@@ -51,6 +51,8 @@ The final event is:
 
 Supported formats: PDF, TXT, DOCX.
 
+Upload responses include `file_size` and `document_metadata` with parser details such as `word_count`, `character_count`, `page_count` for PDFs, and the stored file hash.
+
 ## Voice
 
 - `POST /voice/transcribe`

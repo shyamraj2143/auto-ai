@@ -299,6 +299,14 @@ async def image_analysis(
             detail="Supported image formats are PNG, JPG, JPEG, WEBP, and GIF.",
         )
     data = await file.read()
+    if not data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The uploaded image is empty.")
+    max_bytes = settings.MAX_UPLOAD_MB * 1024 * 1024
+    if len(data) > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Image exceeds {settings.MAX_UPLOAD_MB} MB.",
+        )
     content = groq_service.analyze_image(data, file.filename or "image.png", prompt)
     record_usage(
         db,

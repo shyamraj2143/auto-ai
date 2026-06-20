@@ -12,7 +12,43 @@ import type {
   UserMemory
 } from "../types";
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL ?? "https://auto-ai-production-c510.up.railway.app/api/v1";
+const PUBLIC_API_BASE_URL = "https://auto-ai-production-c510.up.railway.app/api/v1";
+const LOCAL_API_BASE_URL = "http://localhost:8000/api/v1";
+
+function stripTrailingSlash(value: string) {
+  return value.replace(/\/+$/, "");
+}
+
+function isLocalHostname(hostname: string) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0" || hostname === "::1";
+}
+
+function normalizeApiUrl(value?: string) {
+  const trimmed = value?.trim();
+  return trimmed ? stripTrailingSlash(trimmed) : "";
+}
+
+function resolveApiBaseUrl() {
+  const configured = normalizeApiUrl(import.meta.env.VITE_API_URL);
+  if (typeof window === "undefined") return configured || PUBLIC_API_BASE_URL;
+
+  const pageUrl = window.location;
+  const localPage = isLocalHostname(pageUrl.hostname);
+  const fallbackUrl = localPage ? LOCAL_API_BASE_URL : PUBLIC_API_BASE_URL;
+  if (!configured) return fallbackUrl;
+
+  try {
+    const configuredUrl = new URL(configured, pageUrl.origin);
+    if (!localPage && isLocalHostname(configuredUrl.hostname)) return PUBLIC_API_BASE_URL;
+    if (!localPage && pageUrl.protocol === "https:" && configuredUrl.protocol === "http:") return PUBLIC_API_BASE_URL;
+  } catch {
+    return fallbackUrl;
+  }
+
+  return configured;
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
 
 type FetchOptions = RequestInit & {
   token?: string | null;
@@ -47,7 +83,7 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
     headers.set("Authorization", `Bearer ${options.token}`);
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetchWithNetworkMessage(`${API_BASE_URL}${path}`, {
     ...options,
     headers
   });
@@ -61,6 +97,34 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
     return undefined as T;
   }
   return response.json() as Promise<T>;
+}
+
+function getApiConnectionMessage(url: string): string {
+  if (typeof window === "undefined") return "Unable to reach Auto-AI API";
+
+  try {
+    const apiUrl = new URL(url, window.location.origin);
+    if (!isLocalHostname(window.location.hostname) && isLocalHostname(apiUrl.hostname)) {
+      return "Unable to reach Auto-AI API. This build is pointing to localhost, which only works on the same laptop.";
+    }
+    if (window.location.protocol === "https:" && apiUrl.protocol === "http:") {
+      return "Unable to reach Auto-AI API. The site is HTTPS but the API URL is HTTP; use a public HTTPS API URL.";
+    }
+    return `Unable to reach Auto-AI API at ${apiUrl.origin}. Check that the backend is live and CORS allows ${window.location.origin}.`;
+  } catch {
+    return "Unable to reach Auto-AI API. Check the frontend API URL configuration.";
+  }
+}
+
+async function fetchWithNetworkMessage(input: string, init?: RequestInit) {
+  try {
+    return await fetch(input, init);
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error(getApiConnectionMessage(input));
+    }
+    throw error;
+  }
 }
 
 export const api = {
@@ -116,7 +180,7 @@ export const api = {
         }
         reject(new Error(getErrorMessage(payload, "Document upload failed")));
       };
-      request.onerror = () => reject(new Error("Document upload failed"));
+      request.onerror = () => reject(new Error(getApiConnectionMessage(`${API_BASE_URL}/documents/upload`)));
       request.send(formData);
     }),
   deleteDocument: (token: string, id: string) => apiFetch<void>(`/documents/${id}`, { method: "DELETE", token }),
@@ -174,7 +238,7 @@ export async function streamChat(
   payload: ChatRequest,
   onEvent: (event: StreamEvent) => void
 ) {
-  const response = await fetch(`${API_BASE_URL}/ai/chat/stream`, {
+  const response = await fetchWithNetworkMessage(`${API_BASE_URL}/ai/chat/stream`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

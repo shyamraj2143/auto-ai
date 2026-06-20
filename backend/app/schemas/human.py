@@ -14,11 +14,11 @@ class InteractionProfileRead(BaseModel):
     confidence_score: int
     frustration_score: int
     humor_score: int
-    communication_style: dict[str, Any] = {}
-    personality_blend: dict[str, Any] = {}
-    favorite_topics: list[str] = []
-    current_projects: list[str] = []
-    long_term_objectives: list[str] = []
+    communication_style: dict[str, Any] = Field(default_factory=dict)
+    personality_blend: dict[str, Any] = Field(default_factory=dict)
+    favorite_topics: list[str] = Field(default_factory=list)
+    current_projects: list[str] = Field(default_factory=list)
+    long_term_objectives: list[str] = Field(default_factory=list)
     learning_style: str | None = None
     first_interaction_at: datetime
     last_interaction_at: datetime
@@ -65,13 +65,13 @@ class TurnAnalysisRead(BaseModel):
     chat_id: str
     user_message_id: str | None = None
     assistant_message_id: str | None = None
-    emotion: dict[str, Any] = {}
-    tone: dict[str, Any] = {}
+    emotion: dict[str, Any] = Field(default_factory=dict)
+    tone: dict[str, Any] = Field(default_factory=dict)
     intent: str
     language: str
-    personality_mode: dict[str, Any] = {}
-    state_delta: dict[str, Any] = {}
-    flags: dict[str, Any] = {}
+    personality_mode: dict[str, Any] = Field(default_factory=dict)
+    state_delta: dict[str, Any] = Field(default_factory=dict)
+    flags: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -81,4 +81,3 @@ class HumanStateRead(BaseModel):
     profile: InteractionProfileRead
     memories: list[MemoryRead]
     recent_turns: list[TurnAnalysisRead]
-

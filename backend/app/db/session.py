@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
@@ -21,6 +21,32 @@ def init_db() -> None:
     from app import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    ensure_runtime_schema()
+
+
+def ensure_runtime_schema() -> None:
+    """Apply tiny additive schema updates for local SQLite installs."""
+    if not database_url.startswith("sqlite"):
+        return
+
+    inspector = inspect(engine)
+    table_names = set(inspector.get_table_names())
+    if "documents" not in table_names:
+        return
+
+    document_columns = {column["name"] for column in inspector.get_columns("documents")}
+    statements: list[str] = []
+    if "file_size" not in document_columns:
+        statements.append("ALTER TABLE documents ADD COLUMN file_size INTEGER NOT NULL DEFAULT 0")
+    if "metadata" not in document_columns:
+        statements.append("ALTER TABLE documents ADD COLUMN metadata JSON")
+
+    if not statements:
+        return
+
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
 
 
 def get_db() -> Session:
@@ -29,4 +55,3 @@ def get_db() -> Session:
         yield db
     finally:
         db.close()
-

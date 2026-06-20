@@ -15,7 +15,7 @@ class HumanizationLayer:
         conversation: dict[str, Any],
     ) -> str:
         sections = [
-            "Adaptive conversation context:",
+            "Adaptive conversation guidance:",
             f"- Detected user emotion: {emotion.get('primary_emotion', 'neutral')} "
             f"(intensity {emotion.get('intensity', 0)}).",
             f"- User tone: {tone.get('language', 'english')}, {tone.get('formality', 'neutral')} formality, "
@@ -23,6 +23,12 @@ class HumanizationLayer:
             f"- Best personality mode: {personality.get('primary_mode', 'mentor')}.",
             f"- Conversation intent: {conversation.get('intent', 'conversation')}.",
             self._state_line(profile_snapshot, state_delta),
+            "Response shape:",
+            "- Begin with the most context-aware next sentence, not a generic assistant greeting.",
+            "- Use natural callbacks to the user's active goal, prior constraints, or uploaded context when relevant.",
+            "- Keep memory references subtle and useful; do not say that you are using a memory system.",
+            "- Prefer concrete verbs, specific nouns, and varied sentence rhythm.",
+            "- End with a useful next step or one precise question only when needed.",
         ]
 
         if style_directives:
@@ -66,4 +72,3 @@ class HumanizationLayer:
 
 
 humanization_layer = HumanizationLayer()
-

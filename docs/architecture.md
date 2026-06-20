@@ -46,7 +46,7 @@ The public API surface is exposed under `/api/v1/human`. Full details are in `do
 
 ## AI Provider Integration
 
-Auto-AI can use OpenAI or Groq for chat completions. The active chat provider is selected with `AI_PROVIDER`.
+Auto-AI can use OpenAI, Groq, or Amazon Bedrock-compatible chat completions. The active chat provider is selected with `AI_PROVIDER`.
 
 - OpenAI chat completions with `gpt-4.1-mini`
 - Groq chat completions with `openai/gpt-oss-120b`
@@ -62,7 +62,7 @@ The default model values are environment-driven and can be changed without code 
 
 ## Frontend
 
-React Router separates auth, chat, and admin views. Context API manages authentication, theme, and chat state. The chat screen streams assistant output, renders Markdown, highlights code, provides copy controls, supports uploaded document context, and captures microphone audio for transcription.
+React Router separates the public landing page, auth, chat workspace, and admin views. Context API manages authentication, theme, and chat state. The chat screen streams assistant output, renders Markdown, highlights code, virtualizes long threads by showing the latest messages, provides message actions, supports a unified text/file/image/voice composer, exposes document context, and includes a memory management panel.
 
 ## MongoDB Readiness
 

@@ -59,6 +59,9 @@ class GroqService:
             detail=f"Groq request failed: {exc}",
         ) from exc
 
+    def _groq_model_for_fallback(self, *, web_search: bool) -> str:
+        return settings.GROQ_SEARCH_MODEL if web_search else settings.GROQ_MODEL
+
     def _client(self) -> Groq:
         api_key = settings.groq_api_key
         if not api_key:
@@ -428,30 +431,49 @@ class GroqService:
         *,
         model: str,
         temperature: float | None = None,
+        web_search: bool = False,
     ) -> tuple[str, dict[str, int], str]:
         endpoint_mode = settings.bedrock_endpoint_mode.lower()
-        if endpoint_mode in {"mantle", "chat", "chat_completions", "chat-completions"}:
-            return self._complete_bedrock_mantle(messages, model=model)
-        if endpoint_mode == "runtime":
-            return self._complete_bedrock_runtime(
-                messages,
-                model=model,
-                temperature=temperature,
-            )
-        try:
-            return self._complete_bedrock_mantle(messages, model=model)
-        except HTTPException as mantle_error:
-            try:
-                return self._complete_bedrock_runtime(
+        attempts: list[Any] = []
+        if endpoint_mode in {"runtime", "converse"}:
+            attempts.append(
+                lambda: self._complete_bedrock_runtime(
                     messages,
                     model=model,
                     temperature=temperature,
                 )
-            except HTTPException as runtime_error:
+            )
+            attempts.append(lambda: self._complete_bedrock_mantle(messages, model=model))
+        else:
+            attempts.append(lambda: self._complete_bedrock_mantle(messages, model=model))
+            attempts.append(
+                lambda: self._complete_bedrock_runtime(
+                    messages,
+                    model=model,
+                    temperature=temperature,
+                )
+            )
+
+        last_error: HTTPException | None = None
+        for attempt in attempts:
+            try:
+                return attempt()
+            except HTTPException as exc:
+                last_error = exc
+
+        try:
+            return self._complete_groq(
+                messages,
+                model=self._groq_model_for_fallback(web_search=web_search),
+                temperature=temperature,
+            )
+        except HTTPException as groq_error:
+            if last_error:
                 raise HTTPException(
-                    status_code=runtime_error.status_code,
-                    detail=f"{mantle_error.detail} Runtime fallback also failed: {runtime_error.detail}",
-                ) from runtime_error
+                    status_code=last_error.status_code,
+                    detail=f"{last_error.detail} Groq fallback also failed: {groq_error.detail}",
+                ) from groq_error
+            raise
 
     def _stream_openai(
         self,
@@ -542,15 +564,91 @@ class GroqService:
         *,
         model: str,
         temperature: float | None = None,
+        web_search: bool = False,
     ) -> Iterable[Any]:
         endpoint_mode = settings.bedrock_endpoint_mode.lower()
-        if endpoint_mode in {"runtime", "converse"}:
-            return self._stream_bedrock_runtime(
-                messages,
+
+        def iterator():
+            attempts: list[Any] = []
+            if endpoint_mode in {"runtime", "converse"}:
+                attempts.append(
+                    lambda: self._stream_bedrock_runtime(
+                        messages,
+                        model=model,
+                        temperature=temperature,
+                    )
+                )
+                attempts.append(lambda: self._stream_bedrock_mantle(messages, model=model))
+            else:
+                attempts.append(lambda: self._stream_bedrock_mantle(messages, model=model))
+                attempts.append(
+                    lambda: self._stream_bedrock_runtime(
+                        messages,
+                        model=model,
+                        temperature=temperature,
+                    )
+                )
+
+            last_error: HTTPException | None = None
+            for attempt in attempts:
+                try:
+                    yield from attempt()
+                    return
+                except HTTPException as exc:
+                    last_error = exc
+
+            try:
+                yield from self._stream_groq(
+                    messages,
+                    model=self._groq_model_for_fallback(web_search=web_search),
+                    temperature=temperature,
+                )
+            except HTTPException as groq_error:
+                if last_error:
+                    raise HTTPException(
+                        status_code=last_error.status_code,
+                        detail=f"{last_error.detail} Groq fallback also failed: {groq_error.detail}",
+                    ) from groq_error
+                raise
+
+        return iterator()
+
+    def _complete_groq(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        model: str,
+        temperature: float | None = None,
+    ) -> tuple[str, dict[str, int], str]:
+        try:
+            completion = self._client().chat.completions.create(
                 model=model,
-                temperature=temperature,
+                messages=messages,
+                temperature=settings.GROQ_TEMPERATURE if temperature is None else temperature,
+                max_tokens=settings.GROQ_MAX_TOKENS,
             )
-        return self._stream_bedrock_mantle(messages, model=model)
+        except GroqError as exc:
+            self._handle_groq_error(exc)
+        content = completion.choices[0].message.content or ""
+        return content, self.extract_usage(completion), model
+
+    def _stream_groq(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        model: str,
+        temperature: float | None = None,
+    ) -> Iterable[Any]:
+        try:
+            return self._client().chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=settings.GROQ_TEMPERATURE if temperature is None else temperature,
+                max_tokens=settings.GROQ_MAX_TOKENS,
+                stream=True,
+            )
+        except GroqError as exc:
+            self._handle_groq_error(exc)
 
     def complete(
         self,
@@ -574,19 +672,10 @@ class GroqService:
                 messages,
                 model=selected_model,
                 temperature=temperature,
+                web_search=web_search,
             )
 
-        try:
-            completion = self._client().chat.completions.create(
-                model=selected_model,
-                messages=messages,
-                temperature=settings.GROQ_TEMPERATURE if temperature is None else temperature,
-                max_tokens=settings.GROQ_MAX_TOKENS,
-            )
-        except GroqError as exc:
-            self._handle_groq_error(exc)
-        content = completion.choices[0].message.content or ""
-        return content, self.extract_usage(completion), selected_model
+        return self._complete_groq(messages, model=selected_model, temperature=temperature)
 
     def stream(
         self,
@@ -610,18 +699,10 @@ class GroqService:
                 messages,
                 model=selected_model,
                 temperature=temperature,
+                web_search=web_search,
             )
 
-        try:
-            return self._client().chat.completions.create(
-                model=selected_model,
-                messages=messages,
-                temperature=settings.GROQ_TEMPERATURE if temperature is None else temperature,
-                max_tokens=settings.GROQ_MAX_TOKENS,
-                stream=True,
-            )
-        except GroqError as exc:
-            self._handle_groq_error(exc)
+        return self._stream_groq(messages, model=selected_model, temperature=temperature)
 
     def analyze_image(self, image_bytes: bytes, filename: str, prompt: str) -> str:
         suffix = Path(filename).suffix.lower().replace(".", "") or "png"

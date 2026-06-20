@@ -21,6 +21,7 @@ async def upload_document(
     file: UploadFile = File(...),
     chat_id: str | None = Form(default=None),
     summarize: bool = Form(default=True),
+    provider: str | None = Form(default=None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -29,22 +30,23 @@ async def upload_document(
         if not chat:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
 
-    file_path, extracted_text = await document_service.save_and_extract(file, current_user.id)
-    if not extracted_text:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="No readable text was found in the document.",
-        )
+    file_path, extraction = await document_service.save_and_extract(file, current_user.id)
 
-    summary = document_service.summarize(extracted_text, file.filename or "document") if summarize else None
+    summary = (
+        document_service.summarize(extraction.text, file.filename or "document", provider=provider)
+        if summarize
+        else None
+    )
     document = Document(
         user_id=current_user.id,
         chat_id=chat_id,
         filename=file.filename or Path(file_path).name,
         content_type=file.content_type or "application/octet-stream",
+        file_size=int(extraction.metadata.get("file_size", 0) or 0),
         file_path=file_path,
-        extracted_text=extracted_text,
+        extracted_text=extraction.text,
         summary=summary,
+        document_metadata=extraction.metadata,
     )
     db.add(document)
     db.commit()
@@ -108,4 +110,3 @@ def delete_document(
     db.delete(document)
     db.commit()
     return None
-

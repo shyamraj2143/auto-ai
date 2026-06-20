@@ -9,6 +9,17 @@ from app.core.rate_limit import InMemoryRateLimitMiddleware
 from app.db.session import init_db
 
 
+def get_cors_origins() -> list[str]:
+    default_origins = {
+        "https://autoai.site.je",
+        "https://www.autoai.site.je",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    }
+    configured_origins = {str(origin).rstrip("/") for origin in settings.BACKEND_CORS_ORIGINS}
+    return sorted(default_origins | configured_origins)
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.PROJECT_NAME,
@@ -19,11 +30,7 @@ def create_app() -> FastAPI:
     # CORS
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "https://autoai.site.je",
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-        ],
+        allow_origins=get_cors_origins(),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

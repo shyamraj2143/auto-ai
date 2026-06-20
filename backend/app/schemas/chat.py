@@ -36,7 +36,7 @@ class ChatListItem(BaseModel):
 
 class ChatRead(ChatListItem):
     system_prompt: str | None = None
-    messages: list[MessageRead] = []
+    messages: list[MessageRead] = Field(default_factory=list)
 
 
 class ChatRequest(BaseModel):
@@ -48,7 +48,7 @@ class ChatRequest(BaseModel):
     model: str | None = Field(default=None, max_length=120)
     web_search: bool = False
     reasoning: bool = False
-    document_ids: list[str] = []
+    document_ids: list[str] = Field(default_factory=list)
 
 
 class ChatResponse(BaseModel):

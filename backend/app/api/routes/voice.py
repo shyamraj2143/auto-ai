@@ -26,6 +26,13 @@ async def transcribe_voice(
             detail="Supported audio formats are FLAC, MP3, M4A, MPEG, MPGA, OGG, WAV, and WEBM.",
         )
     data = await file.read()
+    if not data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The uploaded audio is empty.")
+    max_bytes = settings.MAX_UPLOAD_MB * 1024 * 1024
+    if len(data) > max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Audio exceeds {settings.MAX_UPLOAD_MB} MB.",
+        )
     text = groq_service.transcribe_audio(data, file.filename or "voice.webm")
     return {"text": text, "model": settings.GROQ_AUDIO_MODEL}
-
