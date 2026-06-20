@@ -12,7 +12,7 @@ import type {
   UserMemory
 } from "../types";
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL ?? "https://auto-ai-production-c510.up.railway.app/api/v1";
+export const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000/api/v1";
 
 type FetchOptions = RequestInit & {
   token?: string | null;
@@ -87,7 +87,49 @@ export const api = {
   listDocuments: (token: string) => apiFetch<DocumentItem[]>("/documents", { token }),
   uploadDocument: (token: string, formData: FormData) =>
     apiFetch<DocumentItem>("/documents/upload", { method: "POST", token, body: formData }),
+  uploadDocumentWithProgress: (
+    token: string,
+    formData: FormData,
+    onProgress: (progress: number) => void
+  ) =>
+    new Promise<DocumentItem>((resolve, reject) => {
+      const request = new XMLHttpRequest();
+      request.open("POST", `${API_BASE_URL}/documents/upload`);
+      request.setRequestHeader("Authorization", `Bearer ${token}`);
+      request.upload.onprogress = (event) => {
+        if (!event.lengthComputable) return;
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      };
+      request.onload = () => {
+        const payload = request.responseText
+          ? (() => {
+              try {
+                return JSON.parse(request.responseText);
+              } catch {
+                return { detail: request.statusText };
+              }
+            })()
+          : undefined;
+        if (request.status >= 200 && request.status < 300) {
+          resolve(payload as DocumentItem);
+          return;
+        }
+        reject(new Error(getErrorMessage(payload, "Document upload failed")));
+      };
+      request.onerror = () => reject(new Error("Document upload failed"));
+      request.send(formData);
+    }),
   deleteDocument: (token: string, id: string) => apiFetch<void>(`/documents/${id}`, { method: "DELETE", token }),
+  analyzeImage: (token: string, file: File, prompt: string) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("prompt", prompt);
+    return apiFetch<{ content: string; model: string }>("/ai/image-analysis", {
+      method: "POST",
+      token,
+      body: formData
+    });
+  },
 
   humanProfile: (token: string) => apiFetch<InteractionProfile>("/human/profile", { token }),
   humanState: (token: string) => apiFetch<HumanState>("/human/state", { token }),

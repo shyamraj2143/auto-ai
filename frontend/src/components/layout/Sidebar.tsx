@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { Bot, MessageSquarePlus, Pencil, Trash2 } from "lucide-react";
+import { Bot, MessageSquarePlus, Pencil, Sparkles, Trash2 } from "lucide-react";
 import clsx from "clsx";
 import { useChat } from "../../contexts/ChatContext";
 
@@ -21,15 +21,15 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="hidden w-72 shrink-0 border-r border-slate-200 bg-slate-950 text-white md:flex md:flex-col">
+    <aside className="hidden w-72 shrink-0 border-r border-white/10 bg-slate-950/90 text-white backdrop-blur-xl md:flex md:flex-col">
       <div className="flex h-14 items-center gap-3 border-b border-white/10 px-4">
-        <span className="grid h-9 w-9 place-items-center rounded-md bg-emerald-500">
-          <Bot size={20} />
+        <span className="grid h-9 w-9 place-items-center rounded-lg border border-cyan-200/30 bg-cyan-200/15 text-cyan-100">
+          <Sparkles size={19} />
         </span>
-        <Link className="font-semibold" to="/">Auto-AI</Link>
+        <Link className="font-semibold" to="/chat">Auto-AI</Link>
       </div>
       <div className="p-3">
-        <button className="flex w-full items-center justify-center gap-2 rounded-md border border-white/10 bg-white/10 px-3 py-2 text-sm font-medium hover:bg-white/15" onClick={() => createChat()}>
+        <button className="flex w-full items-center justify-center gap-2 rounded-lg border border-cyan-200/20 bg-cyan-200/10 px-3 py-2 text-sm font-medium text-cyan-50 transition hover:bg-cyan-200/15" onClick={() => createChat()}>
           <MessageSquarePlus size={17} />
           New chat
         </button>
@@ -37,7 +37,7 @@ export function Sidebar() {
       <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2 pb-3">
         {loadingChats && <p className="px-2 py-2 text-sm text-white/50">Loading...</p>}
         {chats.map((chat) => (
-          <div key={chat.id} className={clsx("group flex items-center rounded-md", activeChat?.id === chat.id && location.pathname === "/" ? "bg-white/15" : "hover:bg-white/10")}>
+          <div key={chat.id} className={clsx("group flex items-center rounded-lg transition", activeChat?.id === chat.id && location.pathname === "/chat" ? "bg-white/15" : "hover:bg-white/10")}>
             <button className="min-w-0 flex-1 truncate px-3 py-2 text-left text-sm" onClick={() => openChat(chat.id)}>
               {chat.title}
             </button>
@@ -50,7 +50,15 @@ export function Sidebar() {
           </div>
         ))}
       </nav>
+      <div className="border-t border-white/10 p-3">
+        <div className="rounded-lg border border-white/10 bg-white/[0.04] p-3 text-xs leading-5 text-slate-300">
+          <div className="mb-2 flex items-center gap-2 font-medium text-white">
+            <Bot size={14} />
+            Human mode
+          </div>
+          Memory, tone, and flow signals are active for every new response.
+        </div>
+      </div>
     </aside>
   );
 }
-

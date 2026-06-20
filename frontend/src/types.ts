@@ -31,7 +31,9 @@ export type DocumentItem = {
   chat_id?: string | null;
   filename: string;
   content_type: string;
+  file_size: number;
   summary?: string | null;
+  document_metadata: Record<string, unknown>;
   created_at: string;
 };
 

@@ -9,9 +9,17 @@ export function VoiceButton({ onTranscript }: { onTranscript: (text: string) => 
   const chunksRef = useRef<Blob[]>([]);
   const [recording, setRecording] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
 
   async function startRecording() {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    setError(false);
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setError(true);
+      return;
+    }
     const recorder = new MediaRecorder(stream);
     chunksRef.current = [];
     recorder.ondataavailable = (event) => {
@@ -25,6 +33,8 @@ export function VoiceButton({ onTranscript }: { onTranscript: (text: string) => 
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
         const result = await api.transcribeAudio(token, blob);
         if (result.text.trim()) onTranscript(result.text.trim());
+      } catch {
+        setError(true);
       } finally {
         setLoading(false);
       }
@@ -41,7 +51,7 @@ export function VoiceButton({ onTranscript }: { onTranscript: (text: string) => 
 
   return (
     <button
-      className="icon-button"
+      className={error ? "icon-button-danger" : "icon-button-dark"}
       disabled={loading}
       onClick={recording ? stopRecording : startRecording}
       title={recording ? "Stop recording" : "Record voice"}
@@ -51,4 +61,3 @@ export function VoiceButton({ onTranscript }: { onTranscript: (text: string) => 
     </button>
   );
 }
-
