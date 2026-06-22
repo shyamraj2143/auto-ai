@@ -25,12 +25,13 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
 
     BACKEND_CORS_ORIGINS: list[AnyHttpUrl | str] = [
+        "https://autoai.site.je",
+        "http://autoai.site.je",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
-        "https://autoai.site.je",
-        "https://www.autoai.site.je",
     ]
-    BACKEND_CORS_ORIGIN_REGEX: str | None = None
+
+
 
     DATABASE_URL: str | None = None
     SQLITE_PATH: str = str(PROJECT_ROOT / "database" / "auto_ai.db")
@@ -55,7 +56,7 @@ class Settings(BaseSettings):
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
 
     BEDROCK_API_KEY: str | None = None
-    BEDROCK_REGION: str = "us-east-1"
+    BEDROCK_REGION: str = "us-south-1"
     BEDROCK_MODEL: str = "openai.gpt-oss-120b"
     BEDROCK_BASE_URL: str | None = None
     BEDROCK_AUTH_MODE: str = "auto"
