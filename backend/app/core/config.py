@@ -26,7 +26,6 @@ class Settings(BaseSettings):
 
     BACKEND_CORS_ORIGINS: list[AnyHttpUrl | str] = [
         "http://autoai.site.je",
-        "https://autoai.site.je",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ]
