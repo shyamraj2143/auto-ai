@@ -43,12 +43,13 @@ export default function App() {
         <BrowserRouter>
           <Suspense fallback={<div className="app-loading">Loading Auto-AI...</div>}>
             <Routes>
-              <Route path="/" element={<LandingPage />} />
+              <Route path="/home" element={<LandingPage />} />
               <Route path="/download" element={<DownloadPage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
               <Route element={<ProtectedRoute />}>
                 <Route element={<AppShell />}>
+                  <Route index element={<ChatPage />} />
                   <Route path="/chat" element={<ChatPage />} />
                   <Route path="/admin" element={<AdminDashboard />} />
                 </Route>

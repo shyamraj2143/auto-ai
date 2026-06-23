@@ -14,6 +14,8 @@ def get_cors_origins() -> list[str]:
     default_origins = {
         "https://autoai.site.je",
         "http://autoai.site.je",
+        "https://localhost",
+        "http://localhost:5173",
     }
     configured_origins = {str(origin).rstrip("/") for origin in settings.BACKEND_CORS_ORIGINS}
     return sorted(default_origins | configured_origins)
