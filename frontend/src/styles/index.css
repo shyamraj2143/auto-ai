@@ -200,19 +200,20 @@ button:disabled {
   box-shadow: 0 26px 80px rgba(8, 145, 178, 0.2);
 }
 
-.composer-main-row {
-  display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) auto;
+.composer-top-row {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  padding: 4px 2px 0;
 }
 
 .composer-plus-button {
   display: grid;
-  height: 36px;
-  width: 36px;
+  height: 48px;
+  width: 48px;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.08);
   color: #f8fafc;
@@ -224,48 +225,83 @@ button:disabled {
   background: rgba(103, 232, 249, 0.12);
 }
 
+.composer-pill {
+  display: inline-flex;
+  height: 48px;
+  min-width: 148px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+  padding: 0 14px;
+  color: #f8fafc;
+}
+
+.composer-pill-active {
+  color: #d8b4fe;
+}
+
+.composer-pill-select {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  outline: none;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.composer-pill-select option {
+  background: #111827;
+  color: #f8fafc;
+}
+
+.composer-divider {
+  height: 34px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.composer-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 16px;
+  margin-top: 24px;
+}
+
 .composer-textarea {
-  min-height: 42px;
-  max-height: 140px;
+  min-height: 70px;
+  max-height: 180px;
   width: 100%;
   resize: none;
   border: 0;
   background: transparent;
   color: white;
   outline: none;
-  padding: 10px 4px;
-  font-size: 15px;
+  padding: 0 12px 10px;
+  font-size: 22px;
   line-height: 1.45;
 }
 
 .composer-textarea::placeholder {
-  color: rgba(203, 213, 225, 0.55);
+  color: rgba(203, 213, 225, 0.5);
 }
 
 .composer-inline-actions {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 14px;
+  padding: 0 4px 8px 0;
 }
 
 .composer-send-round {
-  height: 38px;
-  width: 38px;
+  height: 52px;
+  width: 52px;
   border-radius: 999px;
   padding: 0;
-}
-
-.composer-controls-row {
-  margin-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  padding-top: 10px;
-}
-
-.composer-tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 9px;
 }
 
 .attachment-chip,
@@ -338,6 +374,18 @@ button:disabled {
   opacity: 0.48;
 }
 
+.composer-inline-actions .icon-button-dark,
+.composer-inline-actions .icon-button-danger,
+.composer-send-round {
+  height: 52px;
+  width: 52px;
+  border-radius: 999px;
+}
+
+.composer-send-round {
+  padding: 0;
+}
+
 .segmented-button {
   display: inline-flex;
   height: 32px;
@@ -357,16 +405,18 @@ button:disabled {
 
 .message-row {
   display: flex;
+  width: min(920px, 100%);
   gap: 12px;
-  padding: 14px 18px;
+  margin: 0 auto;
+  padding: 18px 20px;
 }
 
 .message-row-user {
-  justify-content: flex-end;
+  justify-content: center;
 }
 
 .message-row-assistant {
-  justify-content: flex-start;
+  justify-content: center;
 }
 
 .message-avatar {
@@ -380,32 +430,38 @@ button:disabled {
 }
 
 .message-avatar-ai {
-  background: rgba(103, 232, 249, 0.12);
-  color: #a5f3fc;
+  display: none;
 }
 
 .message-avatar-user {
+  display: none;
   order: 2;
   background: rgba(134, 239, 172, 0.12);
   color: #bbf7d0;
 }
 
 .message-card {
-  max-width: min(820px, calc(100vw - 120px));
+  width: min(760px, 100%);
+  max-width: min(760px, calc(100vw - 64px));
   min-width: 0;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 0;
   border-radius: 8px;
-  padding: 14px 15px 10px;
-  box-shadow: 0 20px 52px rgba(0, 0, 0, 0.22);
-  backdrop-filter: blur(18px);
+  padding: 0;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .message-card-ai {
-  background: rgba(15, 23, 42, 0.62);
+  background: transparent;
 }
 
 .message-card-user {
-  background: rgba(255, 255, 255, 0.08);
+  width: fit-content;
+  max-width: min(680px, 82%);
+  margin-left: auto;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.09);
+  padding: 12px 14px;
 }
 
 .message-actions {

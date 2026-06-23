@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { FileText, Globe2, Lightbulb, Plus, SendHorizonal, Trash2, X } from "lucide-react";
+import { Box, FileText, Plus, SendHorizonal, Sparkles, Trash2, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import clsx from "clsx";
 import type { DocumentItem, SearchMode } from "../../types";
@@ -58,13 +58,19 @@ const PROVIDER_MODELS = {
 const DOCUMENT_EXTENSIONS = new Set([".pdf", ".docx", ".txt"]);
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 const SEARCH_MODES: Array<{ value: SearchMode; label: string }> = [
-  { value: "auto", label: "Auto search" },
-  { value: "off", label: "Search off" },
+  { value: "auto", label: "Auto" },
+  { value: "off", label: "Off" },
   { value: "web", label: "Web" },
   { value: "news", label: "News" },
   { value: "research", label: "Research" },
   { value: "deep", label: "Deep" }
 ];
+
+const PROVIDER_LABELS: Record<Provider, string> = {
+  openai: "OpenAI",
+  groq: "Groq",
+  bedrock: "Bedrock"
+};
 
 function fileExtension(file: File) {
   const name = file.name.toLowerCase();
@@ -101,7 +107,7 @@ export function Composer({
   const imageAttachmentsRef = useRef<ImageAttachment[]>([]);
   const [draft, setDraft] = useState("");
   const [searchMode, setSearchMode] = useState<SearchMode>("auto");
-  const [reasoning, setReasoning] = useState(false);
+  const [reasoning] = useState(false);
   const [provider, setProvider] = useState<Provider>("groq");
   const [model, setModel] = useState<string>(PROVIDER_MODELS.groq[0].value);
   const [sending, setSending] = useState(false);
@@ -273,18 +279,56 @@ export function Composer({
           }}
         />
 
-        <div className="composer-main-row">
+        <div className="composer-top-row">
           <button className="composer-plus-button" type="button" onClick={() => fileInputRef.current?.click()} title="Attach files">
             <Plus size={19} />
           </button>
+          <div className={clsx("composer-pill", searchMode !== "off" && "composer-pill-active")} title="Search mode">
+              <Sparkles size={18} />
+              <select
+                aria-label="Search mode"
+                className="composer-pill-select"
+                value={searchMode}
+                onChange={(event) => setSearchMode(event.target.value as SearchMode)}
+              >
+                {SEARCH_MODES.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          <span className="composer-divider" />
+          <div className="composer-pill" title="Model provider">
+            <Box size={18} />
+            <select
+              aria-label="AI provider"
+              className="composer-pill-select"
+              value={provider}
+              onChange={(event) => {
+                const nextProvider = event.target.value as Provider;
+                setProvider(nextProvider);
+                setModel(PROVIDER_MODELS[nextProvider][0].value);
+              }}
+            >
+              {(Object.keys(PROVIDER_LABELS) as Provider[]).map((option) => (
+                <option key={option} value={option}>
+                  {PROVIDER_LABELS[option]}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="composer-input-row">
           <textarea
             className="composer-textarea"
             placeholder={
               selectedDocuments.length
                 ? `Ask about ${selectedDocuments.length} selected document${selectedDocuments.length > 1 ? "s" : ""}`
-                : "Ask anything"
+                : "Ask anything..."
             }
-            rows={1}
+            rows={2}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
@@ -299,60 +343,6 @@ export function Composer({
             <button className="send-button composer-send-round" disabled={!canSend} type="submit" title="Send message">
               <SendHorizonal size={18} />
             </button>
-          </div>
-        </div>
-
-        <div className="composer-controls-row">
-          <div className="composer-tools">
-            <label className={clsx("chip-dark", searchMode !== "off" && "chip-dark-active")} title="Search mode">
-              <Globe2 size={15} />
-              <select
-                aria-label="Search mode"
-                className="search-mode-select"
-                value={searchMode}
-                onChange={(event) => setSearchMode(event.target.value as SearchMode)}
-              >
-                {SEARCH_MODES.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              className={clsx("chip-dark", reasoning && "chip-dark-active")}
-              onClick={() => setReasoning((value) => !value)}
-            >
-              <Lightbulb size={15} />
-              Reason
-            </button>
-            <select
-              aria-label="AI provider"
-              className="model-select-dark w-28"
-              value={provider}
-              onChange={(event) => {
-                const nextProvider = event.target.value as Provider;
-                setProvider(nextProvider);
-                setModel(PROVIDER_MODELS[nextProvider][0].value);
-              }}
-            >
-              <option value="openai">OpenAI</option>
-              <option value="groq">Groq</option>
-              <option value="bedrock">Bedrock</option>
-            </select>
-            <select
-              aria-label="AI model"
-              className="model-select-dark w-44 sm:w-52"
-              value={model}
-              onChange={(event) => setModel(event.target.value)}
-            >
-              {PROVIDER_MODELS[provider].map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
           </div>
         </div>
       </div>

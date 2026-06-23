@@ -27,7 +27,12 @@ from app.services.web_search import SearchAgent, web_search_service
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 
-DEFAULT_CHAT_SYSTEM_PROMPT = AUTO_AI_HUMAN_MODE_PROMPT
+DEFAULT_CHAT_SYSTEM_PROMPT = (
+    AUTO_AI_HUMAN_MODE_PROMPT
+    + "\n\nFormat answers like ChatGPT: start with the direct answer, use clear short paragraphs, "
+    "use bullets or numbered steps only when they improve readability, keep code in fenced blocks, "
+    "and avoid unnecessary preambles."
+)
 
 
 def title_from_message(message: str) -> str:
