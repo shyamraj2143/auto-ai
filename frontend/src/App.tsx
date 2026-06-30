@@ -14,6 +14,15 @@ const ChatPage = lazy(() => import("./components/chat/ChatPage").then((module) =
 const DownloadPage = lazy(() => import("./components/download/DownloadPage").then((module) => ({ default: module.DownloadPage })));
 const LandingPage = lazy(() => import("./components/landing/LandingPage").then((module) => ({ default: module.LandingPage })));
 
+/** Shows LandingPage for guests, redirects logged-in users to /chat */
+function RootRedirect() {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return <div className="app-loading">Loading Auto-AI...</div>;
+  }
+  return user ? <Navigate to="/chat" replace /> : <LandingPage />;
+}
+
 function ProtectedRoute() {
   const { user, loading } = useAuth();
   if (loading) {
@@ -43,13 +52,13 @@ export default function App() {
         <BrowserRouter>
           <Suspense fallback={<div className="app-loading">Loading Auto-AI...</div>}>
             <Routes>
+              <Route index element={<RootRedirect />} />
               <Route path="/home" element={<LandingPage />} />
               <Route path="/download" element={<DownloadPage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
               <Route element={<ProtectedRoute />}>
                 <Route element={<AppShell />}>
-                  <Route index element={<ChatPage />} />
                   <Route path="/chat" element={<ChatPage />} />
                   <Route path="/admin" element={<AdminDashboard />} />
                 </Route>
