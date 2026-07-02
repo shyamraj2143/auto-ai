@@ -214,35 +214,14 @@ button:disabled {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 4px 2px 0;
-}
-
-.composer-quick-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  width: 100%;
-  margin-top: 4px;
-}
-
-.composer-quick-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
-  padding: 8px 12px;
-  color: #e2e8f0;
-  font-size: 12px;
-  font-weight: 700;
 }
 
 .composer-plus-button {
   display: grid;
-  height: 48px;
-  width: 48px;
+  height: 44px;
+  width: 44px;
   place-items: center;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
@@ -258,7 +237,7 @@ button:disabled {
 
 .composer-pill {
   display: inline-flex;
-  height: 48px;
+  height: 44px;
   min-width: 148px;
   align-items: center;
   gap: 10px;
@@ -290,7 +269,7 @@ button:disabled {
 }
 
 .composer-divider {
-  height: 34px;
+  height: 28px;
   width: 1px;
   background: rgba(255, 255, 255, 0.16);
 }

@@ -1,5 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { Brain, LogOut, Moon, Settings, Shield, Sun, Zap } from "lucide-react";
+import clsx from "clsx";
 import { useAuth } from "../../contexts/AuthContext";
 import { useShell } from "../../contexts/ShellContext";
 import { useTheme } from "../../contexts/ThemeContext";
@@ -17,7 +18,12 @@ export function Header() {
   };
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 bg-slate-950/70 px-4 text-white backdrop-blur-xl">
+    <header
+      className={clsx(
+        "h-14 shrink-0 items-center justify-between border-b border-white/10 bg-slate-950/70 px-4 text-white backdrop-blur-xl",
+        isChatWorkspace ? "hidden md:flex" : "flex"
+      )}
+    >
       <div className="min-w-0">
         <h2 className="flex items-center gap-2 truncate text-sm font-semibold">
           <Zap size={15} className="text-cyan-200" />

@@ -7,6 +7,7 @@ import { RegisterPage } from "./components/auth/RegisterPage";
 import { Header } from "./components/layout/Header";
 import { Sidebar } from "./components/layout/Sidebar";
 import { SettingsModal } from "./components/layout/SettingsModal";
+import { AppSettingsProvider } from "./contexts/AppSettingsContext";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ChatProvider } from "./contexts/ChatContext";
 import { ShellProvider, useShell } from "./contexts/ShellContext";
@@ -36,11 +37,9 @@ function ProtectedRoute() {
 function AppShell() {
   const location = useLocation();
   const {
-    isSidebarOpen,
     isSettingsOpen,
     closeSidebar,
-    closeSettings,
-    openSettings
+    closeSettings
   } = useShell();
 
   useEffect(() => {
@@ -66,26 +65,28 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <ShellProvider>
-          <BrowserRouter>
-            <Suspense fallback={<div className="app-loading">Loading Auto-AI...</div>}>
-              <Routes>
-                <Route index element={<RootRedirect />} />
-                <Route path="/home" element={<LandingPage />} />
-                <Route path="/download" element={<DownloadPage />} />
-                <Route path="/login" element={<LoginPage />} />
-                <Route path="/register" element={<RegisterPage />} />
-                <Route element={<ProtectedRoute />}>
-                  <Route element={<AppShell />}>
-                    <Route path="/chat" element={<ChatPage />} />
-                    <Route path="/admin" element={<AdminDashboard />} />
+        <AppSettingsProvider>
+          <ShellProvider>
+            <BrowserRouter>
+              <Suspense fallback={<div className="app-loading">Loading Auto-AI...</div>}>
+                <Routes>
+                  <Route index element={<RootRedirect />} />
+                  <Route path="/home" element={<LandingPage />} />
+                  <Route path="/download" element={<DownloadPage />} />
+                  <Route path="/login" element={<LoginPage />} />
+                  <Route path="/register" element={<RegisterPage />} />
+                  <Route element={<ProtectedRoute />}>
+                    <Route element={<AppShell />}>
+                      <Route path="/chat" element={<ChatPage />} />
+                      <Route path="/admin" element={<AdminDashboard />} />
+                    </Route>
                   </Route>
-                </Route>
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </Suspense>
-          </BrowserRouter>
-        </ShellProvider>
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </Suspense>
+            </BrowserRouter>
+          </ShellProvider>
+        </AppSettingsProvider>
       </AuthProvider>
     </ThemeProvider>
   );

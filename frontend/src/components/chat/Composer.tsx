@@ -1,11 +1,12 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Box, FileImage, FileText, Image, Plus, SendHorizonal, Sparkles, Trash2, X } from "lucide-react";
+import { Box, FileText, Plus, SendHorizonal, Sparkles, Trash2, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import clsx from "clsx";
 import type { DocumentItem, SearchMode } from "../../types";
+import { PROVIDER_MODELS, useAppSettings, type AiProvider } from "../../contexts/AppSettingsContext";
 import { VoiceButton } from "./VoiceButton";
 
-type Provider = keyof typeof PROVIDER_MODELS;
+type Provider = AiProvider;
 
 export type ComposerOptions = {
   searchMode: SearchMode;
@@ -27,33 +28,6 @@ type ImageAttachment = {
   file: File;
   previewUrl: string;
 };
-
-const PROVIDER_MODELS = {
-  openai: [
-    { value: "gpt-4.1-mini", label: "GPT-4.1 mini" },
-    { value: "gpt-4o-mini", label: "GPT-4o mini" },
-    { value: "gpt-4.1", label: "GPT-4.1" },
-    { value: "gpt-4o", label: "GPT-4o" },
-    { value: "gpt-5-mini", label: "GPT-5 mini" }
-  ],
-  groq: [
-    { value: "openai/gpt-oss-120b", label: "GPT-OSS 120B" },
-    { value: "openai/gpt-oss-20b", label: "GPT-OSS 20B" },
-    { value: "llama-3.3-70b-versatile", label: "Llama 3.3 70B" },
-    { value: "llama-3.1-8b-instant", label: "Llama 3.1 8B" },
-    { value: "qwen/qwen3-32b", label: "Qwen 3 32B" },
-    { value: "meta-llama/llama-4-scout-17b-16e-instruct", label: "Llama 4 Scout" }
-  ],
-  bedrock: [
-    { value: "openai.gpt-oss-120b", label: "GPT-OSS 120B" },
-    { value: "openai.gpt-oss-20b", label: "GPT-OSS 20B" },
-    { value: "mistral.ministral-3-8b-instruct", label: "Ministral 3 8B" },
-    { value: "mistral.ministral-3-14b-instruct", label: "Ministral 3 14B" },
-    { value: "mistral.mistral-large-3-675b-instruct", label: "Mistral Large 3" },
-    { value: "google.gemma-3-27b-it", label: "Gemma 3 27B" },
-    { value: "qwen.qwen3-coder-30b-a3b-instruct", label: "Qwen 3 Coder 30B" }
-  ]
-} as const;
 
 const DOCUMENT_EXTENSIONS = new Set([".pdf", ".docx", ".txt"]);
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
@@ -103,14 +77,14 @@ export function Composer({
   onUploadDocuments: (files: File[], provider: Provider) => Promise<void>;
   onSend: (text: string, options: ComposerOptions, imageFiles: File[]) => Promise<void>;
 }) {
+  const { settings } = useAppSettings();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const imageInputRef = useRef<HTMLInputElement | null>(null);
   const imageAttachmentsRef = useRef<ImageAttachment[]>([]);
   const [draft, setDraft] = useState("");
   const [searchMode, setSearchMode] = useState<SearchMode>("auto");
   const [reasoning] = useState(false);
-  const [provider, setProvider] = useState<Provider>("groq");
-  const [model, setModel] = useState<string>(PROVIDER_MODELS.groq[0].value);
+  const [provider, setProvider] = useState<Provider>(settings.defaultProvider);
+  const [model, setModel] = useState<string>(settings.defaultModel);
   const [sending, setSending] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [imageAttachments, setImageAttachments] = useState<ImageAttachment[]>([]);
@@ -122,6 +96,11 @@ export function Composer({
   useEffect(() => {
     imageAttachmentsRef.current = imageAttachments;
   }, [imageAttachments]);
+
+  useEffect(() => {
+    setProvider(settings.defaultProvider);
+    setModel(settings.defaultModel);
+  }, [settings.defaultModel, settings.defaultProvider]);
 
   useEffect(() => {
     return () => {
@@ -192,8 +171,6 @@ export function Composer({
   }
 
   const openFilePicker = () => fileInputRef.current?.click();
-  const openImagePicker = () => imageInputRef.current?.click();
-
   return (
     <form
       className="composer-shell"
@@ -282,25 +259,9 @@ export function Composer({
             event.target.value = "";
           }}
         />
-        <input
-          ref={imageInputRef}
-          className="hidden"
-          type="file"
-          multiple
-          accept="image/png,image/jpeg,image/webp,image/gif"
-          onChange={(event) => {
-            const files = Array.from(event.target.files ?? []);
-            if (files.length) addFiles(files);
-            event.target.value = "";
-          }}
-        />
-
         <div className="composer-top-row">
           <button className="composer-plus-button" type="button" onClick={openFilePicker} title="Attach files">
             <Plus size={19} />
-          </button>
-          <button className="composer-plus-button hidden sm:grid" type="button" onClick={openImagePicker} title="Attach images">
-            <Image size={18} />
           </button>
           <div className={clsx("composer-pill", searchMode !== "off" && "composer-pill-active")} title="Search mode">
               <Sparkles size={18} />
@@ -337,16 +298,6 @@ export function Composer({
               ))}
             </select>
           </div>
-          <div className="composer-quick-actions sm:hidden">
-            <button className="composer-quick-chip" type="button" onClick={openImagePicker}>
-              <FileImage size={14} />
-              Image
-            </button>
-            <button className="composer-quick-chip" type="button" onClick={openFilePicker}>
-              <FileText size={14} />
-              File
-            </button>
-          </div>
         </div>
 
         <div className="composer-input-row">
@@ -368,7 +319,9 @@ export function Composer({
             }}
           />
           <div className="composer-inline-actions">
-            <VoiceButton onTranscript={(text) => setDraft((current) => [current, text].filter(Boolean).join(" "))} />
+            {settings.voiceEnabled && (
+              <VoiceButton onTranscript={(text) => setDraft((current) => [current, text].filter(Boolean).join(" "))} />
+            )}
             <button className="send-button composer-send-round" disabled={!canSend} type="submit" title="Send message">
               <SendHorizonal size={18} />
             </button>

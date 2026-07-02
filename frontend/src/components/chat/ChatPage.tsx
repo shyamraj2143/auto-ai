@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bot, Brain, Menu, MessageSquarePlus, Settings, Sparkles } from "lucide-react";
+import { Bot, Menu, Settings, Sparkles } from "lucide-react";
 import { api, streamChat } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
@@ -10,6 +10,7 @@ import { coerceTextContent } from "../../utils/text";
 import { Composer, type ComposerOptions, type UploadTask } from "./Composer";
 import { ContextPanel } from "./ContextPanel";
 import { MessageBubble, type MessageReaction } from "./MessageBubble";
+import { useAppSettings } from "../../contexts/AppSettingsContext";
 import { useShell } from "../../contexts/ShellContext";
 
 const DEFAULT_OPTIONS: ComposerOptions = {
@@ -26,6 +27,7 @@ function splitDelta(delta: unknown) {
 
 export function ChatPage() {
   const { token } = useAuth();
+  const { settings } = useAppSettings();
   const { activeChat, createChat, openChat, refreshChats, setActiveChat } = useChat();
   const { openSidebar, openSettings } = useShell();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -255,6 +257,7 @@ export function ChatPage() {
         : text;
       let streamFailed = false;
       let persistedAssistantId: string | null = null;
+      let bufferedResponse = "";
 
       await streamChat(
         token,
@@ -266,7 +269,7 @@ export function ChatPage() {
           web_search: options.searchMode !== "off" && options.searchMode !== "auto",
           search_mode: options.searchMode,
           reasoning: options.reasoning,
-          document_ids: selectedDocumentIds
+          document_ids: settings.memoryEnabled ? selectedDocumentIds : []
         },
         (event) => {
           if (event.type === "searching") {
@@ -284,11 +287,24 @@ export function ChatPage() {
           }
           if (event.type === "delta") {
             setSearchingMessageId(null);
-            enqueueDelta(chat.id, assistantMessage.id, event.delta);
+            if (settings.streamingEnabled) {
+              enqueueDelta(chat.id, assistantMessage.id, event.delta);
+            } else {
+              bufferedResponse += coerceTextContent(event.delta);
+            }
           }
           if (event.type === "done") {
             setSearchingMessageId(null);
             persistedAssistantId = event.message_id;
+            if (!settings.streamingEnabled) {
+              updateMessagesForChat(chat.id, (current) =>
+                current.map((message) =>
+                  message.id === assistantMessage.id
+                    ? { ...message, content: bufferedResponse }
+                    : message
+                )
+              );
+            }
           }
           if (event.type === "error") {
             streamFailed = true;
@@ -302,7 +318,9 @@ export function ChatPage() {
         }
       );
 
-      await waitForDeltaDrain();
+      if (settings.streamingEnabled) {
+        await waitForDeltaDrain();
+      }
       const finalAssistantId = persistedAssistantId;
       if (finalAssistantId) {
         updateMessagesForChat(chat.id, (current) =>
@@ -400,17 +418,9 @@ export function ChatPage() {
             <Menu size={18} />
           </button>
           <span className="truncate text-sm font-medium">{activeTitle}</span>
-          <div className="flex items-center gap-1">
-            <button className="icon-button-dark" onClick={openSettings} title="Settings" type="button">
-              <Settings size={18} className="text-cyan-200" />
-            </button>
-            <button className="icon-button-dark" onClick={() => setIsContextOpen(true)} title="Context & Memory">
-              <Brain size={18} className="text-cyan-200" />
-            </button>
-            <button className="icon-button-dark" onClick={() => setActiveChat(null)} title="New chat">
-              <MessageSquarePlus size={18} />
-            </button>
-          </div>
+          <button className="icon-button-dark" onClick={openSettings} title="Settings" type="button">
+            <Settings size={18} className="text-cyan-200" />
+          </button>
         </div>
 
         <div ref={scrollRef} className="chat-scroll">
