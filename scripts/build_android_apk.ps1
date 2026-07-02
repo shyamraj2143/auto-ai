@@ -13,6 +13,17 @@ $root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $frontend = Join-Path $root "frontend"
 $android = Join-Path $root "android"
 $output = Join-Path $root $OutputPath
+$buildVersion = (& git -C $root rev-parse --short HEAD).Trim()
+
+$androidAssets = Join-Path $android "app/src/main/assets/public"
+if (Test-Path $androidAssets) {
+  Remove-Item -Recurse -Force $androidAssets
+}
+
+$androidConfig = Join-Path $android "app/src/main/assets/capacitor.config.json"
+if (Test-Path $androidConfig) {
+  Remove-Item -Force $androidConfig
+}
 $localJdk = Get-ChildItem -Path (Join-Path $root ".jdk") -Directory -Filter "jdk-21*" -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($localJdk) {
   $env:JAVA_HOME = $localJdk.FullName
@@ -83,6 +94,7 @@ Set-Content -Path $localPropertiesPath -Value $localPropertyLines -Encoding ASCI
 Push-Location $frontend
 try {
   $env:VITE_API_URL = $ApiUrl
+  $env:VITE_BUILD_VERSION = $buildVersion
   npm install
   npm run build
 }

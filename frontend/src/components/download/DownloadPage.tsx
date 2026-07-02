@@ -46,6 +46,7 @@ export function DownloadPage() {
   const [stats, setStats] = useState<ApkStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const buildVersion = import.meta.env.VITE_BUILD_VERSION ?? "dev";
   const downloadUrl = useMemo(() => absoluteDownloadUrl(), []);
 
   useEffect(() => {
@@ -103,7 +104,7 @@ export function DownloadPage() {
                 Download Auto-AI APK
               </a>
               <span className="download-version">
-                {latest ? `Version ${latest.version}` : loading ? "Checking latest version" : "No APK release"}
+                {latest ? `Version ${latest.version}` : loading ? "Checking latest version" : `Build ${buildVersion}`}
               </span>
             </div>
           </div>
@@ -179,7 +180,7 @@ export function DownloadPage() {
           <div className="release-panel">
             <div className="section-heading-left">
               <p className="hero-kicker"><FileText size={14} /> Release Notes</p>
-              <h2>{latest ? `Version ${latest.version}` : "Latest release"}</h2>
+              <h2>{latest ? `Version ${latest.version}` : `Build ${buildVersion}`}</h2>
             </div>
             {error && <p className="download-error">{error}</p>}
             {(latest?.release_notes?.length ? latest.release_notes : ["Release notes will appear after the first APK upload."]).map((note) => (

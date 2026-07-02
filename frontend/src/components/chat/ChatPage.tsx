@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bot, Brain, Menu, MessageSquarePlus, Sparkles } from "lucide-react";
+import { Bot, Brain, Menu, MessageSquarePlus, Settings, Sparkles } from "lucide-react";
 import { api, streamChat } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
@@ -402,7 +402,7 @@ export function ChatPage() {
           <span className="truncate text-sm font-medium">{activeTitle}</span>
           <div className="flex items-center gap-1">
             <button className="icon-button-dark" onClick={openSettings} title="Settings" type="button">
-              <Brain size={18} className="text-cyan-200" />
+              <Settings size={18} className="text-cyan-200" />
             </button>
             <button className="icon-button-dark" onClick={() => setIsContextOpen(true)} title="Context & Memory">
               <Brain size={18} className="text-cyan-200" />

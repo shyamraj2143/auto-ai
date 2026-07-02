@@ -136,6 +136,15 @@ button:disabled {
     #05070d;
 }
 
+@supports (padding: max(0px)) {
+  .app-shell,
+  .landing-nav,
+  .download-nav {
+    padding-left: max(0px, env(safe-area-inset-left));
+    padding-right: max(0px, env(safe-area-inset-right));
+  }
+}
+
 .app-shell::before {
   content: "";
   position: absolute;
@@ -177,6 +186,7 @@ button:disabled {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   background: linear-gradient(180deg, rgba(2, 6, 23, 0.1), rgba(2, 6, 23, 0.82));
   padding: 14px;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom));
 }
 
 .composer-card {
