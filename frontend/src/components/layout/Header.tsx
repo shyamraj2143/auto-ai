@@ -42,7 +42,7 @@ export function Header() {
             <Brain size={18} className="text-cyan-200" />
           </button>
         )}
-        <button className="icon-button-dark" onClick={openSettings} title="Settings" type="button">
+        <button className="icon-button-dark" onClick={openSettings} title="Settings" aria-label="Open settings" type="button">
           <Settings size={18} />
         </button>
         {user?.is_admin && (

@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { Cpu, LogOut, Monitor, Moon, Power, Sun, Trash2, User, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import clsx from "clsx";
 import { api } from "../../api/client";
 import {
@@ -102,11 +103,11 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
     }
   }
 
-  return (
+  return createPortal(
     <AnimatePresence>
       {open && (
         <motion.div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-3 py-4 backdrop-blur-md"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 px-3 py-4 backdrop-blur-md"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -114,6 +115,9 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
         >
           <motion.section
             className="relative flex h-[min(720px,calc(100vh-2rem))] w-[min(100%,840px)] flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-950/95 text-white shadow-[0_28px_90px_rgba(0,0,0,0.5)]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="settings-title"
             initial={{ y: 24, scale: 0.98, opacity: 0 }}
             animate={{ y: 0, scale: 1, opacity: 1 }}
             exit={{ y: 14, scale: 0.98, opacity: 0 }}
@@ -123,7 +127,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
             <header className="flex items-center justify-between border-b border-white/10 px-4 py-4 md:px-6">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-cyan-300/80">Settings</p>
-                <h3 className="text-base font-semibold md:text-lg">Workspace Preferences</h3>
+                <h3 id="settings-title" className="text-base font-semibold md:text-lg">Workspace Preferences</h3>
               </div>
               <button className="icon-button-dark" onClick={onClose} type="button" title="Close settings">
                 <X size={16} />
@@ -235,6 +239,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
           </motion.section>
         </motion.div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }

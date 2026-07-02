@@ -418,7 +418,7 @@ export function ChatPage() {
             <Menu size={18} />
           </button>
           <span className="truncate text-sm font-medium">{activeTitle}</span>
-          <button className="icon-button-dark" onClick={openSettings} title="Settings" type="button">
+          <button className="icon-button-dark" onClick={openSettings} title="Settings" aria-label="Open settings" type="button">
             <Settings size={18} className="text-cyan-200" />
           </button>
         </div>

@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useMemo, useState } from "react";
 
 export type AiProvider = "openai" | "groq" | "bedrock";
 
@@ -87,7 +87,11 @@ function readStoredSettings(): AppSettings {
 }
 
 function writeStoredSettings(settings: AppSettings) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  } catch (error) {
+    console.warn("[Auto-AI Settings] Unable to save settings to localStorage.", error);
+  }
 }
 
 const AppSettingsContext = createContext<AppSettingsContextValue | undefined>(undefined);
@@ -95,40 +99,38 @@ const AppSettingsContext = createContext<AppSettingsContextValue | undefined>(un
 export function AppSettingsProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<AppSettings>(() => readStoredSettings());
 
+  const updateSettings = useCallback((updater: (current: AppSettings) => AppSettings) => {
+    setSettings((current) => {
+      const nextSettings = normalizeSettings(updater(current));
+      writeStoredSettings(nextSettings);
+      return nextSettings;
+    });
+  }, []);
+
   const value = useMemo<AppSettingsContextValue>(
     () => ({
       settings,
       setDefaultProvider: (provider) => {
-        const nextSettings: AppSettings = {
-          ...settings,
+        updateSettings((current) => ({
+          ...current,
           defaultProvider: provider,
           defaultModel: PROVIDER_MODELS[provider][0].value
-        };
-        setSettings(nextSettings);
-        writeStoredSettings(nextSettings);
+        }));
       },
       setDefaultModel: (model) => {
-        const nextSettings = { ...settings, defaultModel: model };
-        setSettings(nextSettings);
-        writeStoredSettings(nextSettings);
+        updateSettings((current) => ({ ...current, defaultModel: model }));
       },
       setMemoryEnabled: (enabled) => {
-        const nextSettings = { ...settings, memoryEnabled: enabled };
-        setSettings(nextSettings);
-        writeStoredSettings(nextSettings);
+        updateSettings((current) => ({ ...current, memoryEnabled: enabled }));
       },
       setStreamingEnabled: (enabled) => {
-        const nextSettings = { ...settings, streamingEnabled: enabled };
-        setSettings(nextSettings);
-        writeStoredSettings(nextSettings);
+        updateSettings((current) => ({ ...current, streamingEnabled: enabled }));
       },
       setVoiceEnabled: (enabled) => {
-        const nextSettings = { ...settings, voiceEnabled: enabled };
-        setSettings(nextSettings);
-        writeStoredSettings(nextSettings);
+        updateSettings((current) => ({ ...current, voiceEnabled: enabled }));
       }
     }),
-    [settings]
+    [settings, updateSettings]
   );
 
   return <AppSettingsContext.Provider value={value}>{children}</AppSettingsContext.Provider>;
