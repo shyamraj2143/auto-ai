@@ -5,7 +5,7 @@ import { api, streamChat } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
-import type { DocumentItem, Message } from "../../types";
+import type { DocumentItem, Message, ResponseModelInfo } from "../../types";
 import { coerceTextContent } from "../../utils/text";
 import { Composer, type ComposerOptions, type UploadTask } from "./Composer";
 import { ContextPanel } from "./ContextPanel";
@@ -20,14 +20,38 @@ const DEFAULT_OPTIONS: ComposerOptions = {
   maxModels: 3,
   allModels: false,
   timeoutSeconds: 45,
+  groqModels: [],
+  bedrockModels: [],
+  finalJudgeModel: null,
   reasoning: false,
   provider: "groq",
   model: "openai/gpt-oss-120b"
 };
 
+function providerLabel(provider: ComposerOptions["provider"]) {
+  if (provider === "bedrock") return "AWS Bedrock";
+  if (provider === "openai") return "OpenAI";
+  return "Groq";
+}
+
 function splitDelta(delta: unknown) {
   const text = coerceTextContent(delta);
   return text ? text.match(/\S+\s*/g) ?? [text] : [];
+}
+
+function responseModelFallback(model?: string | null): ResponseModelInfo | null {
+  if (!model) return null;
+  if (model.startsWith("deep_research:")) {
+    return {
+      provider: "deep_research",
+      provider_label: "Deep Research",
+      model: model.replace(/^deep_research:/, "")
+    };
+  }
+  if (/^(amazon|anthropic)\./.test(model)) {
+    return { provider: "bedrock", provider_label: "AWS Bedrock", model };
+  }
+  return { provider: "groq", provider_label: "Groq", model };
 }
 
 export function ChatPage() {
@@ -87,6 +111,10 @@ export function ChatPage() {
 
   const hasMessages = messages.length > 0;
   const activeTitle = useMemo(() => activeChat?.title ?? "New chat", [activeChat]);
+  const fallbackResponseModel = useMemo(
+    () => responseModelFallback(activeChat?.model),
+    [activeChat?.model]
+  );
   const selectedDocuments = useMemo(
     () => documents.filter((document) => selectedDocumentIds.includes(document.id)),
     [documents, selectedDocumentIds]
@@ -247,7 +275,16 @@ export function ChatPage() {
       id: crypto.randomUUID(),
       role: "assistant",
       content: "",
-      message_metadata: {},
+      message_metadata: {
+        model:
+          options.chatMode === "normal"
+            ? {
+                provider: options.provider,
+                provider_label: providerLabel(options.provider),
+                model: options.model
+              }
+            : undefined
+      },
       created_at: new Date().toISOString()
     };
     const optimisticMessages = [...messages, userMessage, assistantMessage];
@@ -276,12 +313,24 @@ export function ChatPage() {
           max_models: options.chatMode === "normal" ? undefined : options.maxModels,
           all_models: options.chatMode === "normal" ? undefined : options.allModels,
           timeout_seconds: options.chatMode === "normal" ? undefined : options.timeoutSeconds,
+          groq_models: options.chatMode === "normal" ? undefined : options.groqModels,
+          bedrock_models: options.chatMode === "normal" ? undefined : options.bedrockModels,
+          final_judge_model: options.chatMode === "normal" ? undefined : options.finalJudgeModel,
           web_search: options.searchMode !== "off" && options.searchMode !== "auto",
           search_mode: options.searchMode,
           reasoning: options.reasoning,
           document_ids: settings.memoryEnabled ? selectedDocumentIds : []
         },
         (event) => {
+          if (event.type === "meta" && event.model) {
+            updateMessagesForChat(chat.id, (current) =>
+              current.map((message) =>
+                message.id === assistantMessage.id
+                  ? { ...message, message_metadata: { ...(message.message_metadata ?? {}), model: event.model } }
+                  : message
+              )
+            );
+          }
           if (event.type === "searching") {
             setSearchingMessageId(assistantMessage.id);
           }
@@ -456,6 +505,7 @@ export function ChatPage() {
                   isSearchingWeb={message.id === searchingMessageId}
                   reaction={reactions[message.id]}
                   bookmarked={bookmarks[message.id]}
+                  fallbackModel={message.role === "assistant" ? fallbackResponseModel : null}
                   onReact={handleReact}
                   onRegenerate={handleRegenerate}
                   onEdit={handleEdit}

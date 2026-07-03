@@ -1,14 +1,10 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Cpu, LogOut, Monitor, Moon, Power, Sun, Trash2, User, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { LogOut, Monitor, Moon, Power, Sun, Trash2, User, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import clsx from "clsx";
 import { api } from "../../api/client";
-import {
-  PROVIDER_MODELS,
-  useAppSettings,
-  type AiProvider
-} from "../../contexts/AppSettingsContext";
+import { useAppSettings } from "../../contexts/AppSettingsContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
 import { useTheme } from "../../contexts/ThemeContext";
@@ -22,12 +18,6 @@ const THEME_OPTIONS: Array<{ value: AppearanceTheme; label: string; icon: typeof
   { value: "dark", label: "Dark", icon: Moon },
   { value: "system", label: "System", icon: Monitor }
 ];
-
-const PROVIDER_LABELS: Record<AiProvider, string> = {
-  openai: "OpenAI",
-  groq: "Groq",
-  bedrock: "Bedrock"
-};
 
 function ToggleRow({
   title,
@@ -72,15 +62,11 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   const { theme, setTheme } = useTheme();
   const {
     settings,
-    setDefaultProvider,
-    setDefaultModel,
     setMemoryEnabled,
     setStreamingEnabled,
     setVoiceEnabled
   } = useAppSettings();
   const [isClearingChats, setIsClearingChats] = useState(false);
-
-  const models = useMemo(() => PROVIDER_MODELS[settings.defaultProvider], [settings.defaultProvider]);
 
   useEffect(() => {
     if (!open) return;
@@ -160,41 +146,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                 </div>
               </section>
 
-              <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 md:p-5">
-                <h4 className="mb-3 text-sm font-semibold text-white">AI Configuration</h4>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <label className="space-y-2 text-sm">
-                    <span className="text-slate-300">AI Provider</span>
-                    <select
-                      value={settings.defaultProvider}
-                      onChange={(event) => setDefaultProvider(event.target.value as AiProvider)}
-                      className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none transition focus:border-cyan-200/40"
-                    >
-                      {(Object.keys(PROVIDER_LABELS) as AiProvider[]).map((provider) => (
-                        <option key={provider} value={provider} className="bg-slate-950 text-white">
-                          {PROVIDER_LABELS[provider]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="space-y-2 text-sm">
-                    <span className="text-slate-300">Default Model</span>
-                    <select
-                      value={settings.defaultModel}
-                      onChange={(event) => setDefaultModel(event.target.value)}
-                      className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm text-white outline-none transition focus:border-cyan-200/40"
-                    >
-                      {models.map((model) => (
-                        <option key={model.value} value={model.value} className="bg-slate-950 text-white">
-                          {model.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-              </section>
-
               <section className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4 md:p-5">
                 <h4 className="text-sm font-semibold text-white">Features</h4>
                 <ToggleRow
@@ -231,7 +182,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                 </div>
                 <div className="mt-4 grid gap-2 rounded-xl border border-white/10 bg-slate-950/45 p-3 text-xs text-slate-300">
                   <p className="flex items-center gap-2"><User size={14} /> {user?.email ?? "Unknown account"}</p>
-                  <p className="flex items-center gap-2"><Cpu size={14} /> Provider: {PROVIDER_LABELS[settings.defaultProvider]}</p>
                   <p className="flex items-center gap-2"><Power size={14} /> App Version: {APP_VERSION}</p>
                 </div>
               </section>

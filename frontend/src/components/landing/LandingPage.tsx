@@ -77,6 +77,7 @@ export function LandingPage() {
           <a href="#features">Features</a>
           <Link to="/download">Android</Link>
           <a href="#pricing">Pricing</a>
+          <Link to="/admin/login">Admin</Link>
           <a href="#faq">FAQ</a>
         </nav>
         <Link className="btn-primary" to={user ? "/chat" : "/login"}>

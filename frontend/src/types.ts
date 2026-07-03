@@ -1,14 +1,30 @@
 export type User = {
   id: string;
   email: string;
+  mobile?: string | null;
   name: string;
   is_admin: boolean;
+  role: string;
   created_at: string;
 };
 
 export type SearchMode = "off" | "auto" | "web" | "news" | "research" | "deep";
 export type ChatMode = "normal" | "deep_research" | "multi_model";
 export type ResearchProvider = "groq" | "bedrock";
+
+export type ResearchProviderModels = {
+  enabled: boolean;
+  models: string[];
+};
+
+export type ResearchModelOptions = {
+  providers: Record<ResearchProvider, ResearchProviderModels>;
+  defaults: {
+    max_models: number;
+    timeout_seconds: number;
+    final_judge_model?: string | null;
+  };
+};
 
 export type SearchSource = {
   id: string;
@@ -56,9 +72,16 @@ export type Message = {
   content: string;
   message_metadata?: {
     search?: SearchResultBundle;
+    model?: ResponseModelInfo;
     [key: string]: unknown;
   };
   created_at: string;
+};
+
+export type ResponseModelInfo = {
+  provider: string;
+  provider_label?: string;
+  model: string;
 };
 
 export type ChatListItem = {
@@ -107,7 +130,7 @@ export type ChatRequest = {
 };
 
 export type StreamEvent =
-  | { type: "meta"; chat_id: string }
+  | { type: "meta"; chat_id: string; model?: ResponseModelInfo }
   | { type: "searching"; mode: SearchMode; message: string }
   | { type: "sources"; search: SearchResultBundle }
   | { type: "delta"; delta: string }
@@ -136,6 +159,14 @@ export type ApkStats = {
 };
 
 export type AdminStats = {
+  total_users: number;
+  active_users: number;
+  blocked_users: number;
+  total_chats: number;
+  total_api_usage: number;
+  active_subscriptions: number;
+  paid_subscriptions: number;
+  total_revenue_cents: number;
   user_count: number;
   chat_count: number;
   message_count: number;
@@ -153,6 +184,143 @@ export type AdminStats = {
     storage_total_gb: number;
     storage_free_gb: number;
   };
+};
+
+export type AdminUser = {
+  id: string;
+  email: string;
+  mobile?: string | null;
+  name: string;
+  role: string;
+  status: "active" | "blocked";
+  is_active: boolean;
+  is_admin: boolean;
+  created_at: string;
+  updated_at: string;
+  subscription?: {
+    plan: AdminPlanName;
+    is_active: boolean;
+    expires_at?: string | null;
+    payment_status: string;
+    expiry_status: string;
+  } | null;
+  usage?: {
+    total_prompts: number;
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    total_chats: number;
+  } | null;
+};
+
+export type AdminPlanName = "free" | "pro" | "pro-plus" | "admin";
+
+export type AdminSubscription = {
+  id: string;
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  plan: AdminPlanName;
+  is_active: boolean;
+  expires_at?: string | null;
+  payment_status: string;
+  razorpay_customer_id?: string | null;
+  razorpay_payment_id?: string | null;
+  stripe_customer_id?: string | null;
+  stripe_payment_id?: string | null;
+  expiry_status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminUsageProviderSummary = {
+  provider: string;
+  requests: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+};
+
+export type AdminUsageUserSummary = {
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  plan: AdminPlanName;
+  total_prompts: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  providers: AdminUsageProviderSummary[];
+};
+
+export type AdminUsageTimeBucket = {
+  period: string;
+  requests: number;
+  total_tokens: number;
+};
+
+export type AdminUsageResponse = {
+  users: AdminUsageUserSummary[];
+  providers: AdminUsageProviderSummary[];
+  daily: AdminUsageTimeBucket[];
+  monthly: AdminUsageTimeBucket[];
+};
+
+export type AdminFeatureFlag = {
+  id: string;
+  key: string;
+  scope: "global" | "user";
+  user_id?: string | null;
+  user_email?: string | null;
+  enabled: boolean;
+  description: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminPlanLimit = {
+  id: string;
+  plan: AdminPlanName;
+  daily_prompt_limit: number;
+  monthly_prompt_limit: number;
+  daily_token_limit: number;
+  monthly_token_limit: number;
+  max_models: number;
+  allow_deep_research: boolean;
+  allow_multi_model: boolean;
+  allow_web_search: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminFeaturesResponse = {
+  flags: AdminFeatureFlag[];
+  plan_limits: AdminPlanLimit[];
+};
+
+export type AdminPaymentRecord = {
+  id: string;
+  user_id?: string | null;
+  user_name?: string | null;
+  user_email?: string | null;
+  provider: string;
+  customer_id?: string | null;
+  payment_id?: string | null;
+  subscription_id?: string | null;
+  plan: AdminPlanName;
+  amount_cents: number;
+  currency: string;
+  status: string;
+  created_at: string;
+};
+
+export type AdminAnalytics = {
+  stats: AdminStats;
+  subscriptions_by_plan: Record<string, number>;
+  users_by_status: Record<string, number>;
+  usage_by_provider: AdminUsageProviderSummary[];
+  payments_by_status: Record<string, number>;
+  daily_usage: AdminUsageTimeBucket[];
 };
 
 export type InteractionProfile = {

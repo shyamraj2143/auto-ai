@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect } from "react";
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { BrowserRouter, useLocation } from "react-router-dom";
 import { AdminDashboard } from "./components/admin/AdminDashboard";
+import { AdminLoginPage } from "./components/auth/AdminLoginPage";
 import { LoginPage } from "./components/auth/LoginPage";
 import { RegisterPage } from "./components/auth/RegisterPage";
 import { Header } from "./components/layout/Header";
@@ -32,6 +33,14 @@ function ProtectedRoute() {
     return <div className="app-loading">Loading Auto-AI...</div>;
   }
   return user ? <Outlet /> : <Navigate to="/login" replace />;
+}
+
+function AdminRoute() {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return <div className="app-loading">Loading Auto-AI...</div>;
+  }
+  return user?.role === "admin" ? <Outlet /> : <Navigate to="/admin/login" replace />;
 }
 
 function AppShell() {
@@ -74,10 +83,15 @@ export default function App() {
                   <Route path="/home" element={<LandingPage />} />
                   <Route path="/download" element={<DownloadPage />} />
                   <Route path="/login" element={<LoginPage />} />
+                  <Route path="/admin/login" element={<AdminLoginPage />} />
                   <Route path="/register" element={<RegisterPage />} />
                   <Route element={<ProtectedRoute />}>
                     <Route element={<AppShell />}>
                       <Route path="/chat" element={<ChatPage />} />
+                    </Route>
+                  </Route>
+                  <Route element={<AdminRoute />}>
+                    <Route element={<AppShell />}>
                       <Route path="/admin" element={<AdminDashboard />} />
                     </Route>
                   </Route>

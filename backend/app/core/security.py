@@ -7,7 +7,7 @@ from passlib.context import CryptContext
 from app.core.config import settings
 
 
-pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+pwd_context = CryptContext(schemes=["pbkdf2_sha256", "bcrypt"], deprecated=["bcrypt"])
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -16,6 +16,10 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
+
+
+def password_needs_rehash(hashed_password: str) -> bool:
+    return pwd_context.needs_update(hashed_password)
 
 
 def create_access_token(subject: str, expires_delta: timedelta | None = None) -> str:
@@ -33,4 +37,3 @@ def decode_access_token(token: str) -> str | None:
         return str(subject) if subject else None
     except JWTError:
         return None
-

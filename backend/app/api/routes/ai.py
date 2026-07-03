@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -16,8 +17,9 @@ from app.models.document import Document
 from app.models.message import Message
 from app.models.search import SearchRun
 from app.models.user import User
-from app.schemas.chat import ChatRead, ChatRequest, ChatResponse, CodeAssistRequest, CodeAssistResponse
+from app.schemas.chat import ChatRead, ChatRequest, ChatResponse, CodeAssistRequest, CodeAssistResponse, ResearchModelOptions
 from app.schemas.search import SearchResultBundle
+from app.services.admin_control import enforce_plan_and_feature_access, record_usage_log
 from app.services.deep_research import deep_research_service
 from app.services.document_service import document_service
 from app.services.groq_service import groq_service
@@ -30,9 +32,19 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 
 DEFAULT_CHAT_SYSTEM_PROMPT = (
     AUTO_AI_HUMAN_MODE_PROMPT
-    + "\n\nFormat answers like ChatGPT: start with the direct answer, use clear short paragraphs, "
+    + "\n\nFormat answers clearly: start with the direct answer, use clear short paragraphs, "
     "use bullets or numbered steps only when they improve readability, keep code in fenced blocks, "
-    "and avoid unnecessary preambles."
+    "and avoid unnecessary preambles. Never reveal hidden reasoning, scratchpad text, or <think> blocks."
+)
+
+THINK_BLOCK_PATTERN = re.compile(r"<think\b[^>]*>.*?</think>\s*", re.IGNORECASE | re.DOTALL)
+OPEN_THINK_BLOCK_PATTERN = re.compile(r"<think\b[^>]*>.*$", re.IGNORECASE | re.DOTALL)
+MODEL_IDENTITY_PATTERN = re.compile(
+    r"\b("
+    r"your model|model name|which model|what model|underlying model|"
+    r"tumhara model|aapka model|kaun sa model|kon sa model"
+    r")\b",
+    re.IGNORECASE,
 )
 
 
@@ -87,6 +99,7 @@ def build_messages(
     reasoning: bool,
     adaptive_context: str | None = None,
     search_context: str | None = None,
+    runtime_identity: str | None = None,
 ) -> list[dict[str, str]]:
     base_prompt = (
         system_prompt
@@ -100,6 +113,8 @@ def build_messages(
         )
 
     messages: list[dict[str, str]] = [{"role": "system", "content": base_prompt}]
+    if runtime_identity:
+        messages.append({"role": "system", "content": runtime_identity})
     if adaptive_context:
         messages.append({"role": "system", "content": adaptive_context})
 
@@ -134,6 +149,25 @@ def search_payload(bundle: SearchResultBundle | None) -> dict:
 
 def deep_research_payload(metadata: dict | None) -> dict:
     return {"deep_research": metadata} if metadata else {}
+
+
+def model_payload(provider: str, model: str) -> dict:
+    provider_name = {"groq": "Groq", "bedrock": "AWS Bedrock", "openai": "OpenAI"}.get(provider, provider)
+    return {"model": {"provider": provider, "provider_label": provider_name, "model": model}}
+
+
+def clean_model_output(content: str) -> str:
+    without_closed_thoughts = THINK_BLOCK_PATTERN.sub("", content)
+    return OPEN_THINK_BLOCK_PATTERN.sub("", without_closed_thoughts).strip()
+
+
+def is_model_identity_question(message: str) -> bool:
+    return bool(MODEL_IDENTITY_PATTERN.search(message.strip()))
+
+
+def model_identity_answer(provider: str, model: str) -> str:
+    provider_name = {"groq": "Groq", "bedrock": "AWS Bedrock", "openai": "OpenAI"}[provider]
+    return f"I am Auto-AI. This response is using {provider_name} / {model}."
 
 
 def attach_search_run_to_message(db: Session, bundle: SearchResultBundle | None, message_id: str) -> None:
@@ -181,6 +215,31 @@ def record_usage(
             total_tokens=usage.get("total_tokens", 0),
         )
     )
+    record_usage_log(db, user_id, endpoint, model, usage)
+
+
+def runtime_identity_prompt(provider: str | None, model: str | None, *, mode: str) -> str:
+    if mode in {"deep_research", "multi_model"}:
+        return (
+            "Runtime identity: You are Auto-AI using Deep Research / Multi-Model mode. "
+            "If the user asks which model is being used, say this mode consults the selected Groq/Bedrock research models and synthesizes one answer. "
+            "Do not claim to be ChatGPT, GPT-4, or any other unrelated model."
+        )
+
+    selected_provider = groq_service.selected_provider(provider)
+    selected_model = groq_service.selected_model(model, provider=selected_provider, web_search=False)
+    provider_name = {"groq": "Groq", "bedrock": "AWS Bedrock", "openai": "OpenAI"}[selected_provider]
+    return (
+        f"Runtime identity: You are Auto-AI using provider {provider_name} with model id {selected_model} for this request. "
+        f"If the user asks your model name or architecture, answer exactly with {provider_name} / {selected_model}. "
+        "Do not claim to be ChatGPT, GPT-4, Claude, or another model unless that is the selected model id/provider. "
+        "Never output hidden reasoning, scratchpad text, or <think> blocks."
+    )
+
+
+@router.get("/research-models", response_model=ResearchModelOptions)
+def research_models(_: User = Depends(get_current_user)) -> dict:
+    return deep_research_service.model_options()
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -189,6 +248,14 @@ def chat(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ChatResponse:
+    enforce_plan_and_feature_access(
+        db,
+        current_user,
+        mode=payload.mode,
+        web_search=payload.web_search,
+        search_mode=payload.search_mode,
+        max_models=payload.max_models,
+    )
     chat_row = get_or_create_chat(db, current_user, payload)
     documents = load_documents(db, current_user.id, payload.document_ids)
     history = chat_row.messages[-settings.MAX_CONTEXT_MESSAGES :] if chat_row.messages else []
@@ -213,11 +280,16 @@ def chat(
         reasoning=payload.reasoning,
         adaptive_context=prepared_context["prompt_context"],
         search_context=web_search_service.build_model_context(search_bundle),
+        runtime_identity=runtime_identity_prompt(payload.provider, payload.model or chat_row.model, mode=payload.mode),
     )
 
     user_message = Message(chat_id=chat_row.id, role="user", content=payload.message)
     db.add(user_message)
     db.flush()
+
+    selected_provider = groq_service.selected_provider(payload.provider)
+    selected_model = groq_service.selected_model(payload.model or chat_row.model, provider=selected_provider, web_search=False)
+    selected_model_payload = model_payload(selected_provider, selected_model)
 
     if payload.mode in {"deep_research", "multi_model"}:
         research_result = deep_research_service.run(
@@ -226,6 +298,7 @@ def chat(
             user_id=current_user.id,
         )
         content = web_search_service.ensure_citations(research_result.content, search_bundle)
+        content = clean_model_output(content)
         assistant_message = Message(
             chat_id=chat_row.id,
             role="assistant",
@@ -256,21 +329,58 @@ def chat(
         db.refresh(assistant_message)
         return ChatResponse(chat=ChatRead.model_validate(chat_row), assistant_message=assistant_message)
 
+    if is_model_identity_question(payload.message):
+        content = model_identity_answer(selected_provider, selected_model)
+        assistant_message = Message(
+            chat_id=chat_row.id,
+            role="assistant",
+            content=content,
+            token_count=0,
+            message_metadata={
+                **search_payload(search_bundle),
+                **selected_model_payload,
+            },
+        )
+        chat_row.model = selected_model
+        chat_row.updated_at = datetime.utcnow()
+        db.add(assistant_message)
+        db.flush()
+        attach_search_run_to_message(db, search_bundle, assistant_message.id)
+        meta_cognition_layer.complete_turn(
+            db,
+            user_id=current_user.id,
+            chat_id=chat_row.id,
+            user_message=payload.message,
+            prepared=prepared_context,
+            user_message_id=user_message.id,
+            assistant_message_id=assistant_message.id,
+        )
+        record_usage(db, current_user.id, "chat_identity", selected_model, {})
+        db.commit()
+        db.refresh(chat_row)
+        db.refresh(assistant_message)
+        return ChatResponse(chat=ChatRead.model_validate(chat_row), assistant_message=assistant_message)
+
     content, usage, selected_model = groq_service.complete(
         messages,
-        model=payload.model or chat_row.model,
-        provider=payload.provider,
+        model=selected_model,
+        provider=selected_provider,
         web_search=False,
+        allow_bedrock_fallback=selected_provider != "bedrock",
     )
+    content = clean_model_output(content)
     content = web_search_service.ensure_citations(content, search_bundle)
     assistant_message = Message(
         chat_id=chat_row.id,
         role="assistant",
         content=content,
         token_count=usage.get("completion_tokens", 0),
-        message_metadata=search_payload(search_bundle),
+        message_metadata={
+            **search_payload(search_bundle),
+            **model_payload(selected_provider, selected_model),
+        },
     )
-    chat_row.model = payload.model or chat_row.model
+    chat_row.model = selected_model
     chat_row.updated_at = datetime.utcnow()
     db.add(assistant_message)
     db.flush()
@@ -297,6 +407,14 @@ def stream_chat(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
+    enforce_plan_and_feature_access(
+        db,
+        current_user,
+        mode=payload.mode,
+        web_search=payload.web_search,
+        search_mode=payload.search_mode,
+        max_models=payload.max_models,
+    )
     chat_row = get_or_create_chat(db, current_user, payload)
     documents = load_documents(db, current_user.id, payload.document_ids)
     history = chat_row.messages[-settings.MAX_CONTEXT_MESSAGES :] if chat_row.messages else []
@@ -307,6 +425,16 @@ def stream_chat(
         user_message=payload.message,
         history=history,
     )
+    user_message = Message(chat_id=chat_row.id, role="user", content=payload.message)
+    db.add(user_message)
+    model_name = payload.model or chat_row.model
+    selected_provider = groq_service.selected_provider(payload.provider)
+    selected_model = groq_service.selected_model(
+        model_name,
+        provider=selected_provider,
+        web_search=False,
+    )
+    selected_model_payload = model_payload(selected_provider, selected_model)
     messages = build_messages(
         chat_row,
         payload.message,
@@ -314,15 +442,51 @@ def stream_chat(
         system_prompt=payload.system_prompt,
         reasoning=payload.reasoning,
         adaptive_context=prepared_context["prompt_context"],
+        runtime_identity=runtime_identity_prompt(payload.provider, selected_model, mode=payload.mode),
     )
-    user_message = Message(chat_id=chat_row.id, role="user", content=payload.message)
-    db.add(user_message)
-    model_name = payload.model or chat_row.model
-    chat_row.model = model_name
+    chat_row.model = selected_model
     chat_row.updated_at = datetime.utcnow()
     db.flush()
     user_message_id = user_message.id
     db.commit()
+
+    if payload.mode == "normal" and is_model_identity_question(payload.message):
+        chat_id = chat_row.id
+        user_id = current_user.id
+        content = model_identity_answer(selected_provider, selected_model)
+
+        def identity_event_generator():
+            yield f"data: {json.dumps({'type': 'meta', 'chat_id': chat_id, 'model': selected_model_payload['model']})}\n\n"
+            yield f"data: {json.dumps({'type': 'delta', 'delta': content})}\n\n"
+            with SessionLocal() as stream_db:
+                message = Message(
+                    chat_id=chat_id,
+                    role="assistant",
+                    content=content,
+                    token_count=0,
+                    message_metadata=selected_model_payload,
+                )
+                chat_record = stream_db.get(Chat, chat_id)
+                if chat_record:
+                    chat_record.model = selected_model
+                    chat_record.updated_at = datetime.utcnow()
+                stream_db.add(message)
+                stream_db.flush()
+                meta_cognition_layer.complete_turn(
+                    stream_db,
+                    user_id=user_id,
+                    chat_id=chat_id,
+                    user_message=payload.message,
+                    prepared=prepared_context,
+                    user_message_id=user_message_id,
+                    assistant_message_id=message.id,
+                )
+                record_usage(stream_db, user_id, "chat_identity_stream", selected_model, {})
+                stream_db.commit()
+                stream_db.refresh(message)
+                yield f"data: {json.dumps({'type': 'done', 'message_id': message.id})}\n\n"
+
+        return StreamingResponse(identity_event_generator(), media_type="text/event-stream")
 
     if payload.mode in {"deep_research", "multi_model"}:
         chat_id = chat_row.id
@@ -362,6 +526,7 @@ def stream_chat(
                     user_id=user_id,
                 )
                 final_content = web_search_service.ensure_citations(research_result.content, search_bundle)
+                final_content = clean_model_output(final_content)
                 yield f"data: {json.dumps({'type': 'delta', 'delta': final_content})}\n\n"
 
                 with SessionLocal() as stream_db:
@@ -401,19 +566,15 @@ def stream_chat(
 
         return StreamingResponse(deep_event_generator(), media_type="text/event-stream")
 
-    selected_model = groq_service.selected_model(
-        model_name,
-        provider=payload.provider,
-        web_search=False,
-    )
     chat_id = chat_row.id
     user_id = current_user.id
     search_mode = SearchAgent.effective_mode(payload.search_mode, payload.web_search)
 
     def event_generator():
-        assistant_content: list[str] = []
+        raw_content = ""
+        visible_content = ""
         usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-        yield f"data: {json.dumps({'type': 'meta', 'chat_id': chat_id})}\n\n"
+        yield f"data: {json.dumps({'type': 'meta', 'chat_id': chat_id, 'model': selected_model_payload['model']})}\n\n"
 
         try:
             search_bundle: SearchResultBundle | None = None
@@ -442,9 +603,10 @@ def stream_chat(
 
             stream = groq_service.stream(
                 model_messages,
-                model=model_name,
-                provider=payload.provider,
+                model=selected_model,
+                provider=selected_provider,
                 web_search=False,
+                allow_bedrock_fallback=selected_provider != "bedrock",
             )
             for chunk in stream:
                 delta = groq_service.extract_stream_delta(chunk)
@@ -452,26 +614,38 @@ def stream_chat(
                 if chunk_usage["total_tokens"]:
                     usage = chunk_usage
                 if delta:
-                    assistant_content.append(delta)
-                    yield f"data: {json.dumps({'type': 'delta', 'delta': delta})}\n\n"
+                    raw_content += delta
+                    next_visible = clean_model_output(raw_content)
+                    visible_delta = (
+                        next_visible[len(visible_content) :]
+                        if next_visible.startswith(visible_content)
+                        else next_visible
+                    )
+                    visible_content = next_visible
+                    if visible_delta:
+                        yield f"data: {json.dumps({'type': 'delta', 'delta': visible_delta})}\n\n"
 
-            final_content = web_search_service.ensure_citations("".join(assistant_content), search_bundle)
-            existing_content = "".join(assistant_content)
+            final_content = web_search_service.ensure_citations(clean_model_output(raw_content), search_bundle)
+            existing_content = visible_content
             citation_delta = final_content[len(existing_content) :]
             if citation_delta:
-                assistant_content.append(citation_delta)
+                visible_content = final_content
                 yield f"data: {json.dumps({'type': 'delta', 'delta': citation_delta})}\n\n"
 
             with SessionLocal() as stream_db:
                 message = Message(
                     chat_id=chat_id,
                     role="assistant",
-                    content="".join(assistant_content),
+                    content=visible_content,
                     token_count=usage.get("completion_tokens", 0),
-                    message_metadata=search_payload(search_bundle),
+                    message_metadata={
+                        **search_payload(search_bundle),
+                        **selected_model_payload,
+                    },
                 )
                 chat_record = stream_db.get(Chat, chat_id)
                 if chat_record:
+                    chat_record.model = selected_model
                     chat_record.updated_at = datetime.utcnow()
                 stream_db.add(message)
                 stream_db.flush()

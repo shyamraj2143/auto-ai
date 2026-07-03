@@ -1,4 +1,5 @@
 from app.models.api_usage import APIUsage
+from app.models.admin_control import FeatureFlag, PaymentRecord, PlanLimit, UsageLog, UserSubscription
 from app.models.apk import ApkDownload, ApkRelease
 from app.models.chat import Chat
 from app.models.document import Document
@@ -14,10 +15,15 @@ __all__ = [
     "Chat",
     "ConversationTurnAnalysis",
     "Document",
+    "FeatureFlag",
     "Message",
+    "PaymentRecord",
+    "PlanLimit",
     "SearchCache",
     "SearchRun",
+    "UsageLog",
     "User",
     "UserInteractionProfile",
     "UserMemory",
+    "UserSubscription",
 ]

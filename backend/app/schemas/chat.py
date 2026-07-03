@@ -69,6 +69,22 @@ class ChatResponse(BaseModel):
     assistant_message: MessageRead
 
 
+class ResearchProviderModels(BaseModel):
+    enabled: bool
+    models: list[str] = Field(default_factory=list)
+
+
+class ResearchModelDefaults(BaseModel):
+    max_models: int
+    timeout_seconds: int
+    final_judge_model: str | None = None
+
+
+class ResearchModelOptions(BaseModel):
+    providers: dict[Literal["groq", "bedrock"], ResearchProviderModels]
+    defaults: ResearchModelDefaults
+
+
 class CodeAssistRequest(BaseModel):
     mode: str = Field(pattern="^(generate|debug|explain)$")
     prompt: str = Field(min_length=1, max_length=20000)

@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { api } from "../api/client";
+import { ApiClientError, api } from "../api/client";
 import type { User } from "../types";
 
 type AuthContextValue = {
@@ -7,6 +7,7 @@ type AuthContextValue = {
   token: string | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  adminLogin: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
 };
@@ -83,11 +84,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       token,
       loading,
       login: async (email, password) => {
-        const session = await api.login({ email, password });
+        const session = await api.login({ email: email.trim().toLowerCase(), password });
+        persistSession(session.access_token, session.user);
+      },
+      adminLogin: async (email, password) => {
+        const credentials = { email: email.trim().toLowerCase(), password };
+        let session: Awaited<ReturnType<typeof api.adminLogin>>;
+        try {
+          session = await api.adminLogin(credentials);
+        } catch (error) {
+          if (!(error instanceof ApiClientError) || error.status !== 404) {
+            throw error;
+          }
+          session = await api.login(credentials);
+        }
+        if (session.user.role !== "admin") {
+          throw new Error("Only admin accounts can access the admin dashboard.");
+        }
         persistSession(session.access_token, session.user);
       },
       register: async (name, email, password) => {
-        const session = await api.register({ name, email, password });
+        const session = await api.register({ name: name.trim(), email: email.trim().toLowerCase(), password });
         persistSession(session.access_token, session.user);
       },
       logout: () => {

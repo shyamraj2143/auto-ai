@@ -616,6 +616,7 @@ class GroqService:
         model: str,
         temperature: float | None = None,
         web_search: bool = False,
+        allow_fallback: bool = True,
     ) -> Iterable[Any]:
         endpoint_mode = settings.bedrock_endpoint_mode.lower()
 
@@ -647,6 +648,14 @@ class GroqService:
                     return
                 except HTTPException as exc:
                     last_error = exc
+
+            if not allow_fallback:
+                if last_error:
+                    raise last_error
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Bedrock request failed before fallback.",
+                )
 
             try:
                 yield from self._stream_groq(
@@ -758,6 +767,7 @@ class GroqService:
         provider: str | None = None,
         web_search: bool = False,
         temperature: float | None = None,
+        allow_bedrock_fallback: bool = True,
     ) -> Iterable[Any]:
         selected_provider = self.selected_provider(provider)
         selected_model = self.selected_model(
@@ -773,6 +783,7 @@ class GroqService:
                 model=selected_model,
                 temperature=temperature,
                 web_search=web_search,
+                allow_fallback=allow_bedrock_fallback,
             )
 
         return self._stream_groq(messages, model=selected_model, temperature=temperature)

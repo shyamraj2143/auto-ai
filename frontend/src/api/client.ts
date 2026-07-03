@@ -1,5 +1,14 @@
 import type {
+  AdminAnalytics,
+  AdminFeaturesResponse,
+  AdminFeatureFlag,
+  AdminPaymentRecord,
+  AdminPlanLimit,
+  AdminPlanName,
   AdminStats,
+  AdminSubscription,
+  AdminUsageResponse,
+  AdminUser,
   ApkRelease,
   ApkStats,
   Chat,
@@ -8,6 +17,8 @@ import type {
   DocumentItem,
   HumanState,
   InteractionProfile,
+  ResponseModelInfo,
+  ResearchModelOptions,
   SearchHistoryItem,
   SearchMode,
   SearchResultBundle,
@@ -112,10 +123,13 @@ function configuredApiUrl() {
 }
 
 function resolveApiBaseUrl() {
-  const configured = configuredApiUrl();
+  const runtimeUrl = isBrowser() ? normalizeApiUrl(window.__AUTO_AI_API_URL__) : "";
+  const configured = runtimeUrl || normalizeApiUrl(import.meta.env.VITE_API_URL);
   if (!isBrowser()) return configured || PUBLIC_API_BASE_URL;
 
   const pageUrl = window.location;
+  const localPage = pageUrl.hostname === "localhost" || pageUrl.hostname === "127.0.0.1";
+  if (!runtimeUrl && localPage) return "http://localhost:8000/api/v1";
   if (!configured) return PUBLIC_API_BASE_URL;
 
   try {
@@ -389,7 +403,7 @@ async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T>
 }
 
 export const api = {
-  register: (payload: { email: string; name: string; password: string }) =>
+  register: (payload: { email: string; name: string; password: string; mobile?: string | null }) =>
     apiFetch<{ access_token: string; token_type: string; user: User }>("/auth/register", {
       method: "POST",
       operation: "auth.register",
@@ -399,6 +413,12 @@ export const api = {
     apiFetch<{ access_token: string; token_type: string; user: User }>("/auth/login", {
       method: "POST",
       operation: "auth.login",
+      body: JSON.stringify(payload)
+    }),
+  adminLogin: (payload: { email: string; password: string }) =>
+    apiFetch<{ access_token: string; token_type: string; user: User }>("/auth/admin-login", {
+      method: "POST",
+      operation: "auth.adminLogin",
       body: JSON.stringify(payload)
     }),
   me: (token: string) => apiFetch<User>("/auth/me", { token, operation: "auth.me" }),
@@ -526,7 +546,87 @@ export const api = {
   apkVersions: () => apiFetch<ApkRelease[]>("/download/apk/versions", { operation: "download.apk.versions" }),
   apkStats: () => apiFetch<ApkStats>("/download/apk/stats", { operation: "download.apk.stats" }),
 
-  adminStats: (token: string) => apiFetch<AdminStats>("/admin/stats", { token, operation: "admin.stats" })
+  researchModels: (token: string) => apiFetch<ResearchModelOptions>("/ai/research-models", { token, operation: "ai.researchModels" }),
+
+  adminStats: (token: string) => apiFetch<AdminStats>("/admin/stats", { token, operation: "admin.stats" }),
+  adminUsers: (token: string, params: { search?: string; role?: string; status?: string } = {}) => {
+    const search = new URLSearchParams();
+    if (params.search) search.set("search", params.search);
+    if (params.role) search.set("role", params.role);
+    if (params.status) search.set("status", params.status);
+    const suffix = search.toString() ? `?${search.toString()}` : "";
+    return apiFetch<AdminUser[]>(`/admin/users${suffix}`, { token, operation: "admin.users.list" });
+  },
+  adminUser: (token: string, id: string) => apiFetch<AdminUser>(`/admin/users/${id}`, { token, operation: "admin.users.get" }),
+  updateAdminUserStatus: (token: string, id: string, isActive: boolean) =>
+    apiFetch<AdminUser>(`/admin/users/${id}/status`, {
+      method: "PATCH",
+      token,
+      operation: "admin.users.status",
+      body: JSON.stringify({ is_active: isActive })
+    }),
+  updateAdminUserRole: (token: string, id: string, role: "user" | "admin") =>
+    apiFetch<AdminUser>(`/admin/users/${id}/role`, {
+      method: "PATCH",
+      token,
+      operation: "admin.users.role",
+      body: JSON.stringify({ role })
+    }),
+  resetAdminUserPassword: (token: string, id: string, newPassword: string) =>
+    apiFetch<AdminUser>(`/admin/users/${id}/password`, {
+      method: "PATCH",
+      token,
+      operation: "admin.users.password",
+      body: JSON.stringify({ new_password: newPassword })
+    }),
+  deleteAdminUser: (token: string, id: string) =>
+    apiFetch<void>(`/admin/users/${id}`, { method: "DELETE", token, operation: "admin.users.delete" }),
+  adminSubscriptions: (token: string) =>
+    apiFetch<AdminSubscription[]>("/admin/subscriptions", { token, operation: "admin.subscriptions.list" }),
+  updateAdminSubscription: (
+    token: string,
+    userId: string,
+    payload: Partial<Pick<
+      AdminSubscription,
+      | "plan"
+      | "is_active"
+      | "expires_at"
+      | "payment_status"
+      | "razorpay_customer_id"
+      | "razorpay_payment_id"
+      | "stripe_customer_id"
+      | "stripe_payment_id"
+    >>
+  ) =>
+    apiFetch<AdminSubscription>(`/admin/subscriptions/${userId}`, {
+      method: "PATCH",
+      token,
+      operation: "admin.subscriptions.update",
+      body: JSON.stringify(payload)
+    }),
+  adminUsage: (token: string) => apiFetch<AdminUsageResponse>("/admin/usage", { token, operation: "admin.usage" }),
+  adminFeatures: (token: string, userId?: string) =>
+    apiFetch<AdminFeaturesResponse>(
+      `/admin/features${userId ? `?user_id=${encodeURIComponent(userId)}` : ""}`,
+      { token, operation: "admin.features" }
+    ),
+  updateAdminFeature: (token: string, key: string, enabled: boolean, userId?: string | null) =>
+    apiFetch<AdminFeatureFlag>("/admin/features", {
+      method: "PATCH",
+      token,
+      operation: "admin.features.update",
+      body: JSON.stringify({ key, enabled, user_id: userId ?? null })
+    }),
+  updateAdminPlanLimit: (token: string, plan: AdminPlanName, payload: Partial<AdminPlanLimit>) =>
+    apiFetch<AdminPlanLimit>(`/admin/features/plan-limits/${plan}`, {
+      method: "PATCH",
+      token,
+      operation: "admin.planLimits.update",
+      body: JSON.stringify(payload)
+    }),
+  adminAnalytics: (token: string) => apiFetch<AdminAnalytics>("/admin/analytics", { token, operation: "admin.analytics" }),
+  adminPayments: (token: string) =>
+    apiFetch<AdminPaymentRecord[]>("/admin/subscriptions/payments", { token, operation: "admin.payments" })
 };
 
 export async function streamChat(
@@ -587,7 +687,11 @@ function normalizeStreamEvent(payload: unknown): StreamEvent | null {
   if (!payload || typeof payload !== "object" || !("type" in payload)) return null;
   const event = payload as Record<string, unknown>;
   if (event.type === "meta") {
-    return { type: "meta", chat_id: coerceTextContent(event.chat_id) };
+    return {
+      type: "meta",
+      chat_id: coerceTextContent(event.chat_id),
+      model: event.model && typeof event.model === "object" ? event.model as ResponseModelInfo : undefined
+    };
   }
   if (event.type === "searching") {
     const rawMode = coerceTextContent(event.mode);

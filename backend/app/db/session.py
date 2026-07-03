@@ -22,6 +22,10 @@ def init_db() -> None:
 
     Base.metadata.create_all(bind=engine)
     ensure_runtime_schema()
+    from app.services.admin_control import ensure_admin_defaults
+
+    with SessionLocal() as db:
+        ensure_admin_defaults(db)
 
 
 def ensure_runtime_schema() -> None:
@@ -32,6 +36,7 @@ def ensure_runtime_schema() -> None:
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
     statements: list[str] = []
+    ensure_mobile_index = False
     if "documents" in table_names:
         document_columns = {column["name"] for column in inspector.get_columns("documents")}
         if "file_size" not in document_columns:
@@ -39,17 +44,38 @@ def ensure_runtime_schema() -> None:
         if "metadata" not in document_columns:
             statements.append("ALTER TABLE documents ADD COLUMN metadata JSON")
 
+    if "users" in table_names:
+        user_columns = {column["name"] for column in inspector.get_columns("users")}
+        if "mobile" not in user_columns:
+            statements.append("ALTER TABLE users ADD COLUMN mobile VARCHAR(32)")
+        if "role" not in user_columns:
+            statements.append("ALTER TABLE users ADD COLUMN role VARCHAR(32) NOT NULL DEFAULT 'user'")
+        ensure_mobile_index = True
+
     if "messages" in table_names:
         message_columns = {column["name"] for column in inspector.get_columns("messages")}
         if "metadata" not in message_columns:
             statements.append("ALTER TABLE messages ADD COLUMN metadata JSON")
 
-    if not statements:
+    if not statements and not ensure_mobile_index:
         return
 
     with engine.begin() as connection:
         for statement in statements:
             connection.execute(text(statement))
+        if ensure_mobile_index:
+            connection.execute(
+                text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_mobile ON users (mobile) WHERE mobile IS NOT NULL")
+            )
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_users_role ON users (role)"))
+            connection.execute(text("UPDATE users SET role = 'user' WHERE role IS NULL OR TRIM(role) = ''"))
+            connection.execute(text("UPDATE users SET role = 'admin' WHERE is_admin = 1"))
+            connection.execute(text("UPDATE users SET is_admin = 1 WHERE role = 'admin' AND is_admin = 0"))
+            for admin_email in settings.ADMIN_EMAILS:
+                connection.execute(
+                    text("UPDATE users SET role = 'admin', is_admin = 1 WHERE LOWER(email) = :email"),
+                    {"email": admin_email.lower()},
+                )
 
 
 def get_db() -> Session:

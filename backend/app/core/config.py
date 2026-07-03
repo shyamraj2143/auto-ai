@@ -1,9 +1,9 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import AnyHttpUrl, Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -70,9 +70,9 @@ class Settings(BaseSettings):
     MAX_DOCUMENT_CONTEXT_CHARS: int = 24000
 
     GROQ_RESEARCH_MODELS: list[str] = [
+        "llama-3.1-8b-instant",
         "llama-3.3-70b-versatile",
         "openai/gpt-oss-120b",
-        "deepseek-r1-distill-llama-70b",
     ]
     BEDROCK_RESEARCH_MODELS: list[str] = [
         "amazon.nova-pro-v1:0",
@@ -108,7 +108,7 @@ class Settings(BaseSettings):
     ALLOWED_AUDIO_EXTENSIONS: set[str] = {".flac", ".mp3", ".m4a", ".mpeg", ".mpga", ".ogg", ".wav", ".webm"}
 
     RATE_LIMIT_PER_MINUTE: int = 90
-    ADMIN_EMAILS: set[str] = set()
+    ADMIN_EMAILS: Annotated[set[str], NoDecode] = set()
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod

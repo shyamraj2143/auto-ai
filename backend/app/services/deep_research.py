@@ -17,6 +17,10 @@ from app.services.groq_service import groq_service
 logger = logging.getLogger(__name__)
 
 ResearchProvider = Literal["groq", "bedrock"]
+DEPRECATED_MODEL_REPLACEMENTS = {
+    "deepseek-r1-distill-llama-70b": "llama-3.3-70b-versatile",
+}
+PLACEHOLDER_SECRET_PREFIXES = ("your-", "change-me", "changeme")
 
 
 @dataclass(frozen=True)
@@ -135,23 +139,37 @@ class DeepResearchService:
             "groq": payload.groq_models,
             "bedrock": payload.bedrock_models,
         }
-        calls: list[ResearchModelCall] = []
+        grouped_calls: dict[ResearchProvider, list[ResearchModelCall]] = {}
 
         for provider in providers:
-            if provider == "groq" and not settings.groq_api_key:
+            if provider not in {"groq", "bedrock"}:
                 continue
-            if provider == "bedrock" and not (settings.bedrock_api_key or settings.aws_access_key_id):
+            if not self._provider_configured(provider):
                 continue
 
             configured_models = self._configured_models(provider)
-            selected = requested[provider] or configured_models
+            if not configured_models:
+                continue
+            selected = self._unique_models(requested[provider])
             allowed = {model for model in configured_models}
+            valid_models = [model for model in selected if model in allowed]
+            if not valid_models:
+                valid_models = configured_models
+
+            provider_calls: list[ResearchModelCall] = []
             for model in selected:
-                if model in allowed and model not in [call.model for call in calls if call.provider == provider]:
-                    calls.append(ResearchModelCall(provider=provider, model=model))
+                if model in allowed:
+                    provider_calls.append(ResearchModelCall(provider=provider, model=model))
+            if not provider_calls:
+                provider_calls = [ResearchModelCall(provider=provider, model=model) for model in valid_models]
+            grouped_calls[provider] = provider_calls
 
         limit = settings.DEEP_RESEARCH_MAX_MODELS if payload.all_models else self._max_models(payload)
-        calls = calls[: max(1, min(limit, settings.DEEP_RESEARCH_MAX_MODELS))]
+        calls = self._balanced_model_calls(
+            grouped_calls,
+            providers,
+            max(1, min(limit, settings.DEEP_RESEARCH_MAX_MODELS)),
+        )
         if not calls:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -159,10 +177,78 @@ class DeepResearchService:
             )
         return calls
 
+    def model_options(self) -> dict:
+        return {
+            "providers": {
+                "groq": {
+                    "enabled": self._provider_configured("groq"),
+                    "models": self._configured_models("groq"),
+                },
+                "bedrock": {
+                    "enabled": self._provider_configured("bedrock"),
+                    "models": self._configured_models("bedrock"),
+                },
+            },
+            "defaults": {
+                "max_models": settings.DEEP_RESEARCH_DEFAULT_MAX_MODELS,
+                "timeout_seconds": settings.DEEP_RESEARCH_PER_MODEL_TIMEOUT_SECONDS,
+                "final_judge_model": settings.DEEP_RESEARCH_JUDGE_MODEL,
+            },
+        }
+
     @staticmethod
-    def _configured_models(provider: ResearchProvider) -> list[str]:
+    def _secret_configured(value: str | None) -> bool:
+        normalized = (value or "").strip()
+        if not normalized or normalized.lower() in {"none", "null"}:
+            return False
+        return not normalized.lower().startswith(PLACEHOLDER_SECRET_PREFIXES)
+
+    def _provider_configured(self, provider: ResearchProvider) -> bool:
+        if provider == "groq":
+            return self._secret_configured(settings.groq_api_key)
+        return self._secret_configured(settings.bedrock_api_key) or (
+            self._secret_configured(settings.aws_access_key_id)
+            and self._secret_configured(settings.aws_secret_access_key)
+        )
+
+    @staticmethod
+    def _unique_models(models: list[str]) -> list[str]:
+        selected: list[str] = []
+        seen: set[str] = set()
+        for raw_model in models:
+            model = DEPRECATED_MODEL_REPLACEMENTS.get(raw_model.strip(), raw_model.strip())
+            if model and model not in seen:
+                selected.append(model)
+                seen.add(model)
+        return selected
+
+    @classmethod
+    def _configured_models(cls, provider: ResearchProvider) -> list[str]:
         models = settings.GROQ_RESEARCH_MODELS if provider == "groq" else settings.BEDROCK_RESEARCH_MODELS
-        return [model for model in models if model.strip()]
+        return cls._unique_models(models)
+
+    @staticmethod
+    def _balanced_model_calls(
+        grouped_calls: dict[ResearchProvider, list[ResearchModelCall]],
+        providers: list[ResearchProvider],
+        limit: int,
+    ) -> list[ResearchModelCall]:
+        calls: list[ResearchModelCall] = []
+        index = 0
+        while len(calls) < limit:
+            added = False
+            for provider in providers:
+                provider_calls = grouped_calls.get(provider, [])
+                if index >= len(provider_calls):
+                    continue
+                calls.append(provider_calls[index])
+                added = True
+                if len(calls) >= limit:
+                    return calls
+            if not added:
+                return calls
+            index += 1
+        return calls
 
     @staticmethod
     def _max_models(payload: ChatRequest) -> int:
@@ -392,13 +478,13 @@ class DeepResearchService:
         successes: list[ResearchModelResult],
     ) -> str:
         configured = payload.final_judge_model or settings.DEEP_RESEARCH_JUDGE_MODEL
-        allowed_models = settings.GROQ_RESEARCH_MODELS if provider == "groq" else settings.BEDROCK_RESEARCH_MODELS
+        allowed_models = DeepResearchService._configured_models(provider)
         if configured and configured in allowed_models:
             return configured
         for result in successes:
             if result.provider == provider:
                 return result.model
-        return allowed_models[0]
+        return allowed_models[0] if allowed_models else successes[0].model
 
     def _judge_messages(
         self,
@@ -452,6 +538,10 @@ class DeepResearchService:
                 return "Authentication failed."
             if exc.status_code == status.HTTP_503_SERVICE_UNAVAILABLE:
                 return "Provider not configured."
+            if exc.status_code in {status.HTTP_400_BAD_REQUEST, status.HTTP_404_NOT_FOUND}:
+                return "Model unavailable or not allowed."
+            if exc.status_code == status.HTTP_403_FORBIDDEN:
+                return "Provider permission denied."
         if isinstance(exc, TimeoutError):
             return "Timed out."
         return "Model request failed."

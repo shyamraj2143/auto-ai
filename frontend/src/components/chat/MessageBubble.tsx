@@ -4,6 +4,7 @@ import {
   Bot,
   Copy,
   CornerDownRight,
+  Cpu,
   Pencil,
   RefreshCw,
   Share2,
@@ -15,13 +16,20 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import clsx from "clsx";
-import type { Message } from "../../types";
+import type { Message, ResponseModelInfo } from "../../types";
 import { coerceTextContent } from "../../utils/text";
 import { MarkdownMessage } from "./MarkdownMessage";
 import { SourceCards } from "./SourceCards";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 
 export type MessageReaction = "up" | "down" | null;
+
+const THINK_BLOCK_PATTERN = /<think\b[^>]*>[\s\S]*?<\/think>\s*/gi;
+const OPEN_THINK_BLOCK_PATTERN = /<think\b[^>]*>[\s\S]*$/i;
+
+function stripThinkBlocks(value: string) {
+  return value.replace(THINK_BLOCK_PATTERN, "").replace(OPEN_THINK_BLOCK_PATTERN, "").trim();
+}
 
 export function MessageBubble({
   message,
@@ -34,13 +42,15 @@ export function MessageBubble({
   onEdit,
   onContinue,
   onBookmark,
-  onShare
+  onShare,
+  fallbackModel
 }: {
   message: Message;
   isStreaming?: boolean;
   isSearchingWeb?: boolean;
   reaction?: MessageReaction;
   bookmarked?: boolean;
+  fallbackModel?: ResponseModelInfo | null;
   onReact: (messageId: string, reaction: MessageReaction) => void;
   onRegenerate: (messageId: string) => void;
   onEdit: (messageId: string) => void;
@@ -49,13 +59,18 @@ export function MessageBubble({
   onShare: (messageId: string) => void;
 }) {
   const isAssistant = message.role === "assistant";
-  const content = coerceTextContent(message.content);
+  const rawContent = coerceTextContent(message.content);
+  const content = isAssistant ? stripThinkBlocks(rawContent) : rawContent;
   const isEmptyStreaming = isAssistant && isStreaming && !content && !isSearchingWeb;
   const search = message.message_metadata?.search;
+  const responseModel = message.message_metadata?.model ?? fallbackModel ?? undefined;
   const deepResearch = message.message_metadata?.deep_research as
     | { models_consulted?: Array<{ provider?: string; model?: string }>; confidence?: string }
     | undefined;
   const consultedModels = deepResearch?.models_consulted ?? [];
+  const responseModelLabel = responseModel
+    ? `${responseModel.provider_label || responseModel.provider} / ${responseModel.model}`
+    : "";
 
   function copyMessage() {
     navigator.clipboard.writeText(content);
@@ -102,6 +117,12 @@ export function MessageBubble({
             </span>
             <span>{consultedModels.length} models consulted</span>
             {deepResearch?.confidence && <span>Confidence: {deepResearch.confidence}</span>}
+          </div>
+        )}
+        {isAssistant && responseModelLabel && (
+          <div className="message-model-corner" title={`Responded by ${responseModelLabel}`}>
+            <Cpu size={13} />
+            <span>{responseModelLabel}</span>
           </div>
         )}
 

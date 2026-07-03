@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { ArrowRight, Brain } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
+import { authErrorMessage } from "../../utils/apiErrors";
 import { LogoIcon } from "../brand/LogoIcon";
 
 export function RegisterPage() {
@@ -21,7 +22,7 @@ export function RegisterPage() {
     try {
       await register(name, email, password);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to register");
+      setError(authErrorMessage(err, "Unable to register"));
     } finally {
       setLoading(false);
     }

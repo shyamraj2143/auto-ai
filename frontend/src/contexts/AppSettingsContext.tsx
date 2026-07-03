@@ -38,6 +38,9 @@ export const PROVIDER_MODELS: Record<AiProvider, Array<{ value: string; label: s
     { value: "meta-llama/llama-4-scout-17b-16e-instruct", label: "Llama 4 Scout" }
   ],
   bedrock: [
+    { value: "amazon.nova-lite-v1:0", label: "Nova Lite" },
+    { value: "amazon.nova-pro-v1:0", label: "Nova Pro" },
+    { value: "anthropic.claude-3-haiku-20240307-v1:0", label: "Claude 3 Haiku" },
     { value: "openai.gpt-oss-120b", label: "GPT-OSS 120B" },
     { value: "openai.gpt-oss-20b", label: "GPT-OSS 20B" },
     { value: "mistral.ministral-3-8b-instruct", label: "Ministral 3 8B" },

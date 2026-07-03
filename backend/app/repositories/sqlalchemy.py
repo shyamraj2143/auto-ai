@@ -10,14 +10,28 @@ class SQLAlchemyUserRepository:
         self.db = db
 
     def get_by_email(self, email: str) -> User | None:
-        return self.db.scalar(select(User).where(User.email == email.lower()))
+        return self.db.scalar(select(User).where(User.email == email.strip().lower()))
 
-    def create(self, *, email: str, name: str, hashed_password: str, is_admin: bool) -> User:
+    def get_by_mobile(self, mobile: str) -> User | None:
+        return self.db.scalar(select(User).where(User.mobile == mobile.strip()))
+
+    def create(
+        self,
+        *,
+        email: str,
+        name: str,
+        hashed_password: str,
+        is_admin: bool,
+        mobile: str | None = None,
+        role: str = "user",
+    ) -> User:
         user = User(
-            email=email.lower(),
-            name=name,
+            email=email.strip().lower(),
+            mobile=mobile.strip() if mobile else None,
+            name=name.strip(),
             hashed_password=hashed_password,
             is_admin=is_admin,
+            role=role,
         )
         self.db.add(user)
         self.db.commit()
@@ -38,4 +52,3 @@ class SQLAlchemyChatRepository:
                 select(Chat).where(Chat.user_id == user_id).order_by(Chat.updated_at.desc())
             )
         )
-

@@ -1,0 +1,6 @@
+C:\Users\Shyam raj\AppData\Roaming\Python\Python314\site-packages\groq\_compat.py:48: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
+  from pydantic.v1.typing import (
+INFO:     Started server process [16364]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
