@@ -11,7 +11,8 @@ export function Header() {
   const { openSettings } = useShell();
   const location = useLocation();
 
-  const isChatWorkspace = location.pathname === "/chat" || location.pathname === "/";
+  const normalizedPath = location.pathname.replace(/\/+$/, "") || "/";
+  const isChatWorkspace = normalizedPath === "/chat" || normalizedPath === "/";
 
   return (
     <header
@@ -28,11 +29,9 @@ export function Header() {
         <p className="truncate text-xs text-slate-400">{user?.email}</p>
       </div>
       <div className="flex items-center gap-2">
-        {!isChatWorkspace && (
-          <button className="icon-button-dark" onClick={openSettings} title="Settings" aria-label="Open settings" type="button">
-            <Settings size={18} />
-          </button>
-        )}
+        <button className="icon-button-dark" onClick={openSettings} title="Settings" aria-label="Open settings" type="button">
+          <Settings size={18} />
+        </button>
         {user?.is_admin && (
           <Link className="icon-button-dark" to="/admin" title="Admin dashboard">
             <Shield size={18} />
