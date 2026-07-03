@@ -1,0 +1,75 @@
+{
+  "siteUrl": "https://autoai.site.je",
+  "siteName": "Auto-AI",
+  "alternateNames": ["AutoAI", "Auto AI", "Auto-AI"],
+  "description": "Auto-AI is a branded AI workspace for human-feeling conversations, memory, file context, voice input, web research, and Android access.",
+  "defaultImage": "/icons/icon-512.png",
+  "themeColor": "#05070d",
+  "organization": {
+    "name": "Auto-AI",
+    "description": "Auto-AI builds AI workspace software for contextual, human-feeling conversations across web and Android."
+  },
+  "application": {
+    "name": "Auto-AI",
+    "category": "ProductivityApplication",
+    "operatingSystem": "Web, Android",
+    "description": "Auto-AI combines chat, memory, uploads, image analysis, voice input, web search, and Android access in one AI workspace."
+  },
+  "routes": [
+    {
+      "path": "/",
+      "public": true,
+      "sitemap": true,
+      "title": "Auto-AI | AutoAI Workspace for AI Chat, Memory and Files",
+      "description": "Auto-AI, also searched as AutoAI and Auto AI, is an AI workspace with memory, uploads, voice input, web research, streaming chat, and Android access.",
+      "canonicalPath": "/",
+      "ogType": "website",
+      "changefreq": "weekly",
+      "priority": 1
+    },
+    {
+      "path": "/download",
+      "public": true,
+      "sitemap": true,
+      "title": "Download Auto-AI Android APK | AutoAI Mobile App",
+      "description": "Download the Auto-AI Android APK and use AutoAI mobile with the same account, memory, chat history, uploads, settings, and web research.",
+      "canonicalPath": "/download",
+      "ogType": "website",
+      "changefreq": "weekly",
+      "priority": 0.85
+    },
+    {
+      "path": "/login",
+      "public": true,
+      "sitemap": true,
+      "title": "Auto-AI Login | Access Your AutoAI Workspace",
+      "description": "Log in to Auto-AI to continue AI chats with memory, documents, image analysis, voice input, web search, and saved workspace settings.",
+      "canonicalPath": "/login",
+      "ogType": "website",
+      "changefreq": "monthly",
+      "priority": 0.65
+    },
+    {
+      "path": "/register",
+      "public": true,
+      "sitemap": true,
+      "title": "Create an Auto-AI Account | Start Using Auto AI",
+      "description": "Create an Auto-AI account to start using Auto AI chat with memory, file uploads, image analysis, voice input, web research, and Android access.",
+      "canonicalPath": "/register",
+      "ogType": "website",
+      "changefreq": "monthly",
+      "priority": 0.7
+    },
+    {
+      "path": "/admin/login",
+      "public": true,
+      "sitemap": true,
+      "title": "Auto-AI Admin Login | AutoAI Control Center",
+      "description": "Access the Auto-AI admin control center for authorized administrators managing the AutoAI workspace, users, providers, and app settings.",
+      "canonicalPath": "/admin/login",
+      "ogType": "website",
+      "changefreq": "monthly",
+      "priority": 0.45
+    }
+  ]
+}

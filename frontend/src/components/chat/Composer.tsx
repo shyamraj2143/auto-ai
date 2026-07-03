@@ -535,7 +535,12 @@ export function Composer({
                 ))}
                 {imageAttachments.map((attachment) => (
                   <span key={attachment.id} className="image-chip">
-                    <img src={attachment.previewUrl} alt="" />
+                    <img
+                      src={attachment.previewUrl}
+                      alt={`Attached image preview: ${attachment.file.name}`}
+                      loading="lazy"
+                      decoding="async"
+                    />
                     <span className="max-w-32 truncate">{attachment.file.name}</span>
                     <button type="button" onClick={() => removeImage(attachment.id)} title="Remove image">
                       <X size={13} />

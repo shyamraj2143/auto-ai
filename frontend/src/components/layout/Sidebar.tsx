@@ -118,7 +118,7 @@ export function Sidebar() {
           ))}
         </nav>
         <div className="border-t border-white/10 p-3 space-y-2">
-          {user?.role === "admin" && (
+          {(user?.role === "admin" || user?.role === "super_admin") && (
             <Link
               className="flex w-full items-center justify-center gap-2 rounded-lg border border-cyan-200/20 bg-cyan-200/10 px-3 py-2 text-sm font-medium text-cyan-50 transition hover:bg-cyan-200/15"
               onClick={closeSidebar}

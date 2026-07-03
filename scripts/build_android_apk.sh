@@ -59,7 +59,8 @@ fi
 
 cd "$ROOT/frontend"
 VITE_API_URL="$API_URL" npm install
-VITE_API_URL="$API_URL" npm run build
+AUTO_AI_SKIP_COMPRESSION=1 VITE_API_URL="$API_URL" npm run build
+find "$ROOT/frontend/dist" -type f \( -name '*.gz' -o -name '*.br' \) -delete
 
 cd "$ROOT"
 npx cap sync android

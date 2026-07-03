@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Auto-AI
 
 Auto-AI is a ChatGPT-style AI assistant built with React, TypeScript, Tailwind CSS, FastAPI, SQLite, JWT authentication, and selectable OpenAI, Groq, or Amazon Bedrock chat providers.
@@ -124,6 +123,3 @@ Provider endpoints used by this build:
 - Amazon Bedrock Converse endpoint: `https://bedrock-runtime.{region}.amazonaws.com/model/{modelId}/converse`
 
 Bedrock uses the Mantle Chat Completions endpoint by default because AWS recommends it for OpenAI-compatible chat. If the native runtime endpoint returns `Operation not allowed`, the key/role can read account model metadata but cannot invoke runtime models; enable Bedrock model invocation permissions such as `bedrock:InvokeModel`/Converse for the selected model and region or keep `BEDROCK_ENDPOINT_MODE=mantle`.
-=======
-# auto-ai
->>>>>>> 63e51fc3686d62716b33dbfbaaf083425978e3fa

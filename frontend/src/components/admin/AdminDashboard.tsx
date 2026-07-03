@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
   Activity,
   Ban,
@@ -27,7 +27,8 @@ import type {
   AdminStats,
   AdminSubscription,
   AdminUsageResponse,
-  AdminUser
+  AdminUser,
+  UserRole
 } from "../../types";
 
 type AdminSection = "dashboard" | "users" | "subscriptions" | "usage" | "features" | "payments" | "settings";
@@ -99,10 +100,19 @@ export function AdminDashboard() {
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [createAdminForm, setCreateAdminForm] = useState({
+    name: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+    role: "admin" as Extract<UserRole, "admin" | "super_admin">
+  });
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const isAdmin = user?.role === "admin";
+  const [success, setSuccess] = useState("");
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
+  const isSuperAdmin = user?.role === "super_admin";
 
   const loadAdminData = useCallback(async () => {
     if (!token || !isAdmin) {
@@ -110,6 +120,7 @@ export function AdminDashboard() {
       return;
     }
     setError("");
+    setSuccess("");
     setLoading(true);
     try {
       const [nextStats, nextUsers, nextSubscriptions, nextUsage, nextFeatures, nextAnalytics, nextPayments] =
@@ -176,7 +187,38 @@ export function AdminDashboard() {
     }
   }
 
-  async function setUserRole(account: AdminUser, role: "user" | "admin") {
+  async function createAdmin(event: FormEvent) {
+    event.preventDefault();
+    if (!token) return;
+    setError("");
+    setSuccess("");
+    if (createAdminForm.password !== createAdminForm.confirmPassword) {
+      setError("Password and confirm password do not match.");
+      return;
+    }
+    setBusyId("create-admin");
+    try {
+      const created = await api.createAdminUser(token, {
+        name: createAdminForm.name.trim(),
+        email: createAdminForm.email.trim().toLowerCase(),
+        password: createAdminForm.password,
+        role: createAdminForm.role
+      });
+      setUsers((current) => [created, ...current.filter((item) => item.id !== created.id)]);
+      setSelectedUser(created);
+      setCreateAdminForm({ name: "", email: "", password: "", confirmPassword: "", role: "admin" });
+      setSuccess(`${created.email} created as ${created.role}.`);
+      const [nextStats, nextSubscriptions] = await Promise.all([api.adminStats(token), api.adminSubscriptions(token)]);
+      setStats(nextStats);
+      setSubscriptions(nextSubscriptions);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create admin");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function setUserRole(account: AdminUser, role: UserRole) {
     if (!token || account.role === role) return;
     if (account.id === user?.id && role !== "admin") return;
     setBusyId(account.id);
@@ -194,6 +236,7 @@ export function AdminDashboard() {
 
   async function resetPassword(account: AdminUser) {
     if (!token) return;
+    if (!window.confirm(`Reset password for ${account.email}?`)) return;
     const nextPassword = window.prompt(`New password for ${account.email}`);
     if (!nextPassword) return;
     setBusyId(account.id);
@@ -335,6 +378,7 @@ export function AdminDashboard() {
       </div>
 
       {error && <p className="mb-4 rounded-md border border-red-300/25 bg-red-500/10 px-3 py-2 text-sm text-red-100">{error}</p>}
+      {success && <p className="mb-4 rounded-md border border-emerald-300/25 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-100">{success}</p>}
 
       {loading ? (
         <p className="text-sm text-slate-400">Loading admin panel...</p>
@@ -381,7 +425,67 @@ export function AdminDashboard() {
           {activeSection === "users" && (
             <section className="rounded-lg border border-white/10 bg-white/[0.045]">
               <div className="border-b border-white/10 p-4">
-                <SectionTitle title="Users" subtitle="Search, block, delete, reset passwords, and change roles" />
+                <SectionTitle title="Users" subtitle="Search, block, delete, reset passwords, and create admins" />
+                <form onSubmit={createAdmin} className="mb-4 rounded-lg border border-cyan-200/15 bg-slate-950/35 p-4">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-sm font-semibold text-white">Create Admin</h3>
+                      <p className="text-xs text-slate-400">Only existing admins can create admin or super admin accounts.</p>
+                    </div>
+                    <button className="btn-secondary h-9" disabled={busyId === "create-admin"} type="submit">
+                      {busyId === "create-admin" ? "Creating" : "Create Admin"}
+                    </button>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-5">
+                    <input
+                      className="input-dark"
+                      minLength={2}
+                      placeholder="Name"
+                      required
+                      value={createAdminForm.name}
+                      onChange={(event) => setCreateAdminForm((current) => ({ ...current, name: event.target.value }))}
+                    />
+                    <input
+                      className="input-dark"
+                      placeholder="Email"
+                      required
+                      type="email"
+                      value={createAdminForm.email}
+                      onChange={(event) => setCreateAdminForm((current) => ({ ...current, email: event.target.value }))}
+                    />
+                    <input
+                      className="input-dark"
+                      minLength={8}
+                      placeholder="Password"
+                      required
+                      type="password"
+                      value={createAdminForm.password}
+                      onChange={(event) => setCreateAdminForm((current) => ({ ...current, password: event.target.value }))}
+                    />
+                    <input
+                      className="input-dark"
+                      minLength={8}
+                      placeholder="Confirm password"
+                      required
+                      type="password"
+                      value={createAdminForm.confirmPassword}
+                      onChange={(event) => setCreateAdminForm((current) => ({ ...current, confirmPassword: event.target.value }))}
+                    />
+                    <select
+                      className="model-select-dark h-11"
+                      value={createAdminForm.role}
+                      onChange={(event) =>
+                        setCreateAdminForm((current) => ({
+                          ...current,
+                          role: event.target.value as Extract<UserRole, "admin" | "super_admin">
+                        }))
+                      }
+                    >
+                      <option value="admin">Admin</option>
+                      {isSuperAdmin && <option value="super_admin">Super Admin</option>}
+                    </select>
+                  </div>
+                </form>
                 <div className="grid gap-3 md:grid-cols-[1fr_160px_160px]">
                   <label className="relative">
                     <Search className="pointer-events-none absolute left-3 top-3 text-slate-500" size={16} />
@@ -391,6 +495,7 @@ export function AdminDashboard() {
                     <option value="">All roles</option>
                     <option value="user">User</option>
                     <option value="admin">Admin</option>
+                    <option value="super_admin">Super Admin</option>
                   </select>
                   <select className="model-select-dark h-11" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
                     <option value="">All status</option>
@@ -440,9 +545,15 @@ export function AdminDashboard() {
                             <div className="text-xs text-slate-400">{account.mobile || "No mobile"}</div>
                           </td>
                           <td className="px-4 py-3">
-                            <select className="model-select-dark" value={account.role} disabled={busy || isSelf} onChange={(event) => setUserRole(account, event.target.value as "user" | "admin")}>
+                            <select
+                              className="model-select-dark"
+                              value={account.role}
+                              disabled={busy || isSelf || (!isSuperAdmin && account.role === "super_admin")}
+                              onChange={(event) => setUserRole(account, event.target.value as UserRole)}
+                            >
                               <option value="user">User</option>
                               <option value="admin">Admin</option>
+                              {(isSuperAdmin || account.role === "super_admin") && <option value="super_admin">Super Admin</option>}
                             </select>
                           </td>
                           <td className="px-4 py-3"><StatusPill active={account.is_active} label={account.status} /></td>

@@ -98,7 +98,7 @@ export function LandingPage() {
             <p className="hero-kicker"><Zap size={14} /> Ultra Premium AI Workspace</p>
             <h1>Auto-AI</h1>
             <p className="hero-subtitle">
-              A commercial-grade AI experience with memory, uploads, voice, streaming, and a conversation style that feels alive.
+              Auto-AI, also known as AutoAI and Auto AI, is a commercial-grade AI experience with memory, uploads, voice, streaming, and a conversation style that feels alive.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
               <Link className="btn-primary h-11 px-5" to={user ? "/chat" : "/register"}>
@@ -134,7 +134,7 @@ export function LandingPage() {
               <div className="preview-message user">Audit the upload flow and make the UI feel premium.</div>
               <div className="preview-message ai">
                 <span className="preview-pulse" />
-                I found the split upload path. I’ll move documents, images, voice, and send into one composer, then keep memory visible beside the thread.
+                I found the split upload path. I'll move documents, images, voice, and send into one composer, then keep memory visible beside the thread.
               </div>
               <div className="preview-composer">
                 <Mic size={14} />
@@ -216,6 +216,10 @@ export function LandingPage() {
         </section>
 
         <section className="landing-section">
+          <div className="section-heading">
+            <p className="hero-kicker">User Feedback</p>
+            <h2>Auto-AI feels built for real work.</h2>
+          </div>
           <div className="testimonial-grid">
             {testimonials.map((quote) => (
               <figure key={quote}>
@@ -227,11 +231,15 @@ export function LandingPage() {
         </section>
 
         <section id="pricing" className="landing-section">
+          <div className="section-heading">
+            <p className="hero-kicker">Plans</p>
+            <h2>Start with Auto-AI and scale when you need more.</h2>
+          </div>
           <div className="pricing-grid">
             {["Starter", "Pro", "Studio"].map((plan, index) => (
               <article key={plan} className="pricing-card">
-                <p>{plan}</p>
-                <h3>{index === 0 ? "$0" : index === 1 ? "$19" : "Custom"}</h3>
+                <h3>{plan}</h3>
+                <strong className="pricing-price">{index === 0 ? "$0" : index === 1 ? "$19" : "Custom"}</strong>
                 <span>{index === 0 ? "Personal testing" : index === 1 ? "Power users" : "Teams and deployments"}</span>
                 <Link className={index === 1 ? "btn-primary" : "btn-secondary"} to={user ? "/chat" : "/register"}>
                   Choose {plan}
@@ -242,6 +250,10 @@ export function LandingPage() {
         </section>
 
         <section id="faq" className="landing-section">
+          <div className="section-heading">
+            <p className="hero-kicker">FAQ</p>
+            <h2>Common Auto-AI questions.</h2>
+          </div>
           <div className="faq-list">
             {faqs.map(([question, answer]) => (
               <details key={question}>

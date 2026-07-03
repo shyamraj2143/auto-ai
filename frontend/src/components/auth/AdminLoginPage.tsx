@@ -12,7 +12,7 @@ export function AdminLoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  if (user?.role === "admin") return <Navigate to="/admin" replace />;
+  if (user?.role === "admin" || user?.role === "super_admin") return <Navigate to="/admin" replace />;
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -43,7 +43,7 @@ export function AdminLoginPage() {
           <p className="text-xs uppercase text-cyan-200">Admin Login</p>
           <h2 className="mt-2 text-2xl font-semibold text-white">Enter dashboard</h2>
         </div>
-        {user && user.role !== "admin" && (
+        {user && (
           <div className="mb-4 rounded-md border border-amber-300/25 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
             Normal user session active. Login below with an admin account or logout first.
             <button className="ml-2 font-semibold text-white underline" type="button" onClick={logout}>

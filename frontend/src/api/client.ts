@@ -25,6 +25,7 @@ import type {
   StreamEvent,
   TurnAnalysis,
   User,
+  UserRole,
   UserMemory
 } from "../types";
 import { coerceTextContent } from "../utils/text";
@@ -565,7 +566,14 @@ export const api = {
       operation: "admin.users.status",
       body: JSON.stringify({ is_active: isActive })
     }),
-  updateAdminUserRole: (token: string, id: string, role: "user" | "admin") =>
+  createAdminUser: (token: string, payload: { name: string; email: string; password: string; role: Extract<UserRole, "admin" | "super_admin"> }) =>
+    apiFetch<AdminUser>("/admin/users/create-admin", {
+      method: "POST",
+      token,
+      operation: "admin.users.createAdmin",
+      body: JSON.stringify(payload)
+    }),
+  updateAdminUserRole: (token: string, id: string, role: UserRole) =>
     apiFetch<AdminUser>(`/admin/users/${id}/role`, {
       method: "PATCH",
       token,
@@ -573,10 +581,10 @@ export const api = {
       body: JSON.stringify({ role })
     }),
   resetAdminUserPassword: (token: string, id: string, newPassword: string) =>
-    apiFetch<AdminUser>(`/admin/users/${id}/password`, {
+    apiFetch<AdminUser>(`/admin/users/${id}/reset-password`, {
       method: "PATCH",
       token,
-      operation: "admin.users.password",
+      operation: "admin.users.resetPassword",
       body: JSON.stringify({ new_password: newPassword })
     }),
   deleteAdminUser: (token: string, id: string) =>

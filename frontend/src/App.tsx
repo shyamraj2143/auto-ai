@@ -13,6 +13,7 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ChatProvider } from "./contexts/ChatContext";
 import { ShellProvider, useShell } from "./contexts/ShellContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { SeoManager } from "./seo/SeoManager";
 
 const ChatPage = lazy(() => import("./components/chat/ChatPage").then((module) => ({ default: module.ChatPage })));
 const DownloadPage = lazy(() => import("./components/download/DownloadPage").then((module) => ({ default: module.DownloadPage })));
@@ -40,7 +41,7 @@ function AdminRoute() {
   if (loading) {
     return <div className="app-loading">Loading Auto-AI...</div>;
   }
-  return user?.role === "admin" ? <Outlet /> : <Navigate to="/admin/login" replace />;
+  return user?.role === "admin" || user?.role === "super_admin" ? <Outlet /> : <Navigate to="/admin/login" replace />;
 }
 
 function AppShell() {
@@ -77,10 +78,11 @@ export default function App() {
         <AppSettingsProvider>
           <ShellProvider>
             <BrowserRouter>
+              <SeoManager />
               <Suspense fallback={<div className="app-loading">Loading Auto-AI...</div>}>
                 <Routes>
                   <Route index element={<RootRedirect />} />
-                  <Route path="/home" element={<LandingPage />} />
+                  <Route path="/home" element={<Navigate to="/" replace />} />
                   <Route path="/download" element={<DownloadPage />} />
                   <Route path="/login" element={<LoginPage />} />
                   <Route path="/admin/login" element={<AdminLoginPage />} />

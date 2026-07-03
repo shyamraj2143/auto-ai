@@ -1,10 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.core.config import settings
 from app.core.security import create_access_token, get_password_hash, password_needs_rehash, verify_password
 from app.db.session import get_db
 from app.models.user import User
@@ -42,17 +40,14 @@ def register(payload: UserCreate, db: Session = Depends(get_db)) -> Token:
             detail="An account with this mobile number already exists. Please log in instead.",
         )
 
-    user_count = db.scalar(select(func.count()).select_from(User)) or 0
-    is_admin = user_count == 0 or email in settings.ADMIN_EMAILS
-    role = "admin" if is_admin else "user"
     try:
         user = repo.create(
             email=email,
             mobile=mobile,
             name=payload.name,
             hashed_password=get_password_hash(payload.password),
-            is_admin=is_admin,
-            role=role,
+            is_admin=False,
+            role="user",
         )
     except IntegrityError as exc:
         db.rollback()
@@ -86,7 +81,7 @@ def admin_login(payload: UserLogin, db: Session = Depends(get_db)) -> Token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin email or password is incorrect.")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This admin account is disabled.")
-    if user.role != "admin":
+    if user.role not in {"admin", "super_admin"}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only admin accounts can access the admin dashboard.")
     if password_needs_rehash(user.hashed_password):
         user.hashed_password = get_password_hash(payload.password)

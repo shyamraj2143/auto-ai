@@ -2,6 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/inter-latin.woff2") format("woff2");
+}
+
 :root {
   color-scheme: dark;
   font-synthesis: none;
@@ -1170,8 +1178,7 @@ button:disabled {
   color: #a5f3fc;
 }
 
-.premium-feature h3,
-.pricing-card h3 {
+.premium-feature h3 {
   margin-top: 18px;
   font-size: 22px;
   font-weight: 720;
@@ -1221,13 +1228,19 @@ button:disabled {
   flex-direction: column;
 }
 
-.pricing-card p {
+.pricing-card h3 {
   color: #a5f3fc;
+  font-size: 18px;
   font-weight: 700;
 }
 
-.pricing-card h3 {
+.pricing-price {
+  display: block;
+  margin-top: 14px;
+  color: #ffffff;
   font-size: 44px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .pricing-card a {

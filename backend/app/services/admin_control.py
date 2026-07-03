@@ -114,7 +114,7 @@ def ensure_user_subscription(db: Session, user: User) -> UserSubscription:
     subscription = db.scalar(select(UserSubscription).where(UserSubscription.user_id == user.id))
     if subscription:
         return subscription
-    plan = "admin" if user.role == "admin" else "free"
+    plan = "admin" if user.role in {"admin", "super_admin"} else "free"
     subscription = UserSubscription(
         user_id=user.id,
         plan=plan,
@@ -156,7 +156,7 @@ def enforce_plan_and_feature_access(
     search_mode: str | None,
     max_models: int | None = None,
 ) -> None:
-    if user.role == "admin":
+    if user.role in {"admin", "super_admin"}:
         return
 
     subscription = ensure_user_subscription(db, user)

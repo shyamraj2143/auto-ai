@@ -95,16 +95,31 @@ Push-Location $frontend
 try {
   $env:VITE_API_URL = $ApiUrl
   $env:VITE_BUILD_VERSION = $buildVersion
+  $env:AUTO_AI_SKIP_COMPRESSION = "1"
   npm install
+  if ($LASTEXITCODE -ne 0) {
+    throw "npm install failed."
+  }
   npm run build
+  if ($LASTEXITCODE -ne 0) {
+    throw "Frontend build failed."
+  }
 }
 finally {
   Pop-Location
 }
 
+$dist = Resolve-Path (Join-Path $frontend "dist")
+Get-ChildItem -Path $dist -Recurse -File |
+  Where-Object { $_.Extension -in ".gz", ".br" } |
+  ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
+
 Push-Location $root
 try {
   npx cap sync android
+  if ($LASTEXITCODE -ne 0) {
+    throw "Capacitor Android sync failed."
+  }
 }
 finally {
   Pop-Location
@@ -113,6 +128,9 @@ finally {
 Push-Location $android
 try {
   .\gradlew.bat assembleRelease
+  if ($LASTEXITCODE -ne 0) {
+    throw "Android release build failed."
+  }
 }
 finally {
   Pop-Location

@@ -39,7 +39,7 @@ export function Header() {
         >
           <Settings size={18} />
         </button>
-        {user?.role === "admin" && (
+        {(user?.role === "admin" || user?.role === "super_admin") && (
           <Link className="icon-button-dark" to="/admin" title="Admin dashboard">
             <Shield size={18} />
           </Link>

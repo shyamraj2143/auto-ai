@@ -69,8 +69,8 @@ def ensure_runtime_schema() -> None:
             )
             connection.execute(text("CREATE INDEX IF NOT EXISTS ix_users_role ON users (role)"))
             connection.execute(text("UPDATE users SET role = 'user' WHERE role IS NULL OR TRIM(role) = ''"))
-            connection.execute(text("UPDATE users SET role = 'admin' WHERE is_admin = 1"))
-            connection.execute(text("UPDATE users SET is_admin = 1 WHERE role = 'admin' AND is_admin = 0"))
+            connection.execute(text("UPDATE users SET role = 'admin' WHERE is_admin = 1 AND role NOT IN ('admin', 'super_admin')"))
+            connection.execute(text("UPDATE users SET is_admin = 1 WHERE role IN ('admin', 'super_admin') AND is_admin = 0"))
             for admin_email in settings.ADMIN_EMAILS:
                 connection.execute(
                     text("UPDATE users SET role = 'admin', is_admin = 1 WHERE LOWER(email) = :email"),

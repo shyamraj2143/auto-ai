@@ -4,9 +4,11 @@ export type User = {
   mobile?: string | null;
   name: string;
   is_admin: boolean;
-  role: string;
+  role: UserRole;
   created_at: string;
 };
+
+export type UserRole = "user" | "admin" | "super_admin";
 
 export type SearchMode = "off" | "auto" | "web" | "news" | "research" | "deep";
 export type ChatMode = "normal" | "deep_research" | "multi_model";
@@ -191,7 +193,7 @@ export type AdminUser = {
   email: string;
   mobile?: string | null;
   name: string;
-  role: string;
+  role: UserRole;
   status: "active" | "blocked";
   is_active: boolean;
   is_admin: boolean;

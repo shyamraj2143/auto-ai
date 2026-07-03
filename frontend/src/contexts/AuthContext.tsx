@@ -98,7 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
           session = await api.login(credentials);
         }
-        if (session.user.role !== "admin") {
+        if (!["admin", "super_admin"].includes(session.user.role)) {
           throw new Error("Only admin accounts can access the admin dashboard.");
         }
         persistSession(session.access_token, session.user);

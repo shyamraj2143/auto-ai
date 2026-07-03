@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc --noEmit && vite build",
+    "seo:generate": "node scripts/generate-seo-assets.mjs",
+    "build": "npm run seo:generate && node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc --noEmit && vite build && node scripts/compress-dist-assets.mjs",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {

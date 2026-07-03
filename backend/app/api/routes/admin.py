@@ -4,6 +4,7 @@ import shutil
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin
@@ -18,6 +19,7 @@ from app.models.message import Message
 from app.models.user import User
 from app.schemas.admin import (
     AdminAnalyticsResponse,
+    AdminCreateUser,
     AdminFeatureFlagRead,
     AdminFeatureFlagUpdate,
     AdminFeaturesResponse,
@@ -209,10 +211,45 @@ def stats(_: User = Depends(get_current_admin), db: Session = Depends(get_db)) -
     return stats_payload(db)
 
 
+@router.post("/users/create-admin", response_model=AdminUserRead, status_code=status.HTTP_201_CREATED)
+def create_admin_user(
+    payload: AdminCreateUser,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AdminUserRead:
+    if payload.role == "super_admin" and current_admin.role != "super_admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only a super admin can create super admin accounts")
+    email = str(payload.email).strip().lower()
+    existing = db.scalar(select(User).where(User.email == email))
+    if existing:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A user with this email already exists.")
+    user = User(
+        email=email,
+        name=payload.name.strip(),
+        hashed_password=get_password_hash(payload.password),
+        is_active=True,
+        is_admin=True,
+        role=payload.role,
+    )
+    try:
+        db.add(user)
+        db.flush()
+        subscription = ensure_user_subscription(db, user)
+        subscription.plan = "admin"
+        subscription.is_active = True
+        subscription.payment_status = "admin"
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A user with this email already exists.") from exc
+    db.refresh(user)
+    return to_admin_user(db, user)
+
+
 @router.get("/users", response_model=list[AdminUserRead])
 def list_users(
     search: str | None = Query(default=None),
-    role: str | None = Query(default=None, pattern="^(user|admin)$"),
+    role: str | None = Query(default=None, pattern="^(user|admin|super_admin)$"),
     status_filter: str | None = Query(default=None, alias="status", pattern="^(active|blocked)$"),
     _: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
@@ -272,13 +309,15 @@ def update_user_role(
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    if user.id == current_admin.id and payload.role != "admin":
+    if user.id == current_admin.id and payload.role not in {"admin", "super_admin"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot remove your own admin role")
+    if (user.role == "super_admin" or payload.role == "super_admin") and current_admin.role != "super_admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only a super admin can manage super admin roles")
     user.role = payload.role
-    user.is_admin = payload.role == "admin"
+    user.is_admin = payload.role in {"admin", "super_admin"}
     user.updated_at = datetime.utcnow()
     subscription = ensure_user_subscription(db, user)
-    if payload.role == "admin":
+    if payload.role in {"admin", "super_admin"}:
         subscription.plan = "admin"
         subscription.is_active = True
         subscription.payment_status = "admin"
@@ -287,13 +326,7 @@ def update_user_role(
     return to_admin_user(db, user)
 
 
-@router.patch("/users/{user_id}/password", response_model=AdminUserRead)
-def reset_user_password(
-    user_id: str,
-    payload: AdminUserPasswordReset,
-    _: User = Depends(get_current_admin),
-    db: Session = Depends(get_db),
-) -> AdminUserRead:
+def reset_user_password_record(db: Session, user_id: str, payload: AdminUserPasswordReset) -> AdminUserRead:
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -302,6 +335,26 @@ def reset_user_password(
     db.commit()
     db.refresh(user)
     return to_admin_user(db, user)
+
+
+@router.patch("/users/{user_id}/reset-password", response_model=AdminUserRead)
+def reset_user_password(
+    user_id: str,
+    payload: AdminUserPasswordReset,
+    _: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AdminUserRead:
+    return reset_user_password_record(db, user_id, payload)
+
+
+@router.patch("/users/{user_id}/password", response_model=AdminUserRead)
+def reset_user_password_legacy(
+    user_id: str,
+    payload: AdminUserPasswordReset,
+    _: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AdminUserRead:
+    return reset_user_password_record(db, user_id, payload)
 
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
