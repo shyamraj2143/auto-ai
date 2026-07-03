@@ -306,10 +306,10 @@ export function Composer({
   const [draft, setDraft] = useState("");
   const [searchMode, setSearchMode] = useState<SearchMode>("auto");
   const [chatMode, setChatMode] = useState<ChatMode>("normal");
-  const [researchProviders, setResearchProviders] = useState<ResearchProvider[]>(["groq", "bedrock"]);
-  const [maxModels, setMaxModels] = useState(3);
-  const [allModels, setAllModels] = useState(false);
-  const [timeoutSeconds, setTimeoutSeconds] = useState(45);
+  const [researchProviders, setResearchProviders] = useState<ResearchProvider[]>(settings.deepResearchProviders);
+  const [maxModels, setMaxModels] = useState(settings.deepResearchMaxModels);
+  const [allModels, setAllModels] = useState(settings.deepResearchAllModels);
+  const [timeoutSeconds, setTimeoutSeconds] = useState(settings.deepResearchTimeoutSeconds);
   const [researchModelOptions, setResearchModelOptions] = useState<ResearchModelOptions | null>(null);
   const [groqModels, setGroqModels] = useState<string[]>([]);
   const [bedrockModels, setBedrockModels] = useState<string[]>([]);
@@ -346,14 +346,24 @@ export function Composer({
   }, [settings.defaultModel, settings.defaultProvider]);
 
   useEffect(() => {
+    setResearchProviders(settings.deepResearchProviders);
+    setMaxModels(settings.deepResearchMaxModels);
+    setAllModels(settings.deepResearchAllModels);
+    setTimeoutSeconds(settings.deepResearchTimeoutSeconds);
+  }, [
+    settings.deepResearchAllModels,
+    settings.deepResearchMaxModels,
+    settings.deepResearchProviders,
+    settings.deepResearchTimeoutSeconds
+  ]);
+
+  useEffect(() => {
     if (!token) return;
     let active = true;
     api.researchModels(token)
       .then((options) => {
         if (!active) return;
         setResearchModelOptions(options);
-        setMaxModels(options.defaults.max_models);
-        setTimeoutSeconds(options.defaults.timeout_seconds);
         setFinalJudgeModel(options.defaults.final_judge_model ?? null);
         const enabled = (["groq", "bedrock"] as ResearchProvider[]).filter((item) => options.providers[item]?.enabled);
         if (enabled.length) setResearchProviders((current) => current.filter((item) => enabled.includes(item)).concat(enabled.filter((item) => !current.includes(item))));

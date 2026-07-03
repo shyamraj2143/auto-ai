@@ -1,6 +1,8 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import type { ResearchProvider } from "../types";
 
 export type AiProvider = "openai" | "groq" | "bedrock";
+export type AppLanguage = "system" | "en" | "hi" | "hinglish";
 
 export type AppSettings = {
   defaultProvider: AiProvider;
@@ -8,6 +10,12 @@ export type AppSettings = {
   memoryEnabled: boolean;
   streamingEnabled: boolean;
   voiceEnabled: boolean;
+  notificationsEnabled: boolean;
+  language: AppLanguage;
+  deepResearchProviders: ResearchProvider[];
+  deepResearchMaxModels: number;
+  deepResearchAllModels: boolean;
+  deepResearchTimeoutSeconds: number;
 };
 
 type AppSettingsContextValue = {
@@ -17,6 +25,12 @@ type AppSettingsContextValue = {
   setMemoryEnabled: (enabled: boolean) => void;
   setStreamingEnabled: (enabled: boolean) => void;
   setVoiceEnabled: (enabled: boolean) => void;
+  setNotificationsEnabled: (enabled: boolean) => void;
+  setLanguage: (language: AppLanguage) => void;
+  setDeepResearchProviders: (providers: ResearchProvider[]) => void;
+  setDeepResearchMaxModels: (maxModels: number) => void;
+  setDeepResearchAllModels: (enabled: boolean) => void;
+  setDeepResearchTimeoutSeconds: (seconds: number) => void;
 };
 
 const STORAGE_KEY = "auto-ai-app-settings";
@@ -56,8 +70,27 @@ const DEFAULT_SETTINGS: AppSettings = {
   defaultModel: PROVIDER_MODELS.groq[0].value,
   memoryEnabled: true,
   streamingEnabled: true,
-  voiceEnabled: true
+  voiceEnabled: true,
+  notificationsEnabled: false,
+  language: "system",
+  deepResearchProviders: ["groq", "bedrock"],
+  deepResearchMaxModels: 3,
+  deepResearchAllModels: false,
+  deepResearchTimeoutSeconds: 45
 };
+
+const LANGUAGE_VALUES = new Set<AppLanguage>(["system", "en", "hi", "hinglish"]);
+function clampNumber(value: unknown, fallback: number, min: number, max: number) {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(parsed)));
+}
+
+function normalizeResearchProviders(value: unknown) {
+  if (!Array.isArray(value)) return DEFAULT_SETTINGS.deepResearchProviders;
+  const providers = value.filter((item): item is ResearchProvider => item === "groq" || item === "bedrock");
+  return providers.length ? Array.from(new Set(providers)) : DEFAULT_SETTINGS.deepResearchProviders;
+}
 
 function normalizeSettings(payload: unknown): AppSettings {
   if (!payload || typeof payload !== "object") return DEFAULT_SETTINGS;
@@ -75,7 +108,18 @@ function normalizeSettings(payload: unknown): AppSettings {
     defaultModel: model,
     memoryEnabled: raw.memoryEnabled ?? DEFAULT_SETTINGS.memoryEnabled,
     streamingEnabled: raw.streamingEnabled ?? DEFAULT_SETTINGS.streamingEnabled,
-    voiceEnabled: raw.voiceEnabled ?? DEFAULT_SETTINGS.voiceEnabled
+    voiceEnabled: raw.voiceEnabled ?? DEFAULT_SETTINGS.voiceEnabled,
+    notificationsEnabled: raw.notificationsEnabled ?? DEFAULT_SETTINGS.notificationsEnabled,
+    language: raw.language && LANGUAGE_VALUES.has(raw.language) ? raw.language : DEFAULT_SETTINGS.language,
+    deepResearchProviders: normalizeResearchProviders(raw.deepResearchProviders),
+    deepResearchMaxModels: clampNumber(raw.deepResearchMaxModels, DEFAULT_SETTINGS.deepResearchMaxModels, 1, 6),
+    deepResearchAllModels: raw.deepResearchAllModels ?? DEFAULT_SETTINGS.deepResearchAllModels,
+    deepResearchTimeoutSeconds: clampNumber(
+      raw.deepResearchTimeoutSeconds,
+      DEFAULT_SETTINGS.deepResearchTimeoutSeconds,
+      20,
+      120
+    )
   };
 }
 
@@ -101,6 +145,16 @@ const AppSettingsContext = createContext<AppSettingsContextValue | undefined>(un
 
 export function AppSettingsProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<AppSettings>(() => readStoredSettings());
+
+  useEffect(() => {
+    const nextLang =
+      settings.language === "system"
+        ? navigator.language || "en"
+        : settings.language === "hinglish"
+          ? "hi-Latn"
+          : settings.language;
+    document.documentElement.lang = nextLang;
+  }, [settings.language]);
 
   const updateSettings = useCallback((updater: (current: AppSettings) => AppSettings) => {
     setSettings((current) => {
@@ -131,6 +185,24 @@ export function AppSettingsProvider({ children }: { children: React.ReactNode })
       },
       setVoiceEnabled: (enabled) => {
         updateSettings((current) => ({ ...current, voiceEnabled: enabled }));
+      },
+      setNotificationsEnabled: (enabled) => {
+        updateSettings((current) => ({ ...current, notificationsEnabled: enabled }));
+      },
+      setLanguage: (language) => {
+        updateSettings((current) => ({ ...current, language }));
+      },
+      setDeepResearchProviders: (providers) => {
+        updateSettings((current) => ({ ...current, deepResearchProviders: providers }));
+      },
+      setDeepResearchMaxModels: (maxModels) => {
+        updateSettings((current) => ({ ...current, deepResearchMaxModels: maxModels }));
+      },
+      setDeepResearchAllModels: (enabled) => {
+        updateSettings((current) => ({ ...current, deepResearchAllModels: enabled }));
+      },
+      setDeepResearchTimeoutSeconds: (seconds) => {
+        updateSettings((current) => ({ ...current, deepResearchTimeoutSeconds: seconds }));
       }
     }),
     [settings, updateSettings]

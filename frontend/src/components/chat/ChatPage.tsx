@@ -12,6 +12,7 @@ import { ContextPanel } from "./ContextPanel";
 import { MessageBubble, type MessageReaction } from "./MessageBubble";
 import { useAppSettings } from "../../contexts/AppSettingsContext";
 import { useShell } from "../../contexts/ShellContext";
+import { useSettingsNavigation } from "../../hooks/useSettingsNavigation";
 
 const DEFAULT_OPTIONS: ComposerOptions = {
   searchMode: "auto",
@@ -58,7 +59,8 @@ export function ChatPage() {
   const { token } = useAuth();
   const { settings } = useAppSettings();
   const { activeChat, createChat, openChat, refreshChats, setActiveChat } = useChat();
-  const { openSidebar, openSettings } = useShell();
+  const { openSidebar } = useShell();
+  const openSettings = useSettingsNavigation();
   const [messages, setMessages] = useState<Message[]>([]);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [documentsLoading, setDocumentsLoading] = useState(false);
@@ -177,6 +179,20 @@ export function ChatPage() {
     return new Promise<void>((resolve) => {
       deltaResolversRef.current.push(resolve);
     });
+  }
+
+  function notifyResponseComplete(title: string) {
+    if (!settings.notificationsEnabled || !document.hidden || !("Notification" in window)) return;
+    if (Notification.permission !== "granted") return;
+    try {
+      new Notification("Auto-AI response ready", {
+        body: title,
+        tag: "auto-ai-chat-response",
+        silent: true
+      });
+    } catch (error) {
+      console.warn("[Auto-AI Notifications] Unable to show response notification.", error);
+    }
   }
 
   async function uploadDocuments(files: File[], provider: ComposerOptions["provider"]) {
@@ -390,6 +406,7 @@ export function ChatPage() {
       }
       if (!streamFailed) {
         await openChat(chat.id);
+        notifyResponseComplete(chat.title);
       }
       await refreshChats();
     } catch (error) {
@@ -480,7 +497,6 @@ export function ChatPage() {
           <button
             className="icon-button-dark"
             onClick={openSettings}
-            onPointerUp={openSettings}
             title="Settings"
             aria-label="Open settings"
             type="button"

@@ -1834,20 +1834,114 @@ button:disabled {
   }
 
   .composer-shell {
-    padding: 10px;
+    padding: 8px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  }
+
+  .composer-card {
+    padding: 8px;
+  }
+
+  .composer-top-row {
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding: 2px 0 0;
+  }
+
+  .composer-plus-button {
+    height: 34px;
+    width: 34px;
+    border-radius: 6px;
+  }
+
+  .composer-plus-button svg,
+  .composer-pill svg {
+    height: 14px;
+    width: 14px;
+    flex: 0 0 auto;
+  }
+
+  .composer-pill {
+    height: 34px;
+    min-width: 0;
+    gap: 5px;
+    border-radius: 6px;
+    padding: 0 8px;
+  }
+
+  .composer-mode-pill {
+    width: 88px;
+    min-width: 88px;
+    max-width: 88px;
+  }
+
+  .composer-pill-select {
+    font-size: 12px;
+    font-weight: 650;
+  }
+
+  .model-menu-trigger {
+    min-width: 88px;
+    max-width: 96px;
+  }
+
+  .model-menu-trigger span {
+    max-width: 46px;
+  }
+
+  .model-menu-trigger svg:last-child {
+    height: 12px;
+    width: 12px;
+  }
+
+  .composer-divider {
+    height: 22px;
+  }
+
+  .model-menu-panel {
+    right: 0;
+    left: auto;
+    max-width: calc(100vw - 20px);
+  }
+
+  .model-menu-subpanel {
+    position: static;
+    width: 100%;
+    max-height: 170px;
+    margin-top: 6px;
+  }
+
+  .model-menu-item {
+    min-height: 30px;
+    font-size: 11px;
   }
 
   .composer-input-row {
-    gap: 10px;
+    gap: 8px;
+    margin-top: 12px;
   }
 
   .composer-textarea {
-    min-height: 62px;
-    font-size: 18px;
+    min-height: 54px;
+    padding: 0 4px 6px;
+    font-size: 16px;
   }
 
   .composer-inline-actions {
-    gap: 10px;
+    gap: 8px;
+    padding: 0 0 6px;
+  }
+
+  .composer-inline-actions .icon-button-dark,
+  .composer-inline-actions .icon-button-danger,
+  .composer-send-round {
+    height: 44px;
+    width: 44px;
+  }
+
+  .composer-send-round svg {
+    height: 16px;
+    width: 16px;
   }
 
   .mobile-feature-strip {

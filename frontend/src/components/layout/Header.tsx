@@ -2,23 +2,24 @@ import { Link, useLocation } from "react-router-dom";
 import { LogOut, Moon, Settings, Shield, Sun, Zap } from "lucide-react";
 import clsx from "clsx";
 import { useAuth } from "../../contexts/AuthContext";
-import { useShell } from "../../contexts/ShellContext";
 import { useTheme } from "../../contexts/ThemeContext";
+import { useSettingsNavigation } from "../../hooks/useSettingsNavigation";
 
 export function Header() {
   const { logout, user } = useAuth();
   const { resolvedTheme, toggleTheme } = useTheme();
-  const { openSettings } = useShell();
+  const openSettings = useSettingsNavigation();
   const location = useLocation();
 
   const normalizedPath = location.pathname.replace(/\/+$/, "") || "/";
   const isChatWorkspace = normalizedPath === "/chat" || normalizedPath === "/";
+  const isSettingsWorkspace = normalizedPath === "/settings";
 
   return (
     <header
       className={clsx(
         "h-14 shrink-0 items-center justify-between border-b border-white/10 bg-slate-950/70 px-4 text-white backdrop-blur-xl",
-        isChatWorkspace ? "hidden md:flex" : "flex"
+        isChatWorkspace || isSettingsWorkspace ? "hidden md:flex" : "flex"
       )}
     >
       <div className="min-w-0">
@@ -32,7 +33,6 @@ export function Header() {
         <button
           className="icon-button-dark"
           onClick={openSettings}
-          onPointerUp={openSettings}
           title="Settings"
           aria-label="Open settings"
           type="button"

@@ -14,6 +14,7 @@ const AdminDashboard = lazy(() => import("./components/admin/AdminDashboard").th
 const AdminLoginPage = lazy(() => import("./components/auth/AdminLoginPage").then((module) => ({ default: module.AdminLoginPage })));
 const LoginPage = lazy(() => import("./components/auth/LoginPage").then((module) => ({ default: module.LoginPage })));
 const RegisterPage = lazy(() => import("./components/auth/RegisterPage").then((module) => ({ default: module.RegisterPage })));
+const SettingsPage = lazy(() => import("./components/settings/SettingsPage").then((module) => ({ default: module.SettingsPage })));
 
 /** Shows LandingPage for guests, redirects logged-in users to /chat */
 function RootRedirect() {
@@ -58,6 +59,7 @@ export default function App() {
                 <Route element={<ProtectedRoute />}>
                   <Route element={<AppShell />}>
                     <Route path="/chat" element={<ChatPage />} />
+                    <Route path="/settings" element={<SettingsPage />} />
                   </Route>
                 </Route>
                 <Route element={<AdminRoute />}>

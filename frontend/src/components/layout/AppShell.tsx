@@ -4,21 +4,17 @@ import { AppSettingsProvider } from "../../contexts/AppSettingsContext";
 import { ChatProvider } from "../../contexts/ChatContext";
 import { useShell } from "../../contexts/ShellContext";
 import { Header } from "./Header";
-import { SettingsModal } from "./SettingsModal";
 import { Sidebar } from "./Sidebar";
 
 export function AppShell() {
   const location = useLocation();
   const {
-    isSettingsOpen,
-    closeSidebar,
-    closeSettings
+    closeSidebar
   } = useShell();
 
   useEffect(() => {
     closeSidebar();
-    closeSettings();
-  }, [closeSettings, closeSidebar, location.pathname]);
+  }, [closeSidebar, location.pathname]);
 
   return (
     <AppSettingsProvider>
@@ -29,7 +25,6 @@ export function AppShell() {
             <Header />
             <Outlet />
           </main>
-          <SettingsModal open={isSettingsOpen} onClose={closeSettings} />
         </div>
       </ChatProvider>
     </AppSettingsProvider>

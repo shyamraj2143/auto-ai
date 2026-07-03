@@ -5,12 +5,14 @@ import clsx from "clsx";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
 import { useShell } from "../../contexts/ShellContext";
+import { useSettingsNavigation } from "../../hooks/useSettingsNavigation";
 import { LogoIcon } from "../brand/LogoIcon";
 
 export function Sidebar() {
   const { user, logout } = useAuth();
   const { chats, activeChat, createChat, deleteChat, loadingChats, openChat, updateChat } = useChat();
-  const { isSidebarOpen, closeSidebar, openSettings } = useShell();
+  const { isSidebarOpen, closeSidebar } = useShell();
+  const openSettings = useSettingsNavigation();
   const location = useLocation();
 
   useEffect(() => {
@@ -142,7 +144,6 @@ export function Sidebar() {
           <button
             className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-medium text-white transition hover:border-cyan-200/30 hover:bg-cyan-200/10"
             aria-label="Open account and settings"
-            onPointerUp={openSettings}
             onClick={() => {
               openSettings();
               closeSidebar();
