@@ -1,6 +1,6 @@
 # Auto-AI
 
-Auto-AI is a ChatGPT-style AI assistant built with React, TypeScript, Tailwind CSS, FastAPI, SQLite, JWT authentication, and selectable OpenAI, Groq, or Amazon Bedrock chat providers.
+Auto-AI is a ChatGPT-style AI assistant built with React, TypeScript, Tailwind CSS, FastAPI, SQLAlchemy, JWT authentication, and selectable OpenAI, Groq, or Amazon Bedrock chat providers.
 
 ## Features
 
@@ -106,12 +106,68 @@ Important environment variables:
 - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`: optional SigV4 fallback credentials for Bedrock
 - `SECRET_KEY`: JWT signing secret
 - `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME`: startup-only first admin bootstrap credentials
-- `SQLITE_PATH`: SQLite database path
+- `DATABASE_URL`: production PostgreSQL/MySQL URL, such as Railway MySQL/PostgreSQL
+- `MYSQL_URL`: Railway MySQL URL fallback when `DATABASE_URL` is not used
+- `SQLITE_PATH`: SQLite database path; production SQLite must use a mounted volume path
 - `BACKEND_CORS_ORIGINS`: frontend origins allowed by FastAPI
+
+## Production Data Persistence
+
+Production user data must never be stored inside the source code folder. Redeploys replace the app filesystem, so paths such as `database/auto_ai.db` are development-only and unsafe for production.
+
+Startup uses additive schema creation/migrations only:
+
+- Existing tables are not dropped.
+- Existing rows are not deleted.
+- Missing columns are added.
+- Admin bootstrap creates the configured admin only when it does not already exist.
+- Existing admin passwords and normal users are not reset.
+
+The backend logs the database backend and a masked target on startup. Passwords and secrets are not printed.
+
+### Railway SQLite Volume
+
+Use this only if you are intentionally running SQLite in production.
+
+Railway volume:
+
+```text
+Mount Path: /data
+```
+
+Railway environment:
+
+```text
+ENVIRONMENT=production
+DB_BACKEND=sqlite
+SQLITE_PATH=/data/auto_ai.db
+```
+
+Do not set `SQLITE_PATH=database/auto_ai.db` in production.
+
+### Railway MySQL
+
+Use Railway MySQL for persistent production data.
+
+Railway environment:
+
+```text
+ENVIRONMENT=production
+DATABASE_URL=<Railway MySQL URL>
+```
+
+If Railway exposes `MYSQL_URL` instead, either set `DATABASE_URL` to that value or set:
+
+```text
+ENVIRONMENT=production
+MYSQL_URL=<Railway MySQL URL>
+```
+
+If `ENVIRONMENT=production` and no persistent database URL or safe `/data` SQLite path is configured, the backend fails startup with a clear error instead of silently creating a new local SQLite database.
 
 ## Notes
 
-SQLite is the active database for the initial build. The backend keeps persistence isolated in repository classes so a MongoDB adapter can be added without changing route contracts.
+SQLite under `database/auto_ai.db` is for local development only. Production must use a Railway volume-backed SQLite file at `/data/auto_ai.db` or a managed database URL.
 
 See `docs/human-mode.md` for the adaptive conversation architecture, database schema, APIs, prompts, and memory design.
 

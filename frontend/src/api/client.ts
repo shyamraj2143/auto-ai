@@ -544,6 +544,24 @@ export const api = {
   latestApk: () => apiFetch<ApkRelease>("/download/apk/latest", { operation: "download.apk.latest" }),
   apkVersions: () => apiFetch<ApkRelease[]>("/download/apk/versions", { operation: "download.apk.versions" }),
   apkStats: () => apiFetch<ApkStats>("/download/apk/stats", { operation: "download.apk.stats" }),
+  uploadApkRelease: (token: string, formData: FormData) =>
+    apiFetch<ApkRelease>("/download/apk/releases", {
+      method: "POST",
+      token,
+      operation: "download.apk.upload",
+      body: formData
+    }),
+  updateApkRelease: (
+    token: string,
+    id: string,
+    payload: Partial<Pick<ApkRelease, "changelog" | "force_update" | "release_notes" | "is_active">>
+  ) =>
+    apiFetch<ApkRelease>(`/download/apk/versions/${id}`, {
+      method: "PATCH",
+      token,
+      operation: "download.apk.update",
+      body: JSON.stringify(payload)
+    }),
 
   researchModels: (token: string) => apiFetch<ResearchModelOptions>("/ai/research-models", { token, operation: "ai.researchModels" }),
   startChatGeneration: (token: string, payload: ChatRequest) =>

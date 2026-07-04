@@ -6,18 +6,21 @@ import {
   Coins,
   CreditCard,
   Database,
+  Download,
   KeyRound,
   MessageSquare,
   RefreshCw,
   Search,
   Settings,
   SlidersHorizontal,
+  Smartphone,
   Trash2,
+  Upload,
   UserCheck,
   Users,
   Wallet
 } from "lucide-react";
-import { api } from "../../api/client";
+import { API_BASE_URL, api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import type {
   AdminAnalytics,
@@ -30,10 +33,12 @@ import type {
   AdminSubscription,
   AdminUsageResponse,
   AdminUser,
+  ApkRelease,
+  ApkStats,
   UserRole
 } from "../../types";
 
-type AdminSection = "dashboard" | "users" | "tokens" | "subscriptions" | "usage" | "features" | "payments" | "settings";
+type AdminSection = "dashboard" | "users" | "tokens" | "subscriptions" | "usage" | "features" | "mobile" | "payments" | "settings";
 
 const sections: Array<{ id: AdminSection; label: string; icon: ReactNode }> = [
   { id: "dashboard", label: "Dashboard", icon: <BarChart3 size={15} /> },
@@ -42,6 +47,7 @@ const sections: Array<{ id: AdminSection; label: string; icon: ReactNode }> = [
   { id: "subscriptions", label: "Subscriptions", icon: <CreditCard size={15} /> },
   { id: "usage", label: "Usage Analytics", icon: <Activity size={15} /> },
   { id: "features", label: "Feature Controls", icon: <SlidersHorizontal size={15} /> },
+  { id: "mobile", label: "Mobile App", icon: <Smartphone size={15} /> },
   { id: "payments", label: "Payments", icon: <Wallet size={15} /> },
   { id: "settings", label: "Settings", icon: <Settings size={15} /> }
 ];
@@ -57,6 +63,14 @@ type QuotaForm = {
   addReason: string;
   deductAmount: string;
   deductReason: string;
+};
+
+type ApkUploadForm = {
+  version_name: string;
+  version_code: string;
+  changelog: string;
+  release_notes: string;
+  force_update: boolean;
 };
 
 type ConfirmAction = {
@@ -87,6 +101,20 @@ function dateInputValue(value?: string | null) {
 
 function money(cents = 0, currency = "INR") {
   return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(cents / 100);
+}
+
+function formatBytes(bytes?: number | null) {
+  if (!bytes) return "0 B";
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function apkDownloadHref(release: ApkRelease) {
+  try {
+    return new URL(release.download_url || release.apk_url, `${API_BASE_URL}/`).toString();
+  } catch {
+    return release.download_url || release.apk_url;
+  }
 }
 
 function numberValue(value: string) {
@@ -140,6 +168,16 @@ export function AdminDashboard() {
   const [usage, setUsage] = useState<AdminUsageResponse | null>(null);
   const [features, setFeatures] = useState<AdminFeaturesResponse | null>(null);
   const [payments, setPayments] = useState<AdminPaymentRecord[]>([]);
+  const [apkVersions, setApkVersions] = useState<ApkRelease[]>([]);
+  const [apkStats, setApkStats] = useState<ApkStats | null>(null);
+  const [apkFile, setApkFile] = useState<File | null>(null);
+  const [apkUploadForm, setApkUploadForm] = useState<ApkUploadForm>({
+    version_name: "",
+    version_code: "",
+    changelog: "",
+    release_notes: "",
+    force_update: false
+  });
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [featureUserId, setFeatureUserId] = useState("");
   const [query, setQuery] = useState("");
@@ -171,7 +209,7 @@ export function AdminDashboard() {
     setSuccess("");
     setLoading(true);
     try {
-      const [nextStats, nextUsers, nextSubscriptions, nextUsage, nextFeatures, nextAnalytics, nextPayments] =
+      const [nextStats, nextUsers, nextSubscriptions, nextUsage, nextFeatures, nextAnalytics, nextPayments, nextApkVersions, nextApkStats] =
         await Promise.all([
           api.adminStats(token),
           api.adminUsers(token),
@@ -179,7 +217,9 @@ export function AdminDashboard() {
           api.adminUsage(token),
           api.adminFeatures(token),
           api.adminAnalytics(token),
-          api.adminPayments(token)
+          api.adminPayments(token),
+          api.apkVersions(),
+          api.apkStats()
         ]);
       setStats(nextStats);
       setUsers(nextUsers);
@@ -188,6 +228,8 @@ export function AdminDashboard() {
       setFeatures(nextFeatures);
       setAnalytics(nextAnalytics);
       setPayments(nextPayments);
+      setApkVersions(nextApkVersions);
+      setApkStats(nextApkStats);
       setSelectedUser((current) => nextUsers.find((item) => item.id === current?.id) ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load admin panel");
@@ -521,6 +563,59 @@ export function AdminDashboard() {
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to update plan limit");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function refreshApkData() {
+    const [nextVersions, nextStats] = await Promise.all([api.apkVersions(), api.apkStats()]);
+    setApkVersions(nextVersions);
+    setApkStats(nextStats);
+  }
+
+  async function uploadApk(event: FormEvent) {
+    event.preventDefault();
+    if (!token || !apkFile) {
+      setError("Select an APK file to upload.");
+      return;
+    }
+    const formData = new FormData();
+    formData.append("file", apkFile);
+    if (apkUploadForm.version_name.trim()) formData.append("version_name", apkUploadForm.version_name.trim());
+    if (apkUploadForm.version_code.trim()) formData.append("version_code", String(numberValue(apkUploadForm.version_code)));
+    if (apkUploadForm.changelog.trim()) formData.append("changelog", apkUploadForm.changelog.trim());
+    if (apkUploadForm.release_notes.trim()) formData.append("release_notes", apkUploadForm.release_notes.trim());
+    formData.append("force_update", String(apkUploadForm.force_update));
+    setBusyId("apk-upload");
+    setError("");
+    setSuccess("");
+    try {
+      const release = await api.uploadApkRelease(token, formData);
+      setApkVersions((current) => [release, ...current.filter((item) => item.id !== release.id)]);
+      setApkUploadForm({ version_name: "", version_code: "", changelog: "", release_notes: "", force_update: false });
+      setApkFile(null);
+      await refreshApkData();
+      setSuccess(`APK ${release.version_name} uploaded.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to upload APK");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function updateApk(release: ApkRelease, payload: Partial<Pick<ApkRelease, "changelog" | "force_update" | "release_notes" | "is_active">>) {
+    if (!token) return;
+    setBusyId(`apk-${release.id}`);
+    setError("");
+    setSuccess("");
+    try {
+      const updated = await api.updateApkRelease(token, release.id, payload);
+      setApkVersions((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      await refreshApkData();
+      setSuccess(`APK ${updated.version_name} updated.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update APK release");
     } finally {
       setBusyId(null);
     }
@@ -1058,6 +1153,136 @@ export function AdminDashboard() {
                     })}
                   </div>
                 )}
+              </div>
+            </section>
+          )}
+
+          {activeSection === "mobile" && (
+            <section className="rounded-lg border border-white/10 bg-white/[0.045] p-4">
+              <SectionTitle title="Mobile Application" subtitle="Upload APK releases, edit changelog, force updates, and track downloads" />
+              <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <StatTile icon={<Smartphone size={18} />} label="Latest version" value={apkStats?.latest?.version_name ?? "None"} />
+                <StatTile icon={<Download size={18} />} label="Downloads" value={apkStats?.total_downloads ?? 0} />
+                <StatTile icon={<Upload size={18} />} label="Version code" value={apkStats?.latest?.version_code ?? 0} />
+                <StatTile icon={<Activity size={18} />} label="Force update" value={apkStats?.latest?.force_update ? "On" : "Off"} />
+              </div>
+
+              <form className="mb-6 grid gap-3 rounded-lg border border-white/10 bg-slate-950/35 p-4 xl:grid-cols-[1fr_120px_1fr_1fr_auto]" onSubmit={uploadApk}>
+                <input
+                  accept=".apk,application/vnd.android.package-archive"
+                  className="input-dark h-11"
+                  onChange={(event) => setApkFile(event.currentTarget.files?.[0] ?? null)}
+                  type="file"
+                />
+                <input
+                  className="input-dark h-11"
+                  placeholder="Version code"
+                  type="number"
+                  value={apkUploadForm.version_code}
+                  onChange={(event) => setApkUploadForm((current) => ({ ...current, version_code: event.target.value }))}
+                />
+                <input
+                  className="input-dark h-11"
+                  placeholder="Version name"
+                  value={apkUploadForm.version_name}
+                  onChange={(event) => setApkUploadForm((current) => ({ ...current, version_name: event.target.value }))}
+                />
+                <input
+                  className="input-dark h-11"
+                  placeholder="Changelog"
+                  value={apkUploadForm.changelog}
+                  onChange={(event) => setApkUploadForm((current) => ({ ...current, changelog: event.target.value }))}
+                />
+                <button className="btn-primary h-11" disabled={busyId === "apk-upload"} type="submit">
+                  <Upload size={16} />
+                  Upload
+                </button>
+                <textarea
+                  className="input-dark min-h-20 xl:col-span-4"
+                  placeholder="Release notes, one per line"
+                  value={apkUploadForm.release_notes}
+                  onChange={(event) => setApkUploadForm((current) => ({ ...current, release_notes: event.target.value }))}
+                />
+                <label className="flex h-11 items-center gap-2 text-sm text-slate-200">
+                  <input
+                    checked={apkUploadForm.force_update}
+                    onChange={(event) => setApkUploadForm((current) => ({ ...current, force_update: event.target.checked }))}
+                    type="checkbox"
+                  />
+                  Force update
+                </label>
+              </form>
+
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1080px] border-collapse text-left text-sm">
+                  <thead className="bg-white/[0.035] text-xs uppercase text-slate-400">
+                    <tr>
+                      <th className="px-4 py-3">Version</th>
+                      <th className="px-4 py-3">Release date</th>
+                      <th className="px-4 py-3">Size</th>
+                      <th className="px-4 py-3">Downloads</th>
+                      <th className="px-4 py-3">Changelog</th>
+                      <th className="px-4 py-3">Force</th>
+                      <th className="px-4 py-3">Latest</th>
+                      <th className="px-4 py-3">Download</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/10">
+                    {apkVersions.map((release) => {
+                      const busy = busyId === `apk-${release.id}`;
+                      return (
+                        <tr key={release.id} className="text-slate-200">
+                          <td className="px-4 py-3">
+                            <div className="font-semibold text-white">{release.version_name}</div>
+                            <div className="text-xs text-slate-400">Code {release.version_code}</div>
+                          </td>
+                          <td className="px-4 py-3">{formatDate(release.release_date)}</td>
+                          <td className="px-4 py-3">{formatBytes(release.file_size)}</td>
+                          <td className="px-4 py-3">{release.download_count.toLocaleString()}</td>
+                          <td className="px-4 py-3">
+                            <textarea
+                              className="input-dark min-h-20 min-w-[280px]"
+                              defaultValue={release.changelog}
+                              onBlur={(event) => {
+                                const next = event.currentTarget.value.trim();
+                                if (next !== release.changelog) void updateApk(release, { changelog: next });
+                              }}
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              className={release.force_update ? "chip-dark chip-dark-active" : "chip-dark"}
+                              disabled={busy}
+                              onClick={() => updateApk(release, { force_update: !release.force_update })}
+                              type="button"
+                            >
+                              {release.force_update ? "On" : "Off"}
+                            </button>
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              className={release.is_active ? "chip-dark chip-dark-active" : "chip-dark"}
+                              disabled={busy || release.is_active}
+                              onClick={() => updateApk(release, { is_active: true })}
+                              type="button"
+                            >
+                              {release.is_active ? "Latest" : "Set latest"}
+                            </button>
+                          </td>
+                          <td className="px-4 py-3">
+                            <a className="chip-dark" href={apkDownloadHref(release)}>
+                              <Download size={15} />
+                              APK
+                            </a>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {apkVersions.length === 0 && (
+                      <tr><td className="px-4 py-6 text-sm text-slate-400" colSpan={8}>No APK versions uploaded yet.</td></tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </section>
           )}

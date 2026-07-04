@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { QRCodeSVG } from "qrcode.react";
 import {
@@ -11,8 +12,9 @@ import {
   Smartphone,
   Zap
 } from "lucide-react";
-import { APK_DOWNLOAD_URL } from "../../api/client";
+import { APK_DOWNLOAD_URL, api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
+import type { ApkRelease, ApkStats } from "../../types";
 import { LogoIcon } from "../brand/LogoIcon";
 
 const features = [
@@ -35,9 +37,32 @@ const faqs = [
   ["Which providers are supported?", "The backend supports OpenAI, Groq, and Bedrock-compatible chat flows."]
 ];
 
+function formatDate(value?: string | null) {
+  if (!value) return "Pending release";
+  return new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "2-digit" }).format(new Date(value));
+}
+
 export function LandingPage() {
   const { user } = useAuth();
+  const [latestApk, setLatestApk] = useState<ApkRelease | null>(null);
+  const [apkStats, setApkStats] = useState<ApkStats | null>(null);
   const qrUrl = typeof window === "undefined" ? APK_DOWNLOAD_URL : new URL(APK_DOWNLOAD_URL, window.location.origin).toString();
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([api.latestApk(), api.apkStats()])
+      .then(([release, stats]) => {
+        if (!active) return;
+        setLatestApk(release);
+        setApkStats(stats);
+      })
+      .catch(() => {
+        if (active) setLatestApk(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <div className="landing-page">
@@ -133,11 +158,17 @@ export function LandingPage() {
         <section className="landing-section">
           <div className="android-promo">
             <div>
-              <p className="hero-kicker"><Smartphone size={14} /> Android App</p>
+              <p className="hero-kicker"><Smartphone size={14} /> Mobile Application</p>
               <h2>Install Auto-AI on Android</h2>
               <p>
                 Use the same account, backend, memory, chat history, uploads, settings, and source-grounded answers from your phone.
               </p>
+              <div className="mobile-release-strip">
+                <span>Latest: {latestApk?.version_name ?? "Checking"}</span>
+                <span>Released: {formatDate(latestApk?.release_date)}</span>
+                <span>Downloads: {(apkStats?.total_downloads ?? 0).toLocaleString()}</span>
+              </div>
+              {latestApk?.changelog && <p className="mobile-changelog">{latestApk.changelog}</p>}
               <div className="mt-5 flex flex-wrap gap-3">
                 <a className="btn-primary h-11 px-5" href={APK_DOWNLOAD_URL}>
                   <Download size={17} />

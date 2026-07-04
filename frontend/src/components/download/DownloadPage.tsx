@@ -35,6 +35,10 @@ function formatBytes(bytes?: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "2-digit" }).format(new Date(value));
+}
+
 function absoluteDownloadUrl() {
   if (typeof window === "undefined") return APK_DOWNLOAD_URL;
   return APK_DOWNLOAD_URL.startsWith("/") ? `${window.location.origin}${APK_DOWNLOAD_URL}` : APK_DOWNLOAD_URL;
@@ -147,6 +151,11 @@ export function DownloadPage() {
               <strong>{stats?.total_downloads?.toLocaleString() ?? "0"}</strong>
             </article>
             <article>
+              <FileText size={18} />
+              <span>Release date</span>
+              <strong>{latest?.release_date ? formatDate(latest.release_date) : "Pending"}</strong>
+            </article>
+            <article>
               <CheckCircle2 size={18} />
               <span>Requires</span>
               <strong>{latest?.min_android_version ?? "Android 7.0"}</strong>
@@ -183,6 +192,7 @@ export function DownloadPage() {
               <h2>{latest ? `Version ${latest.version}` : `Build ${buildVersion}`}</h2>
             </div>
             {error && <p className="download-error">{error}</p>}
+            {latest?.changelog && <p className="mobile-changelog">{latest.changelog}</p>}
             {(latest?.release_notes?.length ? latest.release_notes : ["Release notes will appear after the first APK upload."]).map((note) => (
               <span key={note} className="release-note"><CheckCircle2 size={15} /> {note}</span>
             ))}
@@ -195,7 +205,7 @@ export function DownloadPage() {
             </div>
             {(versions.length ? versions : latest ? [latest] : []).map((release) => (
               <div key={release.id} className="version-row">
-                <span>Version {release.version}</span>
+                <span>Version {release.version_name}</span>
                 <strong>{formatBytes(release.file_size)}</strong>
               </div>
             ))}

@@ -6,9 +6,9 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_admin
 from app.core.security import decode_access_token
 from app.db.session import get_db
-from app.models.apk import ApkDownload, ApkRelease
+from app.models.apk import ApkRelease
 from app.models.user import User
-from app.schemas.download import ApkReleaseRead, ApkStats
+from app.schemas.download import ApkReleaseRead, ApkReleaseUpdate, ApkStats
 from app.services.apk_service import apk_service
 
 
@@ -44,7 +44,7 @@ def download_apk(
         filename=release.filename,
         headers={
             "Cache-Control": "private, max-age=300",
-            "X-Auto-AI-APK-Version": release.version,
+            "X-Auto-AI-APK-Version": release.version_name,
             "X-Auto-AI-APK-Version-Code": str(release.version_code),
             "X-Auto-AI-APK-SHA256": release.sha256,
             "X-Content-Type-Options": "nosniff",
@@ -70,9 +70,10 @@ def apk_versions(db: Session = Depends(get_db)) -> list[ApkReleaseRead]:
 @router.get("/apk/stats", response_model=ApkStats)
 def apk_stats(db: Session = Depends(get_db)) -> ApkStats:
     latest = apk_service.latest_release(db)
+    total_downloads = db.scalar(select(func.coalesce(func.sum(ApkRelease.download_count), 0))) or 0
     return ApkStats(
         latest=apk_service.release_read(latest) if latest else None,
-        total_downloads=db.scalar(select(func.count()).select_from(ApkDownload).where(ApkDownload.status == "completed")) or 0,
+        total_downloads=total_downloads,
         downloads_by_version=apk_service.download_counts(db),
     )
 
@@ -80,21 +81,35 @@ def apk_stats(db: Session = Depends(get_db)) -> ApkStats:
 @router.post("/apk/releases", response_model=ApkReleaseRead, status_code=status.HTTP_201_CREATED)
 async def upload_apk_release(
     file: UploadFile = File(...),
+    version_name: str | None = Form(default=None),
     version: str | None = Form(default=None),
     version_code: int | None = Form(default=None),
     min_android_version: str | None = Form(default=None),
     release_notes: str | None = Form(default=None),
     changelog: str | None = Form(default=None),
+    force_update: bool = Form(default=False),
     _: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> ApkReleaseRead:
     release = await apk_service.save_upload(
         db,
         file,
-        version=version,
+        version_name=version_name or version,
         version_code=version_code,
         min_android_version=min_android_version,
         release_notes=release_notes,
         changelog=changelog,
+        force_update=force_update,
     )
+    return apk_service.release_read(release)
+
+
+@router.patch("/apk/versions/{release_id}", response_model=ApkReleaseRead)
+def update_apk_release(
+    release_id: str,
+    payload: ApkReleaseUpdate,
+    _: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> ApkReleaseRead:
+    release = apk_service.update_release(db, release_id, **payload.model_dump(exclude_unset=True))
     return apk_service.release_read(release)

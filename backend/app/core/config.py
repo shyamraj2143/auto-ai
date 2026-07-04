@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import AnyHttpUrl, EmailStr, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -32,6 +33,7 @@ class Settings(BaseSettings):
 
 
     DATABASE_URL: str | None = None
+    MYSQL_URL: str | None = None
     SQLITE_PATH: str = str(PROJECT_ROOT / "database" / "auto_ai.db")
     DB_BACKEND: str = "sqlite"
     MONGODB_URL: str | None = None
@@ -101,6 +103,7 @@ class Settings(BaseSettings):
     APK_STORAGE_DIR: str = str(PROJECT_ROOT / "public" / "downloads")
     APK_FILENAME: str = "auto-ai.apk"
     APK_DEFAULT_VERSION: str = "1.0.1"
+    APK_DEFAULT_VERSION_CODE: int = 2
     APK_MIN_ANDROID_VERSION: str = "Android 7.0"
     MAX_UPLOAD_MB: int = 20
     ALLOWED_DOCUMENT_EXTENSIONS: set[str] = {".pdf", ".txt", ".docx"}
@@ -128,11 +131,87 @@ class Settings(BaseSettings):
 
     @property
     def sqlalchemy_database_url(self) -> str:
-        if self.DATABASE_URL:
-            return self.DATABASE_URL
-        sqlite_path = Path(self.SQLITE_PATH)
+        configured_url = self.DATABASE_URL or self.MYSQL_URL
+        if configured_url:
+            return self._normalize_sqlalchemy_url(configured_url)
+
+        backend = self.DB_BACKEND.strip().lower()
+        if self.is_production and backend != "sqlite":
+            raise RuntimeError(
+                "Production database URL is missing. Set DATABASE_URL for PostgreSQL/MySQL "
+                "or MYSQL_URL for Railway MySQL."
+            )
+
+        sqlite_path = self.resolved_sqlite_path
+        if self.is_production and self.SQLITE_PATH.strip().replace("\\", "/") != "/data/auto_ai.db":
+            raise RuntimeError(
+                "Production SQLite requires a Railway volume at /data with "
+                "SQLITE_PATH=/data/auto_ai.db, or set DATABASE_URL/MYSQL_URL."
+            )
+        if self.is_production and self._path_is_inside_project(sqlite_path):
+            raise RuntimeError(
+                "Unsafe production SQLite path. Mount a Railway volume at /data and set "
+                "SQLITE_PATH=/data/auto_ai.db, or set DATABASE_URL/MYSQL_URL."
+            )
         sqlite_path.parent.mkdir(parents=True, exist_ok=True)
         return f"sqlite:///{sqlite_path.as_posix()}"
+
+    @property
+    def resolved_sqlite_path(self) -> Path:
+        path = Path(self.SQLITE_PATH).expanduser()
+        if not path.is_absolute():
+            path = PROJECT_ROOT / path
+        return path.resolve()
+
+    @property
+    def database_backend(self) -> str:
+        configured_url = self.DATABASE_URL or self.MYSQL_URL
+        if not configured_url:
+            return "sqlite"
+        scheme = urlsplit(configured_url).scheme.split("+", 1)[0].lower()
+        if scheme == "postgres":
+            return "postgresql"
+        if scheme in {"mysql", "postgresql", "sqlite"}:
+            return scheme
+        return scheme or "unknown"
+
+    @property
+    def safe_database_target(self) -> str:
+        configured_url = self.DATABASE_URL or self.MYSQL_URL
+        if configured_url:
+            parsed = urlsplit(configured_url)
+            host = parsed.hostname or "unknown-host"
+            port = f":{parsed.port}" if parsed.port else ""
+            database = parsed.path or ""
+            scheme = parsed.scheme.split("+", 1)[0] or "database"
+            return f"{scheme}://{host}{port}{database}"
+
+        sqlite_path = self.resolved_sqlite_path
+        try:
+            relative = sqlite_path.relative_to(PROJECT_ROOT)
+            return f"<project>/{relative.as_posix()}"
+        except ValueError:
+            return sqlite_path.as_posix()
+
+    @staticmethod
+    def _normalize_sqlalchemy_url(raw_url: str) -> str:
+        parsed = urlsplit(raw_url)
+        scheme = parsed.scheme.lower()
+        if scheme == "postgres":
+            scheme = "postgresql+psycopg"
+        elif scheme == "postgresql":
+            scheme = "postgresql+psycopg"
+        elif scheme == "mysql":
+            scheme = "mysql+pymysql"
+        return urlunsplit((scheme, parsed.netloc, parsed.path, parsed.query, parsed.fragment))
+
+    @staticmethod
+    def _path_is_inside_project(path: Path) -> bool:
+        try:
+            path.relative_to(PROJECT_ROOT)
+            return True
+        except ValueError:
+            return False
 
     @property
     def default_chat_model(self) -> str:

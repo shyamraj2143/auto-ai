@@ -16,16 +16,21 @@ def releaseKeystorePassword = signingValue('AUTO_AI_ANDROID_KEYSTORE_PASSWORD')
 def releaseKeyAlias = signingValue('AUTO_AI_ANDROID_KEY_ALIAS')
 def releaseKeyPassword = signingValue('AUTO_AI_ANDROID_KEY_PASSWORD')
 def releaseSigningReady = releaseKeystorePath && releaseKeystorePassword && releaseKeyAlias && releaseKeyPassword
+def autoAiApiBaseUrl = signingValue('AUTO_AI_API_BASE_URL') ?: 'https://auto-ai-production-c510.up.railway.app/api/v1'
 
 android {
     namespace = "com.autoai.app"
     compileSdk = rootProject.ext.compileSdkVersion
+    buildFeatures {
+        buildConfig = true
+    }
     defaultConfig {
         applicationId "com.autoai.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 2
         versionName "1.0.1"
+        buildConfigField "String", "AUTO_AI_API_BASE_URL", "\"${autoAiApiBaseUrl.replace('\\', '\\\\').replace('"', '\\"')}\""
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

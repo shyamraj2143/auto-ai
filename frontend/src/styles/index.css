@@ -1422,6 +1422,29 @@ button:disabled {
   line-height: 1.65;
 }
 
+.mobile-release-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.mobile-release-strip span {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.35);
+  padding: 8px 10px;
+  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mobile-changelog {
+  margin-top: 12px;
+  max-width: 680px;
+  color: #e2e8f0;
+}
+
 .android-preview-wrap,
 .app-device-stage {
   display: flex;
