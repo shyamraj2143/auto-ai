@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.admin_control import AuditLog, FeatureFlag, PlanLimit, UsageLog, UserSubscription
@@ -158,9 +159,18 @@ def ensure_user_subscription(db: Session, user: User) -> UserSubscription:
         messages_used_today=0,
     )
     recalculate_token_balance(subscription)
-    db.add(subscription)
-    db.flush()
-    return subscription
+    try:
+        with db.begin_nested():
+            db.add(subscription)
+            db.flush()
+        return subscription
+    except IntegrityError:
+        existing = db.scalar(select(UserSubscription).where(UserSubscription.user_id == user.id))
+        if not existing:
+            raise
+        refresh_quota_periods(existing)
+        recalculate_token_balance(existing)
+        return existing
 
 
 def current_month_key() -> str:

@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 import time
 from datetime import datetime
@@ -46,6 +47,7 @@ from app.services.web_search import SearchAgent, web_search_service
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 generation_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="chat-generation")
+logger = logging.getLogger("auto_ai.chat_generation")
 
 
 DEFAULT_CHAT_SYSTEM_PROMPT = (
@@ -86,11 +88,12 @@ def get_or_create_chat(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
         return chat
 
+    provider, model = effective_provider_model(payload.provider, payload.model)
     chat = Chat(
         user_id=current_user.id,
         title=payload.title or title_from_message(payload.message),
         system_prompt=payload.system_prompt,
-        model=payload.model or settings.chat_model_for(payload.provider),
+        model=model or settings.chat_model_for(provider),
     )
     db.add(chat)
     db.commit()
@@ -306,6 +309,22 @@ def runtime_identity_prompt(provider: str | None, model: str | None, *, mode: st
 
 RUNNING_GENERATION_STATUSES = {"pending", "running", "cancel_requested"}
 TERMINAL_GENERATION_STATUSES = {"completed", "failed", "cancelled"}
+STALE_CLIENT_DEFAULT_PROVIDER = "groq"
+STALE_CLIENT_DEFAULT_MODEL = "openai/gpt-oss-120b"
+
+
+def effective_provider_model(
+    provider: str | None,
+    model: str | None,
+) -> tuple[str | None, str | None]:
+    backend_provider = settings.AI_PROVIDER.lower()
+    if (
+        provider == STALE_CLIENT_DEFAULT_PROVIDER
+        and model == STALE_CLIENT_DEFAULT_MODEL
+        and backend_provider != STALE_CLIENT_DEFAULT_PROVIDER
+    ):
+        return backend_provider, settings.chat_model_for(backend_provider)
+    return provider, model
 
 
 def generation_payload(db: Session, generation: ChatGeneration) -> dict:
@@ -449,9 +468,13 @@ def run_chat_generation(generation_id: str) -> None:
                 history=history[-settings.MAX_CONTEXT_MESSAGES :],
             )
             documents = load_documents(db, generation.user_id, payload.document_ids)
-            selected_provider = groq_service.selected_provider(payload.provider)
-            selected_model = groq_service.selected_model(
+            effective_provider, effective_model = effective_provider_model(
+                payload.provider,
                 payload.model or chat_row.model,
+            )
+            selected_provider = groq_service.selected_provider(effective_provider)
+            selected_model = groq_service.selected_model(
+                effective_model,
                 provider=selected_provider,
                 web_search=False,
             )
@@ -463,7 +486,7 @@ def run_chat_generation(generation_id: str) -> None:
                 system_prompt=payload.system_prompt,
                 reasoning=payload.reasoning,
                 adaptive_context=prepared_context["prompt_context"],
-                runtime_identity=runtime_identity_prompt(payload.provider, selected_model, mode=payload.mode),
+                runtime_identity=runtime_identity_prompt(effective_provider, selected_model, mode=payload.mode),
                 history_messages=history,
             )
             quota_user = db.get(User, generation.user_id)
@@ -683,6 +706,7 @@ def run_chat_generation(generation_id: str) -> None:
             db.commit()
         except Exception as exc:
             detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+            logger.exception("Chat generation %s failed: %s", generation_id, detail)
             update_generation_message(
                 db,
                 generation=generation,
@@ -719,9 +743,13 @@ def start_chat_generation(
         max_models=payload.max_models,
     )
     chat_row = get_or_create_chat(db, current_user, payload)
-    selected_provider = groq_service.selected_provider(payload.provider)
-    selected_model = groq_service.selected_model(
+    effective_provider, effective_model = effective_provider_model(
+        payload.provider,
         payload.model or chat_row.model,
+    )
+    selected_provider = groq_service.selected_provider(effective_provider)
+    selected_model = groq_service.selected_model(
+        effective_model,
         provider=selected_provider,
         web_search=False,
     )
@@ -866,6 +894,13 @@ def chat(
         chat_id=chat_row.id,
         payload=payload,
     )
+    effective_provider, effective_model = effective_provider_model(
+        payload.provider,
+        payload.model or chat_row.model,
+    )
+    selected_provider = groq_service.selected_provider(effective_provider)
+    selected_model = groq_service.selected_model(effective_model, provider=selected_provider, web_search=False)
+    selected_model_payload = model_payload(selected_provider, selected_model)
     messages = build_messages(
         chat_row,
         payload.message,
@@ -874,17 +909,13 @@ def chat(
         reasoning=payload.reasoning,
         adaptive_context=prepared_context["prompt_context"],
         search_context=web_search_service.build_model_context(search_bundle),
-        runtime_identity=runtime_identity_prompt(payload.provider, payload.model or chat_row.model, mode=payload.mode),
+        runtime_identity=runtime_identity_prompt(effective_provider, selected_model, mode=payload.mode),
     )
     enforce_user_quota(db, current_user, estimated_input_tokens=estimate_message_tokens(messages))
 
     user_message = Message(chat_id=chat_row.id, role="user", content=payload.message)
     db.add(user_message)
     db.flush()
-
-    selected_provider = groq_service.selected_provider(payload.provider)
-    selected_model = groq_service.selected_model(payload.model or chat_row.model, provider=selected_provider, web_search=False)
-    selected_model_payload = model_payload(selected_provider, selected_model)
 
     if payload.mode in {"deep_research", "multi_model"}:
         research_result = deep_research_service.run(
@@ -1034,10 +1065,13 @@ def stream_chat(
     )
     user_message = Message(chat_id=chat_row.id, role="user", content=payload.message)
     db.add(user_message)
-    model_name = payload.model or chat_row.model
-    selected_provider = groq_service.selected_provider(payload.provider)
+    effective_provider, effective_model = effective_provider_model(
+        payload.provider,
+        payload.model or chat_row.model,
+    )
+    selected_provider = groq_service.selected_provider(effective_provider)
     selected_model = groq_service.selected_model(
-        model_name,
+        effective_model,
         provider=selected_provider,
         web_search=False,
     )
@@ -1049,7 +1083,7 @@ def stream_chat(
         system_prompt=payload.system_prompt,
         reasoning=payload.reasoning,
         adaptive_context=prepared_context["prompt_context"],
-        runtime_identity=runtime_identity_prompt(payload.provider, selected_model, mode=payload.mode),
+        runtime_identity=runtime_identity_prompt(effective_provider, selected_model, mode=payload.mode),
     )
     enforce_user_quota(db, current_user, estimated_input_tokens=estimate_message_tokens(messages))
     chat_row.model = selected_model
@@ -1182,6 +1216,7 @@ def stream_chat(
                     yield f"data: {json.dumps({'type': 'done', 'message_id': message.id})}\n\n"
             except Exception as exc:
                 detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+                logger.exception("Deep research stream failed: %s", detail)
                 yield f"data: {json.dumps({'type': 'error', 'detail': detail})}\n\n"
 
         return StreamingResponse(deep_event_generator(), media_type="text/event-stream")
@@ -1290,7 +1325,9 @@ def stream_chat(
                 stream_db.refresh(message)
                 yield f"data: {json.dumps({'type': 'done', 'message_id': message.id})}\n\n"
         except Exception as exc:
-            yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)})}\n\n"
+            detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+            logger.exception("Chat stream failed: %s", detail)
+            yield f"data: {json.dumps({'type': 'error', 'detail': detail})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

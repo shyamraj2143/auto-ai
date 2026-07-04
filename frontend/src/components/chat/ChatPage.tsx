@@ -29,6 +29,14 @@ const DEFAULT_OPTIONS: ComposerOptions = {
   model: "openai/gpt-oss-120b"
 };
 
+function modelSelectionPayload(options: ComposerOptions) {
+  const staleGroqDefault = options.provider === "groq" && options.model === "openai/gpt-oss-120b";
+  return {
+    provider: staleGroqDefault ? undefined : options.provider,
+    model: staleGroqDefault ? undefined : options.model
+  };
+}
+
 function splitDelta(delta: unknown) {
   const text = coerceTextContent(delta);
   return text ? text.match(/\S+\s*/g) ?? [text] : [];
@@ -469,14 +477,15 @@ export function ChatPage() {
       const modelMessage = imageContext
         ? `${text}\n\nAttached image context extracted by Auto-AI vision:\n${imageContext}`
         : text;
+      const modelSelection = modelSelectionPayload(options);
 
       const generation = await api.startChatGeneration(
         token,
         {
           message: modelMessage,
           chat_id: chat.id,
-          provider: options.provider,
-          model: options.model,
+          provider: modelSelection.provider,
+          model: modelSelection.model,
           mode: options.chatMode,
           providers: options.chatMode === "normal" ? undefined : options.researchProviders,
           max_models: options.chatMode === "normal" ? undefined : options.maxModels,
@@ -553,6 +562,13 @@ export function ChatPage() {
 
   async function handleContinue() {
     if (streaming) return;
+    const failedWithoutPartial =
+      visibleGeneration?.status === "failed" &&
+      !coerceTextContent(visibleGeneration.assistant_message?.content).trim();
+    if (failedWithoutPartial) {
+      await handleRetryGeneration();
+      return;
+    }
     await handleSend(
       "Continue the previous response from where it stopped. Do not restart the answer.",
       lastOptionsRef.current,
@@ -585,6 +601,16 @@ export function ChatPage() {
         : visibleGeneration?.status === "cancelled"
           ? "Generation stopped"
           : "Generating...";
+  const generationErrorDetail =
+    visibleGeneration?.status === "failed" && visibleGeneration.error
+      ? coerceTextContent(visibleGeneration.error)
+      : "";
+  const generationStatusText = generationErrorDetail
+    ? `${generationStatusLabel}: ${generationErrorDetail}`
+    : generationStatusLabel;
+  const canContinueVisibleGeneration =
+    visibleGeneration?.status !== "failed" ||
+    Boolean(coerceTextContent(visibleGeneration?.assistant_message?.content).trim());
 
   return (
     <div className="chat-workspace">
@@ -671,7 +697,7 @@ export function ChatPage() {
         {visibleGeneration && (
           <div className="generation-status-bar">
             <span className="generation-dot" aria-hidden="true" />
-            <span className="min-w-0 flex-1 truncate">{generationStatusLabel}</span>
+            <span className="min-w-0 flex-1 truncate" title={generationStatusText}>{generationStatusText}</span>
             {isGenerationRunning ? (
               <button className="generation-action" onClick={handleStopGeneration} type="button">
                 <Square size={14} />
@@ -683,10 +709,12 @@ export function ChatPage() {
                   <RefreshCw size={14} />
                   Retry
                 </button>
-                <button className="generation-action" onClick={handleContinue} type="button">
-                  <CornerDownRight size={14} />
-                  Continue
-                </button>
+                {canContinueVisibleGeneration && (
+                  <button className="generation-action" onClick={handleContinue} type="button">
+                    <CornerDownRight size={14} />
+                    Continue
+                  </button>
+                )}
               </>
             )}
           </div>
