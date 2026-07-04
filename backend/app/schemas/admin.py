@@ -11,6 +11,22 @@ class AdminSubscriptionSummary(BaseModel):
     expiry_status: str
 
 
+class AdminQuotaRead(BaseModel):
+    user_id: str
+    user_name: str
+    user_email: EmailStr
+    status: str
+    plan_name: str
+    token_limit_monthly: int
+    tokens_used_monthly: int
+    token_balance: int
+    bonus_tokens: int
+    daily_message_limit: int
+    messages_used_today: int
+    quota_updated_by: str | None = None
+    quota_updated_at: datetime | None = None
+
+
 class AdminUserUsageSummary(BaseModel):
     total_prompts: int = 0
     prompt_tokens: int = 0
@@ -31,6 +47,7 @@ class AdminUserRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     subscription: AdminSubscriptionSummary | None = None
+    quota: AdminQuotaRead | None = None
     usage: AdminUserUsageSummary | None = None
 
 
@@ -51,6 +68,24 @@ class AdminCreateUser(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     role: str = Field(pattern="^(admin|super_admin)$")
+
+
+class AdminQuotaUpdate(BaseModel):
+    token_limit_monthly: int | None = Field(default=None, ge=0)
+    daily_message_limit: int | None = Field(default=None, ge=0)
+    bonus_tokens: int | None = Field(default=None, ge=0)
+    plan_name: str | None = Field(default=None, min_length=1, max_length=64)
+    force: bool = False
+
+    @field_validator("plan_name")
+    @classmethod
+    def normalize_plan_name(cls, value: str | None) -> str | None:
+        return value.strip() if value else value
+
+
+class AdminTokenAdjustment(BaseModel):
+    amount: int = Field(ge=0)
+    reason: str = Field(default="", max_length=255)
 
 
 class TokenUsageSummary(BaseModel):

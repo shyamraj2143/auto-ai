@@ -1,15 +1,38 @@
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.admin_control import FeatureFlag, PlanLimit, UsageLog, UserSubscription
-from app.models.api_usage import APIUsage
+from app.models.admin_control import AuditLog, FeatureFlag, PlanLimit, UsageLog, UserSubscription
 from app.models.user import User
 
 
 PLAN_NAMES = {"free", "pro", "pro-plus", "admin"}
+TOKEN_LIMIT_EXCEEDED_MESSAGE = "Your token limit is over. Please upgrade or contact admin."
+
+QUOTA_DEFAULTS: dict[str, dict[str, int | str]] = {
+    "free": {
+        "plan_name": "Free",
+        "token_limit_monthly": 10000,
+        "daily_message_limit": 25,
+    },
+    "pro": {
+        "plan_name": "Pro",
+        "token_limit_monthly": 100000,
+        "daily_message_limit": 200,
+    },
+    "pro-plus": {
+        "plan_name": "Pro Plus",
+        "token_limit_monthly": 500000,
+        "daily_message_limit": 1000,
+    },
+    "admin": {
+        "plan_name": "Admin",
+        "token_limit_monthly": 0,
+        "daily_message_limit": 0,
+    },
+}
 
 DEFAULT_PLAN_LIMITS: dict[str, dict[str, int | bool]] = {
     "free": {
@@ -73,6 +96,10 @@ def normalize_plan(plan: str) -> str:
     return value
 
 
+def quota_plan_defaults(plan: str) -> dict[str, int | str]:
+    return QUOTA_DEFAULTS.get(plan.strip().lower(), QUOTA_DEFAULTS["free"])
+
+
 def infer_provider_from_model(model: str) -> str:
     value = (model or "").lower()
     if "gemini" in value:
@@ -113,17 +140,109 @@ def ensure_admin_defaults(db: Session) -> None:
 def ensure_user_subscription(db: Session, user: User) -> UserSubscription:
     subscription = db.scalar(select(UserSubscription).where(UserSubscription.user_id == user.id))
     if subscription:
+        refresh_quota_periods(subscription)
+        recalculate_token_balance(subscription)
         return subscription
     plan = "admin" if user.role in {"admin", "super_admin"} else "free"
+    defaults = quota_plan_defaults(plan)
     subscription = UserSubscription(
         user_id=user.id,
         plan=plan,
         is_active=True,
         payment_status="admin" if plan == "admin" else "free",
+        plan_name=str(defaults["plan_name"]),
+        token_limit_monthly=int(defaults["token_limit_monthly"]),
+        daily_message_limit=int(defaults["daily_message_limit"]),
+        tokens_used_monthly=0,
+        bonus_tokens=0,
+        messages_used_today=0,
     )
+    recalculate_token_balance(subscription)
     db.add(subscription)
     db.flush()
     return subscription
+
+
+def current_month_key() -> str:
+    return datetime.utcnow().strftime("%Y-%m")
+
+
+def current_day_key() -> str:
+    return datetime.utcnow().strftime("%Y-%m-%d")
+
+
+def recalculate_token_balance(subscription: UserSubscription) -> None:
+    if subscription.token_limit_monthly <= 0:
+        subscription.token_balance = 0
+        return
+    total_quota = subscription.token_limit_monthly + subscription.bonus_tokens
+    subscription.tokens_used_monthly = max(0, subscription.tokens_used_monthly)
+    subscription.token_balance = max(0, total_quota - subscription.tokens_used_monthly)
+
+
+def refresh_quota_periods(subscription: UserSubscription) -> bool:
+    changed = False
+    month_key = current_month_key()
+    day_key = current_day_key()
+    if subscription.token_usage_month != month_key:
+        subscription.tokens_used_monthly = 0
+        subscription.token_usage_month = month_key
+        changed = True
+    if subscription.messages_used_date != day_key:
+        subscription.messages_used_today = 0
+        subscription.messages_used_date = day_key
+        changed = True
+    recalculate_token_balance(subscription)
+    return changed
+
+
+def enforce_user_quota(db: Session, user: User, estimated_input_tokens: int = 0) -> UserSubscription:
+    subscription = ensure_user_subscription(db, user)
+    refresh_quota_periods(subscription)
+    if subscription.daily_message_limit > 0 and subscription.messages_used_today >= subscription.daily_message_limit:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Daily message limit reached. Please upgrade or contact admin.",
+        )
+    if subscription.token_limit_monthly > 0:
+        total_quota = subscription.token_limit_monthly + subscription.bonus_tokens
+        if subscription.tokens_used_monthly >= total_quota or subscription.token_balance <= 0:
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=TOKEN_LIMIT_EXCEEDED_MESSAGE)
+        if estimated_input_tokens > 0 and subscription.tokens_used_monthly + estimated_input_tokens > total_quota:
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=TOKEN_LIMIT_EXCEEDED_MESSAGE)
+    return subscription
+
+
+def track_quota_usage(db: Session, user_id: str, total_tokens: int) -> None:
+    user = db.get(User, user_id)
+    if not user:
+        return
+    subscription = ensure_user_subscription(db, user)
+    refresh_quota_periods(subscription)
+    subscription.tokens_used_monthly = max(0, subscription.tokens_used_monthly + max(0, total_tokens))
+    subscription.messages_used_today = max(0, subscription.messages_used_today + 1)
+    subscription.updated_at = datetime.utcnow()
+    recalculate_token_balance(subscription)
+
+
+def log_quota_action(
+    db: Session,
+    *,
+    actor_user_id: str,
+    target_user_id: str,
+    action: str,
+    reason: str = "",
+    metadata: dict | None = None,
+) -> None:
+    db.add(
+        AuditLog(
+            actor_user_id=actor_user_id,
+            target_user_id=target_user_id,
+            action=action,
+            reason=reason.strip(),
+            audit_metadata=metadata or {},
+        )
+    )
 
 
 def is_feature_enabled(db: Session, key: str, user_id: str | None = None) -> bool:
@@ -157,6 +276,7 @@ def enforce_plan_and_feature_access(
     max_models: int | None = None,
 ) -> None:
     if user.role in {"admin", "super_admin"}:
+        enforce_user_quota(db, user)
         return
 
     subscription = ensure_user_subscription(db, user)
@@ -193,31 +313,7 @@ def enforce_plan_and_feature_access(
         if not is_feature_enabled(db, "web_search", user.id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Web search is disabled for this account.")
 
-    now = datetime.utcnow()
-    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    daily_usage = db.execute(
-        select(func.count(APIUsage.id), func.coalesce(func.sum(APIUsage.total_tokens), 0)).where(
-            APIUsage.user_id == user.id,
-            APIUsage.created_at >= day_start,
-        )
-    ).one()
-    monthly_usage = db.execute(
-        select(func.count(APIUsage.id), func.coalesce(func.sum(APIUsage.total_tokens), 0)).where(
-            APIUsage.user_id == user.id,
-            APIUsage.created_at >= month_start,
-        )
-    ).one()
-
-    if limits:
-        if limits.daily_prompt_limit > 0 and int(daily_usage[0] or 0) >= limits.daily_prompt_limit:
-            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Daily prompt limit reached.")
-        if limits.monthly_prompt_limit > 0 and int(monthly_usage[0] or 0) >= limits.monthly_prompt_limit:
-            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Monthly prompt limit reached.")
-        if limits.daily_token_limit > 0 and int(daily_usage[1] or 0) >= limits.daily_token_limit:
-            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Daily token limit reached.")
-        if limits.monthly_token_limit > 0 and int(monthly_usage[1] or 0) >= limits.monthly_token_limit:
-            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Monthly token limit reached.")
+    enforce_user_quota(db, user)
 
 
 def record_usage_log(db: Session, user_id: str, endpoint: str, model: str, usage: dict[str, int]) -> None:

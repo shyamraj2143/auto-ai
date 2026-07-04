@@ -220,6 +220,7 @@ export type AdminUser = {
     payment_status: string;
     expiry_status: string;
   } | null;
+  quota?: AdminQuota | null;
   usage?: {
     total_prompts: number;
     prompt_tokens: number;
@@ -230,6 +231,22 @@ export type AdminUser = {
 };
 
 export type AdminPlanName = "free" | "pro" | "pro-plus" | "admin";
+
+export type AdminQuota = {
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  status: "active" | "blocked";
+  plan_name: string;
+  token_limit_monthly: number;
+  tokens_used_monthly: number;
+  token_balance: number;
+  bonus_tokens: number;
+  daily_message_limit: number;
+  messages_used_today: number;
+  quota_updated_by?: string | null;
+  quota_updated_at?: string | null;
+};
 
 export type AdminSubscription = {
   id: string;

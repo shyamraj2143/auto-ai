@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -20,6 +20,17 @@ class UserSubscription(Base):
     razorpay_payment_id: Mapped[str] = mapped_column(String(120), nullable=True)
     stripe_customer_id: Mapped[str] = mapped_column(String(120), nullable=True)
     stripe_payment_id: Mapped[str] = mapped_column(String(120), nullable=True)
+    token_limit_monthly: Mapped[int] = mapped_column(Integer, default=10000, nullable=False)
+    tokens_used_monthly: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    token_balance: Mapped[int] = mapped_column(Integer, default=10000, nullable=False)
+    bonus_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    daily_message_limit: Mapped[int] = mapped_column(Integer, default=25, nullable=False)
+    messages_used_today: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    plan_name: Mapped[str] = mapped_column(String(64), default="Free", nullable=False)
+    quota_updated_by: Mapped[str] = mapped_column(String(36), nullable=True)
+    quota_updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    token_usage_month: Mapped[str] = mapped_column(String(7), default="", nullable=False)
+    messages_used_date: Mapped[str] = mapped_column(String(10), default="", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -92,3 +103,15 @@ class PaymentRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
     user = relationship("User", back_populates="payment_records")
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    actor_user_id: Mapped[str] = mapped_column(String(36), index=True, nullable=True)
+    target_user_id: Mapped[str] = mapped_column(String(36), index=True, nullable=True)
+    action: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    audit_metadata: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

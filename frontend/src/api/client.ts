@@ -5,6 +5,7 @@ import type {
   AdminPaymentRecord,
   AdminPlanLimit,
   AdminPlanName,
+  AdminQuota,
   AdminStats,
   AdminSubscription,
   AdminUsageResponse,
@@ -579,6 +580,39 @@ export const api = {
     return apiFetch<AdminUser[]>(`/admin/users${suffix}`, { token, operation: "admin.users.list" });
   },
   adminUser: (token: string, id: string) => apiFetch<AdminUser>(`/admin/users/${id}`, { token, operation: "admin.users.get" }),
+  adminUserQuota: (token: string, id: string) =>
+    apiFetch<AdminQuota>(`/admin/users/${id}/quota`, { token, operation: "admin.users.quota" }),
+  updateAdminUserQuota: (
+    token: string,
+    id: string,
+    payload: Partial<Pick<AdminQuota, "token_limit_monthly" | "daily_message_limit" | "bonus_tokens" | "plan_name">> & { force?: boolean }
+  ) =>
+    apiFetch<AdminQuota>(`/admin/users/${id}/quota`, {
+      method: "PATCH",
+      token,
+      operation: "admin.users.quota.update",
+      body: JSON.stringify(payload)
+    }),
+  addAdminUserTokens: (token: string, id: string, payload: { amount: number; reason: string }) =>
+    apiFetch<AdminQuota>(`/admin/users/${id}/tokens/add`, {
+      method: "POST",
+      token,
+      operation: "admin.users.tokens.add",
+      body: JSON.stringify(payload)
+    }),
+  deductAdminUserTokens: (token: string, id: string, payload: { amount: number; reason: string }) =>
+    apiFetch<AdminQuota>(`/admin/users/${id}/tokens/deduct`, {
+      method: "POST",
+      token,
+      operation: "admin.users.tokens.deduct",
+      body: JSON.stringify(payload)
+    }),
+  resetAdminUserTokens: (token: string, id: string) =>
+    apiFetch<AdminQuota>(`/admin/users/${id}/tokens/reset`, {
+      method: "POST",
+      token,
+      operation: "admin.users.tokens.reset"
+    }),
   updateAdminUserStatus: (token: string, id: string, isActive: boolean) =>
     apiFetch<AdminUser>(`/admin/users/${id}/status`, {
       method: "PATCH",

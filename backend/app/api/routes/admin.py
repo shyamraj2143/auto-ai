@@ -26,10 +26,13 @@ from app.schemas.admin import (
     AdminPaymentRecordRead,
     AdminPlanLimitRead,
     AdminPlanLimitUpdate,
+    AdminQuotaRead,
+    AdminQuotaUpdate,
     AdminStats,
     AdminSubscriptionRead,
     AdminSubscriptionSummary,
     AdminSubscriptionUpdate,
+    AdminTokenAdjustment,
     AdminUsageProviderSummary,
     AdminUsageResponse,
     AdminUsageTimeBucket,
@@ -48,7 +51,11 @@ from app.services.admin_control import (
     ensure_user_subscription,
     expiry_status,
     infer_provider_from_model,
+    log_quota_action,
     normalize_plan,
+    quota_plan_defaults,
+    recalculate_token_balance,
+    refresh_quota_periods,
 )
 
 
@@ -76,6 +83,7 @@ def usage_for_user(db: Session, user_id: str) -> AdminUserUsageSummary:
 
 def to_admin_user(db: Session, user: User) -> AdminUserRead:
     subscription = ensure_user_subscription(db, user)
+    refresh_quota_periods(subscription)
     return AdminUserRead(
         id=user.id,
         email=user.email,
@@ -94,8 +102,53 @@ def to_admin_user(db: Session, user: User) -> AdminUserRead:
             payment_status=subscription.payment_status,
             expiry_status=expiry_status(subscription.expires_at),
         ),
+        quota=to_quota_read(user, subscription),
         usage=usage_for_user(db, user.id),
     )
+
+
+def to_quota_read(user: User, subscription: UserSubscription) -> AdminQuotaRead:
+    recalculate_token_balance(subscription)
+    return AdminQuotaRead(
+        user_id=user.id,
+        user_name=user.name,
+        user_email=user.email,
+        status="active" if user.is_active else "blocked",
+        plan_name=subscription.plan_name,
+        token_limit_monthly=subscription.token_limit_monthly,
+        tokens_used_monthly=subscription.tokens_used_monthly,
+        token_balance=subscription.token_balance,
+        bonus_tokens=subscription.bonus_tokens,
+        daily_message_limit=subscription.daily_message_limit,
+        messages_used_today=subscription.messages_used_today,
+        quota_updated_by=subscription.quota_updated_by,
+        quota_updated_at=subscription.quota_updated_at,
+    )
+
+
+def get_user_or_404(db: Session, user_id: str) -> User:
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return user
+
+
+def normalized_plan_from_name(plan_name: str) -> str | None:
+    value = plan_name.strip().lower().replace("_", "-")
+    aliases = {
+        "free": "free",
+        "pro": "pro",
+        "pro plus": "pro-plus",
+        "pro-plus": "pro-plus",
+        "admin": "admin",
+    }
+    return aliases.get(value)
+
+
+def mark_quota_updated(subscription: UserSubscription, current_admin: User) -> None:
+    subscription.quota_updated_by = current_admin.id
+    subscription.quota_updated_at = datetime.utcnow()
+    subscription.updated_at = datetime.utcnow()
 
 
 def to_subscription_read(subscription: UserSubscription, user: User) -> AdminSubscriptionRead:
@@ -235,9 +288,18 @@ def create_admin_user(
         db.add(user)
         db.flush()
         subscription = ensure_user_subscription(db, user)
+        defaults = quota_plan_defaults("admin")
         subscription.plan = "admin"
+        subscription.plan_name = str(defaults["plan_name"])
+        subscription.token_limit_monthly = int(defaults["token_limit_monthly"])
+        subscription.daily_message_limit = int(defaults["daily_message_limit"])
+        subscription.tokens_used_monthly = 0
+        subscription.bonus_tokens = 0
+        subscription.messages_used_today = 0
         subscription.is_active = True
         subscription.payment_status = "admin"
+        mark_quota_updated(subscription, current_admin)
+        recalculate_token_balance(subscription)
         db.commit()
     except IntegrityError as exc:
         db.rollback()
@@ -272,12 +334,165 @@ def list_users(
 
 @router.get("/users/{user_id}", response_model=AdminUserRead)
 def get_user(user_id: str, _: User = Depends(get_current_admin), db: Session = Depends(get_db)) -> AdminUserRead:
-    user = db.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    user = get_user_or_404(db, user_id)
     result = to_admin_user(db, user)
     db.commit()
     return result
+
+
+@router.get("/users/{user_id}/quota", response_model=AdminQuotaRead)
+def get_user_quota(
+    user_id: str,
+    _: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AdminQuotaRead:
+    user = get_user_or_404(db, user_id)
+    subscription = ensure_user_subscription(db, user)
+    refresh_quota_periods(subscription)
+    result = to_quota_read(user, subscription)
+    db.commit()
+    return result
+
+
+@router.patch("/users/{user_id}/quota", response_model=AdminQuotaRead)
+def update_user_quota(
+    user_id: str,
+    payload: AdminQuotaUpdate,
+    force: bool = Query(default=False),
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AdminQuotaRead:
+    user = get_user_or_404(db, user_id)
+    subscription = ensure_user_subscription(db, user)
+    refresh_quota_periods(subscription)
+    force_update = force or payload.force
+    before = to_quota_read(user, subscription).model_dump(mode="json")
+
+    if payload.token_limit_monthly is not None:
+        next_limit = payload.token_limit_monthly
+        if next_limit > 0 and next_limit + subscription.bonus_tokens < subscription.tokens_used_monthly and not force_update:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Token limit cannot be less than tokens already used unless force=true.",
+            )
+        subscription.token_limit_monthly = next_limit
+    if payload.daily_message_limit is not None:
+        subscription.daily_message_limit = payload.daily_message_limit
+    if payload.bonus_tokens is not None:
+        if subscription.token_limit_monthly > 0 and subscription.token_limit_monthly + payload.bonus_tokens < subscription.tokens_used_monthly and not force_update:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Total token quota cannot be less than tokens already used unless force=true.",
+            )
+        subscription.bonus_tokens = payload.bonus_tokens
+    if payload.plan_name is not None:
+        subscription.plan_name = payload.plan_name
+        normalized_plan = normalized_plan_from_name(payload.plan_name)
+        if normalized_plan:
+            subscription.plan = normalized_plan
+
+    mark_quota_updated(subscription, current_admin)
+    recalculate_token_balance(subscription)
+    after = to_quota_read(user, subscription).model_dump(mode="json")
+    log_quota_action(
+        db,
+        actor_user_id=current_admin.id,
+        target_user_id=user.id,
+        action="quota.update",
+        metadata={"before": before, "after": after, "force": force_update},
+    )
+    db.commit()
+    db.refresh(subscription)
+    return to_quota_read(user, subscription)
+
+
+@router.post("/users/{user_id}/tokens/add", response_model=AdminQuotaRead)
+def add_user_tokens(
+    user_id: str,
+    payload: AdminTokenAdjustment,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AdminQuotaRead:
+    user = get_user_or_404(db, user_id)
+    subscription = ensure_user_subscription(db, user)
+    refresh_quota_periods(subscription)
+    before = to_quota_read(user, subscription).model_dump(mode="json")
+    subscription.bonus_tokens += payload.amount
+    mark_quota_updated(subscription, current_admin)
+    recalculate_token_balance(subscription)
+    after = to_quota_read(user, subscription).model_dump(mode="json")
+    log_quota_action(
+        db,
+        actor_user_id=current_admin.id,
+        target_user_id=user.id,
+        action="quota.tokens.add",
+        reason=payload.reason,
+        metadata={"amount": payload.amount, "before": before, "after": after},
+    )
+    db.commit()
+    db.refresh(subscription)
+    return to_quota_read(user, subscription)
+
+
+@router.post("/users/{user_id}/tokens/deduct", response_model=AdminQuotaRead)
+def deduct_user_tokens(
+    user_id: str,
+    payload: AdminTokenAdjustment,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AdminQuotaRead:
+    user = get_user_or_404(db, user_id)
+    subscription = ensure_user_subscription(db, user)
+    refresh_quota_periods(subscription)
+    if subscription.token_limit_monthly <= 0 and payload.amount > 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot deduct tokens from an unlimited quota.")
+    if payload.amount > subscription.token_balance:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot deduct more than the user's token balance.")
+    before = to_quota_read(user, subscription).model_dump(mode="json")
+    subscription.tokens_used_monthly = max(0, subscription.tokens_used_monthly + payload.amount)
+    mark_quota_updated(subscription, current_admin)
+    recalculate_token_balance(subscription)
+    after = to_quota_read(user, subscription).model_dump(mode="json")
+    log_quota_action(
+        db,
+        actor_user_id=current_admin.id,
+        target_user_id=user.id,
+        action="quota.tokens.deduct",
+        reason=payload.reason,
+        metadata={"amount": payload.amount, "before": before, "after": after},
+    )
+    db.commit()
+    db.refresh(subscription)
+    return to_quota_read(user, subscription)
+
+
+@router.post("/users/{user_id}/tokens/reset", response_model=AdminQuotaRead)
+def reset_user_tokens(
+    user_id: str,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AdminQuotaRead:
+    user = get_user_or_404(db, user_id)
+    subscription = ensure_user_subscription(db, user)
+    refresh_quota_periods(subscription)
+    before = to_quota_read(user, subscription).model_dump(mode="json")
+    subscription.tokens_used_monthly = 0
+    subscription.messages_used_today = 0
+    subscription.token_usage_month = datetime.utcnow().strftime("%Y-%m")
+    subscription.messages_used_date = datetime.utcnow().strftime("%Y-%m-%d")
+    mark_quota_updated(subscription, current_admin)
+    recalculate_token_balance(subscription)
+    after = to_quota_read(user, subscription).model_dump(mode="json")
+    log_quota_action(
+        db,
+        actor_user_id=current_admin.id,
+        target_user_id=user.id,
+        action="quota.tokens.reset",
+        metadata={"before": before, "after": after},
+    )
+    db.commit()
+    db.refresh(subscription)
+    return to_quota_read(user, subscription)
 
 
 @router.patch("/users/{user_id}/status", response_model=AdminUserRead)
@@ -287,9 +502,7 @@ def update_user_status(
     current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> AdminUserRead:
-    user = db.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    user = get_user_or_404(db, user_id)
     if user.id == current_admin.id and not payload.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot block your own admin account")
     user.is_active = payload.is_active
@@ -318,9 +531,15 @@ def update_user_role(
     user.updated_at = datetime.utcnow()
     subscription = ensure_user_subscription(db, user)
     if payload.role in {"admin", "super_admin"}:
+        defaults = quota_plan_defaults("admin")
         subscription.plan = "admin"
+        subscription.plan_name = str(defaults["plan_name"])
+        subscription.token_limit_monthly = int(defaults["token_limit_monthly"])
+        subscription.daily_message_limit = int(defaults["daily_message_limit"])
         subscription.is_active = True
         subscription.payment_status = "admin"
+        mark_quota_updated(subscription, current_admin)
+        recalculate_token_balance(subscription)
     db.commit()
     db.refresh(user)
     return to_admin_user(db, user)
@@ -404,6 +623,7 @@ def update_subscription(
     updates = payload.model_dump(exclude_unset=True)
     if "plan" in updates and updates["plan"] is not None:
         subscription.plan = normalize_plan(updates["plan"])
+        subscription.plan_name = str(quota_plan_defaults(subscription.plan)["plan_name"])
     for field in (
         "is_active",
         "expires_at",

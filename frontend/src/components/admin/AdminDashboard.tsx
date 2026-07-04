@@ -3,6 +3,7 @@ import {
   Activity,
   Ban,
   BarChart3,
+  Coins,
   CreditCard,
   Database,
   KeyRound,
@@ -24,6 +25,7 @@ import type {
   AdminPaymentRecord,
   AdminPlanLimit,
   AdminPlanName,
+  AdminQuota,
   AdminStats,
   AdminSubscription,
   AdminUsageResponse,
@@ -31,11 +33,12 @@ import type {
   UserRole
 } from "../../types";
 
-type AdminSection = "dashboard" | "users" | "subscriptions" | "usage" | "features" | "payments" | "settings";
+type AdminSection = "dashboard" | "users" | "tokens" | "subscriptions" | "usage" | "features" | "payments" | "settings";
 
 const sections: Array<{ id: AdminSection; label: string; icon: ReactNode }> = [
   { id: "dashboard", label: "Dashboard", icon: <BarChart3 size={15} /> },
   { id: "users", label: "Users", icon: <Users size={15} /> },
+  { id: "tokens", label: "Token Management", icon: <Coins size={15} /> },
   { id: "subscriptions", label: "Subscriptions", icon: <CreditCard size={15} /> },
   { id: "usage", label: "Usage Analytics", icon: <Activity size={15} /> },
   { id: "features", label: "Feature Controls", icon: <SlidersHorizontal size={15} /> },
@@ -44,6 +47,24 @@ const sections: Array<{ id: AdminSection; label: string; icon: ReactNode }> = [
 ];
 
 const plans: AdminPlanName[] = ["free", "pro", "pro-plus", "admin"];
+
+type QuotaForm = {
+  plan_name: string;
+  token_limit_monthly: string;
+  daily_message_limit: string;
+  bonus_tokens: string;
+  addAmount: string;
+  addReason: string;
+  deductAmount: string;
+  deductReason: string;
+};
+
+type ConfirmAction = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  onConfirm: () => Promise<void>;
+};
 
 function StatTile({ icon, label, value }: { icon: ReactNode; label: string; value: string | number }) {
   return (
@@ -66,6 +87,30 @@ function dateInputValue(value?: string | null) {
 
 function money(cents = 0, currency = "INR") {
   return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(cents / 100);
+}
+
+function numberValue(value: string) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 0;
+}
+
+function quotaToForm(quota?: AdminQuota | null): QuotaForm {
+  return {
+    plan_name: quota?.plan_name ?? "Free",
+    token_limit_monthly: String(quota?.token_limit_monthly ?? 10000),
+    daily_message_limit: String(quota?.daily_message_limit ?? 25),
+    bonus_tokens: String(quota?.bonus_tokens ?? 0),
+    addAmount: "",
+    addReason: "",
+    deductAmount: "",
+    deductReason: ""
+  };
+}
+
+function quotaProgress(quota?: AdminQuota | null) {
+  if (!quota || quota.token_limit_monthly <= 0) return 0;
+  const total = quota.token_limit_monthly + quota.bonus_tokens;
+  return total > 0 ? Math.min(100, Math.round((quota.tokens_used_monthly / total) * 100)) : 0;
 }
 
 function StatusPill({ active, label }: { active: boolean; label: string }) {
@@ -98,6 +143,7 @@ export function AdminDashboard() {
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [featureUserId, setFeatureUserId] = useState("");
   const [query, setQuery] = useState("");
+  const [quotaQuery, setQuotaQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [createAdminForm, setCreateAdminForm] = useState({
@@ -111,6 +157,8 @@ export function AdminDashboard() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [quotaForms, setQuotaForms] = useState<Record<string, QuotaForm>>({});
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
   const isSuperAdmin = user?.role === "super_admin";
 
@@ -166,9 +214,141 @@ export function AdminDashboard() {
     });
   }, [query, roleFilter, statusFilter, users]);
 
+  const filteredQuotaUsers = useMemo(() => {
+    const term = quotaQuery.trim().toLowerCase();
+    return users.filter((account) => {
+      if (!term) return true;
+      return account.name.toLowerCase().includes(term) || account.email.toLowerCase().includes(term);
+    });
+  }, [quotaQuery, users]);
+
   function upsertUser(account: AdminUser) {
     setUsers((current) => current.map((item) => (item.id === account.id ? account : item)));
     setSelectedUser((current) => (current?.id === account.id ? account : current));
+  }
+
+  function updateQuotaForm(userId: string, patch: Partial<QuotaForm>) {
+    setQuotaForms((current) => ({
+      ...current,
+      [userId]: { ...(current[userId] ?? quotaToForm(users.find((item) => item.id === userId)?.quota)), ...patch }
+    }));
+  }
+
+  function upsertQuota(quota: AdminQuota) {
+    setUsers((current) =>
+      current.map((account) =>
+        account.id === quota.user_id
+          ? {
+              ...account,
+              status: quota.status,
+              quota
+            }
+          : account
+      )
+    );
+    setSelectedUser((current) => (current?.id === quota.user_id ? { ...current, quota } : current));
+    setQuotaForms((current) => ({ ...current, [quota.user_id]: { ...(current[quota.user_id] ?? quotaToForm(quota)), ...quotaToForm(quota) } }));
+  }
+
+  async function saveQuota(account: AdminUser, force = false) {
+    if (!token || !account.quota) return;
+    const form = quotaForms[account.id] ?? quotaToForm(account.quota);
+    const payload = {
+      plan_name: form.plan_name.trim() || "Free",
+      token_limit_monthly: numberValue(form.token_limit_monthly),
+      daily_message_limit: numberValue(form.daily_message_limit),
+      bonus_tokens: numberValue(form.bonus_tokens),
+      force
+    };
+    if (!force && payload.token_limit_monthly > 0 && payload.token_limit_monthly + payload.bonus_tokens < account.quota.tokens_used_monthly) {
+      setConfirmAction({
+        title: "Force quota change",
+        message: `${account.email} has already used ${account.quota.tokens_used_monthly.toLocaleString()} tokens. Save anyway?`,
+        confirmLabel: "Save anyway",
+        onConfirm: () => saveQuota(account, true)
+      });
+      return;
+    }
+    setBusyId(`quota-${account.id}`);
+    setError("");
+    setSuccess("");
+    try {
+      const updated = await api.updateAdminUserQuota(token, account.id, payload);
+      upsertQuota(updated);
+      setSuccess(`Quota updated for ${account.email}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to update quota");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function addTokens(account: AdminUser) {
+    if (!token || !account.quota) return;
+    const form = quotaForms[account.id] ?? quotaToForm(account.quota);
+    const amount = numberValue(form.addAmount);
+    setBusyId(`quota-add-${account.id}`);
+    setError("");
+    setSuccess("");
+    try {
+      const updated = await api.addAdminUserTokens(token, account.id, { amount, reason: form.addReason.trim() });
+      upsertQuota(updated);
+      updateQuotaForm(account.id, { addAmount: "", addReason: "" });
+      setSuccess(`${amount.toLocaleString()} tokens added to ${account.email}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to add tokens");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function deductTokens(account: AdminUser) {
+    if (!token || !account.quota) return;
+    const form = quotaForms[account.id] ?? quotaToForm(account.quota);
+    const amount = numberValue(form.deductAmount);
+    setConfirmAction({
+      title: "Deduct tokens",
+      message: `Deduct ${amount.toLocaleString()} tokens from ${account.email}?`,
+      confirmLabel: "Deduct",
+      onConfirm: async () => {
+        setBusyId(`quota-deduct-${account.id}`);
+        setError("");
+        setSuccess("");
+        try {
+          const updated = await api.deductAdminUserTokens(token, account.id, { amount, reason: form.deductReason.trim() });
+          upsertQuota(updated);
+          updateQuotaForm(account.id, { deductAmount: "", deductReason: "" });
+          setSuccess(`${amount.toLocaleString()} tokens deducted from ${account.email}.`);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Unable to deduct tokens");
+        } finally {
+          setBusyId(null);
+        }
+      }
+    });
+  }
+
+  async function resetTokens(account: AdminUser) {
+    if (!token || !account.quota) return;
+    setConfirmAction({
+      title: "Reset monthly usage",
+      message: `Reset monthly token and daily message usage for ${account.email}?`,
+      confirmLabel: "Reset",
+      onConfirm: async () => {
+        setBusyId(`quota-reset-${account.id}`);
+        setError("");
+        setSuccess("");
+        try {
+          const updated = await api.resetAdminUserTokens(token, account.id);
+          upsertQuota(updated);
+          setSuccess(`Usage reset for ${account.email}.`);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Unable to reset usage");
+        } finally {
+          setBusyId(null);
+        }
+      }
+    });
   }
 
   async function setUserStatus(account: AdminUser, isActive: boolean) {
@@ -582,6 +762,151 @@ export function AdminDashboard() {
             </section>
           )}
 
+          {activeSection === "tokens" && (
+            <section className="rounded-lg border border-white/10 bg-white/[0.045]">
+              <div className="border-b border-white/10 p-4">
+                <SectionTitle title="User Token Management" subtitle="Adjust monthly quota, bonus tokens, daily messages, and usage resets" />
+                <div className="relative max-w-md">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
+                  <input
+                    className="input-dark h-10 pl-9"
+                    placeholder="Search users by name or email"
+                    value={quotaQuery}
+                    onChange={(event) => setQuotaQuery(event.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1440px] border-collapse text-left text-sm">
+                  <thead className="bg-white/[0.035] text-xs uppercase text-slate-400">
+                    <tr>
+                      <th className="px-4 py-3">User</th>
+                      <th className="px-4 py-3">Plan</th>
+                      <th className="px-4 py-3">Monthly limit</th>
+                      <th className="px-4 py-3">Used / Balance</th>
+                      <th className="px-4 py-3">Bonus</th>
+                      <th className="px-4 py-3">Daily messages</th>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Add tokens</th>
+                      <th className="px-4 py-3">Deduct tokens</th>
+                      <th className="px-4 py-3">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/10">
+                    {filteredQuotaUsers.map((account) => {
+                      const quota = account.quota;
+                      const form = quotaForms[account.id] ?? quotaToForm(quota);
+                      const busy = busyId?.includes(account.id);
+                      const progress = quotaProgress(quota);
+                      return (
+                        <tr key={account.id} className="align-top text-slate-200">
+                          <td className="px-4 py-3">
+                            <div className="font-semibold text-white">{account.name}</div>
+                            <div className="text-xs text-slate-400">{account.email}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <input
+                              className="input-dark h-9 min-w-[120px]"
+                              value={form.plan_name}
+                              onChange={(event) => updateQuotaForm(account.id, { plan_name: event.target.value })}
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <input
+                              className="input-dark h-9 min-w-[130px]"
+                              min={0}
+                              type="number"
+                              value={form.token_limit_monthly}
+                              onChange={(event) => updateQuotaForm(account.id, { token_limit_monthly: event.target.value })}
+                            />
+                          </td>
+                          <td className="px-4 py-3 min-w-[220px]">
+                            <div className="mb-2 flex items-center justify-between gap-3 text-xs">
+                              <span>{(quota?.tokens_used_monthly ?? 0).toLocaleString()} used</span>
+                              <span>{quota?.token_limit_monthly === 0 ? "Unlimited" : `${(quota?.token_balance ?? 0).toLocaleString()} left`}</span>
+                            </div>
+                            <div className="h-2 rounded-full bg-slate-800">
+                              <div className="h-2 rounded-full bg-cyan-300" style={{ width: `${progress}%` }} />
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <input
+                              className="input-dark h-9 min-w-[110px]"
+                              min={0}
+                              type="number"
+                              value={form.bonus_tokens}
+                              onChange={(event) => updateQuotaForm(account.id, { bonus_tokens: event.target.value })}
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <input
+                                className="input-dark h-9 w-24"
+                                min={0}
+                                type="number"
+                                value={form.daily_message_limit}
+                                onChange={(event) => updateQuotaForm(account.id, { daily_message_limit: event.target.value })}
+                              />
+                              <span className="text-xs text-slate-400">{quota?.messages_used_today ?? 0} used</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3"><StatusPill active={account.is_active} label={account.status} /></td>
+                          <td className="px-4 py-3">
+                            <div className="grid min-w-[190px] gap-2">
+                              <input
+                                className="input-dark h-9"
+                                min={0}
+                                placeholder="Amount"
+                                type="number"
+                                value={form.addAmount}
+                                onChange={(event) => updateQuotaForm(account.id, { addAmount: event.target.value })}
+                              />
+                              <input
+                                className="input-dark h-9"
+                                placeholder="Reason"
+                                value={form.addReason}
+                                onChange={(event) => updateQuotaForm(account.id, { addReason: event.target.value })}
+                              />
+                              <button className="chip-dark" disabled={busy} onClick={() => addTokens(account)} type="button">Add</button>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="grid min-w-[190px] gap-2">
+                              <input
+                                className="input-dark h-9"
+                                min={0}
+                                placeholder="Amount"
+                                type="number"
+                                value={form.deductAmount}
+                                onChange={(event) => updateQuotaForm(account.id, { deductAmount: event.target.value })}
+                              />
+                              <input
+                                className="input-dark h-9"
+                                placeholder="Reason"
+                                value={form.deductReason}
+                                onChange={(event) => updateQuotaForm(account.id, { deductReason: event.target.value })}
+                              />
+                              <button className="chip-dark" disabled={busy} onClick={() => deductTokens(account)} type="button">Deduct</button>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex min-w-[170px] flex-wrap gap-2">
+                              <button className="btn-secondary h-9" disabled={busy || !quota} onClick={() => saveQuota(account)} type="button">Save</button>
+                              <button className="chip-dark" disabled={busy || !quota} onClick={() => resetTokens(account)} type="button">Reset</button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {filteredQuotaUsers.length === 0 && (
+                      <tr><td className="px-4 py-6 text-sm text-slate-400" colSpan={10}>No users found.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+
           {activeSection === "subscriptions" && (
             <section className="rounded-lg border border-white/10 bg-white/[0.045]">
               <div className="border-b border-white/10 p-4">
@@ -816,6 +1141,28 @@ export function AdminDashboard() {
             </section>
           )}
         </>
+      )}
+      {confirmAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4">
+          <div className="w-full max-w-sm rounded-lg border border-white/10 bg-slate-950 p-5 shadow-2xl">
+            <h2 className="text-lg font-semibold text-white">{confirmAction.title}</h2>
+            <p className="mt-2 text-sm text-slate-300">{confirmAction.message}</p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button className="chip-dark" onClick={() => setConfirmAction(null)} type="button">Cancel</button>
+              <button
+                className="btn-primary h-10"
+                onClick={() => {
+                  const action = confirmAction;
+                  setConfirmAction(null);
+                  void action.onConfirm();
+                }}
+                type="button"
+              >
+                {confirmAction.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

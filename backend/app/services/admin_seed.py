@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import get_password_hash
 from app.models.user import User
-from app.services.admin_control import ensure_user_subscription
+from app.services.admin_control import ensure_user_subscription, quota_plan_defaults, recalculate_token_balance
 
 
 def _clean(value: str | None) -> str | None:
@@ -53,9 +53,17 @@ def create_admin_from_env(db: Session) -> User | None:
         db.add(user)
         db.flush()
         subscription = ensure_user_subscription(db, user)
+        defaults = quota_plan_defaults("admin")
         subscription.plan = "admin"
+        subscription.plan_name = str(defaults["plan_name"])
+        subscription.token_limit_monthly = int(defaults["token_limit_monthly"])
+        subscription.daily_message_limit = int(defaults["daily_message_limit"])
+        subscription.tokens_used_monthly = 0
+        subscription.bonus_tokens = 0
+        subscription.messages_used_today = 0
         subscription.is_active = True
         subscription.payment_status = "admin"
+        recalculate_token_balance(subscription)
         db.commit()
     except IntegrityError:
         db.rollback()

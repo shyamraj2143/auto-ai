@@ -30,7 +30,13 @@ from app.schemas.chat import (
     ResearchModelOptions,
 )
 from app.schemas.search import SearchResultBundle
-from app.services.admin_control import enforce_plan_and_feature_access, record_usage_log
+from app.services.admin_control import (
+    enforce_plan_and_feature_access,
+    enforce_user_quota,
+    infer_provider_from_model,
+    record_usage_log,
+    track_quota_usage,
+)
 from app.services.deep_research import deep_research_service
 from app.services.document_service import document_service
 from app.services.groq_service import groq_service
@@ -219,17 +225,64 @@ def record_usage(
     model: str,
     usage: dict[str, int],
 ) -> None:
+    provider = infer_provider_from_model(model)
+    input_tokens = int(usage.get("input_tokens", usage.get("prompt_tokens", 0)) or 0)
+    output_tokens = int(usage.get("output_tokens", usage.get("completion_tokens", 0)) or 0)
+    total_tokens = int(usage.get("total_tokens", input_tokens + output_tokens) or 0)
     db.add(
         APIUsage(
             user_id=user_id,
             endpoint=endpoint,
+            provider=provider,
             model=model,
-            prompt_tokens=usage.get("prompt_tokens", 0),
-            completion_tokens=usage.get("completion_tokens", 0),
-            total_tokens=usage.get("total_tokens", 0),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            prompt_tokens=input_tokens,
+            completion_tokens=output_tokens,
+            total_tokens=total_tokens,
         )
     )
-    record_usage_log(db, user_id, endpoint, model, usage)
+    normalized_usage = {
+        "prompt_tokens": input_tokens,
+        "completion_tokens": output_tokens,
+        "total_tokens": total_tokens,
+    }
+    record_usage_log(db, user_id, endpoint, model, normalized_usage)
+    track_quota_usage(db, user_id, total_tokens)
+
+
+def estimate_text_tokens(value: str | None) -> int:
+    if not value:
+        return 0
+    return max(1, (len(value) + 3) // 4)
+
+
+def estimate_message_tokens(messages: list[dict[str, str]]) -> int:
+    return sum(estimate_text_tokens(message.get("content")) for message in messages)
+
+
+def usage_with_estimate(
+    usage: dict[str, int],
+    *,
+    messages: list[dict[str, str]] | None = None,
+    output: str = "",
+) -> dict[str, int]:
+    input_tokens = int(usage.get("input_tokens", usage.get("prompt_tokens", 0)) or 0)
+    output_tokens = int(usage.get("output_tokens", usage.get("completion_tokens", 0)) or 0)
+    total_tokens = int(usage.get("total_tokens", input_tokens + output_tokens) or 0)
+    if total_tokens > 0:
+        return {
+            "prompt_tokens": input_tokens,
+            "completion_tokens": output_tokens,
+            "total_tokens": total_tokens,
+        }
+    input_tokens = input_tokens or estimate_message_tokens(messages or [])
+    output_tokens = output_tokens or estimate_text_tokens(output)
+    return {
+        "prompt_tokens": input_tokens,
+        "completion_tokens": output_tokens,
+        "total_tokens": input_tokens + output_tokens,
+    }
 
 
 def runtime_identity_prompt(provider: str | None, model: str | None, *, mode: str) -> str:
@@ -413,6 +466,9 @@ def run_chat_generation(generation_id: str) -> None:
                 runtime_identity=runtime_identity_prompt(payload.provider, selected_model, mode=payload.mode),
                 history_messages=history,
             )
+            quota_user = db.get(User, generation.user_id)
+            if quota_user:
+                enforce_user_quota(db, quota_user, estimated_input_tokens=estimate_message_tokens(model_messages))
             chat_row.model = selected_model
             generation.status = "running"
             update_generation_message(
@@ -519,7 +575,13 @@ def run_chat_generation(generation_id: str) -> None:
                     user_message_id=generation.user_message_id or "",
                     assistant_message_id=assistant_message.id,
                 )
-                record_usage(db, generation.user_id, "deep_research_background", research_result.selected_model, research_result.usage)
+                record_usage(
+                    db,
+                    generation.user_id,
+                    "deep_research_background",
+                    research_result.selected_model,
+                    usage_with_estimate(research_result.usage, messages=model_messages, output=final_content),
+                )
                 db.commit()
                 return
 
@@ -611,7 +673,13 @@ def run_chat_generation(generation_id: str) -> None:
                 user_message_id=generation.user_message_id or "",
                 assistant_message_id=assistant_message.id,
             )
-            record_usage(db, generation.user_id, "chat_background", selected_model, usage)
+            record_usage(
+                db,
+                generation.user_id,
+                "chat_background",
+                selected_model,
+                usage_with_estimate(usage, messages=model_messages, output=visible_content),
+            )
             db.commit()
         except Exception as exc:
             detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
@@ -808,6 +876,7 @@ def chat(
         search_context=web_search_service.build_model_context(search_bundle),
         runtime_identity=runtime_identity_prompt(payload.provider, payload.model or chat_row.model, mode=payload.mode),
     )
+    enforce_user_quota(db, current_user, estimated_input_tokens=estimate_message_tokens(messages))
 
     user_message = Message(chat_id=chat_row.id, role="user", content=payload.message)
     db.add(user_message)
@@ -849,7 +918,13 @@ def chat(
             user_message_id=user_message.id,
             assistant_message_id=assistant_message.id,
         )
-        record_usage(db, current_user.id, "deep_research", research_result.selected_model, research_result.usage)
+        record_usage(
+            db,
+            current_user.id,
+            "deep_research",
+            research_result.selected_model,
+            usage_with_estimate(research_result.usage, messages=messages, output=content),
+        )
         db.commit()
         db.refresh(chat_row)
         db.refresh(assistant_message)
@@ -881,7 +956,13 @@ def chat(
             user_message_id=user_message.id,
             assistant_message_id=assistant_message.id,
         )
-        record_usage(db, current_user.id, "chat_identity", selected_model, {})
+        record_usage(
+            db,
+            current_user.id,
+            "chat_identity",
+            selected_model,
+            usage_with_estimate({}, messages=messages, output=content),
+        )
         db.commit()
         db.refresh(chat_row)
         db.refresh(assistant_message)
@@ -920,7 +1001,7 @@ def chat(
         user_message_id=user_message.id,
         assistant_message_id=assistant_message.id,
     )
-    record_usage(db, current_user.id, "chat", selected_model, usage)
+    record_usage(db, current_user.id, "chat", selected_model, usage_with_estimate(usage, messages=messages, output=content))
     db.commit()
     db.refresh(chat_row)
     db.refresh(assistant_message)
@@ -970,6 +1051,7 @@ def stream_chat(
         adaptive_context=prepared_context["prompt_context"],
         runtime_identity=runtime_identity_prompt(payload.provider, selected_model, mode=payload.mode),
     )
+    enforce_user_quota(db, current_user, estimated_input_tokens=estimate_message_tokens(messages))
     chat_row.model = selected_model
     chat_row.updated_at = datetime.utcnow()
     db.flush()
@@ -1007,7 +1089,13 @@ def stream_chat(
                     user_message_id=user_message_id,
                     assistant_message_id=message.id,
                 )
-                record_usage(stream_db, user_id, "chat_identity_stream", selected_model, {})
+                record_usage(
+                    stream_db,
+                    user_id,
+                    "chat_identity_stream",
+                    selected_model,
+                    usage_with_estimate({}, messages=messages, output=content),
+                )
                 stream_db.commit()
                 stream_db.refresh(message)
                 yield f"data: {json.dumps({'type': 'done', 'message_id': message.id})}\n\n"
@@ -1082,7 +1170,13 @@ def stream_chat(
                         user_message_id=user_message_id,
                         assistant_message_id=message.id,
                     )
-                    record_usage(stream_db, user_id, "deep_research_stream", research_result.selected_model, research_result.usage)
+                    record_usage(
+                        stream_db,
+                        user_id,
+                        "deep_research_stream",
+                        research_result.selected_model,
+                        usage_with_estimate(research_result.usage, messages=model_messages, output=final_content),
+                    )
                     stream_db.commit()
                     stream_db.refresh(message)
                     yield f"data: {json.dumps({'type': 'done', 'message_id': message.id})}\n\n"
@@ -1185,7 +1279,13 @@ def stream_chat(
                     user_message_id=user_message_id,
                     assistant_message_id=message.id,
                 )
-                record_usage(stream_db, user_id, "chat_stream", selected_model, usage)
+                record_usage(
+                    stream_db,
+                    user_id,
+                    "chat_stream",
+                    selected_model,
+                    usage_with_estimate(usage, messages=model_messages, output=visible_content),
+                )
                 stream_db.commit()
                 stream_db.refresh(message)
                 yield f"data: {json.dumps({'type': 'done', 'message_id': message.id})}\n\n"
@@ -1202,6 +1302,7 @@ async def image_analysis(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    enforce_user_quota(db, current_user)
     extension = Path(file.filename or "").suffix.lower()
     if extension not in settings.ALLOWED_IMAGE_EXTENSIONS:
         raise HTTPException(
@@ -1223,7 +1324,7 @@ async def image_analysis(
         current_user.id,
         "image_analysis",
         settings.GROQ_VISION_MODEL,
-        {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        usage_with_estimate({}, messages=[{"role": "user", "content": prompt}], output=content),
     )
     db.commit()
     return {"content": content, "model": settings.GROQ_VISION_MODEL}
@@ -1245,7 +1346,8 @@ def code_assist(
         {"role": "system", "content": "You are Auto-AI, an expert programming assistant."},
         {"role": "user", "content": f"{mode_prompt}\n\n{payload.prompt}{code_block}"},
     ]
+    enforce_user_quota(db, current_user, estimated_input_tokens=estimate_message_tokens(messages))
     content, usage, selected_model = groq_service.complete(messages, model=payload.model)
-    record_usage(db, current_user.id, "code", selected_model, usage)
+    record_usage(db, current_user.id, "code", selected_model, usage_with_estimate(usage, messages=messages, output=content))
     db.commit()
     return CodeAssistResponse(content=content, model=selected_model)
