@@ -92,6 +92,10 @@ def ensure_runtime_schema() -> None:
             "quota_updated_at": "datetime",
             "token_usage_month": "VARCHAR(7) NOT NULL DEFAULT ''",
             "messages_used_date": "VARCHAR(10) NOT NULL DEFAULT ''",
+            "auto_renewal": "BOOLEAN NOT NULL DEFAULT FALSE",
+            "is_lifetime": "BOOLEAN NOT NULL DEFAULT FALSE",
+            "suspended_at": "datetime",
+            "suspended_by": "VARCHAR(36)",
         }
         for column_name, definition in quota_columns.items():
             if column_name not in subscription_columns:
@@ -166,6 +170,8 @@ def ensure_runtime_schema() -> None:
             connection.execute(text(f"UPDATE {subscriptions} SET {quote('bonus_tokens')} = 0 WHERE {quote('bonus_tokens')} IS NULL OR {quote('bonus_tokens')} < 0"))
             connection.execute(text(f"UPDATE {subscriptions} SET {quote('daily_message_limit')} = 25 WHERE {quote('daily_message_limit')} IS NULL"))
             connection.execute(text(f"UPDATE {subscriptions} SET {quote('messages_used_today')} = 0 WHERE {quote('messages_used_today')} IS NULL OR {quote('messages_used_today')} < 0"))
+            connection.execute(text(f"UPDATE {subscriptions} SET {quote('auto_renewal')} = FALSE WHERE {quote('auto_renewal')} IS NULL"))
+            connection.execute(text(f"UPDATE {subscriptions} SET {quote('is_lifetime')} = FALSE WHERE {quote('is_lifetime')} IS NULL"))
             connection.execute(
                 text(
                     f"UPDATE {subscriptions} SET {quote('plan_name')} = CASE {quote('plan')} "

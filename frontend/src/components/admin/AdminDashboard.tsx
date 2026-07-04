@@ -515,6 +515,83 @@ export function AdminDashboard() {
     }
   }
 
+  async function activateLifetime(account: AdminSubscription) {
+    if (!token) return;
+    if (!window.confirm(`Activate lifetime ${account.plan} for ${account.user_email}?`)) return;
+    setBusyId(`lifetime-${account.user_id}`);
+    setError("");
+    try {
+      const updated = await api.activateLifetimeSubscription(token, account.user_id);
+      setSubscriptions((current) => current.map((item) => (item.user_id === updated.user_id ? updated : item)));
+      setUsers(await api.adminUsers(token));
+      setSuccess(`Lifetime plan activated for ${account.user_email}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to activate lifetime plan");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function suspendSubscription(account: AdminSubscription) {
+    if (!token) return;
+    if (!window.confirm(`Suspend subscription for ${account.user_email}?`)) return;
+    setBusyId(`suspend-${account.user_id}`);
+    setError("");
+    try {
+      const updated = await api.suspendAdminSubscription(token, account.user_id);
+      setSubscriptions((current) => current.map((item) => (item.user_id === updated.user_id ? updated : item)));
+      setUsers(await api.adminUsers(token));
+      setSuccess(`Subscription suspended for ${account.user_email}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to suspend subscription");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function refundPayment(payment: AdminPaymentRecord) {
+    if (!token) return;
+    if (!window.confirm(`Refund ${money(payment.amount_cents, payment.currency)} for ${payment.user_email ?? payment.user_id ?? "this payment"}?`)) return;
+    setBusyId(`refund-${payment.id}`);
+    setError("");
+    try {
+      const updated = await api.refundAdminPayment(token, payment.id);
+      setPayments((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setStats(await api.adminStats(token));
+      setSuccess(`Payment ${payment.id} refunded.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to refund payment");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function downloadAdminInvoice(payment: AdminPaymentRecord) {
+    if (!token || !payment.invoice_url) return;
+    setBusyId(`invoice-${payment.id}`);
+    setError("");
+    try {
+      const apiOrigin = API_BASE_URL.replace(/\/api\/v1\/?$/, "");
+      const response = await fetch(`${apiOrigin}${payment.invoice_url}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error("Unable to download invoice");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `auto-ai-invoice-${payment.id}.txt`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to download invoice");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function reloadFeaturesForUser(userId: string) {
     if (!token) return;
     setFeatureUserId(userId);
@@ -1008,7 +1085,7 @@ export function AdminDashboard() {
                 <SectionTitle title="Subscriptions" subtitle="Plans, activation, expiry, payment status, Razorpay and Stripe IDs" />
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1180px] border-collapse text-left text-sm">
+                <table className="w-full min-w-[1500px] border-collapse text-left text-sm">
                   <thead className="bg-white/[0.035] text-xs uppercase text-slate-400">
                     <tr>
                       <th className="px-4 py-3">User</th>
@@ -1016,8 +1093,11 @@ export function AdminDashboard() {
                       <th className="px-4 py-3">Active</th>
                       <th className="px-4 py-3">Expiry</th>
                       <th className="px-4 py-3">Payment</th>
+                      <th className="px-4 py-3">Quota</th>
+                      <th className="px-4 py-3">Renewal</th>
                       <th className="px-4 py-3">Razorpay</th>
                       <th className="px-4 py-3">Stripe</th>
+                      <th className="px-4 py-3">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/10">
@@ -1044,12 +1124,37 @@ export function AdminDashboard() {
                           <input className="input-dark h-9" defaultValue={subscription.payment_status} onBlur={(event) => updateSubscription(subscription, { payment_status: event.currentTarget.value })} />
                         </td>
                         <td className="px-4 py-3 text-xs">
+                          <div>{subscription.tokens_used_monthly.toLocaleString()} used</div>
+                          <div>{subscription.token_balance.toLocaleString()} left</div>
+                          <div>{subscription.token_limit_monthly === 0 ? "Unlimited" : subscription.token_limit_monthly.toLocaleString()} monthly</div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-2">
+                            <button className={subscription.auto_renewal ? "chip-dark chip-dark-active" : "chip-dark"} disabled={busyId === subscription.user_id} onClick={() => updateSubscription(subscription, { auto_renewal: !subscription.auto_renewal })} type="button">
+                              Auto {subscription.auto_renewal ? "On" : "Off"}
+                            </button>
+                            <button className={subscription.is_lifetime ? "chip-dark chip-dark-active" : "chip-dark"} disabled={busyId === subscription.user_id} onClick={() => updateSubscription(subscription, { is_lifetime: !subscription.is_lifetime })} type="button">
+                              {subscription.is_lifetime ? "Lifetime" : "Timed"}
+                            </button>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-xs">
                           <input className="input-dark mb-2 h-9" placeholder="Customer ID" defaultValue={subscription.razorpay_customer_id ?? ""} onBlur={(event) => updateSubscription(subscription, { razorpay_customer_id: event.currentTarget.value || null })} />
                           <input className="input-dark h-9" placeholder="Payment ID" defaultValue={subscription.razorpay_payment_id ?? ""} onBlur={(event) => updateSubscription(subscription, { razorpay_payment_id: event.currentTarget.value || null })} />
                         </td>
                         <td className="px-4 py-3 text-xs">
                           <input className="input-dark mb-2 h-9" placeholder="Customer ID" defaultValue={subscription.stripe_customer_id ?? ""} onBlur={(event) => updateSubscription(subscription, { stripe_customer_id: event.currentTarget.value || null })} />
                           <input className="input-dark h-9" placeholder="Payment ID" defaultValue={subscription.stripe_payment_id ?? ""} onBlur={(event) => updateSubscription(subscription, { stripe_payment_id: event.currentTarget.value || null })} />
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex min-w-[180px] flex-wrap gap-2">
+                            <button className="chip-dark" disabled={busyId === `lifetime-${subscription.user_id}`} onClick={() => activateLifetime(subscription)} type="button">
+                              Lifetime
+                            </button>
+                            <button className="chip-dark" disabled={busyId === `suspend-${subscription.user_id}`} onClick={() => suspendSubscription(subscription)} type="button">
+                              Suspend
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1293,7 +1398,7 @@ export function AdminDashboard() {
                 <SectionTitle title="Payments" subtitle="Recorded Razorpay/Stripe/manual payment records" />
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[980px] border-collapse text-left text-sm">
+                <table className="w-full min-w-[1120px] border-collapse text-left text-sm">
                   <thead className="bg-white/[0.035] text-xs uppercase text-slate-400">
                     <tr>
                       <th className="px-4 py-3">User</th>
@@ -1303,6 +1408,7 @@ export function AdminDashboard() {
                       <th className="px-4 py-3">Status</th>
                       <th className="px-4 py-3">Customer / Payment</th>
                       <th className="px-4 py-3">Created</th>
+                      <th className="px-4 py-3">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/10">
@@ -1315,10 +1421,24 @@ export function AdminDashboard() {
                         <td className="px-4 py-3">{payment.status}</td>
                         <td className="px-4 py-3 text-xs"><div>{payment.customer_id ?? "No customer ID"}</div><div>{payment.payment_id ?? "No payment ID"}</div></td>
                         <td className="px-4 py-3">{formatDate(payment.created_at)}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex flex-wrap gap-2">
+                            {payment.invoice_url && (
+                              <button className="chip-dark" disabled={busyId === `invoice-${payment.id}`} onClick={() => downloadAdminInvoice(payment)} type="button">
+                                <Download size={14} />
+                                Invoice
+                              </button>
+                            )}
+                            <button className="chip-dark" disabled={busyId === `refund-${payment.id}` || payment.status === "refunded"} onClick={() => refundPayment(payment)} type="button">
+                              <RefreshCw size={14} />
+                              Refund
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                     {payments.length === 0 && (
-                      <tr><td className="px-4 py-6 text-sm text-slate-400" colSpan={7}>No payment records yet.</td></tr>
+                      <tr><td className="px-4 py-6 text-sm text-slate-400" colSpan={8}>No payment records yet.</td></tr>
                     )}
                   </tbody>
                 </table>

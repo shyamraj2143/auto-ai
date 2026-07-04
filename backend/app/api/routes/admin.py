@@ -2,7 +2,10 @@ from datetime import datetime
 import platform
 import shutil
 
+import razorpay
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
+from razorpay.errors import BadRequestError, GatewayError, ServerError
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -47,6 +50,7 @@ from app.schemas.admin import (
 )
 from app.services.admin_control import (
     FEATURE_DEFINITIONS,
+    activate_subscription_plan,
     ensure_admin_defaults,
     ensure_user_subscription,
     expiry_status,
@@ -153,6 +157,12 @@ def mark_quota_updated(subscription: UserSubscription, current_admin: User) -> N
     subscription.updated_at = datetime.utcnow()
 
 
+def admin_razorpay_client() -> razorpay.Client:
+    if not settings.RAZORPAY_KEY_ID or not settings.RAZORPAY_KEY_SECRET:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Razorpay credentials are not configured.")
+    return razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET.get_secret_value()))
+
+
 def to_subscription_read(subscription: UserSubscription, user: User) -> AdminSubscriptionRead:
     return AdminSubscriptionRead(
         id=subscription.id,
@@ -167,6 +177,13 @@ def to_subscription_read(subscription: UserSubscription, user: User) -> AdminSub
         razorpay_payment_id=subscription.razorpay_payment_id,
         stripe_customer_id=subscription.stripe_customer_id,
         stripe_payment_id=subscription.stripe_payment_id,
+        auto_renewal=subscription.auto_renewal,
+        is_lifetime=subscription.is_lifetime,
+        suspended_at=subscription.suspended_at,
+        token_limit_monthly=subscription.token_limit_monthly,
+        tokens_used_monthly=subscription.tokens_used_monthly,
+        token_balance=subscription.token_balance,
+        daily_message_limit=subscription.daily_message_limit,
         expiry_status=expiry_status(subscription.expires_at),
         created_at=subscription.created_at,
         updated_at=subscription.updated_at,
@@ -184,6 +201,25 @@ def to_feature_read(flag: FeatureFlag, user: User | None = None) -> AdminFeature
         description=flag.description,
         created_at=flag.created_at,
         updated_at=flag.updated_at,
+    )
+
+
+def to_payment_read(payment: PaymentRecord, user: User | None = None) -> AdminPaymentRecordRead:
+    return AdminPaymentRecordRead(
+        id=payment.id,
+        user_id=payment.user_id,
+        user_name=user.name if user else None,
+        user_email=user.email if user else None,
+        provider=payment.provider,
+        customer_id=payment.customer_id,
+        payment_id=payment.payment_id,
+        subscription_id=payment.subscription_id,
+        plan=payment.plan,
+        amount_cents=payment.amount_cents,
+        currency=payment.currency,
+        status=payment.status,
+        invoice_url=f"/api/v1/admin/subscriptions/payments/{payment.id}/invoice",
+        created_at=payment.created_at,
     )
 
 
@@ -219,7 +255,7 @@ def stats_payload(db: Session) -> AdminStats:
     total_chats = db.scalar(select(func.count()).select_from(Chat)) or 0
     total_api_usage = int(usage[3] or 0)
     total, _, free = shutil.disk_usage(settings.UPLOAD_DIR)
-    paid_statuses = {"paid", "captured", "succeeded", "active"}
+    paid_statuses = {"paid", "verified", "captured", "succeeded", "active", "restored", "lifetime"}
     active_subscriptions = db.scalar(
         select(func.count()).select_from(UserSubscription).where(UserSubscription.is_active.is_(True))
     ) or 0
@@ -633,6 +669,8 @@ def update_subscription(
         recalculate_token_balance(subscription)
     for field in (
         "is_active",
+        "auto_renewal",
+        "is_lifetime",
         "expires_at",
         "payment_status",
         "razorpay_customer_id",
@@ -642,7 +680,61 @@ def update_subscription(
     ):
         if field in updates:
             setattr(subscription, field, updates[field])
+    if subscription.is_lifetime:
+        subscription.expires_at = None
+        subscription.is_active = True
+        subscription.suspended_at = None
+        subscription.suspended_by = None
     subscription.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(subscription)
+    return to_subscription_read(subscription, user)
+
+
+@router.post("/subscriptions/{user_id}/lifetime", response_model=AdminSubscriptionRead)
+def activate_lifetime_subscription(
+    user_id: str,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AdminSubscriptionRead:
+    user = get_user_or_404(db, user_id)
+    subscription = ensure_user_subscription(db, user)
+    activate_subscription_plan(subscription, subscription.plan if subscription.plan != "free" else "ultra", payment_status="lifetime")
+    subscription.is_lifetime = True
+    subscription.expires_at = None
+    mark_quota_updated(subscription, current_admin)
+    log_quota_action(
+        db,
+        actor_user_id=current_admin.id,
+        target_user_id=user.id,
+        action="subscription.lifetime",
+        metadata={"plan": subscription.plan},
+    )
+    db.commit()
+    db.refresh(subscription)
+    return to_subscription_read(subscription, user)
+
+
+@router.post("/subscriptions/{user_id}/suspend", response_model=AdminSubscriptionRead)
+def suspend_subscription(
+    user_id: str,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AdminSubscriptionRead:
+    user = get_user_or_404(db, user_id)
+    subscription = ensure_user_subscription(db, user)
+    subscription.is_active = False
+    subscription.payment_status = "suspended"
+    subscription.suspended_at = datetime.utcnow()
+    subscription.suspended_by = current_admin.id
+    subscription.updated_at = datetime.utcnow()
+    log_quota_action(
+        db,
+        actor_user_id=current_admin.id,
+        target_user_id=user.id,
+        action="subscription.suspend",
+        metadata={"plan": subscription.plan},
+    )
     db.commit()
     db.refresh(subscription)
     return to_subscription_read(subscription, user)
@@ -655,24 +747,75 @@ def list_payments(_: User = Depends(get_current_admin), db: Session = Depends(ge
         .outerjoin(User, PaymentRecord.user_id == User.id)
         .order_by(PaymentRecord.created_at.desc())
     ).all()
-    return [
-        AdminPaymentRecordRead(
-            id=payment.id,
-            user_id=payment.user_id,
-            user_name=user.name if user else None,
-            user_email=user.email if user else None,
-            provider=payment.provider,
-            customer_id=payment.customer_id,
-            payment_id=payment.payment_id,
-            subscription_id=payment.subscription_id,
-            plan=payment.plan,
-            amount_cents=payment.amount_cents,
-            currency=payment.currency,
-            status=payment.status,
-            created_at=payment.created_at,
-        )
-        for payment, user in rows
-    ]
+    return [to_payment_read(payment, user) for payment, user in rows]
+
+
+@router.get("/subscriptions/payments/{payment_id}/invoice")
+def download_admin_invoice(
+    payment_id: str,
+    _: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> Response:
+    payment = db.get(PaymentRecord, payment_id)
+    if not payment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
+    user = db.get(User, payment.user_id) if payment.user_id else None
+    invoice = "\n".join(
+        [
+            "Auto-AI Invoice",
+            f"Invoice ID: {payment.id}",
+            f"Date: {payment.created_at.isoformat()}",
+            f"Email: {user.email if user else 'N/A'}",
+            f"Plan: {payment.plan}",
+            f"Amount: {payment.amount_cents / 100:.2f} {payment.currency}",
+            f"Status: {payment.status}",
+            f"Payment ID: {payment.payment_id or 'N/A'}",
+            f"Order ID: {payment.subscription_id or 'N/A'}",
+        ]
+    )
+    return Response(
+        content=invoice,
+        media_type="text/plain",
+        headers={"Content-Disposition": f'attachment; filename="auto-ai-invoice-{payment.id}.txt"'},
+    )
+
+
+@router.post("/subscriptions/payments/{payment_id}/refund", response_model=AdminPaymentRecordRead)
+def refund_payment(
+    payment_id: str,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AdminPaymentRecordRead:
+    payment = db.get(PaymentRecord, payment_id)
+    if not payment:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
+    if payment.status == "refunded":
+        user = db.get(User, payment.user_id) if payment.user_id else None
+        return to_payment_read(payment, user)
+    if payment.provider != "razorpay" or not payment.payment_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only Razorpay payments with a payment ID can be refunded.")
+    try:
+        refund = admin_razorpay_client().payment.refund(payment.payment_id, {"amount": payment.amount_cents})
+    except (BadRequestError, GatewayError, ServerError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Razorpay refund failed.") from exc
+    payment.status = "refunded"
+    payment.raw_metadata = {
+        **(payment.raw_metadata or {}),
+        "refund": refund,
+        "refunded_by": current_admin.id,
+        "refunded_at": datetime.utcnow().isoformat(),
+    }
+    log_quota_action(
+        db,
+        actor_user_id=current_admin.id,
+        target_user_id=payment.user_id or "",
+        action="payment.refund",
+        metadata={"payment_id": payment.id, "razorpay_payment_id": payment.payment_id},
+    )
+    db.commit()
+    db.refresh(payment)
+    user = db.get(User, payment.user_id) if payment.user_id else None
+    return to_payment_read(payment, user)
 
 
 def provider_summaries(rows: list[tuple[str, int, int, int, int]]) -> list[AdminUsageProviderSummary]:

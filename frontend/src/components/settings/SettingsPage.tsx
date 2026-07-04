@@ -6,7 +6,6 @@ import {
   ArrowLeft,
   Bell,
   BrainCircuit,
-  CreditCard,
   Globe2,
   LockKeyhole,
   LogOut,
@@ -34,6 +33,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
 import { useTheme } from "../../contexts/ThemeContext";
 import type { ResearchProvider } from "../../types";
+import { SubscriptionBillingCenter } from "./SubscriptionBillingCenter";
 
 const APP_VERSION = "1.0.0";
 
@@ -194,7 +194,6 @@ export function SettingsPage() {
   );
   const selectedModelLabel = providerModels.find((item) => item.value === settings.defaultModel)?.label ?? settings.defaultModel;
   const accountCreated = user?.created_at ? new Date(user.created_at).toLocaleDateString() : "Unknown";
-  const planLabel = user?.role === "super_admin" ? "Super admin" : user?.role === "admin" ? "Admin" : "Free";
 
   useEffect(() => {
     setNotificationPermission("Notification" in window ? Notification.permission : "unsupported");
@@ -271,7 +270,7 @@ export function SettingsPage() {
       exit={{ opacity: 0, y: -8 }}
       transition={{ duration: 0.22, ease: "easeOut" }}
     >
-      <div className="mx-auto w-full max-w-4xl pb-8">
+      <div className="mx-auto w-full max-w-6xl pb-8">
         <header className="sticky top-0 z-20 -mx-3 mb-3 flex h-12 items-center justify-between border-b border-white/10 bg-slate-950/80 px-4 backdrop-blur-xl md:static md:mx-0 md:h-auto md:rounded-lg md:border md:bg-white/[0.04] md:px-4 md:py-4">
           <button className="icon-button-dark" type="button" onClick={goBack} title="Back">
             <ArrowLeft size={18} />
@@ -412,8 +411,9 @@ export function SettingsPage() {
                 ))}
               </Select>
             </SettingsRow>
-            <SettingsRow icon={CreditCard} accent="amber" title="Subscription" description={`${planLabel} plan`} />
           </SettingsCard>
+
+          <SubscriptionBillingCenter />
 
           <SettingsCard>
             <SettingsRow icon={LockKeyhole} accent="green" title="Privacy & Security" description="Memory and data controls" />

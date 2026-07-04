@@ -10,6 +10,7 @@ from app.models.chat import Chat
 from app.models.document import Document
 from app.models.user import User
 from app.schemas.document import DocumentDetail, DocumentRead, DocumentSummary
+from app.services.admin_control import active_subscription, ensure_user_subscription, plan_upload_limit_mb
 from app.services.document_service import document_service
 
 
@@ -30,7 +31,13 @@ async def upload_document(
         if not chat:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
 
-    file_path, extraction = await document_service.save_and_extract(file, current_user.id)
+    subscription = ensure_user_subscription(db, current_user)
+    effective_plan = subscription.plan if active_subscription(subscription) else "free"
+    file_path, extraction = await document_service.save_and_extract(
+        file,
+        current_user.id,
+        max_upload_mb=plan_upload_limit_mb(effective_plan),
+    )
 
     summary = (
         document_service.summarize(extraction.text, file.filename or "document", provider=provider)

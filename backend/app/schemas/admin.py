@@ -133,6 +133,13 @@ class AdminSubscriptionRead(BaseModel):
     razorpay_payment_id: str | None = None
     stripe_customer_id: str | None = None
     stripe_payment_id: str | None = None
+    auto_renewal: bool = False
+    is_lifetime: bool = False
+    suspended_at: datetime | None = None
+    token_limit_monthly: int = 0
+    tokens_used_monthly: int = 0
+    token_balance: int = 0
+    daily_message_limit: int = 0
     expiry_status: str
     created_at: datetime
     updated_at: datetime
@@ -141,6 +148,8 @@ class AdminSubscriptionRead(BaseModel):
 class AdminSubscriptionUpdate(BaseModel):
     plan: str | None = Field(default=None, pattern="^(free|pro|premium|ultra|pro-plus|admin)$")
     is_active: bool | None = None
+    auto_renewal: bool | None = None
+    is_lifetime: bool | None = None
     expires_at: datetime | None = None
     payment_status: str | None = Field(default=None, max_length=32)
     razorpay_customer_id: str | None = Field(default=None, max_length=120)
@@ -249,6 +258,7 @@ class AdminPaymentRecordRead(BaseModel):
     amount_cents: int
     currency: str
     status: str
+    invoice_url: str | None = None
     created_at: datetime
 
 

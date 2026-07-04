@@ -119,6 +119,7 @@ class Settings(BaseSettings):
     RAZORPAY_PRO_LINK: str | None = None
     RAZORPAY_PREMIUM_LINK: str | None = None
     RAZORPAY_ULTRA_LINK: str | None = None
+    PROMO_CODES: str = ""
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod

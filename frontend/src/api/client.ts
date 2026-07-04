@@ -12,6 +12,7 @@ import type {
   AdminUser,
   ApkRelease,
   ApkStats,
+  BillingCenter,
   Chat,
   ChatGeneration,
   ChatListItem,
@@ -20,11 +21,13 @@ import type {
   HumanState,
   InteractionProfile,
   PaymentConfig,
+  PromoCodeResponse,
   PaidPricingPlanName,
   ResponseModelInfo,
   ResearchModelOptions,
   RazorpayOrder,
   RazorpayVerifyResponse,
+  RestorePurchaseResponse,
   SearchHistoryItem,
   SearchMode,
   SearchResultBundle,
@@ -568,9 +571,30 @@ export const api = {
     }),
 
   paymentConfig: () => apiFetch<PaymentConfig>("/payments/config", { operation: "payments.config" }),
+  billingCenter: (token: string) => apiFetch<BillingCenter>("/payments/billing", { token, operation: "payments.billing" }),
+  applyPromoCode: (token: string, payload: { code: string; plan: PaidPricingPlanName }) =>
+    apiFetch<PromoCodeResponse>("/payments/promo-code", {
+      method: "POST",
+      token,
+      operation: "payments.promo",
+      body: JSON.stringify(payload)
+    }),
+  updateAutoRenewal: (token: string, autoRenewal: boolean) =>
+    apiFetch<BillingCenter["current_plan"]>("/payments/auto-renewal", {
+      method: "PATCH",
+      token,
+      operation: "payments.autoRenewal",
+      body: JSON.stringify({ auto_renewal: autoRenewal })
+    }),
+  restorePurchase: (token: string) =>
+    apiFetch<RestorePurchaseResponse>("/payments/restore-purchase", {
+      method: "POST",
+      token,
+      operation: "payments.restore"
+    }),
   createRazorpayOrder: (
     token: string,
-    payload: { plan: PaidPricingPlanName; amount: number; currency: string; receipt?: string }
+    payload: { plan: PaidPricingPlanName; amount: number; currency: string; receipt?: string; promo_code?: string | null }
   ) =>
     apiFetch<RazorpayOrder>("/payments/create-order", {
       method: "POST",
@@ -709,6 +733,8 @@ export const api = {
       | "razorpay_payment_id"
       | "stripe_customer_id"
       | "stripe_payment_id"
+      | "auto_renewal"
+      | "is_lifetime"
     >>
   ) =>
     apiFetch<AdminSubscription>(`/admin/subscriptions/${userId}`, {
@@ -716,6 +742,24 @@ export const api = {
       token,
       operation: "admin.subscriptions.update",
       body: JSON.stringify(payload)
+    }),
+  activateLifetimeSubscription: (token: string, userId: string) =>
+    apiFetch<AdminSubscription>(`/admin/subscriptions/${userId}/lifetime`, {
+      method: "POST",
+      token,
+      operation: "admin.subscriptions.lifetime"
+    }),
+  suspendAdminSubscription: (token: string, userId: string) =>
+    apiFetch<AdminSubscription>(`/admin/subscriptions/${userId}/suspend`, {
+      method: "POST",
+      token,
+      operation: "admin.subscriptions.suspend"
+    }),
+  refundAdminPayment: (token: string, paymentId: string) =>
+    apiFetch<AdminPaymentRecord>(`/admin/subscriptions/payments/${paymentId}/refund`, {
+      method: "POST",
+      token,
+      operation: "admin.payments.refund"
     }),
   adminUsage: (token: string) => apiFetch<AdminUsageResponse>("/admin/usage", { token, operation: "admin.usage" }),
   adminFeatures: (token: string, userId?: string) =>

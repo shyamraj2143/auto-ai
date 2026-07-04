@@ -11,6 +11,54 @@ from app.models.user import User
 
 PLAN_NAMES = {"free", "pro", "premium", "ultra", "pro-plus", "admin"}
 TOKEN_LIMIT_EXCEEDED_MESSAGE = "Your token limit is over. Please upgrade or contact admin."
+PLAN_PRICES_PAISE = {
+    "free": 0,
+    "pro": 2000,
+    "premium": 5000,
+    "ultra": 10000,
+}
+PLAN_CATALOG: dict[str, dict[str, int | str | list[str]]] = {
+    "free": {
+        "label": "Free",
+        "price_paise": 0,
+        "token_quota": 10000,
+        "daily_message_limit": 25,
+        "upload_limit_mb": 20,
+        "model_access": ["Groq basic", "OpenAI basic"],
+        "priority_speed": "Standard",
+        "features": ["Chat", "Voice input", "Document upload"],
+    },
+    "pro": {
+        "label": "Pro",
+        "price_paise": 2000,
+        "token_quota": 100000,
+        "daily_message_limit": 200,
+        "upload_limit_mb": 50,
+        "model_access": ["Groq", "OpenAI", "Web search"],
+        "priority_speed": "Faster",
+        "features": ["Higher monthly quota", "Web search", "Priority queue"],
+    },
+    "premium": {
+        "label": "Premium",
+        "price_paise": 5000,
+        "token_quota": 300000,
+        "daily_message_limit": 600,
+        "upload_limit_mb": 100,
+        "model_access": ["Groq", "OpenAI", "Bedrock", "Deep Research"],
+        "priority_speed": "High",
+        "features": ["Deep research", "Multi-model routing", "Larger uploads"],
+    },
+    "ultra": {
+        "label": "Ultra",
+        "price_paise": 10000,
+        "token_quota": 1000000,
+        "daily_message_limit": 1500,
+        "upload_limit_mb": 250,
+        "model_access": ["All configured models", "Deep Research", "Multi-model routing"],
+        "priority_speed": "Highest",
+        "features": ["Largest quota", "Highest priority", "Maximum upload limit"],
+    },
+}
 
 QUOTA_DEFAULTS: dict[str, dict[str, int | str]] = {
     "free": {
@@ -131,6 +179,74 @@ def quota_plan_defaults(plan: str) -> dict[str, int | str]:
     return QUOTA_DEFAULTS.get(plan.strip().lower(), QUOTA_DEFAULTS["free"])
 
 
+def billing_plan(plan: str) -> dict[str, int | str | list[str]]:
+    return PLAN_CATALOG.get(plan.strip().lower(), PLAN_CATALOG["free"])
+
+
+def plan_upload_limit_mb(plan: str) -> int:
+    return int(billing_plan(plan)["upload_limit_mb"])
+
+
+def paid_plan_amount(plan: str, promo_discount_percent: int = 0) -> int:
+    amount = PLAN_PRICES_PAISE.get(plan.strip().lower(), 0)
+    if promo_discount_percent <= 0:
+        return amount
+    discount = min(100, max(0, promo_discount_percent))
+    return max(100, round(amount * (100 - discount) / 100))
+
+
+def promo_codes() -> dict[str, int]:
+    from app.core.config import settings
+
+    result: dict[str, int] = {}
+    for item in settings.PROMO_CODES.split(","):
+        if ":" not in item:
+            continue
+        code, percent = item.split(":", 1)
+        try:
+            discount = int(percent.strip())
+        except ValueError:
+            continue
+        if code.strip() and 0 < discount <= 100:
+            result[code.strip().upper()] = discount
+    return result
+
+
+def promo_discount_percent(code: str | None) -> int:
+    if not code:
+        return 0
+    return promo_codes().get(code.strip().upper(), 0)
+
+
+def active_subscription(subscription: UserSubscription) -> bool:
+    if not subscription.is_active or subscription.suspended_at is not None:
+        return False
+    return subscription.is_lifetime or subscription.expires_at is None or subscription.expires_at >= datetime.utcnow()
+
+
+def activate_subscription_plan(
+    subscription: UserSubscription,
+    plan: str,
+    *,
+    payment_status: str = "active",
+    months: int = 1,
+) -> None:
+    normalized = normalize_plan(plan)
+    defaults = quota_plan_defaults(normalized)
+    subscription.plan = normalized
+    subscription.plan_name = str(defaults["plan_name"])
+    subscription.token_limit_monthly = int(defaults["token_limit_monthly"])
+    subscription.daily_message_limit = int(defaults["daily_message_limit"])
+    subscription.is_active = True
+    subscription.payment_status = payment_status
+    subscription.suspended_at = None
+    subscription.suspended_by = None
+    if not subscription.is_lifetime:
+        subscription.expires_at = datetime.utcnow() + timedelta(days=30 * max(1, months))
+    subscription.updated_at = datetime.utcnow()
+    recalculate_token_balance(subscription)
+
+
 def infer_provider_from_model(model: str) -> str:
     value = (model or "").lower()
     if "gemini" in value:
@@ -239,6 +355,8 @@ def refresh_quota_periods(subscription: UserSubscription) -> bool:
 def enforce_user_quota(db: Session, user: User, estimated_input_tokens: int = 0) -> UserSubscription:
     subscription = ensure_user_subscription(db, user)
     refresh_quota_periods(subscription)
+    if subscription.suspended_at is not None or not subscription.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Subscription is not active.")
     if subscription.daily_message_limit > 0 and subscription.messages_used_today >= subscription.daily_message_limit:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -320,22 +438,20 @@ def enforce_plan_and_feature_access(
         return
 
     subscription = ensure_user_subscription(db, user)
-    active_subscription = subscription.is_active and (
-        subscription.expires_at is None or subscription.expires_at >= datetime.utcnow()
-    )
-    plan_name = subscription.plan if active_subscription else "free"
+    subscription_is_active = active_subscription(subscription)
+    plan_name = subscription.plan if subscription_is_active else "free"
     limits = db.scalar(select(PlanLimit).where(PlanLimit.plan == plan_name))
     if not limits:
         limits = db.scalar(select(PlanLimit).where(PlanLimit.plan == "free"))
 
     if mode == "deep_research":
-        if not active_subscription or not limits or not limits.allow_deep_research:
+        if not subscription_is_active or not limits or not limits.allow_deep_research:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Deep Research is not enabled for this plan.")
         if not is_feature_enabled(db, "deep_research", user.id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Deep Research is disabled for this account.")
 
     if mode == "multi_model":
-        if not active_subscription or not limits or not limits.allow_multi_model:
+        if not subscription_is_active or not limits or not limits.allow_multi_model:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Multi-Model routing is not enabled for this plan.")
         if not is_feature_enabled(db, "multi_model_routing", user.id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Multi-Model routing is disabled for this account.")

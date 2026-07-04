@@ -31,6 +31,10 @@ class UserSubscription(Base):
     quota_updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     token_usage_month: Mapped[str] = mapped_column(String(7), default="", nullable=False)
     messages_used_date: Mapped[str] = mapped_column(String(10), default="", nullable=False)
+    auto_renewal: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_lifetime: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    suspended_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    suspended_by: Mapped[str] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

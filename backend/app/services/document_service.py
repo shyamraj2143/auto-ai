@@ -20,7 +20,13 @@ class DocumentExtraction:
 
 
 class DocumentService:
-    async def save_and_extract(self, upload: UploadFile, user_id: str) -> tuple[str, DocumentExtraction]:
+    async def save_and_extract(
+        self,
+        upload: UploadFile,
+        user_id: str,
+        *,
+        max_upload_mb: int | None = None,
+    ) -> tuple[str, DocumentExtraction]:
         filename = upload.filename or "document"
         extension = Path(filename).suffix.lower()
         if extension not in settings.ALLOWED_DOCUMENT_EXTENSIONS:
@@ -36,11 +42,12 @@ class DocumentService:
                 detail="The uploaded file is empty.",
             )
 
-        max_bytes = settings.MAX_UPLOAD_MB * 1024 * 1024
+        upload_limit_mb = max_upload_mb or settings.MAX_UPLOAD_MB
+        max_bytes = upload_limit_mb * 1024 * 1024
         if len(data) > max_bytes:
             raise HTTPException(
                 status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"File exceeds {settings.MAX_UPLOAD_MB} MB.",
+                detail=f"File exceeds {upload_limit_mb} MB.",
             )
 
         extraction = self.extract_text(data, extension)

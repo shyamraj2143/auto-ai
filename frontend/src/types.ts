@@ -255,6 +255,67 @@ export type RazorpayVerifyResponse = {
   message: string;
 };
 
+export type BillingPlan = {
+  id: PricingPlanName;
+  label: string;
+  price_paise: number;
+  currency: string;
+  features: string[];
+  token_quota: number;
+  model_access: string[];
+  upload_limit_mb: number;
+  priority_speed: string;
+  daily_message_limit: number;
+};
+
+export type BillingCurrentPlan = {
+  plan: PricingPlanName | AdminPlanName;
+  plan_name: string;
+  status: string;
+  expires_at?: string | null;
+  renewal_at?: string | null;
+  token_limit_monthly: number;
+  tokens_used_monthly: number;
+  token_balance: number;
+  daily_message_limit: number;
+  messages_used_today: number;
+  upload_limit_mb: number;
+  enabled_ai_models: string[];
+  auto_renewal: boolean;
+  is_lifetime: boolean;
+};
+
+export type PaymentHistoryItem = {
+  id: string;
+  date: string;
+  amount_paise: number;
+  currency: string;
+  plan: string;
+  status: string;
+  invoice_url: string;
+};
+
+export type BillingCenter = {
+  current_plan: BillingCurrentPlan;
+  plans: BillingPlan[];
+  payment_history: PaymentHistoryItem[];
+  payment_methods: string[];
+  support_email?: string | null;
+};
+
+export type PromoCodeResponse = {
+  code: string;
+  discount_percent: number;
+  plan: PaidPricingPlanName;
+  original_amount_paise: number;
+  discounted_amount_paise: number;
+};
+
+export type RestorePurchaseResponse = {
+  restored: boolean;
+  message: string;
+};
+
 export type AdminQuota = {
   user_id: string;
   user_name: string;
@@ -284,6 +345,13 @@ export type AdminSubscription = {
   razorpay_payment_id?: string | null;
   stripe_customer_id?: string | null;
   stripe_payment_id?: string | null;
+  auto_renewal: boolean;
+  is_lifetime: boolean;
+  suspended_at?: string | null;
+  token_limit_monthly: number;
+  tokens_used_monthly: number;
+  token_balance: number;
+  daily_message_limit: number;
   expiry_status: string;
   created_at: string;
   updated_at: string;
@@ -367,6 +435,7 @@ export type AdminPaymentRecord = {
   amount_cents: number;
   currency: string;
   status: string;
+  invoice_url?: string | null;
   created_at: string;
 };
 
