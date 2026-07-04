@@ -235,7 +235,25 @@ export type AdminUser = {
   } | null;
 };
 
-export type AdminPlanName = "free" | "pro" | "pro-plus" | "admin";
+export type AdminPlanName = "free" | "pro" | "premium" | "ultra" | "pro-plus" | "admin";
+export type PricingPlanName = "free" | "pro" | "premium" | "ultra";
+export type PaidPricingPlanName = Exclude<PricingPlanName, "free">;
+
+export type PaymentConfig = {
+  key_id?: string | null;
+  payment_links: Record<PaidPricingPlanName, string | null>;
+};
+
+export type RazorpayOrder = {
+  order_id: string;
+  amount: number;
+  currency: string;
+};
+
+export type RazorpayVerifyResponse = {
+  success: boolean;
+  message: string;
+};
 
 export type AdminQuota = {
   user_id: string;

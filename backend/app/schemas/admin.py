@@ -139,7 +139,7 @@ class AdminSubscriptionRead(BaseModel):
 
 
 class AdminSubscriptionUpdate(BaseModel):
-    plan: str | None = Field(default=None, pattern="^(free|pro|pro-plus|admin)$")
+    plan: str | None = Field(default=None, pattern="^(free|pro|premium|ultra|pro-plus|admin)$")
     is_active: bool | None = None
     expires_at: datetime | None = None
     payment_status: str | None = Field(default=None, max_length=32)

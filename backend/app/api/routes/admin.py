@@ -138,6 +138,8 @@ def normalized_plan_from_name(plan_name: str) -> str | None:
     aliases = {
         "free": "free",
         "pro": "pro",
+        "premium": "premium",
+        "ultra": "ultra",
         "pro plus": "pro-plus",
         "pro-plus": "pro-plus",
         "admin": "admin",
@@ -224,7 +226,7 @@ def stats_payload(db: Session) -> AdminStats:
     paid_subscriptions = db.scalar(
         select(func.count()).select_from(UserSubscription).where(
             UserSubscription.is_active.is_(True),
-            UserSubscription.plan.in_(["pro", "pro-plus", "admin"]),
+            UserSubscription.plan.in_(["pro", "premium", "ultra", "pro-plus", "admin"]),
         )
     ) or 0
     total_revenue_cents = db.scalar(
@@ -313,7 +315,7 @@ def list_users(
     search: str | None = Query(default=None),
     role: str | None = Query(default=None, pattern="^(user|admin|super_admin)$"),
     status_filter: str | None = Query(default=None, alias="status", pattern="^(active|blocked)$"),
-    _: User = Depends(get_current_admin),
+    current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> list[AdminUserRead]:
     query = select(User)
@@ -589,7 +591,7 @@ def delete_user(user_id: str, current_admin: User = Depends(get_current_admin), 
 
 @router.get("/subscriptions", response_model=list[AdminSubscriptionRead])
 def list_subscriptions(
-    plan: str | None = Query(default=None, pattern="^(free|pro|pro-plus|admin)$"),
+    plan: str | None = Query(default=None, pattern="^(free|pro|premium|ultra|pro-plus|admin)$"),
     status_filter: str | None = Query(default=None, alias="status", pattern="^(active|inactive)$"),
     _: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
@@ -613,7 +615,7 @@ def list_subscriptions(
 def update_subscription(
     user_id: str,
     payload: AdminSubscriptionUpdate,
-    _: User = Depends(get_current_admin),
+    current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> AdminSubscriptionRead:
     user = db.get(User, user_id)
@@ -623,7 +625,12 @@ def update_subscription(
     updates = payload.model_dump(exclude_unset=True)
     if "plan" in updates and updates["plan"] is not None:
         subscription.plan = normalize_plan(updates["plan"])
-        subscription.plan_name = str(quota_plan_defaults(subscription.plan)["plan_name"])
+        defaults = quota_plan_defaults(subscription.plan)
+        subscription.plan_name = str(defaults["plan_name"])
+        subscription.token_limit_monthly = int(defaults["token_limit_monthly"])
+        subscription.daily_message_limit = int(defaults["daily_message_limit"])
+        mark_quota_updated(subscription, current_admin)
+        recalculate_token_balance(subscription)
     for field in (
         "is_active",
         "expires_at",

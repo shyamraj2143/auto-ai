@@ -169,7 +169,8 @@ def ensure_runtime_schema() -> None:
             connection.execute(
                 text(
                     f"UPDATE {subscriptions} SET {quote('plan_name')} = CASE {quote('plan')} "
-                    "WHEN 'admin' THEN 'Admin' WHEN 'pro-plus' THEN 'Pro Plus' "
+                    "WHEN 'admin' THEN 'Admin' WHEN 'ultra' THEN 'Ultra' "
+                    "WHEN 'premium' THEN 'Premium' WHEN 'pro-plus' THEN 'Pro Plus' "
                     "WHEN 'pro' THEN 'Pro' ELSE 'Free' END "
                     f"WHERE {quote('plan_name')} IS NULL OR TRIM({quote('plan_name')}) = ''"
                 )

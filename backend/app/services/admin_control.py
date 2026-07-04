@@ -9,7 +9,7 @@ from app.models.admin_control import AuditLog, FeatureFlag, PlanLimit, UsageLog,
 from app.models.user import User
 
 
-PLAN_NAMES = {"free", "pro", "pro-plus", "admin"}
+PLAN_NAMES = {"free", "pro", "premium", "ultra", "pro-plus", "admin"}
 TOKEN_LIMIT_EXCEEDED_MESSAGE = "Your token limit is over. Please upgrade or contact admin."
 
 QUOTA_DEFAULTS: dict[str, dict[str, int | str]] = {
@@ -22,6 +22,16 @@ QUOTA_DEFAULTS: dict[str, dict[str, int | str]] = {
         "plan_name": "Pro",
         "token_limit_monthly": 100000,
         "daily_message_limit": 200,
+    },
+    "premium": {
+        "plan_name": "Premium",
+        "token_limit_monthly": 300000,
+        "daily_message_limit": 600,
+    },
+    "ultra": {
+        "plan_name": "Ultra",
+        "token_limit_monthly": 1000000,
+        "daily_message_limit": 1500,
     },
     "pro-plus": {
         "plan_name": "Pro Plus",
@@ -39,8 +49,8 @@ DEFAULT_PLAN_LIMITS: dict[str, dict[str, int | bool]] = {
     "free": {
         "daily_prompt_limit": 100,
         "monthly_prompt_limit": 1000,
-        "daily_token_limit": 50000,
-        "monthly_token_limit": 500000,
+        "daily_token_limit": 10000,
+        "monthly_token_limit": 10000,
         "max_models": 1,
         "allow_deep_research": False,
         "allow_multi_model": False,
@@ -49,9 +59,29 @@ DEFAULT_PLAN_LIMITS: dict[str, dict[str, int | bool]] = {
     "pro": {
         "daily_prompt_limit": 500,
         "monthly_prompt_limit": 10000,
-        "daily_token_limit": 250000,
-        "monthly_token_limit": 5000000,
+        "daily_token_limit": 100000,
+        "monthly_token_limit": 100000,
         "max_models": 3,
+        "allow_deep_research": True,
+        "allow_multi_model": True,
+        "allow_web_search": True,
+    },
+    "premium": {
+        "daily_prompt_limit": 1000,
+        "monthly_prompt_limit": 30000,
+        "daily_token_limit": 300000,
+        "monthly_token_limit": 300000,
+        "max_models": 5,
+        "allow_deep_research": True,
+        "allow_multi_model": True,
+        "allow_web_search": True,
+    },
+    "ultra": {
+        "daily_prompt_limit": 3000,
+        "monthly_prompt_limit": 100000,
+        "daily_token_limit": 1000000,
+        "monthly_token_limit": 1000000,
+        "max_models": 8,
         "allow_deep_research": True,
         "allow_multi_model": True,
         "allow_web_search": True,

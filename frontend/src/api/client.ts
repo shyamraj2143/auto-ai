@@ -19,8 +19,12 @@ import type {
   DocumentItem,
   HumanState,
   InteractionProfile,
+  PaymentConfig,
+  PaidPricingPlanName,
   ResponseModelInfo,
   ResearchModelOptions,
+  RazorpayOrder,
+  RazorpayVerifyResponse,
   SearchHistoryItem,
   SearchMode,
   SearchResultBundle,
@@ -560,6 +564,35 @@ export const api = {
       method: "PATCH",
       token,
       operation: "download.apk.update",
+      body: JSON.stringify(payload)
+    }),
+
+  paymentConfig: () => apiFetch<PaymentConfig>("/payments/config", { operation: "payments.config" }),
+  createRazorpayOrder: (
+    token: string,
+    payload: { plan: PaidPricingPlanName; amount: number; currency: string; receipt?: string }
+  ) =>
+    apiFetch<RazorpayOrder>("/payments/create-order", {
+      method: "POST",
+      token,
+      operation: "payments.createOrder",
+      body: JSON.stringify(payload)
+    }),
+  verifyRazorpayPayment: (
+    token: string,
+    payload: {
+      razorpay_payment_id: string;
+      razorpay_order_id: string;
+      razorpay_signature: string;
+      plan: PaidPricingPlanName;
+      amount: number;
+      currency: string;
+    }
+  ) =>
+    apiFetch<RazorpayVerifyResponse>("/payments/verify-payment", {
+      method: "POST",
+      token,
+      operation: "payments.verify",
       body: JSON.stringify(payload)
     }),
 

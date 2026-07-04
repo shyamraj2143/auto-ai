@@ -39,6 +39,17 @@
       "priority": 0.85
     },
     {
+      "path": "/pricing",
+      "public": true,
+      "sitemap": true,
+      "title": "Auto-AI Pricing | Free, Pro, Premium and Ultra Plans",
+      "description": "Auto-AI pricing includes Free, Pro, Premium, and Ultra plans with Razorpay checkout and monthly token quotas.",
+      "canonicalPath": "/pricing",
+      "ogType": "website",
+      "changefreq": "weekly",
+      "priority": 0.8
+    },
+    {
       "path": "/login",
       "public": true,
       "sitemap": true,

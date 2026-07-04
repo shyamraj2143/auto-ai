@@ -74,7 +74,7 @@ export function LandingPage() {
         <nav className="hidden items-center gap-6 text-sm text-slate-300 md:flex">
           <a href="#features">Features</a>
           <Link to="/download">Android</Link>
-          <a href="#pricing">Pricing</a>
+          <Link to="/pricing">Pricing</Link>
           <Link to="/admin/login">Admin</Link>
           <a href="#faq">FAQ</a>
         </nav>
@@ -230,13 +230,18 @@ export function LandingPage() {
             <p className="hero-kicker">Plans</p>
             <h2>Start with Auto-AI and scale when you need more.</h2>
           </div>
-          <div className="pricing-grid">
-            {["Starter", "Pro", "Studio"].map((plan, index) => (
+          <div className="pricing-grid pricing-grid-four">
+            {[
+              ["Free", "₹0", "10,000 tokens/month"],
+              ["Pro", "₹20", "100,000 tokens/month"],
+              ["Premium", "₹50", "300,000 tokens/month"],
+              ["Ultra", "₹100", "1,000,000 tokens/month"]
+            ].map(([plan, price, tokens]) => (
               <article key={plan} className="pricing-card">
                 <h3>{plan}</h3>
-                <strong className="pricing-price">{index === 0 ? "$0" : index === 1 ? "$19" : "Custom"}</strong>
-                <span>{index === 0 ? "Personal testing" : index === 1 ? "Power users" : "Teams and deployments"}</span>
-                <Link className={index === 1 ? "btn-primary" : "btn-secondary"} to={user ? "/chat" : "/register"}>
+                <strong className="pricing-price">{price}</strong>
+                <span>{tokens}</span>
+                <Link className={plan === "Premium" ? "btn-primary" : "btn-secondary"} to="/pricing">
                   Choose {plan}
                 </Link>
               </article>

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Bot, LogOut, MessageSquarePlus, Pencil, Settings, Shield, Trash2, UserCircle2, X } from "lucide-react";
+import { Bot, CreditCard, LogOut, MessageSquarePlus, Pencil, Settings, Shield, Trash2, UserCircle2, X } from "lucide-react";
 import clsx from "clsx";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
@@ -153,6 +153,14 @@ export function Sidebar() {
             <Settings size={16} />
             Account & Settings
           </button>
+          <Link
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-medium text-white transition hover:border-cyan-200/30 hover:bg-cyan-200/10"
+            onClick={closeSidebar}
+            to="/pricing"
+          >
+            <CreditCard size={16} />
+            Subscription
+          </Link>
           <div className="rounded-lg border border-white/10 bg-white/[0.04] p-3 text-xs leading-5 text-slate-300">
             <div className="mb-2 flex items-center gap-2 text-sm font-medium text-white">
               <UserCircle2 size={15} />

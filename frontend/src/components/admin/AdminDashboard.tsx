@@ -52,7 +52,7 @@ const sections: Array<{ id: AdminSection; label: string; icon: ReactNode }> = [
   { id: "settings", label: "Settings", icon: <Settings size={15} /> }
 ];
 
-const plans: AdminPlanName[] = ["free", "pro", "pro-plus", "admin"];
+const plans: AdminPlanName[] = ["free", "pro", "premium", "ultra", "admin", "pro-plus"];
 
 type QuotaForm = {
   plan_name: string;

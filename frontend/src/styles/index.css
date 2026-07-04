@@ -1338,6 +1338,36 @@ button:disabled {
   flex-direction: column;
 }
 
+.pricing-page {
+  min-height: 100vh;
+}
+
+.pricing-main {
+  padding-top: 44px;
+}
+
+.pricing-main h1 {
+  color: #ffffff;
+  font-size: clamp(36px, 5vw, 68px);
+  font-weight: 800;
+  line-height: 1;
+}
+
+.pricing-subtitle {
+  margin: 16px auto 0;
+  max-width: 660px;
+  color: #cbd5e1;
+}
+
+.pricing-grid-four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.pricing-card-featured {
+  border-color: rgba(103, 232, 249, 0.34);
+  background: rgba(8, 47, 73, 0.34);
+}
+
 .pricing-card h3 {
   color: #a5f3fc;
   font-size: 18px;
@@ -1355,6 +1385,63 @@ button:disabled {
 
 .pricing-card a {
   margin-top: auto;
+}
+
+.pricing-list {
+  margin: 22px 0 24px;
+  display: grid;
+  gap: 10px;
+  color: #e2e8f0;
+  font-size: 14px;
+}
+
+.pricing-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pricing-actions {
+  margin-top: auto;
+  display: grid;
+  gap: 10px;
+}
+
+.pricing-actions .btn-primary,
+.pricing-actions .btn-secondary,
+.pricing-card > .btn-secondary {
+  width: 100%;
+  justify-content: center;
+}
+
+.payment-alert {
+  margin: 0 auto 22px;
+  max-width: 860px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 14px 16px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.payment-alert-success {
+  background: rgba(5, 150, 105, 0.18);
+  color: #a7f3d0;
+}
+
+.payment-alert-error {
+  background: rgba(190, 18, 60, 0.18);
+  color: #fecdd3;
+}
+
+.spin-icon {
+  animation: spin 900ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .faq-list {
@@ -1837,6 +1924,10 @@ button:disabled {
 }
 
 @media (max-width: 1024px) {
+  .pricing-grid-four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .landing-hero,
   .auth-page,
   .capability-band,

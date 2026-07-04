@@ -114,6 +114,11 @@ class Settings(BaseSettings):
     ADMIN_EMAIL: EmailStr | None = None
     ADMIN_PASSWORD: SecretStr | None = Field(default=None, min_length=8, max_length=128)
     ADMIN_NAME: str | None = Field(default=None, min_length=2, max_length=120)
+    RAZORPAY_KEY_ID: str | None = None
+    RAZORPAY_KEY_SECRET: SecretStr | None = None
+    RAZORPAY_PRO_LINK: str | None = None
+    RAZORPAY_PREMIUM_LINK: str | None = None
+    RAZORPAY_ULTRA_LINK: str | None = None
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod
