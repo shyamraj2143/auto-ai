@@ -224,6 +224,7 @@ button:disabled {
   min-height: 0;
   flex: 1;
   overflow: hidden;
+  background: #05070d;
 }
 
 .chat-topbar {
@@ -279,6 +280,7 @@ button:disabled {
   overscroll-behavior-y: contain;
   touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
+  background: #05070d;
   padding: 18px 0 10px;
   scrollbar-color: rgba(103, 232, 249, 0.45) transparent;
 }
@@ -740,9 +742,7 @@ button:disabled {
 }
 
 .message-avatar-ai {
-  display: grid;
-  background: rgba(103, 232, 249, 0.12);
-  color: #a5f3fc;
+  display: none;
 }
 
 .message-avatar-user {
@@ -764,22 +764,22 @@ button:disabled {
 }
 
 .message-card-ai {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(2, 6, 23, 0.34);
-  padding: 12px 14px;
+  border: 0;
+  background: transparent;
+  padding: 0;
 }
 
 .message-card-user {
   width: fit-content;
   max-width: min(680px, 82%);
   margin-left: auto;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.09);
-  padding: 12px 14px;
+  border: 0;
+  background: transparent;
+  padding: 0;
 }
 
 .message-model-corner {
-  display: inline-flex;
+  display: none;
   align-items: center;
   gap: 5px;
   margin-top: 8px;
@@ -973,13 +973,10 @@ button:disabled {
   position: relative;
   overflow: hidden;
   min-width: min(520px, 100%);
-  border: 1px solid rgba(103, 232, 249, 0.18);
+  border: 0;
   border-radius: 8px;
-  background:
-    linear-gradient(115deg, rgba(103, 232, 249, 0.11), transparent 40%),
-    linear-gradient(245deg, rgba(253, 164, 175, 0.09), transparent 46%),
-    rgba(2, 6, 23, 0.72);
-  padding: 15px;
+  background: transparent;
+  padding: 0;
 }
 
 .thinking-particles span {

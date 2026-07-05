@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Bot, CreditCard, Eraser, LogOut, MessageSquarePlus, Pencil, Search, Settings, Shield, Trash2, UserCircle2, X } from "lucide-react";
 import clsx from "clsx";
@@ -8,6 +8,11 @@ import { useShell } from "../../contexts/ShellContext";
 import { useSettingsNavigation } from "../../hooks/useSettingsNavigation";
 import { LogoIcon } from "../brand/LogoIcon";
 
+const accountMenuItemClass =
+  "flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-medium text-white transition hover:border-cyan-200/30 hover:bg-cyan-200/10";
+const accountMenuDangerClass =
+  "flex w-full items-center justify-center gap-2 rounded-lg border border-red-300/30 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-100 transition hover:bg-red-500/20";
+
 export function Sidebar() {
   const { user, logout } = useAuth();
   const { chats, activeChat, createChat, deleteChat, loadingChats, openChat, updateChat } = useChat();
@@ -15,12 +20,18 @@ export function Sidebar() {
   const openSettings = useSettingsNavigation();
   const location = useLocation();
   const [query, setQuery] = useState("");
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
 
   const filteredChats = useMemo(() => {
     const term = query.trim().toLowerCase();
     if (!term) return chats;
     return chats.filter((chat) => chat.title.toLowerCase().includes(term));
   }, [chats, query]);
+
+  const displayName = user?.name?.trim() || "Account";
+  const displayEmail = user?.email?.trim() || "";
+  const profileInitial = (displayName || displayEmail || "A").charAt(0).toUpperCase();
 
   useEffect(() => {
     if (!isSidebarOpen) return;
@@ -38,6 +49,37 @@ export function Sidebar() {
       window.removeEventListener("popstate", handlePopState);
     };
   }, [closeSidebar, isSidebarOpen]);
+
+  useEffect(() => {
+    if (!isSidebarOpen) {
+      setIsAccountMenuOpen(false);
+    }
+  }, [isSidebarOpen]);
+
+  useEffect(() => {
+    if (!isAccountMenuOpen) return;
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target;
+      if (target instanceof Node && !accountMenuRef.current?.contains(target)) {
+        setIsAccountMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsAccountMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isAccountMenuOpen]);
 
   async function renameChat(id: string, currentTitle: string) {
     const nextTitle = window.prompt("Rename chat", currentTitle);
@@ -65,6 +107,7 @@ export function Sidebar() {
   async function clearCurrentChat() {
     if (!activeChat?.id || !window.confirm("Clear all messages in this chat?")) return;
     await updateChat(activeChat.id, { clear_messages: true });
+    setIsAccountMenuOpen(false);
     closeSidebar();
   }
 
@@ -151,81 +194,107 @@ export function Sidebar() {
             </div>
           ))}
         </nav>
-        <div className="border-t border-white/10 p-3 space-y-2">
-          {(user?.role === "admin" || user?.role === "super_admin") && (
-            <Link
-              className="flex w-full items-center justify-center gap-2 rounded-lg border border-cyan-200/20 bg-cyan-200/10 px-3 py-2 text-sm font-medium text-cyan-50 transition hover:bg-cyan-200/15"
-              onClick={closeSidebar}
-              to="/admin"
-            >
-              <Shield size={16} />
-              Admin Dashboard
-            </Link>
+        <div ref={accountMenuRef} className="relative border-t border-white/10 p-3">
+          {isAccountMenuOpen && (
+            <div className="absolute bottom-[calc(100%+8px)] left-3 right-3 z-50 max-h-[calc(100vh-96px)] space-y-2 overflow-y-auto rounded-lg border border-white/10 bg-slate-950 p-2 shadow-[0_22px_65px_rgba(0,0,0,0.55)]">
+              {(user?.role === "admin" || user?.role === "super_admin") && (
+                <Link
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-cyan-200/20 bg-cyan-200/10 px-3 py-2 text-sm font-medium text-cyan-50 transition hover:bg-cyan-200/15"
+                  onClick={() => {
+                    setIsAccountMenuOpen(false);
+                    closeSidebar();
+                  }}
+                  to="/admin"
+                >
+                  <Shield size={16} />
+                  Admin Dashboard
+                </Link>
+              )}
+              <button
+                className={`${accountMenuItemClass} md:hidden`}
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent("toggle-context-panel"));
+                  setIsAccountMenuOpen(false);
+                  closeSidebar();
+                }}
+                type="button"
+              >
+                <Bot size={16} />
+                Context & Memory
+              </button>
+              <button
+                className={accountMenuItemClass}
+                aria-label="Open account and settings"
+                onClick={() => {
+                  openSettings();
+                  setIsAccountMenuOpen(false);
+                  closeSidebar();
+                }}
+                type="button"
+              >
+                <Settings size={16} />
+                Account & Settings
+              </button>
+              {activeChat?.id && (
+                <button className={accountMenuItemClass} onClick={clearCurrentChat} type="button">
+                  <Eraser size={16} />
+                  Clear current chat
+                </button>
+              )}
+              <Link
+                className={accountMenuItemClass}
+                onClick={() => {
+                  setIsAccountMenuOpen(false);
+                  closeSidebar();
+                }}
+                to="/pricing"
+              >
+                <CreditCard size={16} />
+                Subscription
+              </Link>
+              <div className="rounded-lg border border-white/10 bg-white/[0.04] p-3 text-xs leading-5 text-slate-300">
+                <div className="mb-2 flex items-center gap-2 text-sm font-medium text-white">
+                  <UserCircle2 size={15} />
+                  Profile
+                </div>
+                <p className="truncate text-slate-200">{displayName}</p>
+                <p className="truncate text-slate-400">{displayEmail}</p>
+              </div>
+              <button
+                className={accountMenuDangerClass}
+                onClick={() => {
+                  setIsAccountMenuOpen(false);
+                  closeSidebar();
+                  logout();
+                }}
+                type="button"
+              >
+                <LogOut size={16} />
+                Logout
+              </button>
+              <div className="rounded-lg border border-white/10 bg-white/[0.04] p-3 text-xs leading-5 text-slate-300">
+                <div className="mb-2 flex items-center gap-2 font-medium text-white">
+                  <Bot size={14} />
+                  Human mode
+                </div>
+                Memory, tone, and flow signals are active for every new response.
+              </div>
+            </div>
           )}
           <button
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-medium text-white transition hover:border-cyan-200/30 hover:bg-cyan-200/10 md:hidden"
-            onClick={() => {
-              window.dispatchEvent(new CustomEvent("toggle-context-panel"));
-              closeSidebar();
-            }}
+            className={clsx(
+              "grid h-11 w-11 place-items-center rounded-full border border-white/10 bg-white/[0.06] text-sm font-bold text-white transition hover:border-cyan-200/40 hover:bg-cyan-200/12",
+              isAccountMenuOpen && "border-cyan-200/50 bg-cyan-200/15 text-cyan-50"
+            )}
+            aria-expanded={isAccountMenuOpen}
+            aria-haspopup="menu"
+            aria-label="Open profile menu"
+            onClick={() => setIsAccountMenuOpen((current) => !current)}
+            title="Profile menu"
             type="button"
           >
-            <Bot size={16} />
-            Context & Memory
+            {profileInitial}
           </button>
-          <button
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-medium text-white transition hover:border-cyan-200/30 hover:bg-cyan-200/10"
-            aria-label="Open account and settings"
-            onClick={() => {
-              openSettings();
-              closeSidebar();
-            }}
-            type="button"
-          >
-            <Settings size={16} />
-            Account & Settings
-          </button>
-          {activeChat?.id && (
-            <button
-              className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-medium text-white transition hover:border-cyan-200/30 hover:bg-cyan-200/10"
-              onClick={clearCurrentChat}
-              type="button"
-            >
-              <Eraser size={16} />
-              Clear current chat
-            </button>
-          )}
-          <Link
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-medium text-white transition hover:border-cyan-200/30 hover:bg-cyan-200/10"
-            onClick={closeSidebar}
-            to="/pricing"
-          >
-            <CreditCard size={16} />
-            Subscription
-          </Link>
-          <div className="rounded-lg border border-white/10 bg-white/[0.04] p-3 text-xs leading-5 text-slate-300">
-            <div className="mb-2 flex items-center gap-2 text-sm font-medium text-white">
-              <UserCircle2 size={15} />
-              Profile
-            </div>
-            <p className="truncate text-slate-200">{user?.name ?? "Account"}</p>
-            <p className="truncate text-slate-400">{user?.email ?? ""}</p>
-          </div>
-          <button
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-300/30 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-100 transition hover:bg-red-500/20"
-            onClick={logout}
-            type="button"
-          >
-            <LogOut size={16} />
-            Logout
-          </button>
-          <div className="rounded-lg border border-white/10 bg-white/[0.04] p-3 text-xs leading-5 text-slate-300">
-            <div className="mb-2 flex items-center gap-2 font-medium text-white">
-              <Bot size={14} />
-              Human mode
-            </div>
-            Memory, tone, and flow signals are active for every new response.
-          </div>
         </div>
       </aside>
     </>
