@@ -272,6 +272,20 @@ async function canReachApiHostWithoutCors() {
   }
 }
 
+async function canReachApiWithCors() {
+  if (!isBrowser()) return false;
+  try {
+    const response = await fetch(healthProbeUrl(), {
+      method: "GET",
+      cache: "no-store",
+      credentials: "omit"
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 function logApiIssue(error: ApiClientError, context: ApiContext, meta: RequestMeta = {}) {
   if (!isBrowser()) return;
 
@@ -324,9 +338,13 @@ async function createConnectionError(input: string, originalError: unknown, meta
   } else if (isCertificateLikeError(originalError)) {
     kind = "ssl_certificate_issue";
     message = "SSL certificate issue: the browser rejected the API connection certificate.";
-  } else if (context.crossOrigin && (await canReachApiHostWithoutCors())) {
-    kind = "cors_blocked";
-    message = `CORS blocked: ${context.apiOrigin} is reachable, but it is not allowing requests from ${context.pageOrigin}.`;
+  } else if (context.crossOrigin) {
+    if (await canReachApiWithCors()) {
+      message = `Connection failed: Auto-AI API is reachable, but this request was interrupted. Check mobile network and try again.`;
+    } else if (await canReachApiHostWithoutCors()) {
+      kind = "cors_blocked";
+      message = `CORS blocked: ${context.apiOrigin} is reachable, but it is not allowing requests from ${context.pageOrigin}.`;
+    }
   }
 
   const error = new ApiClientError(message, {

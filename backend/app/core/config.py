@@ -116,8 +116,8 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = str(PROJECT_ROOT / "backend" / "uploads")
     APK_STORAGE_DIR: str = str(PROJECT_ROOT / "public" / "downloads")
     APK_FILENAME: str = "auto-ai.apk"
-    APK_DEFAULT_VERSION: str = "1.0.5"
-    APK_DEFAULT_VERSION_CODE: int = 6
+    APK_DEFAULT_VERSION: str = "1.0.6"
+    APK_DEFAULT_VERSION_CODE: int = 7
     APK_MIN_ANDROID_VERSION: str = "Android 7.0"
     MAX_UPLOAD_MB: int = 20
     ALLOWED_DOCUMENT_EXTENSIONS: set[str] = {".pdf", ".txt", ".docx"}
