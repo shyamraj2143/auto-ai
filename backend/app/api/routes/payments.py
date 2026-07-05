@@ -68,7 +68,7 @@ def razorpay_secret() -> str:
     if not settings.RAZORPAY_KEY_ID or not settings.RAZORPAY_KEY_SECRET:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Razorpay credentials are not configured.",
+            detail="Razorpay credentials are missing. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.",
         )
     return settings.RAZORPAY_KEY_SECRET.get_secret_value()
 
@@ -189,9 +189,18 @@ def validate_plan_amount(plan: str | None, amount: int, promo_code: str | None =
 
 def razorpay_error_status(error: Exception) -> int:
     message = str(error).lower()
-    if "auth" in message or "unauthorized" in message or "invalid api key" in message:
+    if "auth" in message or "unauthorized" in message or "invalid api key" in message or "api key" in message:
         return status.HTTP_401_UNAUTHORIZED
     return status.HTTP_500_INTERNAL_SERVER_ERROR
+
+
+def razorpay_error_detail(error: Exception) -> str:
+    message = str(error).lower()
+    if "expired" in message and "api key" in message:
+        return "Razorpay API key has expired. Update RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET."
+    if "auth" in message or "unauthorized" in message or "invalid api key" in message or "api key" in message:
+        return "Razorpay authentication failed. Check RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET."
+    return "Unable to create Razorpay order."
 
 
 @router.get("/payments/config", response_model=PaymentConfigRead)
@@ -401,7 +410,7 @@ def create_order(
     try:
         order = razorpay_client().order.create(order_payload)
     except (BadRequestError, GatewayError, ServerError) as exc:
-        raise HTTPException(status_code=razorpay_error_status(exc), detail="Unable to create Razorpay order.") from exc
+        raise HTTPException(status_code=razorpay_error_status(exc), detail=razorpay_error_detail(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to create Razorpay order.") from exc
 

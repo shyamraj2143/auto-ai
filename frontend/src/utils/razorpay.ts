@@ -36,7 +36,7 @@ export type RazorpayOptions = {
     emi: boolean;
     paylater: boolean;
   };
-  config: {
+  config?: {
     display: {
       blocks: Record<string, { name: string; instruments: RazorpayInstrument[] }>;
       sequence: string[];
@@ -67,24 +67,8 @@ export const RAZORPAY_UPI_FIRST_OPTIONS = {
     wallet: true,
     emi: true,
     paylater: true
-  },
-  config: {
-    display: {
-      blocks: {
-        upi: {
-          name: "UPI / QR Code",
-          instruments: [
-            { method: "upi", flows: ["intent", "qr"] }
-          ]
-        }
-      },
-      sequence: ["block.upi", "card", "netbanking", "wallet", "emi", "paylater"],
-      preferences: {
-        show_default_blocks: true
-      }
-    }
   }
-} satisfies Pick<RazorpayOptions, "method" | "config">;
+} satisfies Pick<RazorpayOptions, "method">;
 
 declare global {
   interface Window {

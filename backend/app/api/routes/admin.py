@@ -161,8 +161,20 @@ def mark_quota_updated(subscription: UserSubscription, current_admin: User) -> N
 
 def admin_razorpay_client() -> razorpay.Client:
     if not settings.RAZORPAY_KEY_ID or not settings.RAZORPAY_KEY_SECRET:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Razorpay credentials are not configured.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Razorpay credentials are missing. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.",
+        )
     return razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET.get_secret_value()))
+
+
+def admin_razorpay_error_detail(error: Exception) -> str:
+    message = str(error).lower()
+    if "expired" in message and "api key" in message:
+        return "Razorpay API key has expired. Update RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET."
+    if "auth" in message or "unauthorized" in message or "invalid api key" in message or "api key" in message:
+        return "Razorpay authentication failed. Check RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET."
+    return "Razorpay refund failed."
 
 
 def to_subscription_read(subscription: UserSubscription, user: User) -> AdminSubscriptionRead:
@@ -821,7 +833,9 @@ def refund_payment(
     try:
         refund = admin_razorpay_client().payment.refund(razorpay_payment_id, {"amount": int(payment.amount or payment.amount_cents or 0)})
     except (BadRequestError, GatewayError, ServerError) as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Razorpay refund failed.") from exc
+        error_detail = admin_razorpay_error_detail(exc)
+        error_status = status.HTTP_401_UNAUTHORIZED if "Razorpay API key" in error_detail or "authentication" in error_detail else status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(status_code=error_status, detail=error_detail) from exc
     payment.status = "refunded"
     payment.raw_metadata = {
         **(payment.raw_metadata or {}),

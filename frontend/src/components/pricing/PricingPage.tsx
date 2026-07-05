@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowRight, Check, CreditCard, ExternalLink, Loader2 } from "lucide-react";
 import { api } from "../../api/client";
@@ -33,7 +33,7 @@ export function PricingPage() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  const razorpayKeyId = useMemo(() => paymentConfig?.key_id || import.meta.env.VITE_RAZORPAY_KEY_ID || "", [paymentConfig]);
+  const razorpayKeyId = import.meta.env.VITE_RAZORPAY_KEY_ID || "";
 
   useEffect(() => {
     let active = true;
@@ -56,7 +56,7 @@ export function PricingPage() {
       return;
     }
     if (!razorpayKeyId) {
-      setError("Razorpay key is not configured.");
+      setError("Razorpay public key is missing. Set VITE_RAZORPAY_KEY_ID.");
       return;
     }
     if (!window.Razorpay) {
@@ -115,7 +115,10 @@ export function PricingPage() {
       });
       checkout.on("payment.failed", (response) => {
         setBusyPlan(null);
-        setError(response.error?.description || response.error?.reason || "Payment failed.");
+        const description = response.error?.description || response.error?.reason || "Payment failed.";
+        setError(description.toLowerCase().includes("api key") && description.toLowerCase().includes("expired")
+          ? "Razorpay API key has expired. Update the Razorpay env keys and rebuild the app."
+          : description);
       });
       checkout.open();
     } catch (err) {

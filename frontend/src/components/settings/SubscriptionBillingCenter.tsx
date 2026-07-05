@@ -72,7 +72,11 @@ export function SubscriptionBillingCenter() {
 
   async function upgrade(plan: BillingPlan) {
     if (!token || !user || !paidPlans.has(plan.id)) return;
-    if (!razorpayKeyId || !window.Razorpay) {
+    if (!razorpayKeyId) {
+      setError("Razorpay public key is missing. Set VITE_RAZORPAY_KEY_ID.");
+      return;
+    }
+    if (!window.Razorpay) {
       setError("Razorpay checkout is not available.");
       return;
     }
@@ -123,7 +127,10 @@ export function SubscriptionBillingCenter() {
       });
       checkout.on("payment.failed", (response) => {
         setBusy("");
-        setError(response.error?.description || response.error?.reason || "Payment failed.");
+        const description = response.error?.description || response.error?.reason || "Payment failed.";
+        setError(description.toLowerCase().includes("api key") && description.toLowerCase().includes("expired")
+          ? "Razorpay API key has expired. Update the Razorpay env keys and rebuild the app."
+          : description);
       });
       checkout.open();
     } catch (err) {
