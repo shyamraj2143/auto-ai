@@ -48,6 +48,7 @@ def ensure_runtime_schema() -> None:
     backfill_payment_records = "payment_records" in table_names
     backfill_subscriptions = "user_subscriptions" in table_names
     backfill_apk_versions = "apk_versions" in table_names
+    backfill_chat_storage = {"chats", "messages", "chat_sessions", "chat_messages"}.issubset(table_names)
     migrate_legacy_apk_releases = "apk_versions" in table_names and "apk_releases" in table_names
 
     def column_definition(kind: str) -> str:
@@ -134,10 +135,19 @@ def ensure_runtime_schema() -> None:
         if "output_tokens" not in usage_columns:
             add_column("api_usage", "output_tokens", "INTEGER NOT NULL DEFAULT 0")
 
+    if "chats" in table_names:
+        chat_columns = {column["name"] for column in inspector.get_columns("chats")}
+        if "mode" not in chat_columns:
+            add_column("chats", "mode", "VARCHAR(32) NOT NULL DEFAULT 'normal'")
+
     if "messages" in table_names:
         message_columns = {column["name"] for column in inspector.get_columns("messages")}
         if "metadata" not in message_columns:
             add_column("messages", "metadata", "json")
+        if "user_id" not in message_columns:
+            add_column("messages", "user_id", "VARCHAR(36)")
+        if "model" not in message_columns:
+            add_column("messages", "model", "VARCHAR(120)")
 
     if "chat_generations" in table_names:
         generation_columns = {column["name"] for column in inspector.get_columns("chat_generations")}
@@ -179,6 +189,7 @@ def ensure_runtime_schema() -> None:
         and not backfill_subscriptions
         and not backfill_apk_versions
         and not migrate_legacy_apk_releases
+        and not backfill_chat_storage
     ):
         return
 
@@ -240,6 +251,27 @@ def ensure_runtime_schema() -> None:
             api_usage = quote("api_usage")
             connection.execute(text(f"UPDATE {api_usage} SET {quote('input_tokens')} = {quote('prompt_tokens')} WHERE {quote('input_tokens')} = 0 AND {quote('prompt_tokens')} > 0"))
             connection.execute(text(f"UPDATE {api_usage} SET {quote('output_tokens')} = {quote('completion_tokens')} WHERE {quote('output_tokens')} = 0 AND {quote('completion_tokens')} > 0"))
+        if "messages" in table_names and "chats" in table_names:
+            messages = quote("messages")
+            chats = quote("chats")
+            connection.execute(
+                text(
+                    f"UPDATE {messages} SET {quote('user_id')} = "
+                    f"(SELECT {chats}.{quote('user_id')} FROM {chats} WHERE {chats}.{quote('id')} = {messages}.{quote('chat_id')}) "
+                    f"WHERE {quote('user_id')} IS NULL"
+                )
+            )
+            connection.execute(
+                text(
+                    f"UPDATE {messages} SET {quote('model')} = "
+                    f"(SELECT {chats}.{quote('model')} FROM {chats} WHERE {chats}.{quote('id')} = {messages}.{quote('chat_id')}) "
+                    f"WHERE {quote('model')} IS NULL"
+                )
+            )
+        if backfill_chat_storage:
+            from app.services.chat_storage import backfill_chat_storage_tables
+
+            backfill_chat_storage_tables(connection, quote)
         if "apk_versions" in table_names:
             apk_versions = quote("apk_versions")
             connection.execute(text(f"UPDATE {apk_versions} SET {quote('release_date')} = {quote('created_at')} WHERE {quote('release_date')} IS NULL"))

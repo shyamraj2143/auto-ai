@@ -12,7 +12,8 @@ export type UserRole = "user" | "admin" | "super_admin";
 
 export type SearchMode = "off" | "auto" | "web" | "news" | "research" | "deep";
 export type ChatMode = "normal" | "deep_research" | "multi_model";
-export type ResearchProvider = "groq" | "bedrock";
+export type AiProvider = "openai" | "groq" | "bedrock" | "gemini";
+export type ResearchProvider = "groq" | "bedrock" | "openai" | "gemini";
 
 export type ResearchProviderModels = {
   enabled: boolean;
@@ -70,8 +71,11 @@ export type SearchHistoryItem = {
 
 export type Message = {
   id: string;
+  user_id?: string | null;
   role: "system" | "user" | "assistant";
   content: string;
+  model?: string | null;
+  token_count?: number;
   message_metadata?: {
     search?: SearchResultBundle;
     model?: ResponseModelInfo;
@@ -90,6 +94,7 @@ export type ChatListItem = {
   id: string;
   title: string;
   model: string;
+  mode: string;
   created_at: string;
   updated_at: string;
 };
@@ -123,7 +128,9 @@ export type ChatRequest = {
   groq_models?: string[];
   bedrock_models?: string[];
   final_judge_model?: string | null;
-  provider?: "openai" | "groq" | "bedrock";
+  openai_models?: string[];
+  gemini_models?: string[];
+  provider?: AiProvider;
   model?: string | null;
   web_search?: boolean;
   search_mode?: SearchMode;

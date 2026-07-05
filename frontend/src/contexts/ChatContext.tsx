@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
-import type { Chat, ChatListItem } from "../types";
+import type { Chat, ChatListItem, ChatMode } from "../types";
 import { useAuth } from "./AuthContext";
 
 type ChatContextValue = {
@@ -10,7 +10,7 @@ type ChatContextValue = {
   refreshChats: () => Promise<void>;
   openChat: (id: string) => Promise<void>;
   createChat: (title?: string) => Promise<Chat>;
-  updateChat: (id: string, payload: { title?: string; system_prompt?: string; model?: string }) => Promise<void>;
+  updateChat: (id: string, payload: { title?: string; system_prompt?: string; model?: string; mode?: ChatMode; clear_messages?: boolean }) => Promise<void>;
   deleteChat: (id: string) => Promise<void>;
   setActiveChat: React.Dispatch<React.SetStateAction<Chat | null>>;
 };
@@ -54,7 +54,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updateChat = useCallback(
-    async (id: string, payload: { title?: string; system_prompt?: string; model?: string }) => {
+    async (id: string, payload: { title?: string; system_prompt?: string; model?: string; mode?: ChatMode; clear_messages?: boolean }) => {
       if (!token) return;
       const updated = await api.updateChat(token, id, payload);
       setActiveChat((current) => (current?.id === id ? updated : current));
@@ -105,4 +105,3 @@ export function useChat() {
   if (!context) throw new Error("useChat must be used within ChatProvider");
   return context;
 }
-

@@ -3,6 +3,7 @@ import datetime as dt
 import hashlib
 import hmac
 import json
+import re
 import tempfile
 from pathlib import Path
 from typing import Any, Iterable
@@ -26,7 +27,7 @@ class GroqService:
 
     def selected_provider(self, provider: str | None = None) -> str:
         selected_provider = (provider or self.provider).lower()
-        if selected_provider not in {"openai", "groq", "bedrock"}:
+        if selected_provider not in {"openai", "groq", "bedrock", "gemini"}:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Unsupported AI provider: {selected_provider}",
@@ -43,6 +44,8 @@ class GroqService:
         selected_provider = self.selected_provider(provider)
         if selected_provider == "openai":
             return model or settings.OPENAI_MODEL
+        if selected_provider == "gemini":
+            return model or settings.GEMINI_MODEL
         if selected_provider == "bedrock":
             return model or settings.bedrock_model
         return settings.GROQ_SEARCH_MODEL if web_search else (model or settings.GROQ_MODEL)
@@ -53,6 +56,13 @@ class GroqService:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Groq API key is invalid.",
+            ) from exc
+        status_code = int(getattr(exc, "status_code", 0) or 0)
+        error_text = str(exc)
+        if status_code == 429 or re.search(r"\b(rate limit|tpm|tokens per minute|too many requests|request limit)\b", error_text, re.IGNORECASE):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Groq rate limit reached. Please wait a minute, use a smaller prompt, or switch to OpenAI/Bedrock/Gemini.",
             ) from exc
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -110,6 +120,17 @@ class GroqService:
             "Content-Type": "application/json",
         }
 
+    def _gemini_headers(self) -> dict[str, str]:
+        if not settings.GEMINI_API_KEY:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="GEMINI_API_KEY is not configured.",
+            )
+        return {
+            "Authorization": f"Bearer {settings.GEMINI_API_KEY}",
+            "Content-Type": "application/json",
+        }
+
     @staticmethod
     def _openai_token_parameter(model: str) -> str:
         reasoning_prefixes = ("gpt-5", "o1", "o3", "o4")
@@ -129,6 +150,22 @@ class GroqService:
         raise HTTPException(
             status_code=status_code if status_code in {400, 401, 403, 429} else status.HTTP_502_BAD_GATEWAY,
             detail=f"OpenAI request failed: {detail}",
+        )
+
+    @staticmethod
+    def _raise_gemini_error(status_code: int, body: str) -> None:
+        detail = body
+        try:
+            payload = json.loads(body)
+            error = payload.get("error", {})
+            if isinstance(error, dict):
+                detail = error.get("message") or detail
+        except json.JSONDecodeError:
+            pass
+
+        raise HTTPException(
+            status_code=status_code if status_code in {400, 401, 403, 429} else status.HTTP_502_BAD_GATEWAY,
+            detail=f"Gemini request failed: {detail}",
         )
 
     def _openai_payload(
@@ -383,6 +420,34 @@ class GroqService:
         content = self._content_to_text(completion.get("choices", [{}])[0].get("message", {}).get("content"))
         return content, self.extract_usage(completion), model
 
+    def _complete_gemini(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        model: str,
+        max_tokens: int | None = None,
+        request_timeout: float | None = None,
+    ) -> tuple[str, dict[str, int], str]:
+        try:
+            response = httpx.post(
+                f"{settings.GEMINI_BASE_URL.rstrip('/')}/chat/completions",
+                headers=self._gemini_headers(),
+                json=self._openai_payload(messages, model=model, max_tokens=max_tokens),
+                timeout=request_timeout or 90,
+            )
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Gemini request failed: {exc}",
+            ) from exc
+
+        if response.status_code >= 400:
+            self._raise_gemini_error(response.status_code, response.text)
+
+        completion = response.json()
+        content = self._content_to_text(completion.get("choices", [{}])[0].get("message", {}).get("content"))
+        return content, self.extract_usage(completion), model
+
     def _complete_bedrock_mantle(
         self,
         messages: list[dict[str, Any]],
@@ -558,6 +623,40 @@ class GroqService:
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=f"OpenAI request failed: {exc}",
+            ) from exc
+
+    def _stream_gemini(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        model: str,
+    ) -> Iterable[Any]:
+        try:
+            with httpx.Client(timeout=None) as client:
+                with client.stream(
+                    "POST",
+                    f"{settings.GEMINI_BASE_URL.rstrip('/')}/chat/completions",
+                    headers=self._gemini_headers(),
+                    json=self._openai_payload(messages, model=model, stream=True),
+                ) as response:
+                    if response.status_code >= 400:
+                        self._raise_gemini_error(
+                            response.status_code,
+                            response.read().decode("utf-8", errors="replace"),
+                        )
+
+                    for line in response.iter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        data = line.removeprefix("data:").strip()
+                        if data == "[DONE]":
+                            break
+                        if data:
+                            yield json.loads(data)
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Gemini request failed: {exc}",
             ) from exc
 
     def _stream_bedrock_mantle(
@@ -740,6 +839,13 @@ class GroqService:
                 max_tokens=max_tokens,
                 request_timeout=request_timeout,
             )
+        if selected_provider == "gemini":
+            return self._complete_gemini(
+                messages,
+                model=selected_model,
+                max_tokens=max_tokens,
+                request_timeout=request_timeout,
+            )
         if selected_provider == "bedrock":
             return self._complete_bedrock(
                 messages,
@@ -777,6 +883,8 @@ class GroqService:
         )
         if selected_provider == "openai":
             return self._stream_openai(messages, model=selected_model)
+        if selected_provider == "gemini":
+            return self._stream_gemini(messages, model=selected_model)
         if selected_provider == "bedrock":
             return self._stream_bedrock(
                 messages,

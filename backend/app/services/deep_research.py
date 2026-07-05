@@ -16,7 +16,7 @@ from app.services.groq_service import groq_service
 
 logger = logging.getLogger(__name__)
 
-ResearchProvider = Literal["groq", "bedrock"]
+ResearchProvider = Literal["groq", "bedrock", "openai", "gemini"]
 DEPRECATED_MODEL_REPLACEMENTS = {
     "deepseek-r1-distill-llama-70b": "llama-3.3-70b-versatile",
 }
@@ -138,11 +138,13 @@ class DeepResearchService:
         requested: dict[ResearchProvider, list[str]] = {
             "groq": payload.groq_models,
             "bedrock": payload.bedrock_models,
+            "openai": payload.openai_models,
+            "gemini": payload.gemini_models,
         }
         grouped_calls: dict[ResearchProvider, list[ResearchModelCall]] = {}
 
         for provider in providers:
-            if provider not in {"groq", "bedrock"}:
+            if provider not in {"groq", "bedrock", "openai", "gemini"}:
                 continue
             if not self._provider_configured(provider):
                 continue
@@ -173,7 +175,7 @@ class DeepResearchService:
         if not calls:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="No configured Groq or Bedrock research models are available.",
+                detail="No configured research models are available for Groq, Bedrock, OpenAI, or Gemini.",
             )
         return calls
 
@@ -187,6 +189,14 @@ class DeepResearchService:
                 "bedrock": {
                     "enabled": self._provider_configured("bedrock"),
                     "models": self._configured_models("bedrock"),
+                },
+                "openai": {
+                    "enabled": self._provider_configured("openai"),
+                    "models": self._configured_models("openai"),
+                },
+                "gemini": {
+                    "enabled": self._provider_configured("gemini"),
+                    "models": self._configured_models("gemini"),
                 },
             },
             "defaults": {
@@ -206,10 +216,14 @@ class DeepResearchService:
     def _provider_configured(self, provider: ResearchProvider) -> bool:
         if provider == "groq":
             return self._secret_configured(settings.groq_api_key)
-        return self._secret_configured(settings.bedrock_api_key) or (
+        if provider == "bedrock":
+            return self._secret_configured(settings.bedrock_api_key) or (
             self._secret_configured(settings.aws_access_key_id)
             and self._secret_configured(settings.aws_secret_access_key)
-        )
+            )
+        if provider == "openai":
+            return self._secret_configured(settings.OPENAI_API_KEY)
+        return self._secret_configured(settings.GEMINI_API_KEY)
 
     @staticmethod
     def _unique_models(models: list[str]) -> list[str]:
@@ -224,7 +238,13 @@ class DeepResearchService:
 
     @classmethod
     def _configured_models(cls, provider: ResearchProvider) -> list[str]:
-        models = settings.GROQ_RESEARCH_MODELS if provider == "groq" else settings.BEDROCK_RESEARCH_MODELS
+        models_by_provider = {
+            "groq": settings.GROQ_RESEARCH_MODELS,
+            "bedrock": settings.BEDROCK_RESEARCH_MODELS,
+            "openai": settings.OPENAI_RESEARCH_MODELS,
+            "gemini": settings.GEMINI_RESEARCH_MODELS,
+        }
+        models = models_by_provider[provider]
         return cls._unique_models(models)
 
     @staticmethod
@@ -465,7 +485,7 @@ class DeepResearchService:
     @staticmethod
     def _judge_provider(successes: list[ResearchModelResult]) -> ResearchProvider:
         configured = settings.DEEP_RESEARCH_JUDGE_PROVIDER.lower()
-        if configured in {"groq", "bedrock"}:
+        if configured in {"groq", "bedrock", "openai", "gemini"}:
             provider = configured
             if any(result.provider == provider for result in successes):
                 return provider  # type: ignore[return-value]

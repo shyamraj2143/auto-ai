@@ -29,13 +29,12 @@ import { api } from "../../api/client";
 import {
   PROVIDER_MODELS,
   useAppSettings,
-  type AiProvider,
   type AppLanguage
 } from "../../contexts/AppSettingsContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
 import { useTheme } from "../../contexts/ThemeContext";
-import type { ResearchProvider } from "../../types";
+import type { AiProvider, ResearchProvider } from "../../types";
 import { SubscriptionBillingCenter } from "./SubscriptionBillingCenter";
 
 const APP_VERSION = "1.0.2";
@@ -56,7 +55,8 @@ const LANGUAGE_OPTIONS: Array<{ value: AppLanguage; label: string }> = [
 const PROVIDER_LABELS: Record<AiProvider, string> = {
   openai: "OpenAI",
   groq: "Groq",
-  bedrock: "AWS Bedrock"
+  bedrock: "AWS Bedrock",
+  gemini: "Gemini"
 };
 
 type SettingsSection = "main" | "general" | "subscription" | "privacy";
@@ -445,7 +445,7 @@ export function SettingsPage() {
             description={`${settings.deepResearchAllModels ? "All models" : `${settings.deepResearchMaxModels} model limit`} - ${settings.deepResearchTimeoutSeconds}s timeout`}
           >
             <div className="flex w-full flex-wrap items-center gap-1 sm:w-auto">
-              {(["groq", "bedrock"] as ResearchProvider[]).map((provider) => (
+              {(["groq", "bedrock", "openai", "gemini"] as ResearchProvider[]).map((provider) => (
                 <button
                   key={provider}
                   type="button"

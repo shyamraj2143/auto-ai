@@ -6,10 +6,17 @@ from pydantic import BaseModel, Field
 from app.schemas.search import SearchMode
 
 
+ProviderName = Literal["openai", "groq", "bedrock", "gemini"]
+ResearchProviderName = Literal["groq", "bedrock", "openai", "gemini"]
+
+
 class MessageRead(BaseModel):
     id: str
+    user_id: str | None = None
     role: str
     content: str
+    model: str | None = None
+    token_count: int = 0
     message_metadata: dict | None = Field(default_factory=dict)
     created_at: datetime
 
@@ -20,18 +27,22 @@ class ChatCreate(BaseModel):
     title: str | None = Field(default=None, max_length=160)
     system_prompt: str | None = Field(default=None, max_length=8000)
     model: str | None = Field(default=None, max_length=120)
+    mode: Literal["normal", "deep_research", "multi_model"] = "normal"
 
 
 class ChatUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=160)
     system_prompt: str | None = Field(default=None, max_length=8000)
     model: str | None = Field(default=None, max_length=120)
+    mode: Literal["normal", "deep_research", "multi_model"] | None = None
+    clear_messages: bool = False
 
 
 class ChatListItem(BaseModel):
     id: str
     title: str
     model: str
+    mode: str = "normal"
     created_at: datetime
     updated_at: datetime
 
@@ -49,14 +60,16 @@ class ChatRequest(BaseModel):
     title: str | None = Field(default=None, max_length=160)
     system_prompt: str | None = Field(default=None, max_length=8000)
     mode: Literal["normal", "deep_research", "multi_model"] = "normal"
-    providers: list[Literal["groq", "bedrock"]] = Field(default_factory=lambda: ["groq", "bedrock"])
+    providers: list[ResearchProviderName] = Field(default_factory=lambda: ["groq", "bedrock"])
     max_models: int | None = Field(default=None, ge=1, le=12)
     all_models: bool = False
     timeout_seconds: int | None = Field(default=None, ge=5, le=120)
     groq_models: list[str] = Field(default_factory=list)
     bedrock_models: list[str] = Field(default_factory=list)
+    openai_models: list[str] = Field(default_factory=list)
+    gemini_models: list[str] = Field(default_factory=list)
     final_judge_model: str | None = Field(default=None, max_length=160)
-    provider: str | None = Field(default=None, pattern="^(openai|groq|bedrock)$")
+    provider: ProviderName | None = None
     model: str | None = Field(default=None, max_length=120)
     web_search: bool = False
     search_mode: SearchMode = "auto"
@@ -97,7 +110,7 @@ class ResearchModelDefaults(BaseModel):
 
 
 class ResearchModelOptions(BaseModel):
-    providers: dict[Literal["groq", "bedrock"], ResearchProviderModels]
+    providers: dict[ResearchProviderName, ResearchProviderModels]
     defaults: ResearchModelDefaults
 
 
@@ -112,3 +125,23 @@ class CodeAssistRequest(BaseModel):
 class CodeAssistResponse(BaseModel):
     content: str
     model: str
+
+
+class ChatRegenerateRequest(BaseModel):
+    message_id: str | None = None
+    mode: Literal["normal", "deep_research", "multi_model"] = "normal"
+    providers: list[ResearchProviderName] = Field(default_factory=lambda: ["groq", "bedrock"])
+    max_models: int | None = Field(default=None, ge=1, le=12)
+    all_models: bool = False
+    timeout_seconds: int | None = Field(default=None, ge=5, le=120)
+    groq_models: list[str] = Field(default_factory=list)
+    bedrock_models: list[str] = Field(default_factory=list)
+    openai_models: list[str] = Field(default_factory=list)
+    gemini_models: list[str] = Field(default_factory=list)
+    final_judge_model: str | None = Field(default=None, max_length=160)
+    provider: ProviderName | None = None
+    model: str | None = Field(default=None, max_length=120)
+    web_search: bool = False
+    search_mode: SearchMode = "auto"
+    reasoning: bool = False
+    document_ids: list[str] = Field(default_factory=list)

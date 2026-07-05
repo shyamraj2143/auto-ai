@@ -3,10 +3,10 @@ import json
 import re
 import shutil
 import zipfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException, Request, UploadFile, status
 from sqlalchemy import or_, select, update
@@ -18,8 +18,15 @@ from app.models.user import User
 from app.schemas.download import ApkReleaseRead
 
 
+def kolkata_timezone():
+    try:
+        return ZoneInfo("Asia/Kolkata")
+    except ZoneInfoNotFoundError:
+        return timezone(timedelta(hours=5, minutes=30), "Asia/Kolkata")
+
+
 class ApkService:
-    response_tz = ZoneInfo("Asia/Kolkata")
+    response_tz = kolkata_timezone()
 
     @staticmethod
     def _db_datetime(value: datetime | None = None) -> datetime:

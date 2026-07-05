@@ -442,13 +442,13 @@ export const api = {
     }),
   me: (token: string) => apiFetch<User>("/auth/me", { token, operation: "auth.me" }),
 
-  listChats: (token: string) => apiFetch<ChatListItem[]>("/chats", { token, operation: "chats.list" }),
-  createChat: (token: string, payload: { title?: string; system_prompt?: string; model?: string }) =>
-    apiFetch<Chat>("/chats", { method: "POST", token, operation: "chats.create", body: JSON.stringify(payload) }),
-  getChat: (token: string, id: string) => apiFetch<Chat>(`/chats/${id}`, { token, operation: "chats.get" }),
-  updateChat: (token: string, id: string, payload: { title?: string; system_prompt?: string; model?: string }) =>
-    apiFetch<Chat>(`/chats/${id}`, { method: "PATCH", token, operation: "chats.update", body: JSON.stringify(payload) }),
-  deleteChat: (token: string, id: string) => apiFetch<void>(`/chats/${id}`, { method: "DELETE", token, operation: "chats.delete" }),
+  listChats: (token: string) => apiFetch<ChatListItem[]>("/chat/sessions", { token, operation: "chat.sessions.list" }),
+  createChat: (token: string, payload: { title?: string; system_prompt?: string; model?: string; mode?: ChatRequest["mode"] }) =>
+    apiFetch<Chat>("/chat/sessions", { method: "POST", token, operation: "chat.sessions.create", body: JSON.stringify(payload) }),
+  getChat: (token: string, id: string) => apiFetch<Chat>(`/chat/sessions/${id}`, { token, operation: "chat.sessions.get" }),
+  updateChat: (token: string, id: string, payload: { title?: string; system_prompt?: string; model?: string; mode?: ChatRequest["mode"]; clear_messages?: boolean }) =>
+    apiFetch<Chat>(`/chat/sessions/${id}`, { method: "PATCH", token, operation: "chat.sessions.update", body: JSON.stringify(payload) }),
+  deleteChat: (token: string, id: string) => apiFetch<void>(`/chat/sessions/${id}`, { method: "DELETE", token, operation: "chat.sessions.delete" }),
 
   listDocuments: (token: string) => apiFetch<DocumentItem[]>("/documents", { token, operation: "documents.list" }),
   uploadDocument: (token: string, formData: FormData) =>
@@ -661,11 +661,24 @@ export const api = {
 
   researchModels: (token: string) => apiFetch<ResearchModelOptions>("/ai/research-models", { token, operation: "ai.researchModels" }),
   startChatGeneration: (token: string, payload: ChatRequest) =>
-    apiFetch<ChatGeneration>("/ai/chat/generations", {
+    apiFetch<ChatGeneration>(payload.chat_id ? `/chat/sessions/${payload.chat_id}/messages` : "/ai/chat/generations", {
       method: "POST",
       token,
-      operation: "ai.chat.generations.start",
+      operation: payload.chat_id ? "chat.sessions.messages.create" : "ai.chat.generations.start",
       body: JSON.stringify(payload)
+    }),
+  regenerateChatSession: (token: string, sessionId: string, payload: Omit<Partial<ChatRequest>, "message" | "chat_id"> & { message_id?: string }) =>
+    apiFetch<ChatGeneration>(`/chat/sessions/${sessionId}/regenerate`, {
+      method: "POST",
+      token,
+      operation: "chat.sessions.regenerate",
+      body: JSON.stringify(payload)
+    }),
+  stopChatSession: (token: string, sessionId: string) =>
+    apiFetch<ChatGeneration>(`/chat/sessions/${sessionId}/stop`, {
+      method: "POST",
+      token,
+      operation: "chat.sessions.stop"
     }),
   activeChatGenerations: (token: string) =>
     apiFetch<ChatGeneration[]>("/ai/chat/generations/active", {

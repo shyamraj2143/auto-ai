@@ -3,6 +3,8 @@ from app.models.admin_control import AuditLog, FeatureFlag, PaymentRecord, PlanL
 from app.models.apk import ApkDownload, ApkRelease
 from app.models.chat import Chat
 from app.models.chat_generation import ChatGeneration
+from app.models.chat_message import ChatMessage
+from app.models.chat_session import ChatSession
 from app.models.document import Document
 from app.models.human import ConversationTurnAnalysis, UserInteractionProfile, UserMemory
 from app.models.message import Message
@@ -16,6 +18,8 @@ __all__ = [
     "ApkRelease",
     "Chat",
     "ChatGeneration",
+    "ChatMessage",
+    "ChatSession",
     "ConversationTurnAnalysis",
     "Document",
     "FeatureFlag",

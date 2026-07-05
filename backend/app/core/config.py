@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4.1-mini"
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
 
+    GEMINI_API_KEY: str | None = None
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai"
+
     BEDROCK_API_KEY: str | None = None
     BEDROCK_REGION: str = "us-south-1"
     BEDROCK_MODEL: str = "openai.gpt-oss-120b"
@@ -80,6 +84,16 @@ class Settings(BaseSettings):
         "amazon.nova-pro-v1:0",
         "amazon.nova-lite-v1:0",
         "anthropic.claude-3-haiku-20240307-v1:0",
+    ]
+    OPENAI_RESEARCH_MODELS: list[str] = [
+        "gpt-4.1-mini",
+        "gpt-4o-mini",
+        "gpt-4.1",
+    ]
+    GEMINI_RESEARCH_MODELS: list[str] = [
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.0-flash",
     ]
     DEEP_RESEARCH_DEFAULT_MAX_MODELS: int = 3
     DEEP_RESEARCH_MAX_MODELS: int = 6
@@ -129,7 +143,7 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 
-    @field_validator("GROQ_RESEARCH_MODELS", "BEDROCK_RESEARCH_MODELS", mode="before")
+    @field_validator("GROQ_RESEARCH_MODELS", "BEDROCK_RESEARCH_MODELS", "OPENAI_RESEARCH_MODELS", "GEMINI_RESEARCH_MODELS", mode="before")
     @classmethod
     def parse_model_list(cls, value: Any) -> list[str] | Any:
         if isinstance(value, str):
@@ -308,6 +322,8 @@ class Settings(BaseSettings):
         selected_provider = (provider or self.AI_PROVIDER).lower()
         if selected_provider == "openai":
             return self.OPENAI_MODEL
+        if selected_provider == "gemini":
+            return self.GEMINI_MODEL
         if selected_provider == "bedrock":
             return self.bedrock_model
         return self.GROQ_MODEL

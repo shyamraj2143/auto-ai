@@ -15,6 +15,7 @@ class Chat(Base):
     title: Mapped[str] = mapped_column(String(160), default="New chat")
     system_prompt: Mapped[str] = mapped_column(Text, nullable=True)
     model: Mapped[str] = mapped_column(String(120), nullable=False)
+    mode: Mapped[str] = mapped_column(String(32), default="normal", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow

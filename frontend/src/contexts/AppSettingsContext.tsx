@@ -1,7 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import type { ResearchProvider } from "../types";
-
-export type AiProvider = "openai" | "groq" | "bedrock";
+import type { AiProvider, ResearchProvider } from "../types";
 export type AppLanguage = "system" | "en" | "hi" | "hinglish";
 
 export type AppSettings = {
@@ -62,6 +60,11 @@ export const PROVIDER_MODELS: Record<AiProvider, Array<{ value: string; label: s
     { value: "mistral.mistral-large-3-675b-instruct", label: "Mistral Large 3" },
     { value: "google.gemma-3-27b-it", label: "Gemma 3 27B" },
     { value: "qwen.qwen3-coder-30b-a3b-instruct", label: "Qwen 3 Coder 30B" }
+  ],
+  gemini: [
+    { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+    { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+    { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" }
   ]
 };
 
@@ -88,14 +91,14 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
 
 function normalizeResearchProviders(value: unknown) {
   if (!Array.isArray(value)) return DEFAULT_SETTINGS.deepResearchProviders;
-  const providers = value.filter((item): item is ResearchProvider => item === "groq" || item === "bedrock");
+  const providers = value.filter((item): item is ResearchProvider => item === "groq" || item === "bedrock" || item === "openai" || item === "gemini");
   return providers.length ? Array.from(new Set(providers)) : DEFAULT_SETTINGS.deepResearchProviders;
 }
 
 function normalizeSettings(payload: unknown): AppSettings {
   if (!payload || typeof payload !== "object") return DEFAULT_SETTINGS;
   const raw = payload as Partial<AppSettings>;
-  const provider = raw.defaultProvider === "openai" || raw.defaultProvider === "groq" || raw.defaultProvider === "bedrock"
+  const provider = raw.defaultProvider === "openai" || raw.defaultProvider === "groq" || raw.defaultProvider === "bedrock" || raw.defaultProvider === "gemini"
     ? raw.defaultProvider
     : DEFAULT_SETTINGS.defaultProvider;
   const validModels = PROVIDER_MODELS[provider].map((item) => item.value);

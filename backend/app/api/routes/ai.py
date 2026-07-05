@@ -41,6 +41,7 @@ from app.services.admin_control import (
 from app.services.deep_research import deep_research_service
 from app.services.document_service import document_service
 from app.services.groq_service import groq_service
+from app.services.chat_storage import sync_chat_history, sync_chat_message, sync_chat_session
 from app.services.human import AUTO_AI_HUMAN_MODE_PROMPT, meta_cognition_layer
 from app.services.web_search import SearchAgent, web_search_service
 
@@ -94,10 +95,13 @@ def get_or_create_chat(
         title=payload.title or title_from_message(payload.message),
         system_prompt=payload.system_prompt,
         model=model or settings.chat_model_for(provider),
+        mode=payload.mode,
     )
     db.add(chat)
     db.commit()
     db.refresh(chat)
+    sync_chat_session(db, chat)
+    db.commit()
     return chat
 
 
@@ -175,7 +179,7 @@ def deep_research_payload(metadata: dict | None) -> dict:
 
 
 def model_payload(provider: str, model: str) -> dict:
-    provider_name = {"groq": "Groq", "bedrock": "AWS Bedrock", "openai": "OpenAI"}.get(provider, provider)
+    provider_name = {"groq": "Groq", "bedrock": "AWS Bedrock", "openai": "OpenAI", "gemini": "Gemini"}.get(provider, provider)
     return {"model": {"provider": provider, "provider_label": provider_name, "model": model}}
 
 
@@ -189,7 +193,7 @@ def is_model_identity_question(message: str) -> bool:
 
 
 def model_identity_answer(provider: str, model: str) -> str:
-    provider_name = {"groq": "Groq", "bedrock": "AWS Bedrock", "openai": "OpenAI"}[provider]
+    provider_name = {"groq": "Groq", "bedrock": "AWS Bedrock", "openai": "OpenAI", "gemini": "Gemini"}[provider]
     return f"I am Auto-AI. This response is using {provider_name} / {model}."
 
 
@@ -292,13 +296,13 @@ def runtime_identity_prompt(provider: str | None, model: str | None, *, mode: st
     if mode in {"deep_research", "multi_model"}:
         return (
             "Runtime identity: You are Auto-AI using Deep Research / Multi-Model mode. "
-            "If the user asks which model is being used, say this mode consults the selected Groq/Bedrock research models and synthesizes one answer. "
+            "If the user asks which model is being used, say this mode consults the selected Groq, Bedrock, OpenAI, and Gemini research models and synthesizes one answer. "
             "Do not claim to be ChatGPT, GPT-4, or any other unrelated model."
         )
 
     selected_provider = groq_service.selected_provider(provider)
     selected_model = groq_service.selected_model(model, provider=selected_provider, web_search=False)
-    provider_name = {"groq": "Groq", "bedrock": "AWS Bedrock", "openai": "OpenAI"}[selected_provider]
+    provider_name = {"groq": "Groq", "bedrock": "AWS Bedrock", "openai": "OpenAI", "gemini": "Gemini"}[selected_provider]
     return (
         f"Runtime identity: You are Auto-AI using provider {provider_name} with model id {selected_model} for this request. "
         f"If the user asks your model name or architecture, answer exactly with {provider_name} / {selected_model}. "
@@ -388,6 +392,13 @@ def update_generation_message(
     chat_record = db.get(Chat, generation.chat_id)
     if chat_record:
         chat_record.updated_at = datetime.utcnow()
+        sync_chat_session(db, chat_record)
+    sync_chat_message(
+        db,
+        assistant_message,
+        user_id=generation.user_id,
+        model=chat_record.model if chat_record else None,
+    )
     db.add_all([generation, assistant_message])
 
 
@@ -576,6 +587,7 @@ def run_chat_generation(generation_id: str) -> None:
                 )
                 final_content = web_search_service.ensure_citations(research_result.content, search_bundle)
                 final_content = clean_model_output(final_content)
+                chat_row.model = research_result.selected_model
                 update_generation_message(
                     db,
                     generation=generation,
@@ -728,12 +740,13 @@ def research_models(_: User = Depends(get_current_user)) -> dict:
     return deep_research_service.model_options()
 
 
-@router.post("/chat/generations", response_model=ChatGenerationRead, status_code=status.HTTP_202_ACCEPTED)
-def start_chat_generation(
+def create_chat_generation(
     payload: ChatRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
+    current_user: User,
+    db: Session,
+    *,
+    existing_user_message: Message | None = None,
+) -> dict:
     enforce_plan_and_feature_access(
         db,
         current_user,
@@ -755,11 +768,21 @@ def start_chat_generation(
     )
     selected_model_payload = model_payload(selected_provider, selected_model)
 
-    user_message = Message(chat_id=chat_row.id, role="user", content=payload.message)
+    user_message = existing_user_message or Message(
+        chat_id=chat_row.id,
+        user_id=current_user.id,
+        role="user",
+        content=payload.message,
+        model=selected_model,
+    )
+    user_message.user_id = user_message.user_id or current_user.id
+    user_message.model = user_message.model or selected_model
     assistant_message = Message(
         chat_id=chat_row.id,
+        user_id=current_user.id,
         role="assistant",
         content="",
+        model=selected_model,
         message_metadata={
             **selected_model_payload,
             "streaming": {
@@ -769,8 +792,9 @@ def start_chat_generation(
         },
     )
     chat_row.model = selected_model
+    chat_row.mode = payload.mode
     chat_row.updated_at = datetime.utcnow()
-    db.add_all([user_message, assistant_message])
+    db.add_all([chat_row, user_message, assistant_message])
     db.flush()
 
     generation = ChatGeneration(
@@ -790,10 +814,22 @@ def start_chat_generation(
         "partial": True,
     }
     assistant_message.message_metadata = assistant_metadata
+    sync_chat_session(db, chat_row)
+    sync_chat_message(db, user_message, user_id=current_user.id, model=selected_model)
+    sync_chat_message(db, assistant_message, user_id=current_user.id, model=selected_model)
     db.commit()
     db.refresh(generation)
     submit_chat_generation(generation.id)
     return generation_payload(db, generation)
+
+
+@router.post("/chat/generations", response_model=ChatGenerationRead, status_code=status.HTTP_202_ACCEPTED)
+def start_chat_generation(
+    payload: ChatRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return create_chat_generation(payload, current_user, db)
 
 
 @router.get("/chat/generations/active", response_model=list[ChatGenerationRead])
@@ -913,7 +949,13 @@ def chat(
     )
     enforce_user_quota(db, current_user, estimated_input_tokens=estimate_message_tokens(messages))
 
-    user_message = Message(chat_id=chat_row.id, role="user", content=payload.message)
+    user_message = Message(
+        chat_id=chat_row.id,
+        user_id=current_user.id,
+        role="user",
+        content=payload.message,
+        model=selected_model,
+    )
     db.add(user_message)
     db.flush()
 
@@ -927,8 +969,10 @@ def chat(
         content = clean_model_output(content)
         assistant_message = Message(
             chat_id=chat_row.id,
+            user_id=current_user.id,
             role="assistant",
             content=content,
+            model=research_result.selected_model,
             token_count=research_result.usage.get("completion_tokens", 0),
             message_metadata={
                 **search_payload(search_bundle),
@@ -936,9 +980,13 @@ def chat(
             },
         )
         chat_row.model = research_result.selected_model
+        chat_row.mode = payload.mode
         chat_row.updated_at = datetime.utcnow()
         db.add(assistant_message)
         db.flush()
+        sync_chat_session(db, chat_row)
+        sync_chat_message(db, user_message, user_id=current_user.id, model=selected_model)
+        sync_chat_message(db, assistant_message, user_id=current_user.id, model=research_result.selected_model)
         attach_search_run_to_message(db, search_bundle, assistant_message.id)
         meta_cognition_layer.complete_turn(
             db,
@@ -965,8 +1013,10 @@ def chat(
         content = model_identity_answer(selected_provider, selected_model)
         assistant_message = Message(
             chat_id=chat_row.id,
+            user_id=current_user.id,
             role="assistant",
             content=content,
+            model=selected_model,
             token_count=0,
             message_metadata={
                 **search_payload(search_bundle),
@@ -974,9 +1024,13 @@ def chat(
             },
         )
         chat_row.model = selected_model
+        chat_row.mode = payload.mode
         chat_row.updated_at = datetime.utcnow()
         db.add(assistant_message)
         db.flush()
+        sync_chat_session(db, chat_row)
+        sync_chat_message(db, user_message, user_id=current_user.id, model=selected_model)
+        sync_chat_message(db, assistant_message, user_id=current_user.id, model=selected_model)
         attach_search_run_to_message(db, search_bundle, assistant_message.id)
         meta_cognition_layer.complete_turn(
             db,
@@ -1010,8 +1064,10 @@ def chat(
     content = web_search_service.ensure_citations(content, search_bundle)
     assistant_message = Message(
         chat_id=chat_row.id,
+        user_id=current_user.id,
         role="assistant",
         content=content,
+        model=selected_model,
         token_count=usage.get("completion_tokens", 0),
         message_metadata={
             **search_payload(search_bundle),
@@ -1019,9 +1075,13 @@ def chat(
         },
     )
     chat_row.model = selected_model
+    chat_row.mode = payload.mode
     chat_row.updated_at = datetime.utcnow()
     db.add(assistant_message)
     db.flush()
+    sync_chat_session(db, chat_row)
+    sync_chat_message(db, user_message, user_id=current_user.id, model=selected_model)
+    sync_chat_message(db, assistant_message, user_id=current_user.id, model=selected_model)
     attach_search_run_to_message(db, search_bundle, assistant_message.id)
     meta_cognition_layer.complete_turn(
         db,
@@ -1063,7 +1123,12 @@ def stream_chat(
         user_message=payload.message,
         history=history,
     )
-    user_message = Message(chat_id=chat_row.id, role="user", content=payload.message)
+    user_message = Message(
+        chat_id=chat_row.id,
+        user_id=current_user.id,
+        role="user",
+        content=payload.message,
+    )
     db.add(user_message)
     effective_provider, effective_model = effective_provider_model(
         payload.provider,
@@ -1087,8 +1152,12 @@ def stream_chat(
     )
     enforce_user_quota(db, current_user, estimated_input_tokens=estimate_message_tokens(messages))
     chat_row.model = selected_model
+    chat_row.mode = payload.mode
     chat_row.updated_at = datetime.utcnow()
     db.flush()
+    user_message.model = selected_model
+    sync_chat_session(db, chat_row)
+    sync_chat_message(db, user_message, user_id=current_user.id, model=selected_model)
     user_message_id = user_message.id
     db.commit()
 
@@ -1103,8 +1172,10 @@ def stream_chat(
             with SessionLocal() as stream_db:
                 message = Message(
                     chat_id=chat_id,
+                    user_id=user_id,
                     role="assistant",
                     content=content,
+                    model=selected_model,
                     token_count=0,
                     message_metadata=selected_model_payload,
                 )
@@ -1114,6 +1185,9 @@ def stream_chat(
                     chat_record.updated_at = datetime.utcnow()
                 stream_db.add(message)
                 stream_db.flush()
+                if chat_record:
+                    sync_chat_session(stream_db, chat_record)
+                sync_chat_message(stream_db, message, user_id=user_id, model=selected_model)
                 meta_cognition_layer.complete_turn(
                     stream_db,
                     user_id=user_id,
@@ -1180,8 +1254,10 @@ def stream_chat(
                 with SessionLocal() as stream_db:
                     message = Message(
                         chat_id=chat_id,
+                        user_id=user_id,
                         role="assistant",
                         content=final_content,
+                        model=research_result.selected_model,
                         token_count=research_result.usage.get("completion_tokens", 0),
                         message_metadata={
                             **search_payload(search_bundle),
@@ -1194,6 +1270,9 @@ def stream_chat(
                         chat_record.updated_at = datetime.utcnow()
                     stream_db.add(message)
                     stream_db.flush()
+                    if chat_record:
+                        sync_chat_session(stream_db, chat_record)
+                    sync_chat_message(stream_db, message, user_id=user_id, model=research_result.selected_model)
                     attach_search_run_to_message(stream_db, search_bundle, message.id)
                     meta_cognition_layer.complete_turn(
                         stream_db,
@@ -1290,8 +1369,10 @@ def stream_chat(
             with SessionLocal() as stream_db:
                 message = Message(
                     chat_id=chat_id,
+                    user_id=user_id,
                     role="assistant",
                     content=visible_content,
+                    model=selected_model,
                     token_count=usage.get("completion_tokens", 0),
                     message_metadata={
                         **search_payload(search_bundle),
@@ -1304,6 +1385,9 @@ def stream_chat(
                     chat_record.updated_at = datetime.utcnow()
                 stream_db.add(message)
                 stream_db.flush()
+                if chat_record:
+                    sync_chat_session(stream_db, chat_record)
+                sync_chat_message(stream_db, message, user_id=user_id, model=selected_model)
                 attach_search_run_to_message(stream_db, search_bundle, message.id)
                 meta_cognition_layer.complete_turn(
                     stream_db,

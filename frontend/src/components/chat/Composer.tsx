@@ -4,8 +4,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import clsx from "clsx";
 import { api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
-import type { ChatMode, DocumentItem, ResearchModelOptions, ResearchProvider, SearchMode } from "../../types";
-import { PROVIDER_MODELS, useAppSettings, type AiProvider } from "../../contexts/AppSettingsContext";
+import type { AiProvider, ChatMode, DocumentItem, ResearchModelOptions, ResearchProvider, SearchMode } from "../../types";
+import { PROVIDER_MODELS, useAppSettings } from "../../contexts/AppSettingsContext";
 import { VoiceButton } from "./VoiceButton";
 
 type Provider = AiProvider;
@@ -19,6 +19,8 @@ export type ComposerOptions = {
   timeoutSeconds: number;
   groqModels: string[];
   bedrockModels: string[];
+  openaiModels: string[];
+  geminiModels: string[];
   finalJudgeModel: string | null;
   reasoning: boolean;
   provider: Provider;
@@ -42,7 +44,7 @@ type ImageAttachment = {
 const DOCUMENT_EXTENSIONS = new Set([".pdf", ".docx", ".txt"]);
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 const MODE_OPTIONS: Array<{ value: string; label: string; searchMode: SearchMode; chatMode: ChatMode }> = [
-  { value: "auto", label: "Auto", searchMode: "auto", chatMode: "normal" },
+  { value: "normal", label: "Normal", searchMode: "auto", chatMode: "normal" },
   { value: "deep", label: "Deep", searchMode: "deep", chatMode: "deep_research" },
   { value: "research", label: "Research", searchMode: "research", chatMode: "multi_model" }
 ];
@@ -50,7 +52,8 @@ const MODE_OPTIONS: Array<{ value: string; label: string; searchMode: SearchMode
 const PROVIDER_LABELS: Record<Provider, string> = {
   openai: "OpenAI",
   groq: "Groq",
-  bedrock: "Bedrock"
+  bedrock: "Bedrock",
+  gemini: "Gemini"
 };
 
 type ModelOption = { value: string; label: string };
@@ -69,6 +72,7 @@ function readableModelLabel(value: string) {
   return value
     .replace(/^amazon\./, "Amazon ")
     .replace(/^anthropic\./, "Claude ")
+    .replace(/^gemini-/, "Gemini ")
     .replace(/^openai[/.]/, "GPT ")
     .replace(/^llama-/, "Llama ")
     .replace(/^meta-/, "Meta ")
@@ -143,7 +147,7 @@ function ModelMenu({
             </button>
           ))}
           <div className="model-menu-separator" />
-          {(["groq", "bedrock", "openai"] as Provider[]).map((item) => (
+          {(["groq", "bedrock", "openai", "gemini"] as Provider[]).map((item) => (
             <button
               key={item}
               className={clsx("model-menu-item model-menu-parent", activeProvider === item && "model-menu-item-active")}
@@ -182,11 +186,15 @@ function ResearchModelMenu({
   config,
   selectedGroqModels,
   selectedBedrockModels,
+  selectedOpenAiModels,
+  selectedGeminiModels,
   onToggle
 }: {
   config: ResearchModelOptions | null;
   selectedGroqModels: string[];
   selectedBedrockModels: string[];
+  selectedOpenAiModels: string[];
+  selectedGeminiModels: string[];
   onToggle: (provider: ResearchProvider, model: string) => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -194,13 +202,17 @@ function ResearchModelMenu({
   const [activeProvider, setActiveProvider] = useState<ResearchProvider>("groq");
   const providerOptions = {
     groq: researchOptionsFor("groq", config),
-    bedrock: researchOptionsFor("bedrock", config)
+    bedrock: researchOptionsFor("bedrock", config),
+    openai: researchOptionsFor("openai", config),
+    gemini: researchOptionsFor("gemini", config)
   };
   const selectedByProvider = {
     groq: selectedGroqModels,
-    bedrock: selectedBedrockModels
+    bedrock: selectedBedrockModels,
+    openai: selectedOpenAiModels,
+    gemini: selectedGeminiModels
   };
-  const selectedCount = selectedGroqModels.length + selectedBedrockModels.length;
+  const selectedCount = selectedGroqModels.length + selectedBedrockModels.length + selectedOpenAiModels.length + selectedGeminiModels.length;
 
   useEffect(() => {
     if (!open) return;
@@ -221,7 +233,7 @@ function ResearchModelMenu({
       {open && (
         <div className="model-menu-panel model-menu-panel-compact">
           <div className="model-menu-title">Research Models</div>
-          {(["groq", "bedrock"] as ResearchProvider[]).map((item) => {
+          {(["groq", "bedrock", "openai", "gemini"] as ResearchProvider[]).map((item) => {
             const enabled = !config || config.providers[item]?.enabled;
             const optionCount = providerOptions[item].length;
             return (
@@ -238,7 +250,7 @@ function ResearchModelMenu({
                 onFocus={() => setActiveProvider(item)}
                 onMouseEnter={() => setActiveProvider(item)}
               >
-                <span>{item === "groq" ? "Groq" : "Bedrock"}</span>
+                <span>{PROVIDER_LABELS[item]}</span>
                 <span className="model-menu-muted">
                   {enabled ? selectedByProvider[item].length || "Auto" : "Off"}
                   <ChevronRight size={14} />
@@ -313,6 +325,8 @@ export function Composer({
   const [researchModelOptions, setResearchModelOptions] = useState<ResearchModelOptions | null>(null);
   const [groqModels, setGroqModels] = useState<string[]>([]);
   const [bedrockModels, setBedrockModels] = useState<string[]>([]);
+  const [openaiModels, setOpenaiModels] = useState<string[]>([]);
+  const [geminiModels, setGeminiModels] = useState<string[]>([]);
   const [finalJudgeModel, setFinalJudgeModel] = useState<string | null>(null);
   const [reasoning] = useState(false);
   const [provider, setProvider] = useState<Provider>(settings.defaultProvider);
@@ -326,7 +340,7 @@ export function Composer({
   const canSend = Boolean(draft.trim() || imageAttachments.length) && !disabled && !sending && !uploading;
   const enabledResearchProviders = useMemo(
     () =>
-      (["groq", "bedrock"] as ResearchProvider[]).filter(
+      (["groq", "bedrock", "openai", "gemini"] as ResearchProvider[]).filter(
         (item) => !researchModelOptions || researchModelOptions.providers[item]?.enabled
       ),
     [researchModelOptions]
@@ -365,7 +379,7 @@ export function Composer({
         if (!active) return;
         setResearchModelOptions(options);
         setFinalJudgeModel(options.defaults.final_judge_model ?? null);
-        const enabled = (["groq", "bedrock"] as ResearchProvider[]).filter((item) => options.providers[item]?.enabled);
+        const enabled = (["groq", "bedrock", "openai", "gemini"] as ResearchProvider[]).filter((item) => options.providers[item]?.enabled);
         if (enabled.length) setResearchProviders((current) => current.filter((item) => enabled.includes(item)).concat(enabled.filter((item) => !current.includes(item))));
       })
       .catch(() => {
@@ -441,6 +455,8 @@ export function Composer({
           timeoutSeconds,
           groqModels,
           bedrockModels,
+          openaiModels,
+          geminiModels,
           finalJudgeModel,
           reasoning,
           provider,
@@ -475,7 +491,14 @@ export function Composer({
   }
 
   function toggleResearchModel(nextProvider: ResearchProvider, nextModel: string) {
-    const setter = nextProvider === "groq" ? setGroqModels : setBedrockModels;
+    const setter =
+      nextProvider === "groq"
+        ? setGroqModels
+        : nextProvider === "bedrock"
+          ? setBedrockModels
+          : nextProvider === "openai"
+            ? setOpenaiModels
+            : setGeminiModels;
     setter((current) => {
       if (current.includes(nextModel)) return current.filter((item) => item !== nextModel);
       return [...current, nextModel];
@@ -627,7 +650,7 @@ export function Composer({
                   <BrainCircuit size={14} />
                   Multi-model reasoning active
                 </span>
-                {(["groq", "bedrock"] as ResearchProvider[]).map((item) => (
+                {(["groq", "bedrock", "openai", "gemini"] as ResearchProvider[]).map((item) => (
                   <button
                     key={item}
                     type="button"
@@ -642,13 +665,15 @@ export function Composer({
                     onClick={() => toggleResearchProvider(item)}
                   >
                     {researchProviders.includes(item) && <Check size={12} />}
-                    {item === "groq" ? "Groq" : "Bedrock"}
+                    {PROVIDER_LABELS[item]}
                   </button>
                 ))}
                 <ResearchModelMenu
                   config={researchModelOptions}
                   selectedGroqModels={groqModels}
                   selectedBedrockModels={bedrockModels}
+                  selectedOpenAiModels={openaiModels}
+                  selectedGeminiModels={geminiModels}
                   onToggle={toggleResearchModel}
                 />
                 <label className="inline-flex h-7 items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2">

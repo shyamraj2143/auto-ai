@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bot, Brain, CornerDownRight, Menu, RefreshCw, Settings, Sparkles, Square } from "lucide-react";
+import { ArrowDown, Bot, Brain, CornerDownRight, Menu, RefreshCw, Settings, Sparkles, Square } from "lucide-react";
 import { api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
@@ -23,6 +23,8 @@ const DEFAULT_OPTIONS: ComposerOptions = {
   timeoutSeconds: 45,
   groqModels: [],
   bedrockModels: [],
+  openaiModels: [],
+  geminiModels: [],
   finalJudgeModel: null,
   reasoning: false,
   provider: "groq",
@@ -162,7 +164,7 @@ export function ChatPage() {
     };
   }, [token]);
 
-  useAutoScroll(scrollRef, [messages, streamingMessageId]);
+  const { isPinnedToBottom, scrollToBottom } = useAutoScroll(scrollRef, [messages, streamingMessageId]);
 
   const hasMessages = messages.length > 0;
   const activeTitle = useMemo(() => activeChat?.title ?? "New chat", [activeChat]);
@@ -472,6 +474,28 @@ export function ChatPage() {
     return analyses.join("\n\n---\n\n");
   }
 
+  function requestOptionsPayload(options: ComposerOptions) {
+    const modelSelection = modelSelectionPayload(options);
+    return {
+      provider: modelSelection.provider,
+      model: modelSelection.model,
+      mode: options.chatMode,
+      providers: options.chatMode === "normal" ? undefined : options.researchProviders,
+      max_models: options.chatMode === "normal" ? undefined : options.maxModels,
+      all_models: options.chatMode === "normal" ? undefined : options.allModels,
+      timeout_seconds: options.chatMode === "normal" ? undefined : options.timeoutSeconds,
+      groq_models: options.chatMode === "normal" ? undefined : options.groqModels,
+      bedrock_models: options.chatMode === "normal" ? undefined : options.bedrockModels,
+      openai_models: options.chatMode === "normal" ? undefined : options.openaiModels,
+      gemini_models: options.chatMode === "normal" ? undefined : options.geminiModels,
+      final_judge_model: options.chatMode === "normal" ? undefined : options.finalJudgeModel,
+      web_search: options.searchMode !== "off" && options.searchMode !== "auto",
+      search_mode: options.searchMode,
+      reasoning: options.reasoning,
+      document_ids: settings.memoryEnabled ? selectedDocumentIds : []
+    };
+  }
+
   async function handleSend(text: string, options: ComposerOptions, imageFiles: File[] = []) {
     if (!token || streaming) return;
     lastOptionsRef.current = options;
@@ -482,27 +506,13 @@ export function ChatPage() {
       const modelMessage = imageContext
         ? `${text}\n\nAttached image context extracted by Auto-AI vision:\n${imageContext}`
         : text;
-      const modelSelection = modelSelectionPayload(options);
 
       const generation = await api.startChatGeneration(
         token,
         {
           message: modelMessage,
           chat_id: chat.id,
-          provider: modelSelection.provider,
-          model: modelSelection.model,
-          mode: options.chatMode,
-          providers: options.chatMode === "normal" ? undefined : options.researchProviders,
-          max_models: options.chatMode === "normal" ? undefined : options.maxModels,
-          all_models: options.chatMode === "normal" ? undefined : options.allModels,
-          timeout_seconds: options.chatMode === "normal" ? undefined : options.timeoutSeconds,
-          groq_models: options.chatMode === "normal" ? undefined : options.groqModels,
-          bedrock_models: options.chatMode === "normal" ? undefined : options.bedrockModels,
-          final_judge_model: options.chatMode === "normal" ? undefined : options.finalJudgeModel,
-          web_search: options.searchMode !== "off" && options.searchMode !== "auto",
-          search_mode: options.searchMode,
-          reasoning: options.reasoning,
-          document_ids: settings.memoryEnabled ? selectedDocumentIds : []
+          ...requestOptionsPayload(options)
         }
       );
 
@@ -543,11 +553,27 @@ export function ChatPage() {
   }
 
   async function handleRegenerate(messageId: string) {
-    if (streaming) return;
+    if (streaming || !token || !activeChat?.id) return;
     const index = messages.findIndex((message) => message.id === messageId);
     const previousUser = [...messages.slice(0, index)].reverse().find((message) => message.role === "user");
     if (!previousUser) return;
-    await handleSend(coerceTextContent(previousUser.content), lastOptionsRef.current, []);
+    setStreaming(true);
+    try {
+      const generation = await api.regenerateChatSession(token, activeChat.id, {
+        message_id: messageId,
+        ...requestOptionsPayload(lastOptionsRef.current)
+      });
+      const trimmedMessages = messages.slice(0, index);
+      setMessages(trimmedMessages);
+      syncActiveChatMessages(activeChat.id, trimmedMessages);
+      applyGenerationSnapshot(generation);
+      startGenerationPolling(generation.id);
+      void refreshChats().catch(() => undefined);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unable to regenerate response";
+      window.alert(detail);
+      setStreaming(false);
+    }
   }
 
   async function handleEdit(messageId: string) {
@@ -584,7 +610,9 @@ export function ChatPage() {
   async function handleStopGeneration() {
     if (!token || !activeGeneration || !isRunningGenerationStatus(activeGeneration.status)) return;
     try {
-      const generation = await api.cancelChatGeneration(token, activeGeneration.id);
+      const generation = activeChat?.id
+        ? await api.stopChatSession(token, activeChat.id)
+        : await api.cancelChatGeneration(token, activeGeneration.id);
       applyGenerationSnapshot(generation);
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unable to stop generation";
@@ -711,6 +739,18 @@ export function ChatPage() {
             )}
           </AnimatePresence>
         </div>
+
+        {!isPinnedToBottom && messages.length > 0 && (
+          <button
+            className="scroll-bottom-button"
+            type="button"
+            onClick={scrollToBottom}
+            title="Scroll to bottom"
+            aria-label="Scroll to bottom"
+          >
+            <ArrowDown size={16} />
+          </button>
+        )}
 
         {visibleGeneration && (
           <div className="generation-status-bar">

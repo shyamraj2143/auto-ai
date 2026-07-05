@@ -237,6 +237,30 @@ button:disabled {
   scrollbar-color: rgba(103, 232, 249, 0.45) transparent;
 }
 
+.scroll-bottom-button {
+  position: absolute;
+  right: max(18px, env(safe-area-inset-right));
+  bottom: calc(132px + env(safe-area-inset-bottom));
+  z-index: 20;
+  display: grid;
+  height: 38px;
+  width: 38px;
+  place-items: center;
+  border: 1px solid rgba(103, 232, 249, 0.34);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #cffafe;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(14px);
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.scroll-bottom-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(103, 232, 249, 0.62);
+  background: rgba(8, 47, 73, 0.92);
+}
+
 .generation-status-bar {
   display: flex;
   align-items: center;
