@@ -43,7 +43,12 @@ declare global {
 }
 
 const GIS_SCRIPT_ID = "google-identity-services";
-const ENV_GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_WEB_CLIENT_ID || import.meta.env.VITE_GOOGLE_CLIENT_ID || "").trim();
+const DEFAULT_GOOGLE_WEB_CLIENT_ID = "776507506876-vjrrc9m5eer82k6digta7ie2phd4l1f8.apps.googleusercontent.com";
+const ENV_GOOGLE_CLIENT_ID = (
+  import.meta.env.VITE_GOOGLE_WEB_CLIENT_ID ||
+  import.meta.env.VITE_GOOGLE_CLIENT_ID ||
+  DEFAULT_GOOGLE_WEB_CLIENT_ID
+).trim();
 
 function loadGoogleIdentityScript() {
   return new Promise<void>((resolve, reject) => {

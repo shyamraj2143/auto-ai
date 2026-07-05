@@ -15,6 +15,7 @@ class PaymentLinkConfig(BaseModel):
 
 class PaymentConfigRead(BaseModel):
     key_id: str | None = None
+    razorpay_ready: bool = False
     razorpay_config_id: str | None = None
     upi_id: str | None = None
     upi_payee_name: str | None = None

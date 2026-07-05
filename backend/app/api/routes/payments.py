@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 from datetime import datetime
 
 import razorpay
@@ -65,15 +66,27 @@ PAYMENT_METHODS = [
 ]
 
 PAYMENT_SCREENSHOT_MESSAGE = "After payment, send your registered email and payment screenshot to admin."
+RAZORPAY_SECRET_PATTERN = re.compile(
+    r"(?i)(key_secret|secret|token|signature|password)([\"']?\s*[:=]\s*[\"']?)[^,\"'\s}]+"
+)
+
+
+def razorpay_key_id() -> str:
+    return (settings.RAZORPAY_KEY_ID or "").strip()
+
+
+def razorpay_secret_value() -> str:
+    return settings.RAZORPAY_KEY_SECRET.get_secret_value().strip() if settings.RAZORPAY_KEY_SECRET else ""
 
 
 def razorpay_secret() -> str:
-    if not settings.RAZORPAY_KEY_ID or not settings.RAZORPAY_KEY_SECRET:
+    secret = razorpay_secret_value()
+    if not razorpay_key_id() or not secret:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Razorpay credentials are missing. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.",
         )
-    return settings.RAZORPAY_KEY_SECRET.get_secret_value()
+    return secret
 
 
 def razorpay_webhook_secret() -> str:
@@ -86,7 +99,7 @@ def razorpay_webhook_secret() -> str:
 
 
 def razorpay_client() -> razorpay.Client:
-    return razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, razorpay_secret()))
+    return razorpay.Client(auth=(razorpay_key_id(), razorpay_secret()))
 
 
 def request_plan(plan_id: str | None, plan: str | None) -> str:
@@ -193,27 +206,43 @@ def validate_plan_amount(plan: str | None, amount: int, promo_code: str | None =
 
 
 def razorpay_error_status(error: Exception) -> int:
-    message = str(error).lower()
+    message = safe_razorpay_error_message(error).lower()
     if "auth" in message or "unauthorized" in message or "invalid api key" in message or "api key" in message:
         return status.HTTP_401_UNAUTHORIZED
-    return status.HTTP_500_INTERNAL_SERVER_ERROR
+    if isinstance(error, BadRequestError):
+        return status.HTTP_400_BAD_REQUEST
+    return status.HTTP_502_BAD_GATEWAY
+
+
+def safe_razorpay_error_message(error: Exception) -> str:
+    message = str(error).strip()
+    if not message:
+        return ""
+    message = RAZORPAY_SECRET_PATTERN.sub(r"\1\2[redacted]", message)
+    message = re.sub(r"rzp_(test|live)_([A-Za-z0-9]{6})[A-Za-z0-9]+", r"rzp_\1_\2...", message)
+    return message[:300]
 
 
 def razorpay_error_detail(error: Exception) -> str:
-    message = str(error).lower()
+    safe_message = safe_razorpay_error_message(error)
+    message = safe_message.lower()
     if "expired" in message and "api key" in message:
         return "Razorpay API key has expired. Update RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET."
     if "auth" in message or "unauthorized" in message or "invalid api key" in message or "api key" in message:
         return "Razorpay authentication failed. Check RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET."
-    return "Unable to create Razorpay order."
+    if safe_message:
+        return f"Razorpay order creation failed: {safe_message}"
+    return "Razorpay order creation failed. Check RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET."
 
 
 @router.get("/payments/config", response_model=PaymentConfigRead)
 def payment_config() -> PaymentConfigRead:
     upi_id = settings.payment_upi_id.strip() if settings.payment_upi_id else None
     upi_payee_name = settings.UPI_PAYEE_NAME.strip() if settings.UPI_PAYEE_NAME else "Auto-AI"
+    key_id = razorpay_key_id() or None
     return PaymentConfigRead(
-        key_id=settings.RAZORPAY_KEY_ID,
+        key_id=key_id,
+        razorpay_ready=bool(key_id and razorpay_secret_value()),
         razorpay_config_id=settings.razorpay_checkout_config_id,
         upi_id=upi_id,
         upi_payee_name=upi_payee_name,
@@ -424,10 +453,12 @@ def create_order(
         order_payload["checkout_config_id"] = checkout_config_id
     try:
         order = razorpay_client().order.create(order_payload)
+    except HTTPException:
+        raise
     except (BadRequestError, GatewayError, ServerError) as exc:
         raise HTTPException(status_code=razorpay_error_status(exc), detail=razorpay_error_detail(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to create Razorpay order.") from exc
+        raise HTTPException(status_code=razorpay_error_status(exc), detail=razorpay_error_detail(exc)) from exc
 
     db.add(
         PaymentRecord(

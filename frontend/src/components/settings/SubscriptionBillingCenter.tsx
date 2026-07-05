@@ -49,6 +49,7 @@ export function SubscriptionBillingCenter() {
   const [promo, setPromo] = useState<PromoCodeResponse | null>(null);
   const [paymentConfig, setPaymentConfig] = useState<PaymentConfig | null>(null);
   const razorpayKeyId = paymentConfig?.key_id || import.meta.env.VITE_RAZORPAY_KEY_ID || "";
+  const razorpayReady = paymentConfig?.razorpay_ready ?? Boolean(import.meta.env.VITE_RAZORPAY_KEY_ID);
   const razorpayCheckoutConfigId = normalizeRazorpayConfigId(
     paymentConfig?.razorpay_config_id,
     import.meta.env.VITE_RAZORPAY_CHECKOUT_CONFIG_ID,
@@ -101,6 +102,10 @@ export function SubscriptionBillingCenter() {
     if (!token || !user || !paidPlans.has(plan.id)) return;
     if (!razorpayKeyId) {
       setError("Razorpay public key is missing. Set RAZORPAY_KEY_ID in backend environment.");
+      return;
+    }
+    if (!razorpayReady) {
+      setError("Razorpay payment is not fully configured. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in backend environment.");
       return;
     }
     if (!window.Razorpay) {
