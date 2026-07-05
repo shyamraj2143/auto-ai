@@ -45,6 +45,8 @@ def ensure_runtime_schema() -> None:
     table_names = set(inspector.get_table_names())
     statements: list[str] = []
     ensure_mobile_index = False
+    backfill_payment_records = "payment_records" in table_names
+    backfill_subscriptions = "user_subscriptions" in table_names
     backfill_apk_versions = "apk_versions" in table_names
     migrate_legacy_apk_releases = "apk_versions" in table_names and "apk_releases" in table_names
 
@@ -83,7 +85,10 @@ def ensure_runtime_schema() -> None:
     if "user_subscriptions" in table_names:
         subscription_columns = {column["name"] for column in inspector.get_columns("user_subscriptions")}
         quota_columns = {
+            "plan_id": "VARCHAR(32) NOT NULL DEFAULT 'free'",
+            "status": "VARCHAR(32) NOT NULL DEFAULT 'free'",
             "token_limit_monthly": "INTEGER NOT NULL DEFAULT 10000",
+            "tokens_added": "INTEGER NOT NULL DEFAULT 10000",
             "tokens_used_monthly": "INTEGER NOT NULL DEFAULT 0",
             "token_balance": "INTEGER NOT NULL DEFAULT 10000",
             "bonus_tokens": "INTEGER NOT NULL DEFAULT 0",
@@ -98,10 +103,27 @@ def ensure_runtime_schema() -> None:
             "is_lifetime": "BOOLEAN NOT NULL DEFAULT FALSE",
             "suspended_at": "datetime",
             "suspended_by": "VARCHAR(36)",
+            "started_at": "datetime",
         }
         for column_name, definition in quota_columns.items():
             if column_name not in subscription_columns:
                 add_column("user_subscriptions", column_name, definition)
+
+    if "payment_records" in table_names:
+        payment_columns = {column["name"] for column in inspector.get_columns("payment_records")}
+        payment_record_columns = {
+            "user_email": "VARCHAR(255)",
+            "plan_id": "VARCHAR(32) NOT NULL DEFAULT 'free'",
+            "amount": "INTEGER NOT NULL DEFAULT 0",
+            "razorpay_order_id": "VARCHAR(120)",
+            "razorpay_payment_id": "VARCHAR(120)",
+            "razorpay_signature": "VARCHAR(255)",
+            "paid_at": "datetime",
+            "updated_at": "datetime",
+        }
+        for column_name, definition in payment_record_columns.items():
+            if column_name not in payment_columns:
+                add_column("payment_records", column_name, definition)
 
     if "api_usage" in table_names:
         usage_columns = {column["name"] for column in inspector.get_columns("api_usage")}
@@ -150,7 +172,14 @@ def ensure_runtime_schema() -> None:
             if column_name not in apk_columns:
                 add_column("apk_versions", column_name, definition)
 
-    if not statements and not ensure_mobile_index and not backfill_apk_versions and not migrate_legacy_apk_releases:
+    if (
+        not statements
+        and not ensure_mobile_index
+        and not backfill_payment_records
+        and not backfill_subscriptions
+        and not backfill_apk_versions
+        and not migrate_legacy_apk_releases
+    ):
         return
 
     with engine.begin() as connection:
@@ -170,13 +199,17 @@ def ensure_runtime_schema() -> None:
             connection.execute(text(f"UPDATE {quote('users')} SET {quote('is_admin')} = TRUE WHERE {quote('role')} IN ('admin', 'super_admin') AND {quote('is_admin')} = FALSE"))
         if "user_subscriptions" in table_names:
             subscriptions = quote("user_subscriptions")
+            connection.execute(text(f"UPDATE {subscriptions} SET {quote('plan_id')} = {quote('plan')} WHERE {quote('plan_id')} IS NULL OR TRIM({quote('plan_id')}) = ''"))
+            connection.execute(text(f"UPDATE {subscriptions} SET {quote('status')} = CASE WHEN {quote('suspended_at')} IS NOT NULL THEN 'suspended' WHEN {quote('is_active')} = TRUE THEN 'active' ELSE COALESCE(NULLIF(TRIM({quote('payment_status')}), ''), 'free') END WHERE {quote('status')} IS NULL OR TRIM({quote('status')}) = ''"))
             connection.execute(text(f"UPDATE {subscriptions} SET {quote('token_limit_monthly')} = 10000 WHERE {quote('token_limit_monthly')} IS NULL"))
+            connection.execute(text(f"UPDATE {subscriptions} SET {quote('tokens_added')} = {quote('token_limit_monthly')} WHERE {quote('tokens_added')} IS NULL OR {quote('tokens_added')} < 0"))
             connection.execute(text(f"UPDATE {subscriptions} SET {quote('tokens_used_monthly')} = 0 WHERE {quote('tokens_used_monthly')} IS NULL OR {quote('tokens_used_monthly')} < 0"))
             connection.execute(text(f"UPDATE {subscriptions} SET {quote('bonus_tokens')} = 0 WHERE {quote('bonus_tokens')} IS NULL OR {quote('bonus_tokens')} < 0"))
             connection.execute(text(f"UPDATE {subscriptions} SET {quote('daily_message_limit')} = 25 WHERE {quote('daily_message_limit')} IS NULL"))
             connection.execute(text(f"UPDATE {subscriptions} SET {quote('messages_used_today')} = 0 WHERE {quote('messages_used_today')} IS NULL OR {quote('messages_used_today')} < 0"))
             connection.execute(text(f"UPDATE {subscriptions} SET {quote('auto_renewal')} = FALSE WHERE {quote('auto_renewal')} IS NULL"))
             connection.execute(text(f"UPDATE {subscriptions} SET {quote('is_lifetime')} = FALSE WHERE {quote('is_lifetime')} IS NULL"))
+            connection.execute(text(f"UPDATE {subscriptions} SET {quote('started_at')} = {quote('created_at')} WHERE {quote('started_at')} IS NULL"))
             connection.execute(
                 text(
                     f"UPDATE {subscriptions} SET {quote('plan_name')} = CASE {quote('plan')} "
@@ -195,6 +228,14 @@ def ensure_runtime_schema() -> None:
                     f"WHERE {quote('token_balance')} IS NULL OR {quote('token_balance')} < 0"
                 )
             )
+        if "payment_records" in table_names:
+            payment_records = quote("payment_records")
+            connection.execute(text(f"UPDATE {payment_records} SET {quote('plan_id')} = {quote('plan')} WHERE {quote('plan_id')} IS NULL OR TRIM({quote('plan_id')}) = ''"))
+            connection.execute(text(f"UPDATE {payment_records} SET {quote('amount')} = {quote('amount_cents')} WHERE {quote('amount')} IS NULL OR {quote('amount')} <= 0"))
+            connection.execute(text(f"UPDATE {payment_records} SET {quote('razorpay_order_id')} = {quote('subscription_id')} WHERE ({quote('razorpay_order_id')} IS NULL OR TRIM({quote('razorpay_order_id')}) = '') AND {quote('provider')} = 'razorpay'"))
+            connection.execute(text(f"UPDATE {payment_records} SET {quote('razorpay_payment_id')} = {quote('payment_id')} WHERE ({quote('razorpay_payment_id')} IS NULL OR TRIM({quote('razorpay_payment_id')}) = '') AND {quote('provider')} = 'razorpay'"))
+            connection.execute(text(f"UPDATE {payment_records} SET {quote('paid_at')} = {quote('created_at')} WHERE {quote('paid_at')} IS NULL AND {quote('status')} IN ('paid', 'verified', 'captured', 'succeeded')"))
+            connection.execute(text(f"UPDATE {payment_records} SET {quote('updated_at')} = {quote('created_at')} WHERE {quote('updated_at')} IS NULL"))
         if "api_usage" in table_names:
             api_usage = quote("api_usage")
             connection.execute(text(f"UPDATE {api_usage} SET {quote('input_tokens')} = {quote('prompt_tokens')} WHERE {quote('input_tokens')} = 0 AND {quote('prompt_tokens')} > 0"))

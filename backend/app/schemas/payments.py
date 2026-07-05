@@ -22,6 +22,7 @@ class CreateOrderRequest(BaseModel):
     amount: int
     currency: str = Field(default="INR", min_length=3, max_length=3)
     receipt: str | None = Field(default=None, max_length=40)
+    plan_id: PaidPlan | None = None
     plan: PaidPlan | None = None
     promo_code: str | None = Field(default=None, max_length=40)
 
@@ -47,12 +48,14 @@ class CreateOrderResponse(BaseModel):
     order_id: str
     amount: int
     currency: str
+    plan_id: PaidPlan
 
 
 class VerifyPaymentRequest(BaseModel):
     razorpay_payment_id: str | None = None
     razorpay_order_id: str | None = None
     razorpay_signature: str | None = None
+    plan_id: PaidPlan | None = None
     plan: PaidPlan | None = None
     amount: int | None = None
     currency: str = Field(default="INR", min_length=3, max_length=3)

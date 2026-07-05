@@ -251,6 +251,7 @@ export type RazorpayOrder = {
   order_id: string;
   amount: number;
   currency: string;
+  plan_id: PaidPricingPlanName;
 };
 
 export type RazorpayVerifyResponse = {
@@ -435,11 +436,18 @@ export type AdminPaymentRecord = {
   payment_id?: string | null;
   subscription_id?: string | null;
   plan: AdminPlanName;
+  plan_id: AdminPlanName;
+  amount: number;
   amount_cents: number;
   currency: string;
   status: string;
+  razorpay_order_id?: string | null;
+  razorpay_payment_id?: string | null;
+  paid_at?: string | null;
+  subscription_status?: string | null;
   invoice_url?: string | null;
   created_at: string;
+  updated_at?: string | null;
 };
 
 export type AdminAnalytics = {

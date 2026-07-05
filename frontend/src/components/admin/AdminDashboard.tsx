@@ -1441,7 +1441,7 @@ export function AdminDashboard() {
                 <SectionTitle title="Payments" subtitle="Recorded Razorpay/Stripe/manual payment records" />
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1120px] border-collapse text-left text-sm">
+                <table className="w-full min-w-[1280px] border-collapse text-left text-sm">
                   <thead className="bg-white/[0.035] text-xs uppercase text-slate-400">
                     <tr>
                       <th className="px-4 py-3">User</th>
@@ -1449,7 +1449,9 @@ export function AdminDashboard() {
                       <th className="px-4 py-3">Plan</th>
                       <th className="px-4 py-3">Amount</th>
                       <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Subscription</th>
                       <th className="px-4 py-3">Customer / Payment</th>
+                      <th className="px-4 py-3">Paid</th>
                       <th className="px-4 py-3">Created</th>
                       <th className="px-4 py-3">Actions</th>
                     </tr>
@@ -1462,7 +1464,9 @@ export function AdminDashboard() {
                         <td className="px-4 py-3">{payment.plan}</td>
                         <td className="px-4 py-3">{money(payment.amount_cents, payment.currency)}</td>
                         <td className="px-4 py-3">{payment.status}</td>
-                        <td className="px-4 py-3 text-xs"><div>{payment.customer_id ?? "No customer ID"}</div><div>{payment.payment_id ?? "No payment ID"}</div></td>
+                        <td className="px-4 py-3">{payment.subscription_status ?? "No subscription"}</td>
+                        <td className="px-4 py-3 text-xs"><div>{payment.customer_id ?? "No customer ID"}</div><div>{payment.razorpay_payment_id ?? payment.payment_id ?? "No payment ID"}</div><div>{payment.razorpay_order_id ?? payment.subscription_id ?? "No order ID"}</div></td>
+                        <td className="px-4 py-3">{payment.paid_at ? formatDate(payment.paid_at) : "Not paid"}</td>
                         <td className="px-4 py-3">{formatDate(payment.created_at)}</td>
                         <td className="px-4 py-3">
                           <div className="flex flex-wrap gap-2">
@@ -1481,7 +1485,7 @@ export function AdminDashboard() {
                       </tr>
                     ))}
                     {payments.length === 0 && (
-                      <tr><td className="px-4 py-6 text-sm text-slate-400" colSpan={8}>No payment records yet.</td></tr>
+                      <tr><td className="px-4 py-6 text-sm text-slate-400" colSpan={10}>No payment records yet.</td></tr>
                     )}
                   </tbody>
                 </table>

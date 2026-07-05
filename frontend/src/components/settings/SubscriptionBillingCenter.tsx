@@ -83,7 +83,7 @@ export function SubscriptionBillingCenter() {
     setSuccess("");
     try {
       const order = await api.createRazorpayOrder(token, {
-        plan: paidPlan,
+        plan_id: paidPlan,
         amount,
         currency: "INR",
         receipt: `auto-ai-${paidPlan}-${Date.now()}`.slice(0, 40),
@@ -96,7 +96,7 @@ export function SubscriptionBillingCenter() {
         name: "Auto-AI",
         description: `${plan.label} plan`,
         order_id: order.order_id,
-        prefill: { name: user.name, email: user.email, contact: user.mobile ?? undefined },
+        prefill: { name: user.name, email: user.email, contact: user.mobile || "" },
         ...RAZORPAY_UPI_FIRST_OPTIONS,
         theme: { color: "#22d3ee" },
         modal: {
@@ -109,10 +109,7 @@ export function SubscriptionBillingCenter() {
           void api.verifyRazorpayPayment(token, {
             razorpay_payment_id: response.razorpay_payment_id,
             razorpay_order_id: response.razorpay_order_id,
-            razorpay_signature: response.razorpay_signature,
-            plan: paidPlan,
-            amount: order.amount,
-            currency: order.currency
+            razorpay_signature: response.razorpay_signature
           })
             .then((result) => {
               setSuccess(result.message);

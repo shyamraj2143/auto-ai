@@ -234,13 +234,17 @@ def activate_subscription_plan(
     normalized = normalize_plan(plan)
     defaults = quota_plan_defaults(normalized)
     subscription.plan = normalized
+    subscription.plan_id = normalized
     subscription.plan_name = str(defaults["plan_name"])
     subscription.token_limit_monthly = int(defaults["token_limit_monthly"])
+    subscription.tokens_added = int(defaults["token_limit_monthly"])
     subscription.daily_message_limit = int(defaults["daily_message_limit"])
     subscription.is_active = True
+    subscription.status = "active"
     subscription.payment_status = payment_status
     subscription.suspended_at = None
     subscription.suspended_by = None
+    subscription.started_at = datetime.utcnow()
     if not subscription.is_lifetime:
         subscription.expires_at = datetime.utcnow() + timedelta(days=30 * max(1, months))
     subscription.updated_at = datetime.utcnow()
@@ -295,14 +299,18 @@ def ensure_user_subscription(db: Session, user: User) -> UserSubscription:
     subscription = UserSubscription(
         user_id=user.id,
         plan=plan,
+        plan_id=plan,
         is_active=True,
+        status="active",
         payment_status="admin" if plan == "admin" else "free",
         plan_name=str(defaults["plan_name"]),
         token_limit_monthly=int(defaults["token_limit_monthly"]),
+        tokens_added=int(defaults["token_limit_monthly"]),
         daily_message_limit=int(defaults["daily_message_limit"]),
         tokens_used_monthly=0,
         bonus_tokens=0,
         messages_used_today=0,
+        started_at=datetime.utcnow(),
     )
     recalculate_token_balance(subscription)
     try:

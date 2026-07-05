@@ -633,7 +633,7 @@ export const api = {
     }),
   createRazorpayOrder: (
     token: string,
-    payload: { plan: PaidPricingPlanName; amount: number; currency: string; receipt?: string; promo_code?: string | null }
+    payload: { plan_id: PaidPricingPlanName; amount: number; currency: string; receipt?: string; promo_code?: string | null }
   ) =>
     apiFetch<RazorpayOrder>("/payments/create-order", {
       method: "POST",
@@ -647,9 +647,9 @@ export const api = {
       razorpay_payment_id: string;
       razorpay_order_id: string;
       razorpay_signature: string;
-      plan: PaidPricingPlanName;
-      amount: number;
-      currency: string;
+      plan_id?: PaidPricingPlanName;
+      amount?: number;
+      currency?: string;
     }
   ) =>
     apiFetch<RazorpayVerifyResponse>("/payments/verify-payment", {

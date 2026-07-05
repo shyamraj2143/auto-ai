@@ -255,11 +255,18 @@ class AdminPaymentRecordRead(BaseModel):
     payment_id: str | None = None
     subscription_id: str | None = None
     plan: str
+    plan_id: str
+    amount: int
     amount_cents: int
     currency: str
     status: str
+    razorpay_order_id: str | None = None
+    razorpay_payment_id: str | None = None
+    paid_at: datetime | None = None
+    subscription_status: str | None = None
     invoice_url: str | None = None
     created_at: datetime
+    updated_at: datetime | None = None
 
 
 class AdminAnalyticsResponse(BaseModel):

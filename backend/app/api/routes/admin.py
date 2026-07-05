@@ -206,22 +206,34 @@ def to_feature_read(flag: FeatureFlag, user: User | None = None) -> AdminFeature
     )
 
 
-def to_payment_read(payment: PaymentRecord, user: User | None = None) -> AdminPaymentRecordRead:
+def to_payment_read(
+    payment: PaymentRecord,
+    user: User | None = None,
+    subscription: UserSubscription | None = None,
+) -> AdminPaymentRecordRead:
+    amount = int(payment.amount or payment.amount_cents or 0)
     return AdminPaymentRecordRead(
         id=payment.id,
         user_id=payment.user_id,
         user_name=user.name if user else None,
-        user_email=user.email if user else None,
+        user_email=user.email if user else payment.user_email,
         provider=payment.provider,
         customer_id=payment.customer_id,
-        payment_id=payment.payment_id,
-        subscription_id=payment.subscription_id,
-        plan=payment.plan,
-        amount_cents=payment.amount_cents,
+        payment_id=payment.razorpay_payment_id or payment.payment_id,
+        subscription_id=payment.razorpay_order_id or payment.subscription_id,
+        plan=payment.plan_id or payment.plan,
+        plan_id=payment.plan_id or payment.plan,
+        amount=amount,
+        amount_cents=amount,
         currency=payment.currency,
         status=payment.status,
+        razorpay_order_id=payment.razorpay_order_id,
+        razorpay_payment_id=payment.razorpay_payment_id or payment.payment_id,
+        paid_at=payment.paid_at,
+        subscription_status=subscription.status if subscription else None,
         invoice_url=f"/api/v1/admin/subscriptions/payments/{payment.id}/invoice",
         created_at=payment.created_at,
+        updated_at=payment.updated_at,
     )
 
 
@@ -663,10 +675,13 @@ def update_subscription(
     updates = payload.model_dump(exclude_unset=True)
     if "plan" in updates and updates["plan"] is not None:
         subscription.plan = normalize_plan(updates["plan"])
+        subscription.plan_id = subscription.plan
         defaults = quota_plan_defaults(subscription.plan)
         subscription.plan_name = str(defaults["plan_name"])
         subscription.token_limit_monthly = int(defaults["token_limit_monthly"])
+        subscription.tokens_added = int(defaults["token_limit_monthly"])
         subscription.daily_message_limit = int(defaults["daily_message_limit"])
+        subscription.status = "active" if subscription.is_active else "inactive"
         mark_quota_updated(subscription, current_admin)
         recalculate_token_balance(subscription)
     for field in (
@@ -682,9 +697,12 @@ def update_subscription(
     ):
         if field in updates:
             setattr(subscription, field, updates[field])
+    if "is_active" in updates:
+        subscription.status = "active" if subscription.is_active else "inactive"
     if subscription.is_lifetime:
         subscription.expires_at = None
         subscription.is_active = True
+        subscription.status = "active"
         subscription.suspended_at = None
         subscription.suspended_by = None
     subscription.updated_at = datetime.utcnow()
@@ -726,6 +744,7 @@ def suspend_subscription(
     user = get_user_or_404(db, user_id)
     subscription = ensure_user_subscription(db, user)
     subscription.is_active = False
+    subscription.status = "suspended"
     subscription.payment_status = "suspended"
     subscription.suspended_at = datetime.utcnow()
     subscription.suspended_by = current_admin.id
@@ -745,11 +764,12 @@ def suspend_subscription(
 @router.get("/subscriptions/payments", response_model=list[AdminPaymentRecordRead])
 def list_payments(_: User = Depends(get_current_admin), db: Session = Depends(get_db)) -> list[AdminPaymentRecordRead]:
     rows = db.execute(
-        select(PaymentRecord, User)
+        select(PaymentRecord, User, UserSubscription)
         .outerjoin(User, PaymentRecord.user_id == User.id)
+        .outerjoin(UserSubscription, UserSubscription.user_id == PaymentRecord.user_id)
         .order_by(PaymentRecord.created_at.desc())
     ).all()
-    return [to_payment_read(payment, user) for payment, user in rows]
+    return [to_payment_read(payment, user, subscription) for payment, user, subscription in rows]
 
 
 @router.get("/subscriptions/payments/{payment_id}/invoice")
@@ -766,13 +786,13 @@ def download_admin_invoice(
         [
             "Auto-AI Invoice",
             f"Invoice ID: {payment.id}",
-            f"Date: {payment.created_at.isoformat()}",
-            f"Email: {user.email if user else 'N/A'}",
-            f"Plan: {payment.plan}",
-            f"Amount: {payment.amount_cents / 100:.2f} {payment.currency}",
+            f"Date: {(payment.paid_at or payment.created_at).isoformat()}",
+            f"Email: {user.email if user else payment.user_email or 'N/A'}",
+            f"Plan: {payment.plan_id or payment.plan}",
+            f"Amount: {int(payment.amount or payment.amount_cents or 0) / 100:.2f} {payment.currency}",
             f"Status: {payment.status}",
-            f"Payment ID: {payment.payment_id or 'N/A'}",
-            f"Order ID: {payment.subscription_id or 'N/A'}",
+            f"Payment ID: {payment.razorpay_payment_id or payment.payment_id or 'N/A'}",
+            f"Order ID: {payment.razorpay_order_id or payment.subscription_id or 'N/A'}",
         ]
     )
     return Response(
@@ -793,11 +813,13 @@ def refund_payment(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
     if payment.status == "refunded":
         user = db.get(User, payment.user_id) if payment.user_id else None
-        return to_payment_read(payment, user)
-    if payment.provider != "razorpay" or not payment.payment_id:
+        subscription = db.scalar(select(UserSubscription).where(UserSubscription.user_id == payment.user_id)) if payment.user_id else None
+        return to_payment_read(payment, user, subscription)
+    razorpay_payment_id = payment.razorpay_payment_id or payment.payment_id
+    if payment.provider != "razorpay" or not razorpay_payment_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only Razorpay payments with a payment ID can be refunded.")
     try:
-        refund = admin_razorpay_client().payment.refund(payment.payment_id, {"amount": payment.amount_cents})
+        refund = admin_razorpay_client().payment.refund(razorpay_payment_id, {"amount": int(payment.amount or payment.amount_cents or 0)})
     except (BadRequestError, GatewayError, ServerError) as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Razorpay refund failed.") from exc
     payment.status = "refunded"
@@ -812,12 +834,13 @@ def refund_payment(
         actor_user_id=current_admin.id,
         target_user_id=payment.user_id or "",
         action="payment.refund",
-        metadata={"payment_id": payment.id, "razorpay_payment_id": payment.payment_id},
+        metadata={"payment_id": payment.id, "razorpay_payment_id": razorpay_payment_id},
     )
     db.commit()
     db.refresh(payment)
     user = db.get(User, payment.user_id) if payment.user_id else None
-    return to_payment_read(payment, user)
+    subscription = db.scalar(select(UserSubscription).where(UserSubscription.user_id == payment.user_id)) if payment.user_id else None
+    return to_payment_read(payment, user, subscription)
 
 
 def provider_summaries(rows: list[tuple[str, int, int, int, int]]) -> list[AdminUsageProviderSummary]:

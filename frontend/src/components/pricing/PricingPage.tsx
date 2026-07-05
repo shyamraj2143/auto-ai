@@ -70,7 +70,7 @@ export function PricingPage() {
     setMessage("");
     try {
       const order = await api.createRazorpayOrder(token, {
-        plan: paidPlan,
+        plan_id: paidPlan,
         amount: plan.amount,
         currency: "INR",
         receipt: `auto-ai-${paidPlan}-${Date.now()}`.slice(0, 40)
@@ -85,7 +85,7 @@ export function PricingPage() {
         prefill: {
           name: user.name,
           email: user.email,
-          contact: user.mobile ?? undefined
+          contact: user.mobile || ""
         },
         ...RAZORPAY_UPI_FIRST_OPTIONS,
         theme: {
@@ -101,10 +101,7 @@ export function PricingPage() {
           void api.verifyRazorpayPayment(token, {
             razorpay_payment_id: response.razorpay_payment_id,
             razorpay_order_id: response.razorpay_order_id,
-            razorpay_signature: response.razorpay_signature,
-            plan: paidPlan,
-            amount: order.amount,
-            currency: order.currency
+            razorpay_signature: response.razorpay_signature
           })
             .then((result) => {
               setMessage(result.message || paymentInstruction);
