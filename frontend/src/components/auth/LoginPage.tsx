@@ -57,11 +57,9 @@ export function LoginPage() {
           {loading ? "Signing in" : "Login"}
           <ArrowRight size={17} />
         </button>
-        {!isMobileAppRuntime() && (
-          <p className="mt-4 text-center text-sm text-slate-400">
-            New here? <Link className="font-medium text-cyan-200" to="/register">Create an account</Link>
-          </p>
-        )}
+        <p className="mt-4 text-center text-sm text-slate-400">
+          New here? <Link className="font-medium text-cyan-200" to="/register">Create an account</Link>
+        </p>
       </form>
     </div>
   );

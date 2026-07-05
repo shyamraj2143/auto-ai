@@ -65,7 +65,7 @@ export default function App() {
                 <Route path="/pricing" element={<MobileBlockedRoute><PricingPage /></MobileBlockedRoute>} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/admin/login" element={<AdminLoginPage />} />
-                <Route path="/register" element={<MobileBlockedRoute><RegisterPage /></MobileBlockedRoute>} />
+                <Route path="/register" element={<RegisterPage />} />
                 <Route element={<ProtectedRoute />}>
                   <Route element={<AppShell />}>
                     <Route path="/chat" element={<ChatPage />} />
