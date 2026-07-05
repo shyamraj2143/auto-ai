@@ -325,6 +325,9 @@ export function SubscriptionBillingCenter() {
                 {plan.features.map((feature) => <li key={feature}><Check size={14} /> {feature}</li>)}
               </ul>
               <div className="billing-payment-actions">
+                {!isCurrent && plan.id !== "free" && (
+                  <UpiPaymentBox upiId={upiId} payeeName={upiPayeeName} amountPaise={amount} planLabel={plan.label} />
+                )}
                 <button
                   className={isCurrent ? "btn-secondary" : "btn-primary"}
                   onClick={() => upgrade(plan)}
@@ -332,11 +335,8 @@ export function SubscriptionBillingCenter() {
                   type="button"
                 >
                   {busy === `pay-${plan.id}` ? <Loader2 className="spin-icon" size={16} /> : <Wallet size={16} />}
-                  {isCurrent ? "Current" : plan.id === "free" ? "Free" : "Upgrade with Razorpay"}
+                  {isCurrent ? "Current" : plan.id === "free" ? "Free" : "Card / Netbanking / Wallet"}
                 </button>
-                {!isCurrent && plan.id !== "free" && (
-                  <UpiPaymentBox upiId={upiId} payeeName={upiPayeeName} amountPaise={amount} planLabel={plan.label} />
-                )}
               </div>
             </article>
           );

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Check, Copy, ExternalLink, QrCode } from "lucide-react";
+import { AlertCircle, Check, Copy, ExternalLink, QrCode } from "lucide-react";
 import { buildUpiPaymentUri, copyText } from "../../utils/upi";
 
 type UpiPaymentBoxProps = {
@@ -25,7 +25,21 @@ export function UpiPaymentBox({ upiId, payeeName, amountPaise, planLabel }: UpiP
     });
   }, [amountPaise, normalizedPayee, normalizedUpiId, planLabel]);
 
-  if (!normalizedUpiId) return null;
+  if (!normalizedUpiId) {
+    return (
+      <div className="upi-payment-box upi-payment-missing">
+        <div className="upi-payment-head">
+          <QrCode size={15} />
+          <span>UPI QR / ID</span>
+        </div>
+        <div className="upi-payment-missing-row">
+          <AlertCircle size={16} />
+          <span>UPI ID is not configured. Set UPI_ID in backend environment.</span>
+        </div>
+      </div>
+    );
+  }
+
   const paymentUpiId = normalizedUpiId;
 
   async function copyUpiId() {

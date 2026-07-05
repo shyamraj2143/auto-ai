@@ -1584,6 +1584,26 @@ button:disabled {
   font-size: 12px;
 }
 
+.upi-payment-missing {
+  border-color: rgba(251, 191, 36, 0.28);
+  background: rgba(251, 191, 36, 0.08);
+}
+
+.upi-payment-missing-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #fde68a;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.upi-payment-missing-row svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
 .payment-alert {
   margin: 0 auto 22px;
   max-width: 860px;

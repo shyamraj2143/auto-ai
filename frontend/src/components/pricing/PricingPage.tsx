@@ -180,9 +180,10 @@ export function PricingPage() {
                   <Link className="btn-secondary" to={user ? "/chat" : "/register"}>Start free</Link>
                 ) : (
                   <div className="pricing-actions">
+                    <UpiPaymentBox upiId={upiId} payeeName={upiPayeeName} amountPaise={plan.amount} planLabel={plan.label} />
                     <button className="btn-primary" disabled={busy} onClick={() => startCheckout(plan)} type="button">
                       {busy ? <Loader2 className="spin-icon" size={16} /> : <CreditCard size={16} />}
-                      Pay {plan.price}
+                      Card / Netbanking / Wallet
                     </button>
                     {paymentLink ? (
                       <a className="btn-secondary" href={paymentLink} rel="noreferrer" target="_blank">
@@ -195,7 +196,6 @@ export function PricingPage() {
                         Payment Link
                       </button>
                     )}
-                    <UpiPaymentBox upiId={upiId} payeeName={upiPayeeName} amountPaise={plan.amount} planLabel={plan.label} />
                   </div>
                 )}
               </article>

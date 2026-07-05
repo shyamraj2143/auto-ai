@@ -116,8 +116,8 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = str(PROJECT_ROOT / "backend" / "uploads")
     APK_STORAGE_DIR: str = str(PROJECT_ROOT / "public" / "downloads")
     APK_FILENAME: str = "auto-ai.apk"
-    APK_DEFAULT_VERSION: str = "1.0.12"
-    APK_DEFAULT_VERSION_CODE: int = 13
+    APK_DEFAULT_VERSION: str = "1.0.13"
+    APK_DEFAULT_VERSION_CODE: int = 14
     APK_MIN_ANDROID_VERSION: str = "Android 7.0"
     MAX_UPLOAD_MB: int = 20
     ALLOWED_DOCUMENT_EXTENSIONS: set[str] = {".pdf", ".txt", ".docx"}
@@ -135,6 +135,9 @@ class Settings(BaseSettings):
     RAZORPAY_PREMIUM_LINK: str | None = None
     RAZORPAY_ULTRA_LINK: str | None = None
     UPI_ID: str | None = None
+    PAYMENT_UPI_ID: str | None = None
+    MERCHANT_UPI_ID: str | None = None
+    RAZORPAY_UPI_ID: str | None = None
     UPI_PAYEE_NAME: str = "Auto-AI"
     PROMO_CODES: str = ""
 
@@ -319,6 +322,19 @@ class Settings(BaseSettings):
     @property
     def aws_session_token(self) -> str | None:
         return self._project_env_value("AWS_SESSION_TOKEN") or self.AWS_SESSION_TOKEN
+
+    @property
+    def payment_upi_id(self) -> str | None:
+        return (
+            self.UPI_ID
+            or self.PAYMENT_UPI_ID
+            or self.MERCHANT_UPI_ID
+            or self.RAZORPAY_UPI_ID
+            or self._project_env_value("UPI_ID")
+            or self._project_env_value("PAYMENT_UPI_ID")
+            or self._project_env_value("MERCHANT_UPI_ID")
+            or self._project_env_value("RAZORPAY_UPI_ID")
+        )
 
     def chat_model_for(self, provider: str | None = None) -> str:
         selected_provider = (provider or self.AI_PROVIDER).lower()

@@ -75,7 +75,8 @@ export const RAZORPAY_UPI_FIRST_OPTIONS = {
           name: "Pay via UPI / QR",
           instruments: [
             {
-              method: "upi"
+              method: "upi",
+              flows: ["qr", "intent", "collect"]
             }
           ]
         },
