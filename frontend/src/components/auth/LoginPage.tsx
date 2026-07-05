@@ -3,6 +3,7 @@ import { Link, Navigate } from "react-router-dom";
 import { ArrowRight, Lock } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { authErrorMessage } from "../../utils/apiErrors";
+import { isMobileAppRuntime } from "../../utils/runtime";
 import { LogoIcon } from "../brand/LogoIcon";
 
 export function LoginPage() {
@@ -29,7 +30,7 @@ export function LoginPage() {
 
   return (
     <div className="auth-page">
-      <Link className="brand-mark absolute left-5 top-5" to="/">
+      <Link className="brand-mark absolute left-5 top-5" to={isMobileAppRuntime() ? "/login" : "/"}>
         <span className="brand-icon"><LogoIcon /></span>
         Auto-AI
       </Link>
@@ -56,9 +57,11 @@ export function LoginPage() {
           {loading ? "Signing in" : "Login"}
           <ArrowRight size={17} />
         </button>
-        <p className="mt-4 text-center text-sm text-slate-400">
-          New here? <Link className="font-medium text-cyan-200" to="/register">Create an account</Link>
-        </p>
+        {!isMobileAppRuntime() && (
+          <p className="mt-4 text-center text-sm text-slate-400">
+            New here? <Link className="font-medium text-cyan-200" to="/register">Create an account</Link>
+          </p>
+        )}
       </form>
     </div>
   );

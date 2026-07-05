@@ -28,8 +28,8 @@ android {
         applicationId "com.autoai.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 8
-        versionName "1.0.7"
+        versionCode 9
+        versionName "1.0.8"
         buildConfigField "String", "AUTO_AI_API_BASE_URL", "\"${autoAiApiBaseUrl.replace('\\', '\\\\').replace('"', '\\"')}\""
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {

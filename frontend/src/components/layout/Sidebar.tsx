@@ -6,6 +6,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
 import { useShell } from "../../contexts/ShellContext";
 import { useSettingsNavigation } from "../../hooks/useSettingsNavigation";
+import { isMobileAppRuntime } from "../../utils/runtime";
 import { LogoIcon } from "../brand/LogoIcon";
 
 const accountMenuItemClass =
@@ -247,7 +248,7 @@ export function Sidebar() {
                   setIsAccountMenuOpen(false);
                   closeSidebar();
                 }}
-                to="/pricing"
+                to={isMobileAppRuntime() ? "/settings?section=subscription" : "/pricing"}
               >
                 <CreditCard size={16} />
                 Subscription

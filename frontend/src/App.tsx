@@ -1,4 +1,4 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, type ReactNode } from "react";
 import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import { BrowserRouter } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
@@ -6,6 +6,7 @@ import { ShellProvider } from "./contexts/ShellContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { SeoManager } from "./seo/SeoManager";
 import { LandingPage } from "./components/landing/LandingPage";
+import { isMobileAppRuntime } from "./utils/runtime";
 
 const AppShell = lazy(() => import("./components/layout/AppShell").then((module) => ({ default: module.AppShell })));
 const ChatPage = lazy(() => import("./components/chat/ChatPage").then((module) => ({ default: module.ChatPage })));
@@ -23,7 +24,14 @@ function RootRedirect() {
   if (loading) {
     return <div className="app-loading">Loading Auto-AI...</div>;
   }
+  if (isMobileAppRuntime()) {
+    return <Navigate to={user ? "/chat" : "/login"} replace />;
+  }
   return user ? <Navigate to="/chat" replace /> : <LandingPage />;
+}
+
+function MobileBlockedRoute({ children }: { children: ReactNode }) {
+  return isMobileAppRuntime() ? <Navigate to="/" replace /> : children;
 }
 
 function ProtectedRoute() {
@@ -53,11 +61,11 @@ export default function App() {
               <Routes>
                 <Route index element={<RootRedirect />} />
                 <Route path="/home" element={<Navigate to="/" replace />} />
-                <Route path="/download" element={<DownloadPage />} />
-                <Route path="/pricing" element={<PricingPage />} />
+                <Route path="/download" element={<MobileBlockedRoute><DownloadPage /></MobileBlockedRoute>} />
+                <Route path="/pricing" element={<MobileBlockedRoute><PricingPage /></MobileBlockedRoute>} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/admin/login" element={<AdminLoginPage />} />
-                <Route path="/register" element={<RegisterPage />} />
+                <Route path="/register" element={<MobileBlockedRoute><RegisterPage /></MobileBlockedRoute>} />
                 <Route element={<ProtectedRoute />}>
                   <Route element={<AppShell />}>
                     <Route path="/chat" element={<ChatPage />} />

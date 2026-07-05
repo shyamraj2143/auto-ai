@@ -138,8 +138,8 @@ public class MainActivity extends BridgeActivity {
         if (isFinishing() || updateDialogVisible) return;
 
         updateDialogVisible = true;
-        String title = update.forceUpdate ? "Update required" : "Update available";
-        String message = "Version " + update.versionName + " is available.";
+        String title = "System Version Update";
+        String message = "Version " + update.versionName + " is available. Download the update to continue with the latest Auto-AI app.";
         if (!update.changelog.trim().isEmpty()) {
             message += "\n\n" + update.changelog.trim();
         }
@@ -147,7 +147,7 @@ public class MainActivity extends BridgeActivity {
         AlertDialog dialog = new AlertDialog.Builder(this)
             .setTitle(title)
             .setMessage(message)
-            .setPositiveButton("Update", (item, which) -> downloadAndInstall(update))
+            .setPositiveButton("Update Now", (item, which) -> downloadAndInstall(update))
             .setOnDismissListener(item -> updateDialogVisible = false)
             .create();
         dialog.setCancelable(!update.forceUpdate);
