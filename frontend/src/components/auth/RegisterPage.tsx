@@ -14,8 +14,6 @@ export function RegisterPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  if (user) return <Navigate to="/chat" replace />;
-
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     setError("");
@@ -44,6 +42,8 @@ export function RegisterPage() {
   const handleGoogleError = useCallback((message: string) => {
     setError(message);
   }, []);
+
+  if (user) return <Navigate to="/chat" replace />;
 
   return (
     <div className="auth-page">
