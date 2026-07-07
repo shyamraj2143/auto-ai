@@ -25,7 +25,9 @@ jobs:
       AUTO_AI_ANDROID_KEY_ALIAS: ${{ secrets.AUTO_AI_ANDROID_KEY_ALIAS }}
       AUTO_AI_ANDROID_KEY_PASSWORD: ${{ secrets.AUTO_AI_ANDROID_KEY_PASSWORD }}
       AUTO_AI_GOOGLE_WEB_CLIENT_ID: ${{ secrets.AUTO_AI_GOOGLE_WEB_CLIENT_ID }}
+      AUTO_AI_GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.AUTO_AI_GOOGLE_SERVICES_JSON_BASE64 }}
       AUTO_AI_APK_FORCE_UPDATE: ${{ secrets.AUTO_AI_APK_FORCE_UPDATE }}
+      AUTO_AI_UPDATE_NOTIFY_SECRET: ${{ secrets.AUTO_AI_UPDATE_NOTIFY_SECRET }}
 
     steps:
       - name: Checkout
@@ -66,6 +68,9 @@ jobs:
           version_code=$((100000 + GITHUB_RUN_NUMBER * 10 + GITHUB_RUN_ATTEMPT))
           echo "AUTO_AI_ANDROID_VERSION_CODE=$version_code" >> "$GITHUB_ENV"
           echo "AUTO_AI_ANDROID_VERSION_NAME=1.0.$version_code" >> "$GITHUB_ENV"
+          if [ -n "${AUTO_AI_GOOGLE_SERVICES_JSON_BASE64:-}" ]; then
+            printf '%s' "$AUTO_AI_GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > android/app/google-services.json
+          fi
 
       - name: Install root dependencies
         run: npm ci
@@ -114,6 +119,16 @@ jobs:
             --changelog "GitHub push ${GITHUB_SHA::7}" \
             --release-notes "Auto update from GitHub push ${GITHUB_SHA::7}" \
             "${args[@]}"
+
+      - name: Notify installed Android apps
+        if: ${{ env.AUTO_AI_UPDATE_NOTIFY_SECRET != '' }}
+        shell: bash
+        run: |
+          python scripts/notify_android_update.py \
+            --api-url "$AUTO_AI_API_BASE_URL" \
+            --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
+            --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
+            --changelog "GitHub push ${GITHUB_SHA::7}"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

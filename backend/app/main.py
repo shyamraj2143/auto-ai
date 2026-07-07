@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import admin, ai, auth, chat_sessions, chats, documents, download, health, human, live, memory, payments, search, voice
+from app.api.routes import admin, ai, auth, chat_sessions, chats, documents, download, health, human, live, memory, notifications, payments, search, voice
 from app.core.config import settings
 from app.core.rate_limit import InMemoryRateLimitMiddleware
 from app.db.session import SessionLocal, init_db
@@ -76,6 +76,7 @@ def create_app() -> FastAPI:
     app.include_router(memory.router, prefix=settings.API_V1_STR)
     app.include_router(human.router, prefix=settings.API_V1_STR)
     app.include_router(search.router, prefix=settings.API_V1_STR)
+    app.include_router(notifications.router, prefix=settings.API_V1_STR)
     app.include_router(download.router, prefix="/api")
     app.include_router(download.router, prefix=settings.API_V1_STR)
     app.include_router(payments.router, prefix="/api")

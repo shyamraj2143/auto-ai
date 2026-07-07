@@ -4,7 +4,7 @@ import re
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from pydantic import AnyHttpUrl, EmailStr, Field, SecretStr, field_validator, model_validator
+from pydantic import AliasChoices, AnyHttpUrl, EmailStr, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,6 +38,14 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str | None = None
     GOOGLE_ANDROID_CLIENT_ID: str | None = None
     GOOGLE_WEB_CLIENT_ID: str | None = None
+    FIREBASE_PROJECT_ID: str | None = None
+    FIREBASE_SERVICE_ACCOUNT_JSON: SecretStr | None = None
+    FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: SecretStr | None = None
+    FIREBASE_SERVICE_ACCOUNT_FILE: str | None = None
+    UPDATE_NOTIFY_SECRET: SecretStr | None = Field(
+        default=None,
+        validation_alias=AliasChoices("UPDATE_NOTIFY_SECRET", "AUTO_AI_UPDATE_NOTIFY_SECRET"),
+    )
 
     BACKEND_CORS_ORIGINS: list[AnyHttpUrl | str] = [
         "https://autoai.site.je",

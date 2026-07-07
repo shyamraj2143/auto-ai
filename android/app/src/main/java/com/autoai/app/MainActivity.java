@@ -30,6 +30,7 @@ import androidx.core.content.FileProvider;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebViewClient;
+import com.google.firebase.messaging.FirebaseMessaging;
 
 import org.json.JSONObject;
 
@@ -101,6 +102,7 @@ public class MainActivity extends BridgeActivity {
 
         createUpdateNotificationChannel();
         requestNotificationPermissionIfNeeded();
+        registerFirebaseMessagingToken();
         UpdateCheckScheduler.schedule(this);
         checkForUpdate(true);
         startUpdatePolling();
@@ -127,6 +129,18 @@ public class MainActivity extends BridgeActivity {
     private void startUpdatePolling() {
         mainHandler.removeCallbacks(updatePollRunnable);
         mainHandler.postDelayed(updatePollRunnable, UPDATE_CHECK_INTERVAL_MS);
+    }
+
+    private void registerFirebaseMessagingToken() {
+        try {
+            FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
+                if (task.isSuccessful()) {
+                    PushTokenRegistrar.registerAsync(this, task.getResult());
+                }
+            });
+        } catch (Exception ignored) {
+            // Firebase is optional until google-services.json is configured.
+        }
     }
 
     private String browserLikeUserAgent(String userAgent) {

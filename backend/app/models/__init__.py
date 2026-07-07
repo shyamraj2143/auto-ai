@@ -10,6 +10,7 @@ from app.models.document import Document
 from app.models.human import ConversationTurnAnalysis, UserInteractionProfile, UserMemory
 from app.models.live import FaceMemory, LiveMessage, LiveSession, VisionFrame
 from app.models.message import Message
+from app.models.push import PushDeviceToken
 from app.models.search import SearchCache, SearchRun
 from app.models.user import User
 
@@ -31,6 +32,7 @@ __all__ = [
     "Message",
     "PaymentRecord",
     "PlanLimit",
+    "PushDeviceToken",
     "RefreshToken",
     "SearchCache",
     "SearchRun",
