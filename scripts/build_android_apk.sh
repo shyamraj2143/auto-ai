@@ -83,6 +83,7 @@ cd "$ROOT"
 npx cap sync android
 
 cd "$ROOT/android"
+chmod +x ./gradlew
 ./gradlew assembleRelease
 
 SIGNED="$ROOT/android/app/build/outputs/apk/release/app-release.apk"
