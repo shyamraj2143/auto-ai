@@ -208,6 +208,7 @@ def create_razorpay_payment_record(
     currency: str,
     receipt: str | None = None,
     promo_code: str | None = None,
+    checkout_config_id: str | None = None,
 ) -> PaymentRecord:
     if amount < 100:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Amount must be at least 100 paise.")
@@ -224,6 +225,9 @@ def create_razorpay_payment_record(
             "plan_id": selected_plan,
         },
     }
+    resolved_checkout_config_id = checkout_config_id or settings.razorpay_checkout_config_id
+    if resolved_checkout_config_id:
+        order_payload["checkout_config_id"] = resolved_checkout_config_id
     log_razorpay_order_request(order_payload, selected_plan, receipt_value[:40])
     try:
         order = razorpay_client().order.create(order_payload)
@@ -678,6 +682,7 @@ def create_order(
         currency=payload.currency,
         receipt=payload.receipt,
         promo_code=payload.promo_code,
+        checkout_config_id=payload.checkout_config_id,
     )
     db.commit()
     return CreateOrderResponse(
