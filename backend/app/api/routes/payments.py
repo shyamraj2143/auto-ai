@@ -7,10 +7,11 @@ import logging
 import re
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlencode
 
 import razorpay
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import Response
+from fastapi.responses import RedirectResponse, Response
 from razorpay.errors import BadRequestError, GatewayError, ServerError
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -27,9 +28,11 @@ from app.schemas.payments import (
     BillingPlanRead,
     CreateOrderRequest,
     CreateOrderResponse,
+    CreatePaymentSessionRequest,
     PaymentHistoryRead,
     PaymentConfigRead,
     PaymentLinkConfig,
+    PaymentSessionResponse,
     PromoCodeRequest,
     PromoCodeResponse,
     RestorePurchaseResponse,
@@ -121,6 +124,25 @@ def razorpay_client() -> razorpay.Client:
     return razorpay.Client(auth=(key_id, razorpay_secret()))
 
 
+def verify_razorpay_signature(order_id: str, payment_id: str, signature: str) -> None:
+    body = f"{order_id}|{payment_id}".encode("utf-8")
+    generated_signature = hmac.new(razorpay_secret().encode("utf-8"), body, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(generated_signature, signature):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Razorpay signature mismatch.")
+
+
+def payment_status_url(base_url: str, params: dict[str, str]) -> str:
+    clean_params = {key: value for key, value in params.items() if value}
+    if not clean_params:
+        return base_url
+    separator = "&" if "?" in base_url else "?"
+    return f"{base_url}{separator}{urlencode(clean_params)}"
+
+
+def checkout_url_for_session(session_id: str) -> str:
+    return f"{settings.frontend_url}/payment/checkout?{urlencode({'session_id': session_id})}"
+
+
 def request_plan(plan_id: str | None, plan: str | None) -> str:
     selected_plan = plan_id or plan
     if selected_plan not in PLAN_PRICES_PAISE or selected_plan == "free":
@@ -153,6 +175,91 @@ def find_razorpay_payment(db: Session, *, order_id: str | None = None, subscript
         .where(PaymentRecord.provider == "razorpay", or_(*filters))
         .order_by(PaymentRecord.created_at.desc())
     )
+
+
+def payment_session_read(payment: PaymentRecord) -> PaymentSessionResponse:
+    order_id = payment_order_id(payment)
+    if not order_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payment session has no Razorpay order.")
+    key_id = razorpay_key_id()
+    if not key_id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Razorpay public key is missing.")
+    metadata = payment.raw_metadata or {}
+    return PaymentSessionResponse(
+        session_id=payment.id,
+        checkout_url=checkout_url_for_session(payment.id),
+        razorpay_order_id=order_id,
+        amount=payment_amount(payment),
+        currency=payment.currency,
+        key_id=key_id,
+        plan_id=payment_plan(payment),
+        status=payment.status,
+        user_email=payment.user_email,
+        user_name=str(metadata.get("user_name") or ""),
+    )
+
+
+def create_razorpay_payment_record(
+    db: Session,
+    current_user: User,
+    *,
+    selected_plan: str,
+    amount: int,
+    currency: str,
+    receipt: str | None = None,
+    promo_code: str | None = None,
+) -> PaymentRecord:
+    if amount < 100:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Amount must be at least 100 paise.")
+    validate_plan_amount(selected_plan, amount, promo_code)
+
+    receipt_value = receipt or f"auto-ai-{current_user.id[:8]}-{int(datetime.utcnow().timestamp())}"
+    order_payload = {
+        "amount": amount,
+        "currency": currency,
+        "receipt": receipt_value[:40],
+        "notes": {
+            "user_id": current_user.id,
+            "user_email": current_user.email,
+            "plan_id": selected_plan,
+        },
+    }
+    log_razorpay_order_request(order_payload, selected_plan, receipt_value[:40])
+    try:
+        order = razorpay_client().order.create(order_payload)
+    except HTTPException:
+        raise
+    except (BadRequestError, GatewayError, ServerError) as exc:
+        log_razorpay_order_failure(exc, order_payload, selected_plan, receipt_value[:40])
+        raise HTTPException(status_code=razorpay_error_status(exc), detail=razorpay_error_detail(exc)) from exc
+    except Exception as exc:
+        log_razorpay_order_failure(exc, order_payload, selected_plan, receipt_value[:40])
+        raise HTTPException(status_code=razorpay_error_status(exc), detail=razorpay_error_detail(exc)) from exc
+
+    payment = PaymentRecord(
+        user_id=current_user.id,
+        user_email=current_user.email,
+        provider="razorpay",
+        subscription_id=str(order["id"]),
+        razorpay_order_id=str(order["id"]),
+        plan=selected_plan,
+        plan_id=selected_plan,
+        amount=int(order["amount"]),
+        amount_cents=int(order["amount"]),
+        currency=str(order["currency"]),
+        status="created",
+        raw_metadata={
+            "receipt": receipt_value[:40],
+            "promo_code": promo_code,
+            "user_id": current_user.id,
+            "user_email": current_user.email,
+            "user_name": current_user.name,
+            "plan_id": selected_plan,
+        },
+    )
+    db.add(payment)
+    db.flush()
+    return payment
 
 
 def apply_paid_razorpay_payment(
@@ -197,6 +304,7 @@ def apply_paid_razorpay_payment(
         subscription.status = "active"
         subscription.tokens_added = subscription.token_limit_monthly
         subscription.started_at = now
+        recalculate_token_balance(subscription)
     if razorpay_payment_id:
         subscription.razorpay_payment_id = razorpay_payment_id
     subscription.updated_at = now
@@ -339,6 +447,8 @@ def payment_config() -> PaymentConfigRead:
         razorpay_ready=bool(key_id and razorpay_secret_value()),
         razorpay_mode=razorpay_key_mode(key_id),
         razorpay_config_id=settings.razorpay_checkout_config_id,
+        frontend_url=settings.frontend_url,
+        backend_url=settings.backend_url,
         upi_id=upi_id,
         upi_payee_name=upi_payee_name,
         payment_links=PaymentLinkConfig(
@@ -520,6 +630,38 @@ def restore_purchase(
     return RestorePurchaseResponse(restored=True, message="Purchase restored.")
 
 
+@router.post("/payments/create-session", response_model=PaymentSessionResponse)
+def create_payment_session(
+    payload: CreatePaymentSessionRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PaymentSessionResponse:
+    selected_plan = request_plan(payload.plan_id, None)
+    amount = payload.amount if payload.amount is not None else expected_plan_amount(selected_plan, payload.promo_code)
+    if amount is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unable to determine plan amount.")
+    payment = create_razorpay_payment_record(
+        db,
+        current_user,
+        selected_plan=selected_plan,
+        amount=amount,
+        currency=payload.currency,
+        receipt=payload.receipt,
+        promo_code=payload.promo_code,
+    )
+    db.commit()
+    db.refresh(payment)
+    return payment_session_read(payment)
+
+
+@router.get("/payments/sessions/{session_id}", response_model=PaymentSessionResponse)
+def payment_session(session_id: str, db: Session = Depends(get_db)) -> PaymentSessionResponse:
+    payment = db.get(PaymentRecord, session_id)
+    if not payment or payment.provider != "razorpay":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment session not found.")
+    return payment_session_read(payment)
+
+
 @router.post("/create-order", response_model=CreateOrderResponse)
 @router.post("/payments/create-order", response_model=CreateOrderResponse)
 def create_order(
@@ -528,60 +670,20 @@ def create_order(
     db: Session = Depends(get_db),
 ) -> CreateOrderResponse:
     selected_plan = request_plan(payload.plan_id, payload.plan)
-    if payload.amount < 100:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Amount must be at least 100 paise.")
-    validate_plan_amount(selected_plan, payload.amount, payload.promo_code)
-
-    receipt = payload.receipt or f"auto-ai-{current_user.id[:8]}-{int(datetime.utcnow().timestamp())}"
-    order_payload = {
-        "amount": payload.amount,
-        "currency": payload.currency,
-        "receipt": receipt[:40],
-        "notes": {
-            "user_id": current_user.id,
-            "user_email": current_user.email,
-            "plan_id": selected_plan,
-        },
-    }
-    log_razorpay_order_request(order_payload, selected_plan, receipt[:40])
-    try:
-        order = razorpay_client().order.create(order_payload)
-    except HTTPException:
-        raise
-    except (BadRequestError, GatewayError, ServerError) as exc:
-        log_razorpay_order_failure(exc, order_payload, selected_plan, receipt[:40])
-        raise HTTPException(status_code=razorpay_error_status(exc), detail=razorpay_error_detail(exc)) from exc
-    except Exception as exc:
-        log_razorpay_order_failure(exc, order_payload, selected_plan, receipt[:40])
-        raise HTTPException(status_code=razorpay_error_status(exc), detail=razorpay_error_detail(exc)) from exc
-
-    db.add(
-        PaymentRecord(
-            user_id=current_user.id,
-            user_email=current_user.email,
-            provider="razorpay",
-            subscription_id=str(order["id"]),
-            razorpay_order_id=str(order["id"]),
-            plan=selected_plan,
-            plan_id=selected_plan,
-            amount=int(order["amount"]),
-            amount_cents=int(order["amount"]),
-            currency=str(order["currency"]),
-            status="created",
-            raw_metadata={
-                "receipt": receipt[:40],
-                "promo_code": payload.promo_code,
-                "user_id": current_user.id,
-                "user_email": current_user.email,
-                "plan_id": selected_plan,
-            },
-        )
+    payment = create_razorpay_payment_record(
+        db,
+        current_user,
+        selected_plan=selected_plan,
+        amount=payload.amount,
+        currency=payload.currency,
+        receipt=payload.receipt,
+        promo_code=payload.promo_code,
     )
     db.commit()
     return CreateOrderResponse(
-        order_id=str(order["id"]),
-        amount=int(order["amount"]),
-        currency=str(order["currency"]),
+        order_id=payment_order_id(payment) or "",
+        amount=payment_amount(payment),
+        currency=payment.currency,
         plan_id=selected_plan,
     )
 
@@ -590,7 +692,6 @@ def create_order(
 @router.post("/payments/verify-payment", response_model=VerifyPaymentResponse)
 def verify_payment(
     payload: VerifyPaymentRequest,
-    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> VerifyPaymentResponse:
     if not payload.razorpay_payment_id or not payload.razorpay_order_id or not payload.razorpay_signature:
@@ -599,8 +700,6 @@ def verify_payment(
     order_record = find_razorpay_payment(db, order_id=payload.razorpay_order_id)
     if not order_record:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Razorpay order was not created by this account.")
-    if order_record.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Razorpay order was not created by this account.")
     if payload.amount is not None and payload.amount != payment_amount(order_record):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payment amount does not match the created order.")
     requested_plan = payload.plan_id or payload.plan
@@ -608,16 +707,12 @@ def verify_payment(
     if requested_plan and requested_plan != stored_plan:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payment plan does not match the created order.")
 
-    body = f"{payload.razorpay_order_id}|{payload.razorpay_payment_id}".encode("utf-8")
-    generated_signature = hmac.new(razorpay_secret().encode("utf-8"), body, hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(generated_signature, payload.razorpay_signature):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Razorpay signature mismatch.")
+    verify_razorpay_signature(payload.razorpay_order_id, payload.razorpay_payment_id, payload.razorpay_signature)
 
     order_record.raw_metadata = {
         **(order_record.raw_metadata or {}),
         "razorpay_order_id": payload.razorpay_order_id,
         "razorpay_payment_id": payload.razorpay_payment_id,
-        "verified_by_user_id": current_user.id,
         "verified_at": datetime.utcnow().isoformat(),
     }
     apply_paid_razorpay_payment(
@@ -629,6 +724,50 @@ def verify_payment(
     )
     db.commit()
     return VerifyPaymentResponse(success=True, message=PAYMENT_SCREENSHOT_MESSAGE)
+
+
+@router.post("/billing/razorpay/callback")
+async def razorpay_checkout_callback(request: Request, db: Session = Depends(get_db)) -> RedirectResponse:
+    try:
+        form = await request.form()
+        razorpay_payment_id = str(form.get("razorpay_payment_id") or "").strip()
+        razorpay_order_id = str(form.get("razorpay_order_id") or "").strip()
+        razorpay_signature = str(form.get("razorpay_signature") or "").strip()
+        if not razorpay_payment_id or not razorpay_order_id or not razorpay_signature:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing Razorpay payment fields.")
+
+        payment = find_razorpay_payment(db, order_id=razorpay_order_id)
+        if not payment:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Razorpay order was not created by Auto-AI.")
+        verify_razorpay_signature(razorpay_order_id, razorpay_payment_id, razorpay_signature)
+        payment.raw_metadata = {
+            **(payment.raw_metadata or {}),
+            "razorpay_order_id": razorpay_order_id,
+            "razorpay_payment_id": razorpay_payment_id,
+            "callback_verified_at": datetime.utcnow().isoformat(),
+        }
+        apply_paid_razorpay_payment(
+            db,
+            payment,
+            razorpay_payment_id=razorpay_payment_id,
+            razorpay_signature=razorpay_signature,
+            status_value="paid",
+        )
+        db.commit()
+        return RedirectResponse(
+            payment_status_url(
+                settings.razorpay_success_url,
+                {"order_id": razorpay_order_id, "payment_id": razorpay_payment_id},
+            ),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
+    except Exception as exc:
+        db.rollback()
+        logger.warning("razorpay_callback_failed %s", safe_razorpay_error_message(exc))
+        return RedirectResponse(
+            payment_status_url(settings.razorpay_failure_url, {"reason": "verification_failed"}),
+            status_code=status.HTTP_303_SEE_OTHER,
+        )
 
 
 @router.post("/billing/razorpay/webhook")

@@ -4,11 +4,13 @@ import re
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from pydantic import AnyHttpUrl, EmailStr, Field, SecretStr, field_validator
+from pydantic import AnyHttpUrl, EmailStr, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_FRONTEND_URL = "https://autoai.site.je"
+DEFAULT_BACKEND_URL = "https://auto-ai-production-c510.up.railway.app"
 DEFAULT_RAZORPAY_CHECKOUT_CONFIG_ID = "config_T9ulbVgLBfz7ko"
 
 
@@ -22,6 +24,10 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Auto-AI"
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = "development"
+    FRONTEND_URL: str = DEFAULT_FRONTEND_URL
+    BACKEND_URL: str = DEFAULT_BACKEND_URL
+    RAZORPAY_CALLBACK_URL: str | None = None
+    RAZORPAY_FAILURE_URL: str | None = None
 
     SECRET_KEY: str = Field(default="change-me-in-production")
     JWT_SECRET_KEY: str | None = None
@@ -166,6 +172,19 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [model.strip() for model in value.split(",") if model.strip()]
         return value
+
+    @model_validator(mode="after")
+    def validate_payment_urls(self) -> "Settings":
+        if not self.is_production:
+            return self
+        for name, value in (
+            ("FRONTEND_URL", self.frontend_url),
+            ("BACKEND_URL", self.backend_url),
+            ("RAZORPAY_FAILURE_URL", self.razorpay_failure_url),
+            ("RAZORPAY_SUCCESS_URL", self.razorpay_success_url),
+        ):
+            self._validate_production_payment_url(name, value)
+        return self
 
     @property
     def sqlalchemy_database_url(self) -> str:
@@ -353,6 +372,44 @@ class Settings(BaseSettings):
             if normalized:
                 return normalized
         return None
+
+    @staticmethod
+    def _normalize_public_url(value: str | None, default: str) -> str:
+        candidate = (value or "").strip() or default
+        return candidate.rstrip("/")
+
+    @staticmethod
+    def _validate_production_payment_url(name: str, value: str) -> None:
+        parsed = urlsplit(value)
+        host = (parsed.hostname or "").lower()
+        local_host = host in {"localhost", "127.0.0.1", "0.0.0.0", "::1"} or host.endswith(".localhost")
+        if not parsed.scheme or not parsed.netloc:
+            raise ValueError(f"{name} must be an absolute URL.")
+        if parsed.scheme.lower() != "https":
+            raise ValueError(f"{name} must use HTTPS in production.")
+        if local_host:
+            raise ValueError(f"{name} cannot use localhost or loopback hosts in production.")
+
+    @property
+    def frontend_url(self) -> str:
+        return self._normalize_public_url(self.FRONTEND_URL, DEFAULT_FRONTEND_URL)
+
+    @property
+    def backend_url(self) -> str:
+        return self._normalize_public_url(self.BACKEND_URL, DEFAULT_BACKEND_URL)
+
+    @property
+    def razorpay_callback_url(self) -> str:
+        default = f"{self.backend_url}{self.API_V1_STR}/billing/razorpay/callback"
+        return self._normalize_public_url(self.RAZORPAY_CALLBACK_URL, default)
+
+    @property
+    def razorpay_success_url(self) -> str:
+        return f"{self.frontend_url}/payment/success"
+
+    @property
+    def razorpay_failure_url(self) -> str:
+        return self._normalize_public_url(self.RAZORPAY_FAILURE_URL, f"{self.frontend_url}/payment/failed")
 
     @staticmethod
     def normalize_upi_id(value: str | None) -> str | None:

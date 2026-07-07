@@ -288,6 +288,8 @@ export type PaymentConfig = {
   razorpay_ready?: boolean;
   razorpay_mode?: "test" | "live" | string | null;
   razorpay_config_id?: string | null;
+  frontend_url?: string | null;
+  backend_url?: string | null;
   upi_id?: string | null;
   upi_payee_name?: string | null;
   payment_links: Record<PaidPricingPlanName, string | null>;
@@ -298,6 +300,19 @@ export type RazorpayOrder = {
   amount: number;
   currency: string;
   plan_id: PaidPricingPlanName;
+};
+
+export type PaymentSession = {
+  session_id: string;
+  checkout_url: string;
+  razorpay_order_id: string;
+  amount: number;
+  currency: string;
+  key_id: string;
+  plan_id: PaidPricingPlanName;
+  status: string;
+  user_email?: string | null;
+  user_name?: string | null;
 };
 
 export type RazorpayVerifyResponse = {

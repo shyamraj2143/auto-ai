@@ -18,9 +18,49 @@ class PaymentConfigRead(BaseModel):
     razorpay_ready: bool = False
     razorpay_mode: str | None = None
     razorpay_config_id: str | None = None
+    frontend_url: str | None = None
+    backend_url: str | None = None
     upi_id: str | None = None
     upi_payee_name: str | None = None
     payment_links: PaymentLinkConfig
+
+
+class CreatePaymentSessionRequest(BaseModel):
+    plan_id: PaidPlan
+    amount: int | None = None
+    currency: str = Field(default="INR", min_length=3, max_length=3)
+    receipt: str | None = Field(default=None, max_length=40)
+    promo_code: str | None = Field(default=None, max_length=40)
+
+    @field_validator("currency")
+    @classmethod
+    def normalize_currency(cls, value: str) -> str:
+        return value.strip().upper()
+
+    @field_validator("receipt")
+    @classmethod
+    def normalize_receipt(cls, value: str | None) -> str | None:
+        if not value:
+            return value
+        return value.strip() or None
+
+    @field_validator("promo_code")
+    @classmethod
+    def normalize_session_promo_code(cls, value: str | None) -> str | None:
+        return value.strip().upper() or None if value else value
+
+
+class PaymentSessionResponse(BaseModel):
+    session_id: str
+    checkout_url: str
+    razorpay_order_id: str
+    amount: int
+    currency: str
+    key_id: str
+    plan_id: PaidPlan
+    status: str = "created"
+    user_email: str | None = None
+    user_name: str | None = None
 
 
 class CreateOrderRequest(BaseModel):

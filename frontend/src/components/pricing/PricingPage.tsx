@@ -4,7 +4,7 @@ import { ArrowRight, Check, CreditCard, ExternalLink, Loader2 } from "lucide-rea
 import { api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import type { PaidPricingPlanName, PaymentConfig, PricingPlanName } from "../../types";
-import { DEFAULT_RAZORPAY_CHECKOUT_CONFIG_ID, loadRazorpayCheckout, normalizeRazorpayConfigId, razorpayAllPaymentOptions } from "../../utils/razorpay";
+import { createRazorpayCheckoutOptions, loadRazorpayCheckout, openPaymentCheckoutExternal, resolveRazorpayCheckoutConfigId } from "../../utils/razorpay";
 import { isMobileAppRuntime } from "../../utils/runtime";
 import { normalizeUpiId } from "../../utils/upi";
 import { LogoIcon } from "../brand/LogoIcon";
@@ -39,15 +39,7 @@ export function PricingPage() {
 
   const razorpayKeyId = paymentConfig?.key_id || "";
   const razorpayReady = paymentConfig?.razorpay_ready ?? false;
-  const razorpayCheckoutConfigId = normalizeRazorpayConfigId(
-    paymentConfig?.razorpay_config_id,
-    import.meta.env.VITE_RAZORPAY_CHECKOUT_CONFIG_ID,
-    import.meta.env.VITE_RAZORPAY_PAYMENT_CONFIG_ID,
-    import.meta.env.VITE_RAZORPAY_CONFIG_ID,
-    paymentConfig?.upi_id,
-    import.meta.env.VITE_UPI_ID,
-    DEFAULT_RAZORPAY_CHECKOUT_CONFIG_ID
-  );
+  const razorpayCheckoutConfigId = resolveRazorpayCheckoutConfigId(paymentConfig);
   const upiId = normalizeUpiId(paymentConfig?.upi_id || import.meta.env.VITE_UPI_ID || "");
   const upiPayeeName = paymentConfig?.upi_payee_name || import.meta.env.VITE_UPI_PAYEE_NAME || "Auto-AI";
 
@@ -76,7 +68,7 @@ export function PricingPage() {
       return;
     }
     if (!razorpayReady) {
-      setError("Razorpay payment is not fully configured. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in backend environment.");
+      setError("Razorpay payment is not fully configured on the backend.");
       return;
     }
     const paidPlan = plan.id as PaidPricingPlanName;
@@ -84,37 +76,38 @@ export function PricingPage() {
     setError("");
     setMessage("");
     try {
-      await loadRazorpayCheckout();
-      if (!window.Razorpay) throw new Error("Razorpay checkout failed to load. Check internet connection and try again.");
-      const order = await api.createRazorpayOrder(token, {
+      const session = await api.createPaymentSession(token, {
         plan_id: paidPlan,
         amount: plan.amount,
         currency: "INR",
         receipt: `auto-ai-${paidPlan}-${Date.now()}`.slice(0, 40)
       });
-      const checkout = new window.Razorpay({
-        key: razorpayKeyId,
-        amount: order.amount,
-        currency: order.currency,
+      if (mobileApp) {
+        await openPaymentCheckoutExternal(session.checkout_url);
+        setMessage("Payment opened in browser. Return here after payment to refresh your subscription.");
+        setBusyPlan(null);
+        return;
+      }
+      await loadRazorpayCheckout();
+      if (!window.Razorpay) throw new Error("Razorpay checkout failed to load. Check internet connection and try again.");
+      const checkout = new window.Razorpay(createRazorpayCheckoutOptions({
+        key: session.key_id || razorpayKeyId,
+        amount: session.amount,
+        currency: session.currency,
         name: "Auto-AI",
         description: `${plan.label} plan`,
-        order_id: order.order_id,
+        orderId: session.razorpay_order_id,
         prefill: {
           name: user.name,
           email: user.email,
           contact: user.mobile || ""
         },
-        ...razorpayAllPaymentOptions(razorpayCheckoutConfigId),
-        theme: {
-          color: "#22d3ee"
+        configId: razorpayCheckoutConfigId,
+        onDismiss: () => {
+          setBusyPlan(null);
+          setError("Payment cancelled.");
         },
-        modal: {
-          ondismiss: () => {
-            setBusyPlan(null);
-            setError("Payment cancelled.");
-          }
-        },
-        handler: (response) => {
+        onSuccess: (response) => {
           void api.verifyRazorpayPayment(token, {
             razorpay_payment_id: response.razorpay_payment_id,
             razorpay_order_id: response.razorpay_order_id,
@@ -129,7 +122,7 @@ export function PricingPage() {
             })
             .finally(() => setBusyPlan(null));
         }
-      });
+      }));
       checkout.on("payment.failed", (response) => {
         setBusyPlan(null);
         const description = response.error?.description || response.error?.reason || "Payment failed.";

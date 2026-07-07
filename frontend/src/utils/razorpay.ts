@@ -52,7 +52,7 @@ export type RazorpayOptions = {
   modal: {
     ondismiss: () => void;
   };
-  handler: (response: RazorpaySuccessResponse) => void;
+  handler?: (response: RazorpaySuccessResponse) => void;
 };
 
 export type RazorpayCheckout = {
@@ -119,6 +119,18 @@ export function normalizeRazorpayConfigId(...values: Array<string | null | undef
   return "";
 }
 
+export function resolveRazorpayCheckoutConfigId(config?: { razorpay_config_id?: string | null; upi_id?: string | null } | null) {
+  return normalizeRazorpayConfigId(
+    config?.razorpay_config_id,
+    import.meta.env.VITE_RAZORPAY_CHECKOUT_CONFIG_ID,
+    import.meta.env.VITE_RAZORPAY_PAYMENT_CONFIG_ID,
+    import.meta.env.VITE_RAZORPAY_CONFIG_ID,
+    config?.upi_id,
+    import.meta.env.VITE_UPI_ID,
+    DEFAULT_RAZORPAY_CHECKOUT_CONFIG_ID
+  );
+}
+
 export function razorpayAllPaymentOptions(configId?: string | null): Pick<RazorpayOptions, "method" | "config" | "checkout_config_id"> {
   const normalizedConfigId = normalizeRazorpayConfigId(configId);
   if (normalizedConfigId?.startsWith("config_")) {
@@ -130,6 +142,55 @@ export function razorpayAllPaymentOptions(configId?: string | null): Pick<Razorp
   return {
     ...RAZORPAY_UPI_FIRST_OPTIONS
   };
+}
+
+export function createRazorpayCheckoutOptions({
+  key,
+  amount,
+  currency,
+  name,
+  description,
+  orderId,
+  prefill,
+  configId,
+  onDismiss,
+  onSuccess
+}: {
+  key: string;
+  amount: number;
+  currency: string;
+  name: string;
+  description: string;
+  orderId: string;
+  prefill: RazorpayOptions["prefill"];
+  configId?: string | null;
+  onDismiss: () => void;
+  onSuccess: (response: RazorpaySuccessResponse) => void;
+}): RazorpayOptions {
+  return {
+    key,
+    amount,
+    currency,
+    name,
+    description,
+    order_id: orderId,
+    prefill,
+    ...razorpayAllPaymentOptions(configId),
+    theme: { color: "#22d3ee" },
+    modal: { ondismiss: onDismiss },
+    handler: onSuccess
+  };
+}
+
+export function openPaymentCheckoutExternal(url: string) {
+  const capacitor = window.Capacitor as
+    | { Plugins?: { Browser?: { open?: (options: { url: string }) => Promise<void> } } }
+    | undefined;
+  const browserOpen = capacitor?.Plugins?.Browser?.open;
+  if (browserOpen) return browserOpen({ url });
+  const opened = window.open(url, "_blank", "noopener,noreferrer");
+  if (!opened) window.location.assign(url);
+  return Promise.resolve();
 }
 
 export function loadRazorpayCheckout() {

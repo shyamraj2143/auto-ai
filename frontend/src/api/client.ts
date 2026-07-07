@@ -21,6 +21,7 @@ import type {
   HumanState,
   InteractionProfile,
   PaymentConfig,
+  PaymentSession,
   PromoCodeResponse,
   PaidPricingPlanName,
   ResponseModelInfo,
@@ -696,8 +697,28 @@ export const api = {
       operation: "payments.createOrder",
       body: JSON.stringify(payload)
     }),
-  verifyRazorpayPayment: (
+  createPaymentSession: (
     token: string,
+    payload: {
+      plan_id: PaidPricingPlanName;
+      amount?: number | null;
+      currency?: string;
+      receipt?: string;
+      promo_code?: string | null;
+    }
+  ) =>
+    apiFetch<PaymentSession>("/payments/create-session", {
+      method: "POST",
+      token,
+      operation: "payments.createSession",
+      body: JSON.stringify(payload)
+    }),
+  paymentSession: (sessionId: string) =>
+    apiFetch<PaymentSession>(`/payments/sessions/${encodeURIComponent(sessionId)}`, {
+      operation: "payments.session"
+    }),
+  verifyRazorpayPayment: (
+    token: string | null,
     payload: {
       razorpay_payment_id: string;
       razorpay_order_id: string;
@@ -709,7 +730,7 @@ export const api = {
   ) =>
     apiFetch<RazorpayVerifyResponse>("/payments/verify-payment", {
       method: "POST",
-      token,
+      token: token || undefined,
       operation: "payments.verify",
       body: JSON.stringify(payload)
     }),
