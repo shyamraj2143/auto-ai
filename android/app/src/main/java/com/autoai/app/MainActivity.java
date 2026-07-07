@@ -54,6 +54,7 @@ public class MainActivity extends BridgeActivity {
     private static final int NOTIFICATION_PERMISSION_REQUEST_CODE = 1002;
     private static final String UPDATE_NOTIFICATION_CHANNEL_ID = "auto_ai_updates";
     private static final String LAST_NOTIFIED_UPDATE_VERSION_CODE = "last_notified_update_version_code";
+    private static final String UPDATE_PREFERENCES = "auto_ai_update_preferences";
 
     private final ExecutorService updateExecutor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -94,6 +95,7 @@ public class MainActivity extends BridgeActivity {
 
         createUpdateNotificationChannel();
         requestNotificationPermissionIfNeeded();
+        UpdateCheckScheduler.schedule(this);
         checkForUpdate(true);
         startUpdatePolling();
     }
@@ -220,7 +222,7 @@ public class MainActivity extends BridgeActivity {
 
     private void showUpdateNotification(ApkUpdate update) {
         if (!canPostNotifications()) return;
-        int lastNotifiedVersion = getPreferences(MODE_PRIVATE).getInt(LAST_NOTIFIED_UPDATE_VERSION_CODE, 0);
+        int lastNotifiedVersion = getSharedPreferences(UPDATE_PREFERENCES, MODE_PRIVATE).getInt(LAST_NOTIFIED_UPDATE_VERSION_CODE, 0);
         if (lastNotifiedVersion >= update.versionCode) return;
 
         Intent intent = new Intent(this, MainActivity.class);
@@ -255,7 +257,7 @@ public class MainActivity extends BridgeActivity {
         NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (manager == null) return;
         manager.notify(UPDATE_NOTIFICATION_ID, builder.build());
-        getPreferences(MODE_PRIVATE)
+        getSharedPreferences(UPDATE_PREFERENCES, MODE_PRIVATE)
             .edit()
             .putInt(LAST_NOTIFIED_UPDATE_VERSION_CODE, update.versionCode)
             .apply();
