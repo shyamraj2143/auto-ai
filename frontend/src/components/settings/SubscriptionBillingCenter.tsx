@@ -15,7 +15,7 @@ import {
 import { API_BASE_URL, api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import type { BillingCenter, BillingPlan, PaidPricingPlanName, PaymentConfig, PaymentHistoryItem, PromoCodeResponse } from "../../types";
-import { createRazorpayCheckoutOptions, loadRazorpayCheckout, openPaymentCheckoutExternal, resolveRazorpayCheckoutConfigId } from "../../utils/razorpay";
+import { createRazorpayCheckoutOptions, loadRazorpayCheckout, openPaymentCheckoutExternal } from "../../utils/razorpay";
 import { isMobileAppRuntime } from "../../utils/runtime";
 import { normalizeUpiId } from "../../utils/upi";
 import { UpiPaymentBox } from "../payments/UpiPaymentBox";
@@ -51,7 +51,6 @@ export function SubscriptionBillingCenter() {
   const [paymentConfig, setPaymentConfig] = useState<PaymentConfig | null>(null);
   const razorpayKeyId = paymentConfig?.key_id || "";
   const razorpayReady = paymentConfig?.razorpay_ready ?? false;
-  const razorpayCheckoutConfigId = resolveRazorpayCheckoutConfigId(paymentConfig);
   const mobileApp = isMobileAppRuntime();
   const upiId = normalizeUpiId(paymentConfig?.upi_id || import.meta.env.VITE_UPI_ID || "");
   const upiPayeeName = paymentConfig?.upi_payee_name || import.meta.env.VITE_UPI_PAYEE_NAME || "Auto-AI";
@@ -144,7 +143,6 @@ export function SubscriptionBillingCenter() {
         description: `${plan.label} plan`,
         orderId: session.razorpay_order_id,
         prefill: { name: user.name, email: user.email, contact: user.mobile || "" },
-        configId: razorpayCheckoutConfigId,
         onDismiss: () => {
           setBusy("");
           setError("Payment cancelled.");

@@ -11,7 +11,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_FRONTEND_URL = "https://autoai.site.je"
 DEFAULT_BACKEND_URL = "https://auto-ai-production-c510.up.railway.app"
-DEFAULT_RAZORPAY_CHECKOUT_CONFIG_ID = "config_T9ulbVgLBfz7ko"
 
 
 class Settings(BaseSettings):
@@ -149,7 +148,7 @@ class Settings(BaseSettings):
     RAZORPAY_PRO_LINK: str | None = None
     RAZORPAY_PREMIUM_LINK: str | None = None
     RAZORPAY_ULTRA_LINK: str | None = None
-    RAZORPAY_CHECKOUT_CONFIG_ID: str | None = DEFAULT_RAZORPAY_CHECKOUT_CONFIG_ID
+    RAZORPAY_CHECKOUT_CONFIG_ID: str | None = None
     RAZORPAY_PAYMENT_CONFIG_ID: str | None = None
     RAZORPAY_CONFIG_ID: str | None = None
     UPI_ID: str | None = None
@@ -429,8 +428,6 @@ class Settings(BaseSettings):
             self._project_env_value("RAZORPAY_CHECKOUT_CONFIG_ID"),
             self._project_env_value("RAZORPAY_PAYMENT_CONFIG_ID"),
             self._project_env_value("RAZORPAY_CONFIG_ID"),
-            self.RAZORPAY_UPI_ID,
-            self._project_env_value("RAZORPAY_UPI_ID"),
         ):
             candidate = (value or "").strip()
             if candidate.lower().startswith("config_"):

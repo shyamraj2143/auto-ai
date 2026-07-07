@@ -4,7 +4,7 @@ import { ArrowRight, Check, CreditCard, ExternalLink, Loader2 } from "lucide-rea
 import { api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import type { PaidPricingPlanName, PaymentConfig, PricingPlanName } from "../../types";
-import { createRazorpayCheckoutOptions, loadRazorpayCheckout, openPaymentCheckoutExternal, resolveRazorpayCheckoutConfigId } from "../../utils/razorpay";
+import { createRazorpayCheckoutOptions, loadRazorpayCheckout, openPaymentCheckoutExternal } from "../../utils/razorpay";
 import { isMobileAppRuntime } from "../../utils/runtime";
 import { normalizeUpiId } from "../../utils/upi";
 import { LogoIcon } from "../brand/LogoIcon";
@@ -39,7 +39,6 @@ export function PricingPage() {
 
   const razorpayKeyId = paymentConfig?.key_id || "";
   const razorpayReady = paymentConfig?.razorpay_ready ?? false;
-  const razorpayCheckoutConfigId = resolveRazorpayCheckoutConfigId(paymentConfig);
   const upiId = normalizeUpiId(paymentConfig?.upi_id || import.meta.env.VITE_UPI_ID || "");
   const upiPayeeName = paymentConfig?.upi_payee_name || import.meta.env.VITE_UPI_PAYEE_NAME || "Auto-AI";
 
@@ -102,7 +101,6 @@ export function PricingPage() {
           email: user.email,
           contact: user.mobile || ""
         },
-        configId: razorpayCheckoutConfigId,
         onDismiss: () => {
           setBusyPlan(null);
           setError("Payment cancelled.");
