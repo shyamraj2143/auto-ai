@@ -219,8 +219,14 @@ def regenerate_session_message(
     for message in messages[:target_index]:
         sync_chat_message(db, message, user_id=current_user.id, model=chat.model)
 
+    previous_metadata = previous_user.message_metadata or {}
+    previous_attachments = previous_metadata.get("attachments")
+    previous_internal_context = previous_metadata.get("internal_context")
     request_payload = ChatRequest(
         message=previous_user.content,
+        client_message_id=previous_metadata.get("client_message_id"),
+        attachments=previous_attachments if isinstance(previous_attachments, list) else [],
+        internal_context=previous_internal_context if isinstance(previous_internal_context, dict) else None,
         chat_id=chat.id,
         title=chat.title,
         system_prompt=chat.system_prompt,

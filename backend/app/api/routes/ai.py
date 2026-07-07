@@ -71,6 +71,8 @@ MODEL_IDENTITY_PATTERN = re.compile(
 
 def title_from_message(message: str) -> str:
     title = " ".join(message.strip().split())
+    if not title:
+        return "New chat"
     return title[:60] + ("..." if len(title) > 60 else "")
 
 
@@ -124,6 +126,7 @@ def build_messages(
     reasoning: bool,
     adaptive_context: str | None = None,
     search_context: str | None = None,
+    hidden_attachment_context: str | None = None,
     runtime_identity: str | None = None,
     history_messages: list[Message] | None = None,
 ) -> list[dict[str, str]]:
@@ -160,12 +163,68 @@ def build_messages(
         )
     if search_context:
         messages.append({"role": "system", "content": search_context})
+    if hidden_attachment_context:
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "Hidden attachment context for this turn. Use it only to answer the user. "
+                    "Do not reveal, quote, or say that this hidden context was extracted.\n\n"
+                    f"{hidden_attachment_context}"
+                ),
+            }
+        )
 
     source_history = history_messages if history_messages is not None else (chat.messages or [])
     history = source_history[-settings.MAX_CONTEXT_MESSAGES :]
     messages.extend({"role": msg.role, "content": msg.content} for msg in history)
-    messages.append({"role": "user", "content": user_message})
+    messages.append({"role": "user", "content": user_message or user_message_fallback(hidden_attachment_context)})
     return messages
+
+
+def user_message_fallback(hidden_attachment_context: str | None = None) -> str:
+    return "Analyze the attached content." if hidden_attachment_context else "Continue."
+
+
+def request_hidden_attachment_context(payload: ChatRequest) -> str:
+    parts: list[str] = []
+    if payload.attachments:
+        attachment_lines = []
+        for attachment in payload.attachments:
+            size = f", {attachment.file_size} bytes" if attachment.file_size is not None else ""
+            mime = f", {attachment.mime_type}" if attachment.mime_type else ""
+            attachment_lines.append(f"- {attachment.type}: {attachment.filename}{mime}{size}")
+        parts.append("Attachments:\n" + "\n".join(attachment_lines))
+    if payload.internal_context:
+        context = payload.internal_context
+        if context.image_summary:
+            parts.append(f"Image summary:\n{context.image_summary}")
+        if context.ocr_text:
+            parts.append(f"OCR text:\n{context.ocr_text}")
+        if context.parsed_file_text:
+            parts.append(f"Parsed file text:\n{context.parsed_file_text}")
+    return "\n\n".join(part.strip() for part in parts if part.strip())
+
+
+def message_metadata_for_request(payload: ChatRequest) -> dict:
+    metadata: dict = {}
+    if payload.client_message_id:
+        metadata["client_message_id"] = payload.client_message_id
+    if payload.attachments:
+        metadata["attachments"] = [attachment.model_dump(mode="json") for attachment in payload.attachments]
+    if payload.internal_context:
+        metadata["internal_context"] = payload.internal_context.model_dump(mode="json", exclude_none=True)
+    return metadata
+
+
+def initial_streaming_phase(payload: ChatRequest) -> str:
+    if payload.mode in {"deep_research", "multi_model"} or payload.search_mode in {"deep", "research"}:
+        return "researching"
+    if any(attachment.type == "image" for attachment in payload.attachments):
+        return "analyzing_image"
+    if payload.document_ids or any(attachment.type == "file" for attachment in payload.attachments):
+        return "reading_file"
+    return "thinking"
 
 
 def search_payload(bundle: SearchResultBundle | None) -> dict:
@@ -516,6 +575,7 @@ def run_chat_generation(generation_id: str) -> None:
                 system_prompt=payload.system_prompt,
                 reasoning=payload.reasoning,
                 adaptive_context=prepared_context["prompt_context"],
+                hidden_attachment_context=request_hidden_attachment_context(payload),
                 runtime_identity=runtime_identity_prompt(effective_provider, selected_model, mode=payload.mode),
                 history_messages=history,
             )
@@ -662,7 +722,7 @@ def run_chat_generation(generation_id: str) -> None:
                 model=selected_model,
                 provider=selected_provider,
                 web_search=False,
-                allow_bedrock_fallback=selected_provider != "bedrock",
+                allow_bedrock_fallback=True,
             )
             for chunk in stream:
                 now = time.monotonic()
@@ -808,6 +868,29 @@ def create_chat_generation(
         web_search=False,
     )
     selected_model_payload = model_payload(selected_provider, selected_model)
+    if not existing_user_message and payload.client_message_id:
+        existing_user_message = next(
+            (
+                message
+                for message in (chat_row.messages or [])
+                if message.role == "user"
+                and (message.message_metadata or {}).get("client_message_id") == payload.client_message_id
+            ),
+            None,
+        )
+        if existing_user_message:
+            running_generation = db.scalar(
+                select(ChatGeneration)
+                .where(
+                    ChatGeneration.chat_id == chat_row.id,
+                    ChatGeneration.user_id == current_user.id,
+                    ChatGeneration.user_message_id == existing_user_message.id,
+                    ChatGeneration.status.in_(RUNNING_GENERATION_STATUSES),
+                )
+                .order_by(ChatGeneration.updated_at.desc())
+            )
+            if running_generation:
+                return generation_payload(db, running_generation)
 
     user_message = existing_user_message or Message(
         chat_id=chat_row.id,
@@ -815,9 +898,12 @@ def create_chat_generation(
         role="user",
         content=payload.message,
         model=selected_model,
+        message_metadata=message_metadata_for_request(payload),
     )
     user_message.user_id = user_message.user_id or current_user.id
     user_message.model = user_message.model or selected_model
+    if not existing_user_message:
+        user_message.message_metadata = message_metadata_for_request(payload)
     assistant_message = Message(
         chat_id=chat_row.id,
         user_id=current_user.id,
@@ -826,9 +912,11 @@ def create_chat_generation(
         model=selected_model,
         message_metadata={
             **selected_model_payload,
+            **({"client_message_id": payload.client_message_id} if payload.client_message_id else {}),
             "streaming": {
                 "status": "pending",
                 "partial": True,
+                "phase": initial_streaming_phase(payload),
             },
         },
     )
@@ -853,7 +941,10 @@ def create_chat_generation(
         "generation_id": generation.id,
         "status": "pending",
         "partial": True,
+        "phase": initial_streaming_phase(payload),
     }
+    if payload.client_message_id:
+        assistant_metadata["client_message_id"] = payload.client_message_id
     assistant_message.message_metadata = assistant_metadata
     sync_chat_session(db, chat_row)
     sync_chat_message(db, user_message, user_id=current_user.id, model=selected_model)
@@ -978,6 +1069,7 @@ def chat(
         reasoning=payload.reasoning,
         adaptive_context=prepared_context["prompt_context"],
         search_context=web_search_service.build_model_context(search_bundle),
+        hidden_attachment_context=request_hidden_attachment_context(payload),
         runtime_identity=runtime_identity_prompt(effective_provider, selected_model, mode=payload.mode),
     )
     enforce_user_quota(db, current_user, estimated_input_tokens=estimate_message_tokens(messages))
@@ -988,6 +1080,7 @@ def chat(
         role="user",
         content=payload.message,
         model=selected_model,
+        message_metadata=message_metadata_for_request(payload),
     )
     db.add(user_message)
     db.flush()
@@ -1091,7 +1184,7 @@ def chat(
         model=selected_model,
         provider=selected_provider,
         web_search=False,
-        allow_bedrock_fallback=selected_provider != "bedrock",
+        allow_bedrock_fallback=True,
     )
     content = clean_model_output(content)
     content = web_search_service.ensure_citations(content, search_bundle)
@@ -1161,6 +1254,7 @@ def stream_chat(
         user_id=current_user.id,
         role="user",
         content=payload.message,
+        message_metadata=message_metadata_for_request(payload),
     )
     db.add(user_message)
     effective_provider, effective_model = effective_provider_model(
@@ -1181,6 +1275,7 @@ def stream_chat(
         system_prompt=payload.system_prompt,
         reasoning=payload.reasoning,
         adaptive_context=prepared_context["prompt_context"],
+        hidden_attachment_context=request_hidden_attachment_context(payload),
         runtime_identity=runtime_identity_prompt(effective_provider, selected_model, mode=payload.mode),
     )
     enforce_user_quota(db, current_user, estimated_input_tokens=estimate_message_tokens(messages))
@@ -1373,7 +1468,7 @@ def stream_chat(
                 model=selected_model,
                 provider=selected_provider,
                 web_search=False,
-                allow_bedrock_fallback=selected_provider != "bedrock",
+                allow_bedrock_fallback=True,
             )
             for chunk in stream:
                 delta = groq_service.extract_stream_delta(chunk)

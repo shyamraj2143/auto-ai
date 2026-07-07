@@ -5,7 +5,7 @@ import { ApiClientError, api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
-import type { ChatGeneration, DocumentItem, Message, ResponseModelInfo } from "../../types";
+import type { ChatAttachment, ChatGeneration, ChatRequest, DocumentItem, Message, MessageInternalContext, ResponseModelInfo } from "../../types";
 import { coerceTextContent } from "../../utils/text";
 import { Composer, type ComposerOptions, type UploadTask } from "./Composer";
 import { ContextPanel } from "./ContextPanel";
@@ -29,6 +29,18 @@ const DEFAULT_OPTIONS: ComposerOptions = {
   reasoning: false,
   provider: "groq",
   model: "openai/gpt-oss-120b"
+};
+
+type LocalRetryRequest = {
+  chatId?: string;
+  text: string;
+  options: ComposerOptions;
+  imageFiles: File[];
+  attachments: ChatAttachment[];
+  internalContext: MessageInternalContext | null;
+  clientMessageId: string;
+  userMessageId: string;
+  documentIds: string[];
 };
 
 function modelSelectionPayload(options: ComposerOptions) {
@@ -57,6 +69,75 @@ function responseModelFallback(model?: string | null): ResponseModelInfo | null 
     return { provider: "bedrock", provider_label: "AWS Bedrock", model };
   }
   return { provider: "groq", provider_label: "Groq", model };
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function clientMessageIdOf(message?: Message | null) {
+  return typeof message?.message_metadata?.client_message_id === "string"
+    ? message.message_metadata.client_message_id
+    : "";
+}
+
+function attachmentsOf(message?: Message | null): ChatAttachment[] {
+  return Array.isArray(message?.message_metadata?.attachments)
+    ? message.message_metadata.attachments
+    : [];
+}
+
+function mergeAttachmentPreviews(incoming: ChatAttachment[], existing: ChatAttachment[]) {
+  return incoming.map((attachment) => {
+    const previous = existing.find((item) => item.id === attachment.id || item.filename === attachment.filename);
+    return previous?.preview_url && !attachment.preview_url
+      ? { ...attachment, preview_url: previous.preview_url }
+      : attachment;
+  });
+}
+
+function createImageAttachment(file: File): ChatAttachment {
+  return {
+    id: crypto.randomUUID(),
+    type: "image",
+    preview_url: URL.createObjectURL(file),
+    filename: file.name || "image",
+    mime_type: file.type || "image/*",
+    file_size: file.size,
+    status: "analyzing"
+  };
+}
+
+function createDocumentAttachments(documents: DocumentItem[], documentIds: string[]): ChatAttachment[] {
+  return documents
+    .filter((document) => documentIds.includes(document.id))
+    .map((document) => ({
+      id: document.id,
+      type: "file",
+      filename: document.filename,
+      mime_type: document.content_type,
+      file_size: document.file_size,
+      status: "uploaded"
+    }));
+}
+
+function serializableAttachments(attachments: ChatAttachment[]): ChatAttachment[] {
+  return attachments.map((attachment) => ({
+    id: attachment.id,
+    type: attachment.type,
+    url: attachment.url,
+    filename: attachment.filename,
+    mime_type: attachment.mime_type,
+    file_size: attachment.file_size,
+    status: attachment.status === "analyzing" || attachment.status === "queued" ? "uploaded" : attachment.status
+  }));
+}
+
+function thinkingPhase(options: ComposerOptions, attachments: ChatAttachment[], documentIds: string[]) {
+  if (options.chatMode !== "normal" || options.searchMode === "deep" || options.searchMode === "research") return "researching";
+  if (attachments.some((attachment) => attachment.type === "image")) return "analyzing_image";
+  if (attachments.some((attachment) => attachment.type === "file") || documentIds.length) return "reading_file";
+  return "thinking";
 }
 
 export function ChatPage() {
@@ -91,6 +172,7 @@ export function ChatPage() {
   const queuedContentRef = useRef<Record<string, string>>({});
   const generationPollTimerRef = useRef<number | null>(null);
   const lastOptionsRef = useRef<ComposerOptions>(DEFAULT_OPTIONS);
+  const localRetryRef = useRef<Record<string, LocalRetryRequest>>({});
 
   useEffect(() => {
     setMessages(activeChat?.messages ?? []);
@@ -186,7 +268,7 @@ export function ChatPage() {
   const visibleGenerationRunning = Boolean(visibleGeneration && isRunningGenerationStatus(visibleGeneration.status));
   const visibleChatBusy = submittingGeneration || visibleGenerationRunning;
   const visibleStreamingMessageId =
-    visibleGenerationRunning ? visibleGeneration?.assistant_message_id ?? null : null;
+    visibleGenerationRunning ? visibleGeneration?.assistant_message_id ?? streamingMessageId : streamingMessageId;
 
   function syncActiveChatMessages(chatId: string, nextMessages: Message[]) {
     setActiveChat((current) =>
@@ -271,11 +353,26 @@ export function ChatPage() {
   }
 
   function upsertMessage(current: Message[], incoming: Message) {
-    const index = current.findIndex((message) => message.id === incoming.id);
+    const incomingClientId = clientMessageIdOf(incoming);
+    const index = current.findIndex((message) =>
+      message.id === incoming.id ||
+      (incomingClientId && message.role === incoming.role && clientMessageIdOf(message) === incomingClientId)
+    );
     if (index < 0) return [...current, incoming];
     if (current[index] === incoming) return current;
     const next = current.slice();
-    next[index] = incoming;
+    const existing = current[index];
+    const existingAttachments = attachmentsOf(existing);
+    const incomingAttachments = attachmentsOf(incoming);
+    next[index] = incomingAttachments.length
+      ? {
+          ...incoming,
+          message_metadata: {
+            ...(incoming.message_metadata || {}),
+            attachments: mergeAttachmentPreviews(incomingAttachments, existingAttachments)
+          }
+        }
+      : incoming;
     return next;
   }
 
@@ -467,21 +564,26 @@ export function ChatPage() {
     }
   }
 
-  async function analyzeImages(text: string, imageFiles: File[]) {
-    if (!token || !imageFiles.length) return "";
+  async function analyzeImages(text: string, imageFiles: File[]): Promise<MessageInternalContext | null> {
+    if (!token || !imageFiles.length) return null;
     const analyses: string[] = [];
     for (const file of imageFiles) {
-      const result = await api.analyzeImage(
-        token,
-        file,
-        text || "Analyze this image in detail and extract useful context for the next answer."
-      );
-      analyses.push(`Image: ${file.name}\n${result.content}`);
+      try {
+        const result = await api.analyzeImage(
+          token,
+          file,
+          text || "Analyze this image in detail and extract useful context for the next answer."
+        );
+        analyses.push(`Image: ${file.name}\n${result.content}`);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "Image analysis failed";
+        analyses.push(`Image: ${file.name}\nImage analysis unavailable: ${detail}`);
+      }
     }
-    return analyses.join("\n\n---\n\n");
+    return analyses.length ? { image_summary: analyses.join("\n\n---\n\n") } : null;
   }
 
-  function requestOptionsPayload(options: ComposerOptions) {
+  function requestOptionsPayload(options: ComposerOptions, documentIds = selectedDocumentIds) {
     const modelSelection = modelSelectionPayload(options);
     return {
       provider: modelSelection.provider,
@@ -499,44 +601,152 @@ export function ChatPage() {
       web_search: options.searchMode !== "off" && options.searchMode !== "auto",
       search_mode: options.searchMode,
       reasoning: options.reasoning,
-      document_ids: settings.memoryEnabled ? selectedDocumentIds : []
+      document_ids: settings.memoryEnabled ? documentIds : []
     };
   }
 
-  async function handleSend(text: string, options: ComposerOptions, imageFiles: File[] = []) {
-    if (!token || visibleChatBusy) return;
-    lastOptionsRef.current = options;
-    setChatNotice("");
+  function buildGenerationPayload(request: LocalRetryRequest, chatId: string, internalContext: MessageInternalContext | null): ChatRequest {
+    return {
+      message: request.text,
+      chat_id: chatId,
+      client_message_id: request.clientMessageId,
+      attachments: serializableAttachments(request.attachments),
+      internal_context: internalContext,
+      ...requestOptionsPayload(request.options, request.documentIds)
+    };
+  }
+
+  function optimisticMessages(request: LocalRetryRequest, assistantId: string): Message[] {
+    const phase = thinkingPhase(request.options, request.attachments, request.documentIds);
+    return [
+      {
+        id: request.userMessageId,
+        role: "user",
+        content: request.text,
+        message_metadata: {
+          client_message_id: request.clientMessageId,
+          attachments: request.attachments
+        },
+        created_at: nowIso()
+      },
+      {
+        id: assistantId,
+        role: "assistant",
+        content: "",
+        message_metadata: {
+          client_message_id: request.clientMessageId,
+          streaming: {
+            status: "pending",
+            partial: true,
+            phase
+          }
+        },
+        created_at: nowIso()
+      }
+    ];
+  }
+
+  function markLocalAssistant(
+    chatId: string | undefined,
+    assistantId: string,
+    updater: (message: Message) => Message
+  ) {
+    const applyUpdate = (current: Message[]) =>
+      current.map((message) => (message.id === assistantId ? updater(message) : message));
+    if (chatId) {
+      updateMessagesForChat(chatId, applyUpdate, true);
+    } else {
+      setMessages(applyUpdate);
+    }
+  }
+
+  function markLocalGenerationFailed(chatId: string | undefined, assistantId: string, error: unknown) {
+    const detail = error instanceof Error ? error.message : "Unable to stream response";
+    markLocalAssistant(chatId, assistantId, (message) => ({
+      ...message,
+      message_metadata: {
+        ...(message.message_metadata || {}),
+        streaming: {
+          ...((message.message_metadata?.streaming as object | undefined) || {}),
+          status: "failed",
+          partial: false,
+          error: detail
+        }
+      }
+    }));
+    showChatNotice("Response interrupted. Your message was saved. Tap Retry.");
+  }
+
+  async function startGenerationForLocalAssistant(request: LocalRetryRequest, assistantId: string) {
+    if (!token) return;
+    let chatId = request.chatId || activeChatRef.current?.id;
     setStreaming(true);
     setSubmittingGeneration(true);
+    setStreamingMessageId(assistantId);
+    setSearchingMessageId(null);
     try {
-      const chat = activeChat ?? (await createChat(text.slice(0, 60) || "New chat"));
-      const imageContext = await analyzeImages(text, imageFiles);
-      const modelMessage = imageContext
-        ? `${text}\n\nAttached image context extracted by Auto-AI vision:\n${imageContext}`
-        : text;
-
-      const generation = await api.startChatGeneration(
-        token,
-        {
-          message: modelMessage,
-          chat_id: chat.id,
-          ...requestOptionsPayload(options)
-        }
-      );
-
+      if (!chatId) {
+        const chat = await createChat(request.text.slice(0, 60) || request.attachments[0]?.filename || "New chat");
+        chatId = chat.id;
+        request.chatId = chat.id;
+        const pendingMessages = optimisticMessages(request, assistantId);
+        setMessages((current) =>
+          current.some((message) => message.id === assistantId) ? current : [...current, ...pendingMessages]
+        );
+        setActiveChat({
+          ...chat,
+          messages: messagesRef.current.some((message) => message.id === assistantId)
+            ? messagesRef.current
+            : pendingMessages
+        });
+      }
+      const internalContext = request.internalContext ?? await analyzeImages(request.text, request.imageFiles);
+      request.internalContext = internalContext;
+      const generation = await api.startChatGeneration(token, buildGenerationPayload(request, chatId, internalContext));
+      delete localRetryRef.current[assistantId];
       applyGenerationSnapshot(generation);
       startGenerationPolling(generation.id);
       void refreshChats().catch(() => undefined);
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "Unable to stream response";
-      showChatNotice(`AI request failed: ${detail}`);
-      await refreshChats();
+      markLocalGenerationFailed(chatId, assistantId, error);
       setStreaming(false);
       setSubmittingGeneration(false);
       setStreamingMessageId(null);
       setSearchingMessageId(null);
     }
+  }
+
+  async function handleSend(text: string, options: ComposerOptions, imageFiles: File[] = []) {
+    if (!token || visibleChatBusy) return;
+    const documentIds = settings.memoryEnabled ? [...selectedDocumentIds] : [];
+    const attachments = [
+      ...imageFiles.map(createImageAttachment),
+      ...createDocumentAttachments(documents, documentIds)
+    ];
+    const request: LocalRetryRequest = {
+      chatId: activeChat?.id,
+      text,
+      options,
+      imageFiles,
+      attachments,
+      internalContext: null,
+      clientMessageId: crypto.randomUUID(),
+      userMessageId: "",
+      documentIds
+    };
+    const assistantId = `local-assistant-${request.clientMessageId}`;
+    const userId = `local-user-${request.clientMessageId}`;
+    request.userMessageId = userId;
+    const pendingMessages = optimisticMessages(request, assistantId);
+    lastOptionsRef.current = options;
+    setChatNotice("");
+    localRetryRef.current[assistantId] = request;
+    if (activeChat?.id) {
+      updateMessagesForChat(activeChat.id, (current) => [...current, ...pendingMessages], true);
+    } else {
+      setMessages((current) => [...current, ...pendingMessages]);
+    }
+    await startGenerationForLocalAssistant(request, assistantId);
   }
 
   function handleReact(messageId: string, reaction: MessageReaction) {
@@ -563,6 +773,24 @@ export function ChatPage() {
   }
 
   async function handleRegenerate(messageId: string) {
+    const localRetry = localRetryRef.current[messageId];
+    if (localRetry) {
+      if (visibleChatBusy) return;
+      markLocalAssistant(localRetry.chatId, messageId, (message) => ({
+        ...message,
+        content: "",
+        message_metadata: {
+          ...(message.message_metadata || {}),
+          streaming: {
+            status: "pending",
+            partial: true,
+            phase: thinkingPhase(localRetry.options, localRetry.attachments, localRetry.documentIds)
+          }
+        }
+      }));
+      await startGenerationForLocalAssistant(localRetry, messageId);
+      return;
+    }
     if (visibleChatBusy || !token || !activeChat?.id) return;
     const index = messages.findIndex((message) => message.id === messageId);
     const previousUser = [...messages.slice(0, index)].reverse().find((message) => message.role === "user");

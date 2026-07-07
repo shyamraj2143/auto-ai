@@ -85,6 +85,9 @@ export type Message = {
   message_metadata?: {
     search?: SearchResultBundle;
     model?: ResponseModelInfo;
+    attachments?: ChatAttachment[];
+    client_message_id?: string;
+    internal_context?: MessageInternalContext;
     [key: string]: unknown;
   };
   created_at: string;
@@ -121,8 +124,28 @@ export type DocumentItem = {
   created_at: string;
 };
 
+export type ChatAttachment = {
+  id: string;
+  type: "image" | "file";
+  url?: string | null;
+  preview_url?: string | null;
+  filename: string;
+  mime_type?: string | null;
+  file_size?: number | null;
+  status?: "queued" | "uploading" | "uploaded" | "failed" | "analyzed" | string;
+};
+
+export type MessageInternalContext = {
+  image_summary?: string | null;
+  ocr_text?: string | null;
+  parsed_file_text?: string | null;
+};
+
 export type ChatRequest = {
   message: string;
+  client_message_id?: string;
+  attachments?: ChatAttachment[];
+  internal_context?: MessageInternalContext | null;
   chat_id?: string | null;
   title?: string | null;
   system_prompt?: string | null;

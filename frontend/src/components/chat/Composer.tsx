@@ -461,7 +461,7 @@ export function Composer({
   async function submit(event?: FormEvent) {
     event?.preventDefault();
     if (!canSend) return;
-    const text = draft.trim() || "Analyze the attached image.";
+    const text = draft.trim();
     const files = imageAttachments.map((attachment) => attachment.file);
     setDraft("");
     imageAttachments.forEach((attachment) => URL.revokeObjectURL(attachment.previewUrl));

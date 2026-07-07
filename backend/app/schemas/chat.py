@@ -54,8 +54,28 @@ class ChatRead(ChatListItem):
     messages: list[MessageRead] = Field(default_factory=list)
 
 
+class ChatAttachment(BaseModel):
+    id: str = Field(min_length=1, max_length=120)
+    type: Literal["image", "file"]
+    url: str | None = Field(default=None, max_length=2000)
+    preview_url: str | None = Field(default=None, max_length=2000)
+    filename: str = Field(min_length=1, max_length=255)
+    mime_type: str | None = Field(default=None, max_length=120)
+    file_size: int | None = Field(default=None, ge=0)
+    status: str | None = Field(default=None, max_length=40)
+
+
+class MessageInternalContext(BaseModel):
+    image_summary: str | None = Field(default=None, max_length=20000)
+    ocr_text: str | None = Field(default=None, max_length=20000)
+    parsed_file_text: str | None = Field(default=None, max_length=40000)
+
+
 class ChatRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=20000)
+    message: str = Field(default="", max_length=20000)
+    client_message_id: str | None = Field(default=None, max_length=120)
+    attachments: list[ChatAttachment] = Field(default_factory=list, max_length=20)
+    internal_context: MessageInternalContext | None = None
     chat_id: str | None = None
     title: str | None = Field(default=None, max_length=160)
     system_prompt: str | None = Field(default=None, max_length=8000)
