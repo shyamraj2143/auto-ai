@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
-import { Camera, CameraOff, FileUp, MessageSquareText, Mic, MicOff, PhoneOff, RefreshCw, RotateCcw, Volume2, VolumeX, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { Camera, CameraOff, FileUp, MessageSquareText, Mic, MicOff, PhoneOff, RefreshCw, RotateCcw, Send, Volume2, VolumeX, X } from "lucide-react";
 import clsx from "clsx";
 import { api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
@@ -35,6 +35,11 @@ type SpeechRecognitionEventLike = {
 };
 
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+type NativeLiveSpeechPlugin = {
+  startListening: (options: { language: string }) => Promise<{ text?: string }>;
+  speak: (options: { text: string; language: string; rate: number }) => Promise<void>;
+  stopSpeaking: () => Promise<void>;
+};
 
 const RECORDER_MIME_TYPES = [
   "audio/webm;codecs=opus",
@@ -66,6 +71,18 @@ function speechRecognitionConstructor(): SpeechRecognitionConstructor | null {
   return win.SpeechRecognition ?? win.webkitSpeechRecognition ?? null;
 }
 
+function nativeLiveSpeechPlugin(): NativeLiveSpeechPlugin | null {
+  const win = window as typeof window & {
+    Capacitor?: {
+      getPlatform?: () => string;
+      Plugins?: { AutoAiLiveSpeech?: NativeLiveSpeechPlugin };
+    };
+  };
+  return win.Capacitor?.getPlatform?.() === "android"
+    ? win.Capacitor?.Plugins?.AutoAiLiveSpeech ?? null
+    : null;
+}
+
 function languageToSpeechCode(language: string) {
   if (language === "english") return "en-US";
   if (language === "hindi") return "hi-IN";
@@ -94,6 +111,7 @@ export function LiveMode({ onClose }: { onClose: () => void }) {
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const sendUserTextRef = useRef<(text: string) => void>(() => undefined);
   const recognitionActiveRef = useRef(false);
+  const nativeListeningRef = useRef(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const audioStreamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -120,6 +138,7 @@ export function LiveMode({ onClose }: { onClose: () => void }) {
   const [voiceURI, setVoiceURI] = useState("");
   const [speechRate, setSpeechRate] = useState(1);
   const [language, setLanguage] = useState("auto");
+  const [manualText, setManualText] = useState("");
 
   const selectedVoice = useMemo(
     () => voices.find((voice) => voice.voiceURI === voiceURI) ?? null,
@@ -132,11 +151,12 @@ export function LiveMode({ onClose }: { onClose: () => void }) {
   }, []);
 
   const stopSpeaking = useCallback(() => {
+    void nativeLiveSpeechPlugin()?.stopSpeaking().catch(() => undefined);
+    speakingRef.current = false;
+    if (!mutedRef.current) setStatus("listening");
     if (!("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
-    speakingRef.current = false;
-    if (!muted) setStatus("listening");
-  }, [muted]);
+  }, []);
 
   const ensureSession = useCallback(async () => {
     if (!token) throw new Error("Not authenticated");
@@ -231,6 +251,25 @@ export function LiveMode({ onClose }: { onClose: () => void }) {
   const startListening = useCallback(async () => {
     setError("");
     if (!token || mutedRef.current) return;
+    const nativeSpeech = nativeLiveSpeechPlugin();
+    if (nativeSpeech && !nativeListeningRef.current) {
+      nativeListeningRef.current = true;
+      setStatus("listening");
+      try {
+        const result = await nativeSpeech.startListening({ language: languageToSpeechCode(language) });
+        const text = (result.text || "").trim();
+        if (text) {
+          sendUserTextRef.current(text);
+        } else if (shouldListenRef.current && !mutedRef.current && !speakingRef.current) {
+          window.setTimeout(() => void startListening(), 450);
+        }
+      } catch {
+        setError("No speech detected. Tap mic or type a message.");
+      } finally {
+        nativeListeningRef.current = false;
+      }
+      return;
+    }
     const Recognition = speechRecognitionConstructor();
     if (!Recognition) {
       await startFallbackRecording();
@@ -303,6 +342,23 @@ export function LiveMode({ onClose }: { onClose: () => void }) {
   }, [language, startFallbackRecording, stopSpeaking, token]);
 
   const speak = useCallback((text: string) => {
+    const nativeSpeech = nativeLiveSpeechPlugin();
+    if (nativeSpeech && text.trim()) {
+      recognitionRef.current?.abort();
+      stopFallbackRecording();
+      speakingRef.current = true;
+      setStatus("speaking");
+      nativeSpeech.speak({ text, language: languageToSpeechCode(language), rate: speechRate })
+        .catch(() => undefined)
+        .finally(() => {
+          speakingRef.current = false;
+          if (!mutedRef.current) {
+            setStatus("listening");
+            void startListening();
+          }
+        });
+      return;
+    }
     if (!("speechSynthesis" in window) || !text.trim()) {
       if (!muted) setStatus("listening");
       return;
@@ -534,6 +590,7 @@ export function LiveMode({ onClose }: { onClose: () => void }) {
     setMuted(true);
     mutedRef.current = true;
     shouldListenRef.current = false;
+    nativeListeningRef.current = false;
     recognitionRef.current?.abort();
     stopFallbackRecording();
     setStatus("muted");
@@ -551,6 +608,14 @@ export function LiveMode({ onClose }: { onClose: () => void }) {
     await analyzeBlob(file, "Analyze this uploaded visual context for the live conversation.");
   }
 
+  async function submitManualText(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const text = manualText.trim();
+    if (!text) return;
+    setManualText("");
+    await sendUserText(text);
+  }
+
   async function deleteFaceMemory() {
     if (!token) return;
     await api.deleteFaceMemory(token);
@@ -560,6 +625,7 @@ export function LiveMode({ onClose }: { onClose: () => void }) {
 
   async function endCall() {
     shouldListenRef.current = false;
+    nativeListeningRef.current = false;
     recognitionRef.current?.abort();
     stopFallbackRecording();
     stopSpeaking();
@@ -610,6 +676,18 @@ export function LiveMode({ onClose }: { onClose: () => void }) {
             </p>
           ))}
         </section>
+
+        <form className="live-manual-form" onSubmit={submitManualText}>
+          <input
+            value={manualText}
+            onChange={(event) => setManualText(event.target.value)}
+            placeholder="Type if voice is not detected..."
+            aria-label="Live message"
+          />
+          <button type="submit" disabled={!manualText.trim()} title="Send live message">
+            <Send size={17} />
+          </button>
+        </form>
 
         <section className="live-settings-row">
           <select value={language} onChange={(event) => setLanguage(event.target.value)} aria-label="Live language">

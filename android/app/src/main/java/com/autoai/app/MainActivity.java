@@ -77,6 +77,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(AutoAiSecureStoragePlugin.class);
         registerPlugin(AutoAiGoogleAuthPlugin.class);
+        registerPlugin(AutoAiLiveSpeechPlugin.class);
         super.onCreate(savedInstanceState);
 
         WebView webView = getBridge().getWebView();
