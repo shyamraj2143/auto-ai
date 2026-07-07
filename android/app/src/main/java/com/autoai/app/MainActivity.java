@@ -15,11 +15,13 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Message;
 import android.provider.Settings;
 import android.webkit.CookieManager;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
@@ -29,6 +31,7 @@ import androidx.core.content.FileProvider;
 
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.BridgeWebChromeClient;
 import com.getcapacitor.BridgeWebViewClient;
 import com.google.firebase.messaging.FirebaseMessaging;
 
@@ -97,6 +100,7 @@ public class MainActivity extends BridgeActivity {
         settings.setSupportMultipleWindows(true);
         settings.setUserAgentString(browserLikeUserAgent(settings.getUserAgentString()));
         getBridge().setWebViewClient(new AutoAiWebViewClient(getBridge()));
+        webView.setWebChromeClient(new AutoAiWebChromeClient(getBridge()));
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
 
@@ -197,7 +201,15 @@ public class MainActivity extends BridgeActivity {
             || "phonepe".equals(scheme)
             || "paytmmp".equals(scheme)
             || "gpay".equals(scheme)
-            || "bhim".equals(scheme);
+            || "bhim".equals(scheme)
+            || "credpay".equals(scheme)
+            || "mobikwik".equals(scheme)
+            || "freecharge".equals(scheme)
+            || "amazonpay".equals(scheme)
+            || "payzapp".equals(scheme)
+            || "whatsapp".equals(scheme)
+            || "ybl".equals(scheme)
+            || "myairtel".equals(scheme);
     }
 
     private class AutoAiWebViewClient extends BridgeWebViewClient {
@@ -219,6 +231,54 @@ public class MainActivity extends BridgeActivity {
         public boolean shouldOverrideUrlLoading(WebView view, String url) {
             Uri uri = Uri.parse(url);
             return openPaymentIntent(uri) || bridge.launchIntent(uri);
+        }
+    }
+
+    private class AutoAiWebChromeClient extends BridgeWebChromeClient {
+        AutoAiWebChromeClient(Bridge bridge) {
+            super(bridge);
+        }
+
+        @Override
+        public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
+            WebView paymentWindow = new WebView(view.getContext());
+            WebSettings paymentSettings = paymentWindow.getSettings();
+            paymentSettings.setJavaScriptEnabled(true);
+            paymentSettings.setDomStorageEnabled(true);
+            paymentWindow.setWebViewClient(new PaymentPopupWebViewClient());
+            WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
+            transport.setWebView(paymentWindow);
+            resultMsg.sendToTarget();
+            return true;
+        }
+    }
+
+    private class PaymentPopupWebViewClient extends WebViewClient {
+        @Override
+        public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+            return handlePopupUrl(request.getUrl()) || super.shouldOverrideUrlLoading(view, request);
+        }
+
+        @Override
+        @SuppressWarnings("deprecation")
+        public boolean shouldOverrideUrlLoading(WebView view, String url) {
+            return handlePopupUrl(Uri.parse(url));
+        }
+
+        private boolean handlePopupUrl(Uri uri) {
+            if (openPaymentIntent(uri)) return true;
+            String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.US);
+            if (!"http".equals(scheme) && !"https".equals(scheme) && !"about".equals(scheme)) {
+                Intent intent = new Intent(Intent.ACTION_VIEW, uri);
+                intent.addCategory(Intent.CATEGORY_BROWSABLE);
+                try {
+                    startActivity(intent);
+                } catch (ActivityNotFoundException error) {
+                    Toast.makeText(MainActivity.this, "Payment app not found.", Toast.LENGTH_SHORT).show();
+                }
+                return true;
+            }
+            return false;
         }
     }
 
