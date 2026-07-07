@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
-from fastapi.responses import FileResponse
+import httpx
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -10,6 +11,7 @@ from app.models.apk import ApkRelease
 from app.models.user import User
 from app.schemas.download import ApkDownloadCountRequest, ApkReleaseRead, ApkReleaseUpdate, ApkStats
 from app.services.apk_service import apk_service
+from app.services.github_apk_release import github_apk_release_service
 
 
 router = APIRouter(prefix="/download", tags=["download"])
@@ -21,6 +23,14 @@ def optional_user(request: Request, db: Session) -> User | None:
         return None
     user_id = decode_access_token(auth.split(" ", 1)[1].strip())
     return db.get(User, user_id) if user_id else None
+
+
+def newest_release(db_release: ApkRelease | None) -> ApkReleaseRead | None:
+    db_read = apk_service.release_read(db_release) if db_release else None
+    github_release = github_apk_release_service.latest_release()
+    if github_release and (not db_read or github_release.read.version_code > db_read.version_code):
+        return github_release.read
+    return db_read or (github_release.read if github_release else None)
 
 
 @router.get("/apk")
@@ -56,16 +66,47 @@ def download_apk(
 
 @router.get("/apk/latest", response_model=ApkReleaseRead)
 def latest_apk(db: Session = Depends(get_db)) -> ApkReleaseRead:
-    release = apk_service.latest_release(db)
+    release = newest_release(apk_service.latest_release(db))
     if not release:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No APK release is available.")
-    return apk_service.release_read(release)
+    return release
 
 
 @router.get("/apk/versions", response_model=list[ApkReleaseRead])
 def apk_versions(db: Session = Depends(get_db)) -> list[ApkReleaseRead]:
     releases = db.scalars(select(ApkRelease).order_by(ApkRelease.version_code.desc(), ApkRelease.released_at.desc())).all()
-    return [apk_service.release_read(release) for release in releases]
+    result = [apk_service.release_read(release) for release in releases]
+    github_release = github_apk_release_service.latest_release()
+    if github_release and all(item.version_code != github_release.read.version_code for item in result):
+        result.insert(0, github_release.read)
+    return result
+
+
+@router.get("/apk/github/latest")
+def download_latest_github_apk(version: str | None = None):
+    release = github_apk_release_service.latest_release()
+    if not release or (version and release.read.version_name != version):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No GitHub APK release is available.")
+
+    def stream_apk():
+        with httpx.stream("GET", release.asset_url, follow_redirects=True, timeout=120.0) as response:
+            response.raise_for_status()
+            for chunk in response.iter_bytes():
+                if chunk:
+                    yield chunk
+
+    return StreamingResponse(
+        stream_apk(),
+        media_type="application/vnd.android.package-archive",
+        headers={
+            "Cache-Control": "private, max-age=300",
+            "Content-Disposition": f'attachment; filename="{release.read.file_name}"',
+            "X-Auto-AI-APK-Version": release.read.version_name,
+            "X-Auto-AI-APK-Version-Code": str(release.read.version_code),
+            "X-Auto-AI-APK-SHA256": release.read.sha256,
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.post("/apk/count", response_model=ApkReleaseRead)
@@ -89,10 +130,10 @@ def count_apk_download(
 
 @router.get("/apk/stats", response_model=ApkStats)
 def apk_stats(db: Session = Depends(get_db)) -> ApkStats:
-    latest = apk_service.latest_release(db)
+    latest = newest_release(apk_service.latest_release(db))
     total_downloads = db.scalar(select(func.coalesce(func.sum(ApkRelease.download_count), 0))) or 0
     return ApkStats(
-        latest=apk_service.release_read(latest) if latest else None,
+        latest=latest,
         total_downloads=total_downloads,
         downloads_by_version=apk_service.download_counts(db),
     )

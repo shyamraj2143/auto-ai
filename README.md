@@ -178,12 +178,10 @@ Do not store APK stats in source files. Use the same persistent production datab
 
 ## Automatic Android Releases
 
-Pushes to `main` run `.github/workflows/android-release.yml`. The workflow builds a signed APK, increments the Android `versionCode`, uploads the APK to the backend, and mobile apps show an update dialog plus Android notification when the new release is detected.
+Pushes to `main` run `.github/workflows/android-release.yml`. The workflow builds a signed APK, increments the Android `versionCode`, publishes a GitHub APK release, and mobile apps show an update dialog plus Android notification when the backend detects the new release.
 
 Required GitHub repository secrets:
 
-- `AUTO_AI_ADMIN_EMAIL`
-- `AUTO_AI_ADMIN_PASSWORD`
 - `AUTO_AI_ANDROID_KEYSTORE_BASE64`
 - `AUTO_AI_ANDROID_KEYSTORE_PASSWORD`
 - `AUTO_AI_ANDROID_KEY_ALIAS`
@@ -192,6 +190,8 @@ Required GitHub repository secrets:
 Optional secrets:
 
 - `AUTO_AI_API_BASE_URL`
+- `AUTO_AI_ADMIN_EMAIL`
+- `AUTO_AI_ADMIN_PASSWORD`
 - `AUTO_AI_GOOGLE_WEB_CLIENT_ID`
 - `AUTO_AI_APK_FORCE_UPDATE`
 

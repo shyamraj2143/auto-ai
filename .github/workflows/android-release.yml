@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-and-publish:
@@ -43,11 +43,11 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Validate release secrets
+      - name: Validate signing secrets
         shell: bash
         run: |
           missing=()
-          for name in AUTO_AI_ADMIN_EMAIL AUTO_AI_ADMIN_PASSWORD AUTO_AI_ANDROID_KEYSTORE_BASE64 AUTO_AI_ANDROID_KEYSTORE_PASSWORD AUTO_AI_ANDROID_KEY_ALIAS AUTO_AI_ANDROID_KEY_PASSWORD; do
+          for name in AUTO_AI_ANDROID_KEYSTORE_BASE64 AUTO_AI_ANDROID_KEYSTORE_PASSWORD AUTO_AI_ANDROID_KEY_ALIAS AUTO_AI_ANDROID_KEY_PASSWORD; do
             if [ -z "${!name:-}" ]; then
               missing+=("$name")
             fi
@@ -76,7 +76,30 @@ jobs:
           chmod +x scripts/build_android_apk.sh
           APK_OUTPUT_PATH=output/android/auto-ai.apk VITE_API_URL="$AUTO_AI_API_BASE_URL" ./scripts/build_android_apk.sh
 
+      - name: Publish GitHub APK release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apk_path="output/android/auto-ai.apk"
+          sha256="$(sha256sum "$apk_path" | awk '{print $1}')"
+          tag="android-${AUTO_AI_ANDROID_VERSION_CODE}"
+          notes="$(mktemp)"
+          {
+            echo "Version-Code: ${AUTO_AI_ANDROID_VERSION_CODE}"
+            echo "Version-Name: ${AUTO_AI_ANDROID_VERSION_NAME}"
+            echo "SHA256: ${sha256}"
+            echo "Changelog: GitHub push ${GITHUB_SHA::7}"
+            echo
+            echo "Auto update from GitHub push ${GITHUB_SHA::7}"
+          } > "$notes"
+          gh release create "$tag" "$apk_path" \
+            --title "Auto-AI Android ${AUTO_AI_ANDROID_VERSION_NAME}" \
+            --notes-file "$notes" \
+            --latest
+
       - name: Publish APK to backend
+        if: ${{ env.AUTO_AI_ADMIN_EMAIL != '' && env.AUTO_AI_ADMIN_PASSWORD != '' }}
         shell: bash
         run: |
           args=()
