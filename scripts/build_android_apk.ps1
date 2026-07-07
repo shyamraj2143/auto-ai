@@ -71,6 +71,12 @@ if (-not $googleWebClientId) { $googleWebClientId = $localProperties["AUTO_AI_GO
 if (-not $googleWebClientId) { $googleWebClientId = $localProperties["GOOGLE_WEB_CLIENT_ID"] }
 if (-not $googleWebClientId) { $googleWebClientId = $localProperties["VITE_GOOGLE_WEB_CLIENT_ID"] }
 $googleWebClientId = if ($googleWebClientId) { $googleWebClientId.Trim() } else { "" }
+$androidVersionCode = $env:AUTO_AI_ANDROID_VERSION_CODE
+if (-not $androidVersionCode) { $androidVersionCode = $localProperties["AUTO_AI_ANDROID_VERSION_CODE"] }
+$androidVersionName = $env:AUTO_AI_ANDROID_VERSION_NAME
+if (-not $androidVersionName) { $androidVersionName = $localProperties["AUTO_AI_ANDROID_VERSION_NAME"] }
+$androidVersionCode = if ($androidVersionCode) { $androidVersionCode.Trim() } else { "19" }
+$androidVersionName = if ($androidVersionName) { $androidVersionName.Trim() } else { "1.0.18" }
 
 if (-not ($keystore -and $storePassword -and $keyAlias -and $keyPassword)) {
   $signingDir = Join-Path $root ".android-signing"
@@ -100,6 +106,8 @@ $localPropertyLines += "AUTO_AI_ANDROID_KEY_PASSWORD=$keyPassword"
 if ($googleWebClientId) {
   $localPropertyLines += "AUTO_AI_GOOGLE_WEB_CLIENT_ID=$googleWebClientId"
 }
+$localPropertyLines += "AUTO_AI_ANDROID_VERSION_CODE=$androidVersionCode"
+$localPropertyLines += "AUTO_AI_ANDROID_VERSION_NAME=$androidVersionName"
 Set-Content -Path $localPropertiesPath -Value $localPropertyLines -Encoding ASCII
 
 Push-Location $frontend
@@ -163,3 +171,5 @@ $size = (Get-Item $output).Length
 Write-Output "APK=$output"
 Write-Output "SHA256=$hash"
 Write-Output "SIZE=$size"
+Write-Output "VERSION_CODE=$androidVersionCode"
+Write-Output "VERSION_NAME=$androidVersionName"

@@ -1,8 +1,15 @@
 package com.autoai.app;
 
+import android.Manifest;
 import android.app.AlertDialog;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.content.Context;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -42,10 +49,21 @@ public class MainActivity extends BridgeActivity {
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int READ_TIMEOUT_MS = 60000;
     private static final int MAX_DOWNLOAD_ATTEMPTS = 3;
-    private static final long UPDATE_CHECK_INTERVAL_MS = 30L * 60L * 1000L;
+    private static final long UPDATE_CHECK_INTERVAL_MS = 5L * 60L * 1000L;
+    private static final int UPDATE_NOTIFICATION_ID = 1001;
+    private static final int NOTIFICATION_PERMISSION_REQUEST_CODE = 1002;
+    private static final String UPDATE_NOTIFICATION_CHANNEL_ID = "auto_ai_updates";
+    private static final String LAST_NOTIFIED_UPDATE_VERSION_CODE = "last_notified_update_version_code";
 
     private final ExecutorService updateExecutor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Runnable updatePollRunnable = new Runnable() {
+        @Override
+        public void run() {
+            checkForUpdate(false);
+            mainHandler.postDelayed(this, UPDATE_CHECK_INTERVAL_MS);
+        }
+    };
     private ApkUpdate latestUpdate;
     private File pendingInstallFile;
     private DownloadProgress downloadProgress;
@@ -74,7 +92,10 @@ public class MainActivity extends BridgeActivity {
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
 
+        createUpdateNotificationChannel();
+        requestNotificationPermissionIfNeeded();
         checkForUpdate(true);
+        startUpdatePolling();
     }
 
     @Override
@@ -91,7 +112,13 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onDestroy() {
         super.onDestroy();
+        mainHandler.removeCallbacks(updatePollRunnable);
         updateExecutor.shutdownNow();
+    }
+
+    private void startUpdatePolling() {
+        mainHandler.removeCallbacks(updatePollRunnable);
+        mainHandler.postDelayed(updatePollRunnable, UPDATE_CHECK_INTERVAL_MS);
     }
 
     private void checkForUpdate(boolean force) {
@@ -105,7 +132,10 @@ public class MainActivity extends BridgeActivity {
                 ApkUpdate update = fetchLatestUpdate();
                 if (update.versionCode > BuildConfig.VERSION_CODE) {
                     latestUpdate = update;
-                    mainHandler.post(() -> showUpdateDialog(update));
+                    mainHandler.post(() -> {
+                        showUpdateNotification(update);
+                        showUpdateDialog(update);
+                    });
                 }
             } catch (Exception ignored) {
                 // Update checks must never block normal app startup.
@@ -162,6 +192,73 @@ public class MainActivity extends BridgeActivity {
             dialog.setButton(AlertDialog.BUTTON_NEGATIVE, "Later", (item, which) -> item.dismiss());
         }
         dialog.show();
+    }
+
+    private void createUpdateNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager == null) return;
+        NotificationChannel channel = new NotificationChannel(
+            UPDATE_NOTIFICATION_CHANNEL_ID,
+            "Auto-AI updates",
+            NotificationManager.IMPORTANCE_HIGH
+        );
+        channel.setDescription("Auto-AI APK update alerts");
+        manager.createNotificationChannel(channel);
+    }
+
+    private void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return;
+        requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, NOTIFICATION_PERMISSION_REQUEST_CODE);
+    }
+
+    private boolean canPostNotifications() {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+            || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void showUpdateNotification(ApkUpdate update) {
+        if (!canPostNotifications()) return;
+        int lastNotifiedVersion = getPreferences(MODE_PRIVATE).getInt(LAST_NOTIFIED_UPDATE_VERSION_CODE, 0);
+        if (lastNotifiedVersion >= update.versionCode) return;
+
+        Intent intent = new Intent(this, MainActivity.class);
+        intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            flags |= PendingIntent.FLAG_IMMUTABLE;
+        }
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, intent, flags);
+
+        String body = "Version " + update.versionName + " is ready to install.";
+        if (!update.changelog.trim().isEmpty()) {
+            body += " " + update.changelog.trim();
+        }
+
+        Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            ? new Notification.Builder(this, UPDATE_NOTIFICATION_CHANNEL_ID)
+            : new Notification.Builder(this);
+        builder
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle("Auto-AI update available")
+            .setContentText(body)
+            .setStyle(new Notification.BigTextStyle().bigText(body))
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setShowWhen(true)
+            .setWhen(System.currentTimeMillis());
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            builder.setPriority(Notification.PRIORITY_HIGH);
+        }
+
+        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager == null) return;
+        manager.notify(UPDATE_NOTIFICATION_ID, builder.build());
+        getPreferences(MODE_PRIVATE)
+            .edit()
+            .putInt(LAST_NOTIFIED_UPDATE_VERSION_CODE, update.versionCode)
+            .apply();
     }
 
     private void downloadAndInstall(ApkUpdate update) {

@@ -1,0 +1,100 @@
+name: Android release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    env:
+      AUTO_AI_API_BASE_URL: ${{ secrets.AUTO_AI_API_BASE_URL || 'https://auto-ai-production-c510.up.railway.app/api/v1' }}
+      AUTO_AI_ADMIN_EMAIL: ${{ secrets.AUTO_AI_ADMIN_EMAIL }}
+      AUTO_AI_ADMIN_PASSWORD: ${{ secrets.AUTO_AI_ADMIN_PASSWORD }}
+      AUTO_AI_ANDROID_KEYSTORE_BASE64: ${{ secrets.AUTO_AI_ANDROID_KEYSTORE_BASE64 }}
+      AUTO_AI_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.AUTO_AI_ANDROID_KEYSTORE_PASSWORD }}
+      AUTO_AI_ANDROID_KEY_ALIAS: ${{ secrets.AUTO_AI_ANDROID_KEY_ALIAS }}
+      AUTO_AI_ANDROID_KEY_PASSWORD: ${{ secrets.AUTO_AI_ANDROID_KEY_PASSWORD }}
+      AUTO_AI_GOOGLE_WEB_CLIENT_ID: ${{ secrets.AUTO_AI_GOOGLE_WEB_CLIENT_ID }}
+      AUTO_AI_APK_FORCE_UPDATE: ${{ secrets.AUTO_AI_APK_FORCE_UPDATE }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Validate release secrets
+        shell: bash
+        run: |
+          missing=()
+          for name in AUTO_AI_ADMIN_EMAIL AUTO_AI_ADMIN_PASSWORD AUTO_AI_ANDROID_KEYSTORE_BASE64 AUTO_AI_ANDROID_KEYSTORE_PASSWORD AUTO_AI_ANDROID_KEY_ALIAS AUTO_AI_ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf 'Missing GitHub secrets: %s\n' "${missing[*]}" >&2
+            exit 1
+          fi
+
+      - name: Prepare signing and version
+        shell: bash
+        run: |
+          mkdir -p .android-signing
+          printf '%s' "$AUTO_AI_ANDROID_KEYSTORE_BASE64" | base64 --decode > .android-signing/auto-ai-release.jks
+          echo "AUTO_AI_ANDROID_KEYSTORE=$PWD/.android-signing/auto-ai-release.jks" >> "$GITHUB_ENV"
+          version_code=$((100000 + GITHUB_RUN_NUMBER * 10 + GITHUB_RUN_ATTEMPT))
+          echo "AUTO_AI_ANDROID_VERSION_CODE=$version_code" >> "$GITHUB_ENV"
+          echo "AUTO_AI_ANDROID_VERSION_NAME=1.0.$version_code" >> "$GITHUB_ENV"
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Build Android APK
+        shell: bash
+        run: |
+          chmod +x scripts/build_android_apk.sh
+          APK_OUTPUT_PATH=output/android/auto-ai.apk VITE_API_URL="$AUTO_AI_API_BASE_URL" ./scripts/build_android_apk.sh
+
+      - name: Publish APK to backend
+        shell: bash
+        run: |
+          args=()
+          if [ "${AUTO_AI_APK_FORCE_UPDATE,,}" = "true" ]; then
+            args+=(--force-update)
+          fi
+          python scripts/publish_android_release.py \
+            --api-url "$AUTO_AI_API_BASE_URL" \
+            --apk output/android/auto-ai.apk \
+            --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
+            --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
+            --changelog "GitHub push ${GITHUB_SHA::7}" \
+            --release-notes "Auto update from GitHub push ${GITHUB_SHA::7}" \
+            "${args[@]}"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: auto-ai-${{ env.AUTO_AI_ANDROID_VERSION_NAME }}
+          path: output/android/auto-ai.apk
+          if-no-files-found: error
