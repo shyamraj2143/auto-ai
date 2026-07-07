@@ -20,6 +20,9 @@ import type {
   DocumentItem,
   HumanState,
   InteractionProfile,
+  FaceMemoryStatus,
+  LiveMessageResponse,
+  LiveSessionStart,
   PaymentConfig,
   PaymentSession,
   PromoCodeResponse,
@@ -36,6 +39,7 @@ import type {
   TurnAnalysis,
   User,
   UserRole,
+  VisionAnalyzeResponse,
   UserMemory
 } from "../types";
 import { coerceTextContent } from "../utils/text";
@@ -601,6 +605,62 @@ export const api = {
       body: formData
     });
   },
+
+  startLiveSession: (token: string) =>
+    apiFetch<LiveSessionStart>("/live/session/start", {
+      method: "POST",
+      token,
+      operation: "live.session.start"
+    }),
+  sendLiveMessage: (
+    token: string,
+    payload: {
+      session_id: string;
+      transcript?: string;
+      image_frame_id?: string | null;
+      provider?: string | null;
+      model?: string | null;
+      language?: string | null;
+    }
+  ) =>
+    apiFetch<LiveMessageResponse>("/live/message", {
+      method: "POST",
+      token,
+      operation: "live.message",
+      body: JSON.stringify(payload)
+    }),
+  analyzeLiveVision: (token: string, formData: FormData) =>
+    apiFetch<VisionAnalyzeResponse>("/live/vision/analyze", {
+      method: "POST",
+      token,
+      operation: "live.vision.analyze",
+      body: formData
+    }),
+  endLiveSession: (token: string, sessionId: string) =>
+    apiFetch<{ session_id: string; status: string; ended_at: string }>("/live/session/end", {
+      method: "POST",
+      token,
+      operation: "live.session.end",
+      body: JSON.stringify({ session_id: sessionId })
+    }),
+  faceMemoryStatus: (token: string) =>
+    apiFetch<FaceMemoryStatus>("/memory/face/status", {
+      token,
+      operation: "memory.face.status"
+    }),
+  enrollFaceMemory: (token: string, formData: FormData) =>
+    apiFetch<FaceMemoryStatus>("/memory/face/enroll", {
+      method: "POST",
+      token,
+      operation: "memory.face.enroll",
+      body: formData
+    }),
+  deleteFaceMemory: (token: string) =>
+    apiFetch<void>("/memory/face", {
+      method: "DELETE",
+      token,
+      operation: "memory.face.delete"
+    }),
 
   runSearch: (token: string, payload: { query: string; mode?: ChatRequest["search_mode"] }) =>
     apiFetch<SearchResultBundle>("/search", {

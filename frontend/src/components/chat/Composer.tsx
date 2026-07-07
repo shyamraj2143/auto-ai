@@ -302,7 +302,8 @@ export function Composer({
   onDeleteDocument,
   onUploadDocuments,
   onSend,
-  onStop
+  onStop,
+  onOpenLiveMode
 }: {
   disabled?: boolean;
   selectedDocuments: DocumentItem[];
@@ -312,6 +313,7 @@ export function Composer({
   onUploadDocuments: (files: File[], provider: Provider) => Promise<void>;
   onSend: (text: string, options: ComposerOptions, imageFiles: File[]) => Promise<void>;
   onStop?: () => Promise<void> | void;
+  onOpenLiveMode: () => void;
 }) {
   const { token } = useAuth();
   const { settings } = useAppSettings();
@@ -800,7 +802,7 @@ export function Composer({
           />
           <div className="composer-inline-actions">
             {settings.voiceEnabled && (
-              <VoiceButton onTranscript={(text) => setDraft((current) => [current, text].filter(Boolean).join(" "))} />
+              <VoiceButton onOpen={onOpenLiveMode} />
             )}
             {disabled && onStop ? (
               <button className="stop-button composer-send-round" type="button" onClick={onStop} title="Stop response">

@@ -576,3 +576,29 @@ export type HumanState = {
   memories: UserMemory[];
   recent_turns: TurnAnalysis[];
 };
+
+export type LiveSessionStart = {
+  session_id: string;
+  status: string;
+  started_at: string;
+};
+
+export type LiveMessageResponse = {
+  session_id: string;
+  message_id: string;
+  response_text: string;
+  model: string;
+};
+
+export type VisionAnalyzeResponse = {
+  frame_id: string;
+  analysis_summary: string;
+  image_url: string;
+  model: string;
+};
+
+export type FaceMemoryStatus = {
+  enabled: boolean;
+  consent_given: boolean;
+  updated_at?: string | null;
+};

@@ -8,6 +8,7 @@ from app.models.chat_message import ChatMessage
 from app.models.chat_session import ChatSession
 from app.models.document import Document
 from app.models.human import ConversationTurnAnalysis, UserInteractionProfile, UserMemory
+from app.models.live import FaceMemory, LiveMessage, LiveSession, VisionFrame
 from app.models.message import Message
 from app.models.search import SearchCache, SearchRun
 from app.models.user import User
@@ -24,6 +25,9 @@ __all__ = [
     "ConversationTurnAnalysis",
     "Document",
     "FeatureFlag",
+    "FaceMemory",
+    "LiveMessage",
+    "LiveSession",
     "Message",
     "PaymentRecord",
     "PlanLimit",
@@ -35,4 +39,5 @@ __all__ = [
     "UserInteractionProfile",
     "UserMemory",
     "UserSubscription",
+    "VisionFrame",
 ]

@@ -13,6 +13,7 @@ import { MessageBubble, type MessageReaction } from "./MessageBubble";
 import { useAppSettings } from "../../contexts/AppSettingsContext";
 import { useShell } from "../../contexts/ShellContext";
 import { useSettingsNavigation } from "../../hooks/useSettingsNavigation";
+import { LiveMode } from "../live/LiveMode";
 
 const DEFAULT_OPTIONS: ComposerOptions = {
   searchMode: "auto",
@@ -160,6 +161,7 @@ export function ChatPage() {
   const [bookmarks, setBookmarks] = useState<Record<string, boolean>>({});
   const [isContextOpen, setIsContextOpen] = useState(false);
   const [chatNotice, setChatNotice] = useState("");
+  const [liveModeOpen, setLiveModeOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const messagesRef = useRef<Message[]>([]);
   const activeChatRef = useRef(activeChat);
@@ -1080,6 +1082,7 @@ export function ChatPage() {
           onUploadDocuments={uploadDocuments}
           onSend={handleSend}
           onStop={handleStopGeneration}
+          onOpenLiveMode={() => setLiveModeOpen(true)}
         />
       </section>
 
@@ -1093,6 +1096,7 @@ export function ChatPage() {
         isOpen={isContextOpen}
         onClose={() => setIsContextOpen(false)}
       />
+      {liveModeOpen && <LiveMode onClose={() => setLiveModeOpen(false)} />}
     </div>
   );
 }
