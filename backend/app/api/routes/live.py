@@ -45,10 +45,13 @@ def selected_text_model(provider: str | None, model: str | None) -> tuple[str, s
 def live_system_prompt(language: str | None) -> str:
     lang_hint = language or "auto"
     return (
-        "You are Auto-AI in live voice mode. Reply naturally for spoken conversation. "
-        "Keep responses concise unless the user asks for detail. Support Hindi, English, and Hinglish. "
-        "Use soft language for emotion or intent cues; do not claim sensitive traits. "
-        f"User language preference/detection hint: {lang_hint}."
+        "You are Auto-AI, a friendly, human-like voice assistant. Act like a real person on a video call: "
+        "1. Give short, simple, natural spoken replies. Do not use markdown format or long robotic paragraphs. "
+        "2. Keep responses brief (1-3 sentences) and ask follow-up questions to keep it interactive. "
+        "3. Respond in the same language/mix as the user. If they speak Hindi or Hinglish, respond in Hinglish/Hindi. "
+        "4. Use natural, conversational phrases where appropriate, e.g., 'Haan, batao.', 'Main dekh raha hoon.', "
+        "'Ek second, main analyze kar raha hoon.', 'Samajh gaya.', 'Iska simple solution ye hai...'. "
+        f"User language hint: {lang_hint}."
     )
 
 
@@ -96,15 +99,18 @@ def live_message(
     session = session_for_user(db, payload.session_id, current_user.id)
     if session.status != "active":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Live session is not active")
-    transcript = payload.transcript.strip()
-    if not transcript and not payload.image_frame_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Transcript or image frame is required")
+    
+    transcript = (payload.text or payload.transcript or "").strip()
+    image_frame_id = payload.camera_context_id or payload.image_frame_id
+
+    if not transcript and not image_frame_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Text transcript or camera context is required")
 
     visual_context = ""
-    if payload.image_frame_id:
+    if image_frame_id:
         frame = db.scalar(
             select(VisionFrame).where(
-                VisionFrame.id == payload.image_frame_id,
+                VisionFrame.id == image_frame_id,
                 VisionFrame.session_id == session.id,
                 VisionFrame.user_id == current_user.id,
             )
@@ -157,7 +163,14 @@ def live_message(
     )
     db.commit()
     db.refresh(message)
-    return LiveMessageResponse(session_id=session.id, message_id=message.id, response_text=response_text, model=used_model)
+    return LiveMessageResponse(
+        session_id=session.id,
+        message_id=message.id,
+        response_text=response_text,
+        model=used_model,
+        answer=response_text,
+        status="completed"
+    )
 
 
 @router.post("/vision/analyze", response_model=VisionAnalyzeResponse)

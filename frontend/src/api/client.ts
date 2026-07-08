@@ -616,7 +616,9 @@ export const api = {
     token: string,
     payload: {
       session_id: string;
+      text?: string;
       transcript?: string;
+      camera_context_id?: string | null;
       image_frame_id?: string | null;
       provider?: string | null;
       model?: string | null;

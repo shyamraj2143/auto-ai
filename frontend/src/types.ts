@@ -588,6 +588,8 @@ export type LiveMessageResponse = {
   message_id: string;
   response_text: string;
   model: string;
+  answer?: string;
+  status?: string;
 };
 
 export type VisionAnalyzeResponse = {

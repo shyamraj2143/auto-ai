@@ -11,7 +11,9 @@ class LiveSessionStartResponse(BaseModel):
 
 class LiveMessageRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=36)
-    transcript: str = Field(default="", max_length=20000)
+    text: str = Field(default="", max_length=20000)
+    transcript: str | None = Field(default=None, max_length=20000)
+    camera_context_id: str | None = Field(default=None, max_length=36)
     image_frame_id: str | None = Field(default=None, max_length=36)
     provider: str | None = Field(default=None, max_length=40)
     model: str | None = Field(default=None, max_length=160)
@@ -23,6 +25,8 @@ class LiveMessageResponse(BaseModel):
     message_id: str
     response_text: str
     model: str
+    answer: str
+    status: str
 
 
 class VisionAnalyzeResponse(BaseModel):

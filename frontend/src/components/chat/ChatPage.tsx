@@ -13,7 +13,7 @@ import { MessageBubble, type MessageReaction } from "./MessageBubble";
 import { useAppSettings } from "../../contexts/AppSettingsContext";
 import { useShell } from "../../contexts/ShellContext";
 import { useSettingsNavigation } from "../../hooks/useSettingsNavigation";
-import { LiveMode } from "../live/LiveMode";
+import { LiveCallMode } from "../live/LiveCallMode";
 
 const DEFAULT_OPTIONS: ComposerOptions = {
   searchMode: "auto",
@@ -1096,7 +1096,7 @@ export function ChatPage() {
         isOpen={isContextOpen}
         onClose={() => setIsContextOpen(false)}
       />
-      {liveModeOpen && <LiveMode onClose={() => setLiveModeOpen(false)} />}
+      {liveModeOpen && <LiveCallMode onClose={() => setLiveModeOpen(false)} />}
     </div>
   );
 }
