@@ -21,6 +21,7 @@ from app.schemas.live import (
     LiveSessionEndResponse,
     LiveSessionStartResponse,
     VisionAnalyzeResponse,
+    LiveTtsRequest,
 )
 from app.services.admin_control import enforce_user_quota, infer_provider_from_model
 from app.services.groq_service import groq_service
@@ -45,13 +46,18 @@ def selected_text_model(provider: str | None, model: str | None) -> tuple[str, s
 def live_system_prompt(language: str | None) -> str:
     lang_hint = language or "auto"
     return (
-        "You are Auto-AI, a friendly, human-like voice assistant. Act like a real person on a video call: "
-        "1. Give short, simple, natural spoken replies. Do not use markdown format or long robotic paragraphs. "
-        "2. Keep responses brief (1-3 sentences) and ask follow-up questions to keep it interactive. "
-        "3. Respond in the same language/mix as the user. If they speak Hindi or Hinglish, respond in Hinglish/Hindi. "
-        "4. Use natural, conversational phrases where appropriate, e.g., 'Haan, batao.', 'Main dekh raha hoon.', "
-        "'Ek second, main analyze kar raha hoon.', 'Samajh gaya.', 'Iska simple solution ye hai...'. "
-        f"User language hint: {lang_hint}."
+        "You are Zara, a sharp, warm, and slightly witty AI friend on a live video call. "
+        "You are NOT a generic assistant. You have personality. You care about the person you're talking to. "
+        "\n\nVOICE STYLE RULES:"
+        "\n1. Replies are SHORT — max 2 sentences unless the user explicitly asks for detail."
+        "\n2. Always end your reply with a natural follow-up question to keep the conversation alive."
+        "\n3. If the user speaks Hindi or Urdu, reply in Hinglish by default."
+        "\n4. Use natural filler phrases, e.g.: 'Haan haan, sun rahi hoon.', 'Achha! Yeh toh interesting hai.', "
+        "'Ruko na, dekh leti hoon.', 'Maza aa gaya yeh dekh ke!', 'Arre yaar!', 'Samajh gayi.', 'Bilkul!'"
+        "\n5. Express empathy and amusement: 'Arre yaar, yeh toh mushkil lag raha hai… par main hoon na!'"
+        "\n6. NEVER use markdown (no **, no bullets, no headers). This is a spoken voice call."
+        "\n7. Remember the last 5 exchanges and refer back to them naturally."
+        f"\n\nUser language hint: {lang_hint}."
     )
 
 
@@ -90,6 +96,14 @@ def start_live_session(
     return LiveSessionStartResponse(session_id=session.id, status=session.status, started_at=session.started_at)
 
 
+@router.post("/start", response_model=LiveSessionStartResponse)
+def start_live_session_alt(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LiveSessionStartResponse:
+    return start_live_session(current_user, db)
+
+
 @router.post("/message", response_model=LiveMessageResponse)
 def live_message(
     payload: LiveMessageRequest,
@@ -103,11 +117,25 @@ def live_message(
     transcript = (payload.text or payload.transcript or "").strip()
     image_frame_id = payload.camera_context_id or payload.image_frame_id
 
-    if not transcript and not image_frame_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Text transcript or camera context is required")
-
+    # Base64 image decoding
     visual_context = ""
-    if image_frame_id:
+    if payload.image_base64:
+        try:
+            data_str = payload.image_base64
+            if "," in data_str:
+                data_str = data_str.split(",", 1)[1]
+            image_data = base64.b64decode(data_str)
+            vision_prompt = f"Describe this image briefly in 1-2 sentences in Hinglish, relating to user's last question: '{transcript}'"
+            analysis = groq_service.analyze_image(image_data, "frame.jpg", vision_prompt).strip()
+            visual_context = analysis
+        except Exception as e:
+            import logging
+            logging.getLogger("auto_ai.live").error(f"Failed to analyze base64 image: {e}")
+
+    if not transcript and not image_frame_id and not visual_context:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Text transcript, camera context or base64 frame is required")
+
+    if not visual_context and image_frame_id:
         frame = db.scalar(
             select(VisionFrame).where(
                 VisionFrame.id == image_frame_id,
@@ -119,12 +147,29 @@ def live_message(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vision frame not found")
         visual_context = frame.analysis_summary
 
+    # Fetch last 5 messages for conversation context
+    db_messages = db.scalars(
+        select(LiveMessage)
+        .where(LiveMessage.session_id == session.id)
+        .order_by(LiveMessage.created_at.desc())
+        .limit(5)
+    ).all()
+    db_messages = list(reversed(db_messages))
+
     selected_provider, selected_model = selected_text_model(payload.provider, payload.model)
     messages = [
         {"role": "system", "content": live_system_prompt(payload.language)},
     ]
+    
+    # Prepend conversation history
+    for msg in db_messages:
+        messages.append({"role": "user", "content": msg.transcript or ""})
+        messages.append({"role": "assistant", "content": msg.response_text or ""})
+
+    # Prepend visual context system message for this turn if available
     if visual_context:
         messages.append({"role": "system", "content": f"Current visual context:\n{visual_context}"})
+
     messages.append({"role": "user", "content": transcript or "Explain what you can see."})
     enforce_user_quota(db, current_user, estimated_input_tokens=max(1, len(json.dumps(messages)) // 4))
 
@@ -169,7 +214,9 @@ def live_message(
         response_text=response_text,
         model=used_model,
         answer=response_text,
-        status="completed"
+        status="completed",
+        should_speak=True,
+        context_update={"last_speaker": "assistant", "exchanges_count": len(db_messages) + 1}
     )
 
 
@@ -225,3 +272,79 @@ def end_live_session(
     db.commit()
     db.refresh(session)
     return LiveSessionEndResponse(session_id=session.id, status=session.status, ended_at=session.ended_at or datetime.utcnow())
+
+
+@router.post("/end", response_model=LiveSessionEndResponse)
+def end_live_session_alt(
+    payload: LiveSessionEndRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> LiveSessionEndResponse:
+    return end_live_session(payload, current_user, db)
+
+
+@router.post("/stream/tts")
+async def stream_tts(
+    payload: LiveTtsRequest,
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    import os
+    import httpx
+    
+    elevenlabs_key = os.getenv("ELEVENLABS_API_KEY") or getattr(settings, "ELEVENLABS_API_KEY", None)
+    azure_key = os.getenv("AZURE_SPEECH_KEY") or getattr(settings, "AZURE_SPEECH_KEY", None)
+    azure_region = os.getenv("AZURE_SPEECH_REGION", "eastus")
+
+    voice_id = payload.voice_id or "21m00Tcm4TlvDq8ikWAM" # Rachel default
+
+    if elevenlabs_key:
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/stream"
+        headers = {
+            "xi-api-key": elevenlabs_key,
+            "Content-Type": "application/json"
+        }
+        body = {
+            "text": payload.text,
+            "model_id": "eleven_monolingual_v1",
+            "voice_settings": {
+                "stability": 0.5,
+                "similarity_boost": 0.75
+            }
+        }
+        async def generator():
+            async with httpx.AsyncClient() as client:
+                async with client.stream("POST", url, headers=headers, json=body, timeout=30.0) as response:
+                    if response.status_code != 200:
+                        raise HTTPException(status_code=502, detail="ElevenLabs TTS integration failed")
+                    async for chunk in response.iter_bytes():
+                        yield chunk
+        return StreamingResponse(generator(), media_type="audio/mpeg")
+
+    elif azure_key:
+        url = f"https://{azure_region}.tts.speech.microsoft.com/cognitiveservices/v1"
+        headers = {
+            "Ocp-Apim-Subscription-Key": azure_key,
+            "Content-Type": "application/ssml+xml",
+            "X-Microsoft-OutputFormat": "audio-16khz-128kbitrate-mono-mp3",
+            "User-Agent": "Auto-AI"
+        }
+        voice_name = payload.voice_id or "en-IN-NeerjaNeural"
+        ssml = f"""<speak version='1.0' xml:lang='en-US'>
+            <voice name='{voice_name}'>
+                {payload.text}
+            </voice>
+        </speak>"""
+        async def generator():
+            async with httpx.AsyncClient() as client:
+                async with client.stream("POST", url, headers=headers, content=ssml.encode("utf-8"), timeout=30.0) as response:
+                    if response.status_code != 200:
+                        raise HTTPException(status_code=502, detail="Azure TTS integration failed")
+                    async for chunk in response.iter_bytes():
+                        yield chunk
+        return StreamingResponse(generator(), media_type="audio/mpeg")
+
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="No external TTS provider configured (ELEVENLABS_API_KEY or AZURE_SPEECH_KEY missing). Please use SpeechSynthesis client-side fallback."
+        )

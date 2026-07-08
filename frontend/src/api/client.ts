@@ -607,7 +607,7 @@ export const api = {
   },
 
   startLiveSession: (token: string) =>
-    apiFetch<LiveSessionStart>("/live/session/start", {
+    apiFetch<LiveSessionStart>("/live/start", {
       method: "POST",
       token,
       operation: "live.session.start"
@@ -620,6 +620,7 @@ export const api = {
       transcript?: string;
       camera_context_id?: string | null;
       image_frame_id?: string | null;
+      image_base64?: string | null;
       provider?: string | null;
       model?: string | null;
       language?: string | null;
@@ -639,7 +640,7 @@ export const api = {
       body: formData
     }),
   endLiveSession: (token: string, sessionId: string) =>
-    apiFetch<{ session_id: string; status: string; ended_at: string }>("/live/session/end", {
+    apiFetch<{ session_id: string; status: string; ended_at: string }>("/live/end", {
       method: "POST",
       token,
       operation: "live.session.end",

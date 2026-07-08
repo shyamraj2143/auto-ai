@@ -14,7 +14,7 @@ export function useCameraVision() {
       }
       
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: facing },
+        video: { facingMode: facing, width: { ideal: 640 } },
         audio: false
       });
       cameraStreamRef.current = stream;
@@ -62,8 +62,21 @@ export function useCameraVision() {
     if (!context) return null;
     context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
     return new Promise<Blob | null>((resolve) => {
-      canvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.85);
+      canvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.7);
     });
+  }, []);
+
+  const captureBase64Frame = useCallback(async (videoElement: HTMLVideoElement | null): Promise<string | null> => {
+    if (!videoElement || !videoElement.videoWidth || !videoElement.videoHeight) {
+      return null;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = videoElement.videoWidth;
+    canvas.height = videoElement.videoHeight;
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.7);
   }, []);
 
   return {
@@ -75,5 +88,6 @@ export function useCameraVision() {
     stopCamera,
     switchCamera,
     captureFrame,
+    captureBase64Frame,
   };
 }

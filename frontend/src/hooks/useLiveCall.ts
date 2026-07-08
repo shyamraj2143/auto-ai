@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { api } from "../api/client";
+import { api, API_BASE_URL } from "../api/client";
+import { useTranscript } from "./useTranscript";
 
 export type LiveCallState =
   | "idle"
@@ -14,29 +15,6 @@ export type LiveCallState =
   | "error"
   | "ended";
 
-export interface LiveLine {
-  id: string;
-  role: "user" | "assistant" | "system";
-  text: string;
-}
-
-type NativeLiveSpeechPlugin = {
-  speak: (options: { text: string; language: string; rate: number }) => Promise<void>;
-  stopSpeaking: () => Promise<void>;
-};
-
-function nativeLiveSpeechPlugin(): NativeLiveSpeechPlugin | null {
-  const win = window as typeof window & {
-    Capacitor?: {
-      getPlatform?: () => string;
-      Plugins?: { AutoAiLiveSpeech?: NativeLiveSpeechPlugin };
-    };
-  };
-  return win.Capacitor?.getPlatform?.() === "android"
-    ? win.Capacitor?.Plugins?.AutoAiLiveSpeech ?? null
-    : null;
-}
-
 function getLangCode(lang: string) {
   if (lang === "english") return "en-US";
   if (lang === "hindi") return "hi-IN";
@@ -46,11 +24,12 @@ function getLangCode(lang: string) {
 
 interface UseLiveCallProps {
   token: string | null;
-  language: string; // "auto" | "hindi" | "english" | "hinglish"
+  language: string;
   speechRate: number;
   selectedVoiceURI: string;
   cameraActive: boolean;
   captureAndAnalyzeFrame: (prompt: string, silent: boolean) => Promise<string | null>;
+  captureBase64Frame: () => Promise<string | null>;
   defaultProvider?: string | null;
   defaultModel?: string | null;
 }
@@ -62,15 +41,18 @@ export function useLiveCall({
   selectedVoiceURI,
   cameraActive,
   captureAndAnalyzeFrame,
+  captureBase64Frame,
   defaultProvider,
   defaultModel,
 }: UseLiveCallProps) {
   const [status, setStatus] = useState<LiveCallState>("idle");
   const [sessionId, setSessionId] = useState("");
-  const [lines, setLines] = useState<LiveLine[]>([]);
   const [interimTranscript, setInterimTranscript] = useState("");
   const [error, setError] = useState("");
   const [muted, setMuted] = useState(false);
+
+  // Use integrated transcript log hook
+  const { lines, addLine, clearTranscripts, scrollRef } = useTranscript();
 
   const sessionIdRef = useRef("");
   const sessionPromiseRef = useRef<Promise<string> | null>(null);
@@ -81,6 +63,7 @@ export function useLiveCall({
   const isRecognitionRunningRef = useRef(false);
   const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const accumulatedTranscriptRef = useRef("");
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Sync refs to avoid stale closures in event listeners
   useEffect(() => {
@@ -90,14 +73,6 @@ export function useLiveCall({
   useEffect(() => {
     mutedRef.current = muted;
   }, [muted]);
-
-  const addLine = useCallback((role: LiveLine["role"], text: string) => {
-    if (!text.trim()) return;
-    setLines((current) => [
-      ...current.slice(-15),
-      { id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`, role, text: text.trim() }
-    ]);
-  }, []);
 
   const ensureSession = useCallback(async () => {
     if (!token) throw new Error("Not authenticated");
@@ -118,44 +93,25 @@ export function useLiveCall({
   }, [token]);
 
   const stopAudioPlayback = useCallback(() => {
-    const nativeSpeech = nativeLiveSpeechPlugin();
-    if (nativeSpeech) {
-      void nativeSpeech.stopSpeaking().catch(() => undefined);
-    }
+    // Stop local SpeechSynthesis
     if ("speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
+    // Stop Audio element stream playback
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause();
+        audioRef.current.src = "";
+      } catch (e) {
+        // already paused/empty
+      }
+      audioRef.current = null;
+    }
   }, []);
 
-  const speak = useCallback((text: string) => {
-    stopAudioPlayback();
-    if (!text.trim()) {
-      if (shouldListenRef.current && !mutedRef.current) {
-        setStatus("listening");
-      }
-      return;
-    }
-
-    const nativeSpeech = nativeLiveSpeechPlugin();
-    if (nativeSpeech) {
-      setStatus("speaking");
-      nativeSpeech.speak({ text, language: getLangCode(language), rate: speechRate })
-        .catch((e) => {
-          console.error("Native speech failed:", e);
-        })
-        .finally(() => {
-          if (statusRef.current === "speaking") {
-            if (shouldListenRef.current && !mutedRef.current) {
-              setStatus("listening");
-            } else {
-              setStatus("idle");
-            }
-          }
-        });
-      return;
-    }
-
-    if (!("speechSynthesis" in window)) {
+  // Browser Synthesis Fallback
+  const speakLocalTts = useCallback((text: string) => {
+    if (!("speechSynthesis" in window) || !text.trim()) {
       if (shouldListenRef.current && !mutedRef.current) {
         setStatus("listening");
       }
@@ -186,7 +142,7 @@ export function useLiveCall({
     };
 
     utterance.onerror = (e) => {
-      console.error("TTS failed:", e);
+      console.error("Local SpeechSynthesis failed:", e);
       if (statusRef.current === "speaking") {
         if (shouldListenRef.current && !mutedRef.current) {
           setStatus("listening");
@@ -197,9 +153,72 @@ export function useLiveCall({
     };
 
     window.speechSynthesis.speak(utterance);
-  }, [language, selectedVoiceURI, speechRate, stopAudioPlayback]);
+  }, [language, selectedVoiceURI, speechRate]);
 
-  // Clean up timers
+  // Main Speech play dispatcher (attempts streaming API -> falls back to browser TTS)
+  const speak = useCallback(async (text: string) => {
+    stopAudioPlayback();
+    if (!text.trim()) {
+      if (shouldListenRef.current && !mutedRef.current) {
+        setStatus("listening");
+      }
+      return;
+    }
+
+    setStatus("speaking");
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/live/stream/tts`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          session_id: sessionIdRef.current,
+          text,
+          voice_id: selectedVoiceURI
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error("TTS Stream Endpoint returned non-ok status code");
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+
+      const audio = new Audio(url);
+      audioRef.current = audio;
+
+      audio.onplay = () => {
+        setStatus("speaking");
+      };
+
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        if (statusRef.current === "speaking") {
+          if (shouldListenRef.current && !mutedRef.current) {
+            setStatus("listening");
+          } else {
+            setStatus("idle");
+          }
+        }
+      };
+
+      audio.onerror = () => {
+        URL.revokeObjectURL(url);
+        // Fallback
+        speakLocalTts(text);
+      };
+
+      await audio.play();
+    } catch (e) {
+      // If endpoint is unconfigured (501) or network fails, fall back to native browser speechSynthesis
+      speakLocalTts(text);
+    }
+  }, [token, selectedVoiceURI, stopAudioPlayback, speakLocalTts]);
+
   const clearSilenceTimer = () => {
     if (silenceTimerRef.current) {
       clearTimeout(silenceTimerRef.current);
@@ -215,7 +234,7 @@ export function useLiveCall({
     setStatus("processing_speech");
     setError("");
 
-    let contextId = null;
+    let base64Frame = null;
 
     // Detect if this is a visual query while camera is active
     const visualKeywords = [
@@ -231,38 +250,46 @@ export function useLiveCall({
 
     if (isVisualQuery) {
       setStatus("analyzing_vision");
-      contextId = await captureAndAnalyzeFrame(`Use this camera frame to answer: ${text}`, true);
+      base64Frame = await captureBase64Frame();
     }
 
     setStatus("thinking");
 
     try {
       const sid = await ensureSession();
-      // Call sendLiveMessage with the updated backend structure
+      // Call sendLiveMessage with the updated backend structure and optional inline image
       const result = await api.sendLiveMessage(token, {
         session_id: sid,
-        text: text, // mapping transcript -> text
-        camera_context_id: contextId, // mapping image_frame_id -> camera_context_id
+        text: text,
+        image_base64: base64Frame,
         provider: defaultProvider,
         model: defaultModel,
         language
       });
 
-      // Get response text from result
       const answer = result.answer || result.response_text || "";
       addLine("assistant", answer);
-      speak(answer);
+      
+      if (result.should_speak !== false) {
+        speak(answer);
+      } else {
+        if (shouldListenRef.current && !mutedRef.current) {
+          setStatus("listening");
+        } else {
+          setStatus("idle");
+        }
+      }
     } catch (e: any) {
-      console.error("Failed to fetch backend response:", e);
+      console.error("Failed to fetch response:", e);
       setError(e.message || "Connection interrupted. Tap to retry.");
       setStatus("error");
     }
-  }, [token, cameraActive, captureAndAnalyzeFrame, ensureSession, addLine, speak, defaultModel, defaultProvider, language, stopAudioPlayback]);
+  }, [token, cameraActive, captureBase64Frame, ensureSession, addLine, speak, defaultModel, defaultProvider, language, stopAudioPlayback]);
 
   // Instant voice interruption handler
   const handleInterruption = useCallback(() => {
     if (statusRef.current !== "speaking") return;
-    console.log("Interruption detected: user started speaking.");
+    console.log("Interruption: stopping speech stream.");
     stopAudioPlayback();
     setStatus("interrupted");
     setTimeout(() => {
@@ -292,7 +319,6 @@ export function useLiveCall({
     };
 
     rec.onresult = (event: any) => {
-      // If AI is speaking, user speaking is an interruption!
       if (statusRef.current === "speaking") {
         handleInterruption();
         return;
@@ -319,7 +345,7 @@ export function useLiveCall({
         accumulatedTranscriptRef.current += " " + finalTranscript.trim();
       }
 
-      // 1.5s Silence detection
+      // Vibe Call Pro VAD Timing: 800ms silence detection for faster turns
       silenceTimerRef.current = setTimeout(() => {
         const textToSend = accumulatedTranscriptRef.current.trim() || interim.trim();
         if (textToSend) {
@@ -327,7 +353,7 @@ export function useLiveCall({
           setInterimTranscript("");
           void triggerResponse(textToSend);
         }
-      }, 1500);
+      }, 800);
     };
 
     rec.onspeechstart = () => {
@@ -353,7 +379,6 @@ export function useLiveCall({
 
     rec.onend = () => {
       isRecognitionRunningRef.current = false;
-      // Auto restart if call is still active
       if (shouldListenRef.current && !mutedRef.current && statusRef.current === "listening") {
         try {
           rec.start();
@@ -416,7 +441,7 @@ export function useLiveCall({
     }
   }, [muted, startRecognition, stopRecognition, stopAudioPlayback]);
 
-  // Restart session or retry when failed
+  // Retry when connection errors occur
   const retryCall = useCallback(() => {
     setError("");
     setStatus("listening");
@@ -474,6 +499,7 @@ export function useLiveCall({
     interimTranscript,
     error,
     muted,
+    scrollRef,
     toggleMute,
     retryCall,
     triggerResponse,

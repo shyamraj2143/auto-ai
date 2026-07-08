@@ -590,6 +590,8 @@ export type LiveMessageResponse = {
   model: string;
   answer?: string;
   status?: string;
+  should_speak?: boolean;
+  context_update?: string | null;
 };
 
 export type VisionAnalyzeResponse = {

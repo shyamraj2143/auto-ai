@@ -15,6 +15,7 @@ class LiveMessageRequest(BaseModel):
     transcript: str | None = Field(default=None, max_length=20000)
     camera_context_id: str | None = Field(default=None, max_length=36)
     image_frame_id: str | None = Field(default=None, max_length=36)
+    image_base64: str | None = Field(default=None, description="Base64 encoded image frame for visual context")
     provider: str | None = Field(default=None, max_length=40)
     model: str | None = Field(default=None, max_length=160)
     language: str | None = Field(default=None, max_length=40)
@@ -27,6 +28,8 @@ class LiveMessageResponse(BaseModel):
     model: str
     answer: str
     status: str
+    should_speak: bool = True
+    context_update: dict | None = None
 
 
 class VisionAnalyzeResponse(BaseModel):
@@ -50,3 +53,9 @@ class FaceMemoryStatusResponse(BaseModel):
     enabled: bool
     consent_given: bool
     updated_at: datetime | None = None
+
+
+class LiveTtsRequest(BaseModel):
+    session_id: str
+    text: str
+    voice_id: str | None = None
