@@ -589,7 +589,7 @@ export function Composer({
         addFiles(Array.from(event.dataTransfer.files));
       }}
     >
-      <div className={clsx("composer-card", dragActive && "composer-card-active")}>
+      <div className={clsx("composer-card compact-card", dragActive && "composer-card-active")}>
         <AnimatePresence>
           {(selectedDocuments.length > 0 || uploadTasks.length > 0 || imageAttachments.length > 0 || error) && (
             <motion.div
@@ -651,7 +651,7 @@ export function Composer({
         <input ref={documentInputRef} className="hidden" type="file" multiple accept=".pdf,.docx,.txt" onChange={handleFileSelection} />
         <input ref={imageInputRef} className="hidden" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif" onChange={handleFileSelection} />
         <input ref={cameraInputRef} className="hidden" type="file" accept="image/*" capture="environment" onChange={handleFileSelection} />
-        <div className="composer-top-row">
+        <div className="composer-top-row compact-toolbar">
           <div ref={attachmentMenuRef} className="attachment-menu">
             <button
               aria-expanded={attachmentMenuOpen}

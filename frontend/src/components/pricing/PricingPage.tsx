@@ -8,6 +8,7 @@ import { createRazorpayCheckoutOptions, loadRazorpayCheckout } from "../../utils
 import { isMobileAppRuntime } from "../../utils/runtime";
 import { normalizeUpiId } from "../../utils/upi";
 import { LogoIcon } from "../brand/LogoIcon";
+import { ThemeToggleButton } from "../layout/ThemeToggleButton";
 import { UpiPaymentBox } from "../payments/UpiPaymentBox";
 
 type Plan = {
@@ -141,10 +142,13 @@ export function PricingPage() {
           <Link to="/download">Android</Link>
           <Link to="/admin/login">Admin</Link>
         </nav>
-        <Link className="btn-primary" to={user ? "/chat" : "/login"}>
-          {user ? "Open app" : "Sign in"}
-          <ArrowRight size={16} />
-        </Link>
+        <div className="nav-actions">
+          <Link className="btn-primary" to={user ? "/chat" : "/login"}>
+            {user ? "Open app" : "Sign in"}
+            <ArrowRight size={16} />
+          </Link>
+          <ThemeToggleButton />
+        </div>
       </header>
 
       <main className="landing-section pricing-main">

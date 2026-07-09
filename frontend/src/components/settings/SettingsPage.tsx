@@ -82,7 +82,7 @@ function SettingsIcon({ icon: Icon, accent = "cyan" }: { icon: LucideIcon; accen
 
 function SettingsCard({ children }: { children: React.ReactNode }) {
   return (
-    <section className="overflow-hidden rounded-lg border border-white/10 bg-white/[0.04] shadow-[0_16px_42px_rgba(0,0,0,0.22)] backdrop-blur-xl">
+    <section className="settings-card overflow-hidden rounded-lg border border-white/10 bg-white/[0.04] shadow-[0_16px_42px_rgba(0,0,0,0.22)] backdrop-blur-xl">
       {children}
     </section>
   );
@@ -122,7 +122,7 @@ function SettingsRow({
   );
 
   const className = clsx(
-    "flex w-full min-w-0 flex-col gap-2 border-b border-white/10 px-3 py-2.5 text-left last:border-b-0 sm:flex-row sm:items-center",
+    "settings-row flex w-full min-w-0 flex-col gap-2 border-b border-white/10 px-3 py-2.5 text-left last:border-b-0 sm:flex-row sm:items-center",
     onClick && "transition hover:bg-white/[0.055] focus:outline-none focus-visible:bg-white/[0.055]",
     tone === "danger" && "hover:bg-red-500/10"
   );
@@ -151,7 +151,7 @@ function Toggle({
     <button
       type="button"
       className={clsx(
-        "relative inline-flex h-6 w-10 shrink-0 items-center rounded-full border transition disabled:opacity-50",
+        "settings-toggle relative inline-flex h-6 w-10 shrink-0 items-center rounded-full border transition disabled:opacity-50",
         checked ? "border-cyan-200/40 bg-cyan-200/20" : "border-white/15 bg-white/10"
       )}
       onClick={() => onChange(!checked)}
@@ -184,7 +184,7 @@ function Select({
   return (
     <select
       aria-label={label}
-      className="h-8 w-full min-w-0 rounded-md border border-white/10 bg-slate-950/80 px-2 text-[11px] font-semibold text-cyan-50 outline-none transition focus:border-cyan-200/60 focus:ring-2 focus:ring-cyan-200/15 disabled:opacity-50 sm:w-auto sm:max-w-[220px]"
+      className="settings-select h-8 w-full min-w-0 rounded-md border border-white/10 bg-slate-950/80 px-2 text-[11px] font-semibold text-cyan-50 outline-none transition focus:border-cyan-200/60 focus:ring-2 focus:ring-cyan-200/15 disabled:opacity-50 sm:w-auto sm:max-w-[220px]"
       value={value}
       onChange={(event) => onChange(event.target.value)}
       disabled={disabled}
@@ -538,7 +538,7 @@ export function SettingsPage() {
 
   return (
     <motion.div
-      className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-3 text-white md:px-6 md:py-5"
+      className="settings-page min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-3 text-white md:px-6 md:py-5"
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}

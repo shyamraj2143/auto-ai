@@ -1809,6 +1809,32 @@ button:disabled {
   box-shadow: 0 0 18px rgba(34, 245, 255, 0.18), 0 0 20px rgba(255, 178, 30, 0.12);
 }
 
+.nav-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.theme-toggle-button {
+  display: grid;
+  height: 40px;
+  width: 40px;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid var(--holo-border, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  background: var(--holo-card-strong, rgba(255, 255, 255, 0.08));
+  color: var(--holo-primary, #a5f3fc);
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.theme-toggle-button:hover {
+  transform: translateY(-2px);
+  border-color: var(--holo-border-strong, rgba(103, 232, 249, 0.36));
+  background: rgba(192, 132, 252, 0.18);
+}
+
 .app-logo {
   display: block;
   height: 100%;
@@ -3669,5 +3695,1937 @@ button:disabled {
 
   .billing-history-table td[colspan]::before {
     display: none;
+  }
+}
+
+/* Lavender Hologram redesign */
+:root {
+  --holo-bg: #f5f0ff;
+  --holo-bg-2: #ede7f6;
+  --holo-text: #1e1b4b;
+  --holo-secondary-text: #374151;
+  --holo-muted: #4b5563;
+  --holo-primary: #7c3aed;
+  --holo-secondary: #4f46e5;
+  --holo-violet: #a855f7;
+  --holo-accent: #c084fc;
+  --holo-mint: #10b981;
+  --holo-rose: #e11d48;
+  --holo-amber: #d97706;
+  --holo-border: rgba(124, 58, 237, 0.2);
+  --holo-border-strong: rgba(124, 58, 237, 0.34);
+  --holo-card: rgba(255, 255, 255, 0.88);
+  --holo-card-strong: rgba(255, 255, 255, 0.96);
+  --holo-card-soft: rgba(255, 255, 255, 0.78);
+  --holo-nav: rgba(255, 255, 255, 0.86);
+  --holo-panel: rgba(255, 255, 255, 0.84);
+  --holo-bottom-fade: rgba(245, 240, 255, 0.88);
+  --holo-placeholder: rgba(107, 114, 128, 0.74);
+  --holo-shadow: 10px 10px 28px rgba(124, 58, 237, 0.14), -10px -10px 28px rgba(255, 255, 255, 0.82);
+  --holo-shadow-soft: 0 18px 46px rgba(124, 58, 237, 0.18);
+  --holo-inner: inset 1px 1px 0 rgba(255, 255, 255, 0.86), inset -1px -1px 0 rgba(124, 58, 237, 0.08);
+  --holo-gradient: linear-gradient(135deg, #7c3aed 0%, #4f46e5 62%, #0ea5e9 100%);
+  --holo-gradient-soft: linear-gradient(135deg, rgba(124, 58, 237, 0.18), rgba(192, 132, 252, 0.12), rgba(16, 185, 129, 0.08));
+  --theme-background: var(--holo-bg);
+  --theme-surface: var(--holo-panel);
+  --theme-card: var(--holo-card);
+  --theme-text-primary: var(--holo-text);
+  --theme-text-secondary: var(--holo-secondary-text);
+  --theme-text-muted: var(--holo-muted);
+  --theme-border: var(--holo-border);
+  --theme-input-background: rgba(255, 255, 255, 0.92);
+  --theme-button-background: var(--holo-gradient);
+  --theme-gradient-primary: var(--holo-gradient);
+  --theme-success: #047857;
+  --theme-warning: #92400e;
+  --theme-danger: #b91c1c;
+  --holo-page-bg:
+    linear-gradient(115deg, rgba(16, 185, 129, 0.12), transparent 30%),
+    linear-gradient(245deg, rgba(225, 29, 72, 0.1), transparent 34%),
+    linear-gradient(180deg, var(--holo-bg), var(--holo-bg-2) 58%, #ffffff 100%);
+}
+
+.light {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+  --holo-bg: #171326;
+  --holo-bg-2: #0f1020;
+  --holo-text: #f8f5ff;
+  --holo-secondary-text: #e5e7eb;
+  --holo-muted: #cbd5e1;
+  --holo-primary: #d8b4fe;
+  --holo-secondary: #a5b4fc;
+  --holo-violet: #e9d5ff;
+  --holo-accent: #f0abfc;
+  --holo-border: rgba(216, 180, 254, 0.2);
+  --holo-border-strong: rgba(216, 180, 254, 0.38);
+  --holo-card: rgba(32, 24, 52, 0.9);
+  --holo-card-strong: rgba(47, 34, 75, 0.96);
+  --holo-card-soft: rgba(35, 24, 54, 0.82);
+  --holo-nav: rgba(23, 19, 38, 0.92);
+  --holo-panel: rgba(35, 24, 54, 0.9);
+  --holo-bottom-fade: rgba(23, 19, 38, 0.9);
+  --holo-placeholder: rgba(196, 181, 253, 0.7);
+  --holo-shadow: 10px 10px 28px rgba(3, 7, 18, 0.36), -10px -10px 28px rgba(124, 58, 237, 0.08);
+  --holo-shadow-soft: 0 18px 52px rgba(3, 7, 18, 0.36);
+  --holo-inner: inset 1px 1px 0 rgba(255, 255, 255, 0.12), inset -1px -1px 0 rgba(3, 7, 18, 0.18);
+  --theme-background: var(--holo-bg-2);
+  --theme-surface: var(--holo-panel);
+  --theme-card: var(--holo-card);
+  --theme-text-primary: var(--holo-text);
+  --theme-text-secondary: var(--holo-secondary-text);
+  --theme-text-muted: var(--holo-muted);
+  --theme-border: var(--holo-border);
+  --theme-input-background: rgba(17, 24, 39, 0.82);
+  --theme-button-background: var(--holo-gradient);
+  --theme-gradient-primary: var(--holo-gradient);
+  --theme-success: #86efac;
+  --theme-warning: #fcd34d;
+  --theme-danger: #fca5a5;
+  --holo-page-bg:
+    linear-gradient(115deg, rgba(16, 185, 129, 0.1), transparent 30%),
+    linear-gradient(245deg, rgba(225, 29, 72, 0.12), transparent 34%),
+    linear-gradient(180deg, #171326, #211438 54%, #0f1020 100%);
+}
+
+body {
+  color: var(--holo-text);
+  background: var(--holo-page-bg);
+}
+
+.readable-text,
+.text-primary {
+  color: var(--theme-text-primary) !important;
+}
+
+.text-secondary {
+  color: var(--theme-text-secondary) !important;
+}
+
+.text-muted {
+  color: var(--theme-text-muted) !important;
+}
+
+.glass-card,
+.soft-card {
+  border: 1px solid var(--theme-border);
+  background: var(--theme-card);
+  color: var(--theme-text-primary);
+  box-shadow: var(--holo-shadow), var(--holo-inner);
+  backdrop-filter: blur(22px) saturate(1.18);
+}
+
+.gradient-button {
+  border: 0;
+  background: var(--theme-gradient-primary);
+  color: #ffffff;
+  box-shadow: 0 14px 34px rgba(124, 58, 237, 0.34);
+}
+
+.premium-input {
+  border: 1px solid var(--theme-border);
+  background: var(--theme-input-background);
+  color: var(--theme-text-primary);
+  box-shadow: inset 4px 4px 10px rgba(124, 58, 237, 0.08), inset -4px -4px 10px rgba(255, 255, 255, 0.62);
+}
+
+.soft-icon-button {
+  border: 1px solid var(--theme-border);
+  background: var(--holo-card-strong);
+  color: var(--holo-primary);
+  box-shadow: 5px 5px 12px rgba(124, 58, 237, 0.12), -5px -5px 12px rgba(255, 255, 255, 0.55);
+}
+
+.animated-card {
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.animated-card:hover,
+.glow-active {
+  border-color: var(--holo-border-strong) !important;
+  box-shadow: 0 18px 44px rgba(124, 58, 237, 0.28), var(--holo-inner) !important;
+}
+
+a {
+  color: var(--holo-primary);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 3px solid rgba(124, 58, 237, 0.34);
+  outline-offset: 2px;
+}
+
+button:disabled,
+input:disabled,
+textarea:disabled,
+select:disabled {
+  opacity: 0.62 !important;
+}
+
+@keyframes hologramMesh {
+  to {
+    background-position: 180px 96px, 96px 180px;
+  }
+}
+
+@keyframes hologramFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes pageFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes micBreathing {
+  0%,
+  100% {
+    box-shadow: 5px 5px 12px rgba(124, 58, 237, 0.12), -5px -5px 12px rgba(255, 255, 255, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(192, 132, 252, 0.14), 0 0 22px rgba(124, 58, 237, 0.28);
+  }
+}
+
+@keyframes hologramShimmer {
+  to {
+    background-position: 220% 0;
+  }
+}
+
+.landing-page,
+.auth-page,
+.download-page,
+.pricing-page,
+.app-shell {
+  color: var(--holo-text);
+  background: var(--holo-page-bg);
+  animation: pageFadeIn 320ms ease-out both;
+}
+
+.chat-workspace,
+.chat-scroll,
+.settings-page,
+.admin-dashboard-page {
+  color: var(--holo-text);
+  background: transparent;
+}
+
+.app-loading {
+  color: var(--holo-text);
+  background: var(--holo-page-bg);
+}
+
+.app-shell::before,
+.landing-lighting {
+  opacity: 0.58;
+  background-image:
+    linear-gradient(rgba(124, 58, 237, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16, 185, 129, 0.1) 1px, transparent 1px);
+  background-size: 48px 48px, 48px 48px;
+  animation: hologramMesh 18s linear infinite;
+}
+
+.landing-nav,
+.download-nav,
+.workspace-header,
+.chat-topbar,
+.workspace-sidebar {
+  border-color: var(--holo-border) !important;
+  background: var(--holo-nav) !important;
+  color: var(--holo-text) !important;
+  box-shadow: var(--holo-shadow-soft);
+  backdrop-filter: blur(24px) saturate(1.18);
+}
+
+.brand-mark {
+  color: var(--theme-text-primary) !important;
+}
+
+.workspace-sidebar {
+  box-shadow: 18px 0 56px rgba(124, 58, 237, 0.18) !important;
+}
+
+.workspace-sidebar > div,
+.workspace-sidebar label,
+.workspace-sidebar nav > div,
+.workspace-sidebar [class*="bg-white"],
+.workspace-sidebar [class*="bg-slate"],
+.workspace-sidebar [class*="bg-cyan-200/"],
+.workspace-sidebar [class*="bg-cyan-200\\["],
+.workspace-sidebar [aria-haspopup="menu"] {
+  border-color: var(--holo-border) !important;
+  background: var(--holo-panel) !important;
+  color: var(--holo-text) !important;
+  box-shadow: var(--holo-inner);
+}
+
+.workspace-sidebar .space-y-3 > button,
+.workspace-sidebar a[href="/admin"] {
+  border: 0 !important;
+  background: var(--holo-gradient) !important;
+  color: #ffffff !important;
+  box-shadow: 0 14px 32px rgba(124, 58, 237, 0.32);
+}
+
+.brand-icon,
+.message-avatar,
+.premium-feature > span,
+.download-meta-grid svg,
+.thinking-core {
+  border-color: var(--holo-border-strong) !important;
+  background:
+    radial-gradient(circle at 32% 25%, rgba(255, 255, 255, 0.9), rgba(192, 132, 252, 0.28) 34%, rgba(124, 58, 237, 0.16) 100%) !important;
+  color: var(--holo-primary) !important;
+  box-shadow: 0 10px 24px rgba(124, 58, 237, 0.2), var(--holo-inner);
+}
+
+.glass-panel,
+.product-preview,
+.premium-feature,
+.testimonial-grid figure,
+.pricing-card,
+.capability-band,
+.faq-list details,
+.auth-card,
+.android-promo,
+.download-meta-grid article,
+.release-panel,
+.screenshot-card,
+.settings-card,
+.settings-billing-center,
+.billing-current-card,
+.billing-side-card,
+.billing-plan-card,
+.billing-tool-card,
+.billing-history-card,
+.billing-loading,
+.admin-dashboard-page section,
+.admin-stat-tile,
+.composer-card,
+.message-card-ai,
+.source-card,
+.thinking-panel,
+.code-block,
+.upi-payment-box,
+.download-qr,
+.promo-qr,
+.mini-phone,
+.device-phone,
+.payment-alert,
+.attachment-menu-panel,
+.model-menu-panel,
+.model-menu-subpanel {
+  border-color: var(--holo-border) !important;
+  background: var(--holo-card) !important;
+  box-shadow: var(--holo-shadow), var(--holo-inner) !important;
+  backdrop-filter: blur(22px) saturate(1.18);
+}
+
+.message-card-ai,
+.thinking-panel {
+  padding: 16px;
+}
+
+.message-card {
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.message-card:hover,
+.premium-feature:hover,
+.pricing-card:hover,
+.download-meta-grid article:hover,
+.screenshot-card:hover,
+.admin-stat-tile:hover,
+.billing-plan-card:hover {
+  transform: perspective(800px) rotateX(0.5deg) translateY(-3px);
+  border-color: var(--holo-border-strong) !important;
+  box-shadow: 0 22px 54px rgba(124, 58, 237, 0.22), var(--holo-inner) !important;
+}
+
+.message-card-user {
+  width: fit-content;
+  max-width: min(680px, 82%);
+  margin-left: auto;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 8px 8px 2px 8px;
+  background: var(--holo-gradient) !important;
+  padding: 14px 16px;
+  color: #ffffff !important;
+  box-shadow: 0 14px 34px rgba(124, 58, 237, 0.34) !important;
+}
+
+.message-card-user *,
+.message-card-user .prose,
+.message-card-user .prose :where(*) {
+  color: #ffffff !important;
+}
+
+.message-card-ai {
+  border-radius: 8px 8px 8px 2px;
+}
+
+.message-actions {
+  gap: 6px;
+}
+
+.message-action,
+.icon-button,
+.icon-button-dark,
+.composer-plus-button,
+.composer-pill,
+.chip,
+.chip-dark,
+.model-menu-item,
+.attachment-menu-item,
+.code-block-action,
+.generation-action,
+.scroll-bottom-button,
+.chat-notice-close,
+.settings-toggle,
+.billing-toggle,
+.source-summary,
+.source-preview-chip,
+.source-preview-more {
+  border-color: var(--holo-border) !important;
+  background: var(--holo-card-strong) !important;
+  color: var(--holo-primary) !important;
+  box-shadow: 5px 5px 12px rgba(124, 58, 237, 0.12), -5px -5px 12px rgba(255, 255, 255, 0.55);
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.dark .message-action,
+.dark .icon-button,
+.dark .icon-button-dark,
+.dark .composer-plus-button,
+.dark .composer-pill,
+.dark .chip,
+.dark .chip-dark,
+.dark .model-menu-item,
+.dark .attachment-menu-item,
+.dark .code-block-action,
+.dark .generation-action,
+.dark .scroll-bottom-button,
+.dark .chat-notice-close,
+.dark .settings-toggle,
+.dark .billing-toggle,
+.dark .source-summary,
+.dark .source-preview-chip,
+.dark .source-preview-more {
+  box-shadow: 5px 5px 14px rgba(3, 7, 18, 0.28), -5px -5px 14px rgba(124, 58, 237, 0.08);
+}
+
+.message-action:hover,
+.icon-button:hover,
+.icon-button-dark:hover,
+.composer-plus-button:hover,
+.composer-pill:hover,
+.chip:hover,
+.chip-dark:hover,
+.model-menu-item:hover,
+.attachment-menu-item:hover,
+.code-block-action:hover,
+.generation-action:hover,
+.scroll-bottom-button:hover {
+  transform: translateY(-2px);
+  border-color: var(--holo-border-strong) !important;
+  background: rgba(192, 132, 252, 0.18) !important;
+}
+
+button:active:not(:disabled),
+a.btn-primary:active,
+a.btn-secondary:active {
+  transform: scale(0.97);
+}
+
+.btn-primary,
+.send-button,
+.gradient-button,
+.chat-topbar-action,
+.live-manual-form button {
+  border: 0 !important;
+  background: var(--holo-gradient) !important;
+  color: #ffffff !important;
+  box-shadow: 0 14px 34px rgba(124, 58, 237, 0.34) !important;
+}
+
+.btn-primary,
+.send-button,
+.composer-send-round,
+.workspace-sidebar .space-y-3 > button {
+  animation: hologramFloat 3.2s ease-in-out infinite;
+}
+
+.btn-primary:hover:not(:disabled),
+.send-button:hover:not(:disabled),
+.gradient-button:hover:not(:disabled),
+.chat-topbar-action:hover:not(:disabled),
+.live-manual-form button:hover:not(:disabled) {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 18px 44px rgba(124, 58, 237, 0.42) !important;
+}
+
+.btn-secondary,
+.google-auth-button,
+.pricing-card > .btn-secondary,
+.pricing-actions .btn-secondary,
+.billing-payment-actions > .btn-secondary,
+.billing-actions-card .btn-secondary {
+  border-color: var(--holo-border) !important;
+  background: var(--holo-card-strong) !important;
+  color: var(--holo-primary) !important;
+  box-shadow: var(--holo-inner), 0 10px 26px rgba(124, 58, 237, 0.12) !important;
+}
+
+.chip-active,
+.chip-dark-active,
+.composer-pill-active,
+.model-menu-item-active,
+.billing-toggle-on {
+  border-color: var(--holo-border-strong) !important;
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.22), rgba(16, 185, 129, 0.1)) !important;
+  color: var(--holo-primary) !important;
+}
+
+.input,
+.input-dark,
+.model-select,
+.model-select-dark,
+.settings-select,
+.composer-textarea,
+.composer-pill-select,
+.search-mode-select,
+.live-manual-form input,
+.live-settings-row select,
+.live-settings-row label,
+.lcm-select {
+  border-color: var(--holo-border) !important;
+  background: var(--theme-input-background) !important;
+  color: var(--holo-text) !important;
+  box-shadow: inset 4px 4px 10px rgba(124, 58, 237, 0.08), inset -4px -4px 10px rgba(255, 255, 255, 0.62);
+}
+
+.dark .input,
+.dark .input-dark,
+.dark .model-select,
+.dark .model-select-dark,
+.dark .settings-select,
+.dark .composer-textarea,
+.dark .composer-pill-select,
+.dark .search-mode-select,
+.dark .live-manual-form input,
+.dark .live-settings-row select,
+.dark .live-settings-row label,
+.dark .lcm-select {
+  background: var(--theme-input-background) !important;
+  box-shadow: inset 4px 4px 10px rgba(3, 7, 18, 0.22), inset -4px -4px 10px rgba(124, 58, 237, 0.08);
+}
+
+.input option,
+.input-dark option,
+.model-select option,
+.model-select-dark option,
+.settings-select option,
+.composer-pill-select option,
+.search-mode-select option,
+.lcm-select option {
+  background: var(--theme-card);
+  color: var(--theme-text-primary);
+}
+
+.input::placeholder,
+.input-dark::placeholder,
+.composer-textarea::placeholder {
+  color: var(--holo-placeholder);
+}
+
+.composer-shell {
+  border-color: var(--holo-border) !important;
+  background: linear-gradient(180deg, transparent, var(--holo-bottom-fade)) !important;
+}
+
+.composer-card:focus-within,
+.composer-card-active {
+  border-color: var(--holo-border-strong) !important;
+  box-shadow: 0 24px 60px rgba(124, 58, 237, 0.28), var(--holo-inner) !important;
+}
+
+.composer-send-round {
+  border-radius: 999px;
+}
+
+.mic-breathing {
+  animation: micBreathing 2.8s ease-in-out infinite;
+}
+
+.chat-topbar-dot,
+.generation-dot,
+.typing-cursor,
+.billing-token-bar div {
+  background: linear-gradient(135deg, var(--holo-accent), var(--holo-mint));
+  box-shadow: 0 0 18px rgba(192, 132, 252, 0.78);
+}
+
+.chat-scroll {
+  scrollbar-color: rgba(124, 58, 237, 0.55) transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--holo-primary), var(--holo-accent));
+  border-radius: 999px;
+}
+
+.hero-kicker,
+.mobile-feature-strip span,
+.mobile-release-strip span,
+.capability-grid span,
+.release-note,
+.version-row,
+.screenshot-card span,
+.download-feature-list span,
+.billing-chip-list span,
+.billing-status,
+.source-panel-header strong,
+.searching-web-indicator {
+  border-color: var(--holo-border) !important;
+  background: var(--holo-gradient-soft) !important;
+  color: var(--holo-primary) !important;
+  box-shadow: var(--holo-inner);
+}
+
+.hero-copy h1,
+.auth-visual h1,
+.pricing-main h1,
+.download-copy h1,
+.android-promo h2,
+.section-heading h2,
+.capability-band h2,
+.section-heading-left h2 {
+  color: transparent !important;
+  background: linear-gradient(135deg, var(--holo-text), var(--holo-primary) 46%, var(--holo-mint));
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.hero-subtitle,
+.auth-visual p,
+.pricing-subtitle,
+.premium-feature p,
+.testimonial-grid figcaption,
+.pricing-card span,
+.faq-list p,
+.landing-footer p,
+.android-promo p,
+.release-panel,
+.download-version,
+.source-snippet,
+.billing-plan-line span,
+.billing-metrics span,
+.billing-plan-meta span {
+  color: var(--holo-muted) !important;
+}
+
+.pricing-card-featured,
+.billing-plan-active {
+  position: relative;
+  overflow: hidden;
+  border-color: var(--holo-border-strong) !important;
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.2), rgba(255, 255, 255, 0.64)) !important;
+}
+
+.dark .pricing-card-featured,
+.dark .billing-plan-active {
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.32), rgba(35, 24, 54, 0.78)) !important;
+}
+
+.pricing-card-featured::before,
+.billing-plan-active::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 1px solid transparent;
+  background: linear-gradient(120deg, transparent 0%, rgba(255, 255, 255, 0.58) 45%, transparent 70%) 0 0 / 220% 100%;
+  animation: hologramShimmer 4.5s linear infinite;
+}
+
+.product-preview,
+.app-device-stage,
+.android-preview-wrap {
+  perspective: 1000px;
+}
+
+.product-preview,
+.device-phone-main,
+.mini-phone {
+  transform: perspective(900px) rotateX(1.5deg) rotateY(-2deg);
+  transform-style: preserve-3d;
+}
+
+.preview-sidebar,
+.preview-composer,
+.device-screen,
+.mini-phone-screen,
+.device-composer,
+.source-card,
+.code-block-header,
+.billing-history-table tr,
+.admin-dashboard-page table,
+.admin-dashboard-page thead,
+.admin-dashboard-page tbody tr,
+.settings-row {
+  border-color: var(--holo-border) !important;
+  background: var(--holo-card-soft) !important;
+}
+
+.preview-message.user,
+.device-message.user,
+.mini-bubble.user,
+.live-line-user {
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  background: var(--holo-gradient) !important;
+  color: #ffffff !important;
+  box-shadow: 0 12px 28px rgba(124, 58, 237, 0.28);
+}
+
+.preview-message.ai,
+.device-message.ai,
+.mini-bubble.ai,
+.live-line-assistant {
+  border-color: var(--holo-border) !important;
+  background: var(--holo-card-strong) !important;
+  color: var(--holo-text) !important;
+}
+
+.mini-sources,
+.device-sources {
+  background: rgba(16, 185, 129, 0.13) !important;
+  color: #047857 !important;
+}
+
+.dark .mini-sources,
+.dark .device-sources {
+  color: #bbf7d0 !important;
+}
+
+.source-card:hover {
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.16), rgba(16, 185, 129, 0.08)) !important;
+}
+
+.source-domain,
+.pricing-card h3,
+.pricing-price,
+.billing-plan-top h3,
+.billing-plan-top strong,
+.billing-plan-line strong,
+.billing-metrics strong,
+.settings-eyebrow,
+.billing-side-title,
+.screenshot-header,
+.source-card-topline,
+.source-link,
+.source-summary-icon-open {
+  color: var(--holo-primary) !important;
+}
+
+.prose {
+  color: var(--holo-text);
+}
+
+.prose :where(p, li, blockquote, td):not(:where([class~="not-prose"] *)),
+.streaming-plain-text {
+  color: var(--holo-text);
+}
+
+.prose code:not(pre code),
+.code-block {
+  color: var(--holo-text);
+}
+
+.code-block pre {
+  color: var(--holo-text);
+}
+
+.code-block code {
+  color: inherit;
+}
+
+.payment-alert-success,
+.billing-alert-success {
+  border-color: rgba(16, 185, 129, 0.36) !important;
+  background: rgba(16, 185, 129, 0.14) !important;
+  color: #047857 !important;
+}
+
+.dark .payment-alert-success,
+.dark .billing-alert-success {
+  color: #bbf7d0 !important;
+}
+
+.payment-alert-error,
+.billing-alert-error,
+.chat-notice,
+.message-error-panel,
+.download-error {
+  border-color: rgba(225, 29, 72, 0.34) !important;
+  background: rgba(225, 29, 72, 0.12) !important;
+  color: #be123c !important;
+}
+
+.dark .payment-alert-error,
+.dark .billing-alert-error,
+.dark .chat-notice,
+.dark .message-error-panel,
+.dark .download-error {
+  color: #fecdd3 !important;
+}
+
+.admin-dashboard-page,
+.settings-page {
+  background:
+    linear-gradient(120deg, rgba(124, 58, 237, 0.08), transparent 34%),
+    linear-gradient(245deg, rgba(16, 185, 129, 0.08), transparent 36%);
+}
+
+.admin-dashboard-page :is(.text-white, .text-slate-100, .text-slate-200, .text-slate-300),
+.settings-page :is(.text-white, .text-slate-100, .text-slate-200, .text-slate-300),
+.landing-page :is(.text-white, .text-slate-100, .text-slate-200, .text-slate-300),
+.auth-page :is(.text-white, .text-slate-100, .text-slate-200, .text-slate-300),
+.download-page :is(.text-white, .text-slate-100, .text-slate-200, .text-slate-300),
+.pricing-page :is(.text-white, .text-slate-100, .text-slate-200, .text-slate-300),
+.app-shell :is(.text-white, .text-slate-100, .text-slate-200, .text-slate-300) {
+  color: var(--holo-text) !important;
+}
+
+.admin-dashboard-page :is(.text-slate-400, .text-slate-500),
+.settings-page :is(.text-slate-400, .text-slate-500),
+.landing-page :is(.text-slate-400, .text-slate-500),
+.auth-page :is(.text-slate-400, .text-slate-500),
+.download-page :is(.text-slate-400, .text-slate-500),
+.pricing-page :is(.text-slate-400, .text-slate-500),
+.app-shell :is(.text-slate-400, .text-slate-500) {
+  color: var(--holo-muted) !important;
+}
+
+.admin-dashboard-page :is(.text-cyan-50, .text-cyan-100, .text-cyan-200, .text-cyan-300, .text-cyan-400),
+.settings-page :is(.text-cyan-50, .text-cyan-100, .text-cyan-200, .text-cyan-300, .text-cyan-400),
+.landing-page :is(.text-cyan-50, .text-cyan-100, .text-cyan-200, .text-cyan-300, .text-cyan-400),
+.auth-page :is(.text-cyan-50, .text-cyan-100, .text-cyan-200, .text-cyan-300, .text-cyan-400),
+.download-page :is(.text-cyan-50, .text-cyan-100, .text-cyan-200, .text-cyan-300, .text-cyan-400),
+.pricing-page :is(.text-cyan-50, .text-cyan-100, .text-cyan-200, .text-cyan-300, .text-cyan-400),
+.app-shell :is(.text-cyan-50, .text-cyan-100, .text-cyan-200, .text-cyan-300, .text-cyan-400) {
+  color: var(--holo-primary) !important;
+}
+
+.admin-dashboard-page table,
+.billing-history-table table {
+  color: var(--theme-text-primary) !important;
+}
+
+.admin-dashboard-page th,
+.billing-history-table th {
+  color: var(--theme-text-secondary) !important;
+  background: rgba(124, 58, 237, 0.08) !important;
+}
+
+.admin-dashboard-page td,
+.billing-history-table td,
+.admin-dashboard-page label,
+.settings-row,
+.billing-current-card,
+.billing-side-card,
+.billing-plan-card,
+.billing-tool-card,
+.billing-history-card {
+  color: var(--theme-text-primary) !important;
+}
+
+.admin-dashboard-page td div,
+.admin-dashboard-page td span,
+.billing-history-table td div,
+.billing-history-table td span {
+  color: inherit;
+}
+
+.admin-dashboard-page :is(input, textarea, select),
+.settings-page :is(input, textarea, select),
+.pricing-page :is(input, textarea, select),
+.auth-page :is(input, textarea, select),
+.chat-workspace :is(input, textarea, select) {
+  min-height: 34px;
+  color: var(--theme-text-primary) !important;
+  background: var(--theme-input-background) !important;
+}
+
+.admin-dashboard-page ::placeholder,
+.settings-page ::placeholder,
+.pricing-page ::placeholder,
+.auth-page ::placeholder,
+.chat-workspace ::placeholder {
+  color: var(--holo-placeholder) !important;
+  opacity: 1 !important;
+}
+
+.billing-feature-list,
+.billing-feature-list li,
+.pricing-list,
+.pricing-list li,
+.download-feature-list,
+.release-note,
+.version-row,
+.source-card strong,
+.source-card p,
+.message-attachment,
+.message-attachment-name,
+.message-attachment-detail,
+.attachment-chip,
+.image-chip,
+.upload-progress {
+  color: var(--theme-text-primary) !important;
+}
+
+.billing-feature-list svg,
+.pricing-list svg,
+.download-feature-list svg {
+  color: var(--holo-primary) !important;
+}
+
+.code-block-header,
+.code-block pre,
+.code-block code,
+.prose :where(h1, h2, h3, h4, strong, em, a, p, li, blockquote, th, td):not(:where([class~="not-prose"] *)) {
+  color: var(--theme-text-primary) !important;
+}
+
+.prose a,
+.source-link {
+  color: var(--holo-primary) !important;
+  text-decoration-color: rgba(124, 58, 237, 0.38);
+}
+
+.payment-alert,
+.billing-alert,
+.message-error-panel,
+.chat-notice,
+.download-error {
+  font-weight: 750;
+}
+
+.text-red-100,
+.text-red-200,
+.text-red-300,
+.text-red-400 {
+  color: var(--theme-danger) !important;
+}
+
+.text-amber-100,
+.text-amber-200,
+.text-amber-300,
+.text-amber-400 {
+  color: var(--theme-warning) !important;
+}
+
+.text-emerald-100,
+.text-emerald-200,
+.text-emerald-300,
+.text-emerald-400 {
+  color: var(--theme-success) !important;
+}
+
+.admin-dashboard-page [class*="bg-white"],
+.admin-dashboard-page [class*="bg-slate"],
+.settings-page [class*="bg-white"],
+.settings-page [class*="bg-slate"],
+.chat-workspace [class*="bg-white"],
+.chat-workspace [class*="bg-slate"] {
+  background-color: var(--holo-card-soft) !important;
+}
+
+.admin-dashboard-page [class*="border-white"],
+.settings-page [class*="border-white"],
+.chat-workspace [class*="border-white"] {
+  border-color: var(--holo-border) !important;
+}
+
+.settings-toggle span,
+.billing-toggle span {
+  background: #ffffff !important;
+  box-shadow: 0 4px 10px rgba(124, 58, 237, 0.18);
+}
+
+.settings-toggle[aria-pressed="true"],
+.billing-toggle-on {
+  background: var(--holo-gradient) !important;
+}
+
+.billing-token-bar {
+  background: rgba(124, 58, 237, 0.12) !important;
+}
+
+.morphing-dots span,
+.thinking-core span {
+  background: linear-gradient(135deg, var(--holo-primary), var(--holo-mint));
+}
+
+@media (max-width: 768px) {
+  .product-preview,
+  .device-phone-main,
+  .mini-phone {
+    transform: none;
+  }
+
+  .message-card-ai,
+  .message-card-user {
+    max-width: calc(100vw - 56px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell::before,
+  .landing-lighting,
+  .landing-page,
+  .auth-page,
+  .download-page,
+  .pricing-page,
+  .app-shell,
+  .btn-primary,
+  .send-button,
+  .composer-send-round,
+  .mic-breathing,
+  .workspace-sidebar .space-y-3 > button,
+  .pricing-card-featured::before,
+  .billing-plan-active::before {
+    animation: none !important;
+  }
+}
+
+/* Compact usability pass */
+:root {
+  --compact-page-pad: 14px;
+  --compact-card-pad: 12px;
+  --compact-gap: 10px;
+  --compact-radius: 8px;
+  --compact-control: 38px;
+  --compact-touch: 40px;
+  --compact-shadow: 0 12px 30px rgba(124, 58, 237, 0.14);
+  --holo-shadow: 7px 7px 18px rgba(124, 58, 237, 0.1), -7px -7px 18px rgba(255, 255, 255, 0.58);
+  --holo-shadow-soft: 0 12px 30px rgba(124, 58, 237, 0.14);
+}
+
+.dark {
+  --compact-shadow: 0 14px 34px rgba(3, 7, 18, 0.34);
+  --holo-shadow: 7px 7px 18px rgba(3, 7, 18, 0.3), -7px -7px 18px rgba(124, 58, 237, 0.07);
+  --holo-shadow-soft: 0 14px 34px rgba(3, 7, 18, 0.34);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 58, 237, 0.44) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.compact-card,
+.compact-panel {
+  border-radius: var(--compact-radius);
+  padding: var(--compact-card-pad);
+}
+
+.compact-button,
+.premium-gradient-button {
+  min-height: 36px;
+  padding: 7px 11px;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.compact-input {
+  min-height: 36px;
+  padding-inline: 10px;
+  font-size: 13px;
+}
+
+.compact-sidebar-item {
+  min-height: 54px;
+}
+
+.compact-toolbar {
+  gap: 8px;
+}
+
+.readable-muted-text {
+  color: var(--theme-text-muted) !important;
+}
+
+.soft-icon-button,
+.icon-button,
+.icon-button-dark,
+.message-action,
+.chat-notice-close,
+.generation-action {
+  min-height: 34px;
+  min-width: 34px;
+}
+
+.premium-gradient-button {
+  border: 0 !important;
+  background: var(--holo-gradient) !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 24px rgba(124, 58, 237, 0.28) !important;
+}
+
+.app-shell > main {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.workspace-sidebar {
+  width: min(280px, 88vw) !important;
+  max-width: 280px;
+}
+
+.workspace-sidebar > div:first-child {
+  height: 48px !important;
+  padding-inline: 12px !important;
+}
+
+.workspace-sidebar .brand-icon,
+.workspace-sidebar [class*="h-9"][class*="w-9"] {
+  height: 32px !important;
+  width: 32px !important;
+}
+
+.workspace-sidebar .space-y-3 {
+  padding: 10px !important;
+}
+
+.workspace-sidebar .space-y-3 > button {
+  height: 38px !important;
+  min-height: 38px;
+  font-size: 13px;
+}
+
+.workspace-sidebar label {
+  height: 36px !important;
+  min-height: 36px !important;
+}
+
+.workspace-sidebar label input {
+  font-size: 13px !important;
+}
+
+.workspace-sidebar nav {
+  padding-inline: 8px !important;
+  padding-bottom: 8px !important;
+}
+
+.workspace-sidebar nav > div {
+  min-height: 54px;
+  max-height: 64px;
+  overflow: hidden;
+}
+
+.workspace-sidebar nav > div > button:first-child {
+  padding: 8px 10px !important;
+}
+
+.workspace-sidebar nav span:first-child {
+  font-size: 13px !important;
+  line-height: 1.25;
+}
+
+.workspace-sidebar nav span:last-child {
+  font-size: 10px !important;
+  line-height: 1.25;
+}
+
+.workspace-sidebar nav .compact-sidebar-item > button:not(:first-child) {
+  min-height: 30px;
+  min-width: 30px;
+}
+
+.workspace-sidebar > div:last-child {
+  padding: 10px !important;
+}
+
+.workspace-sidebar > div:last-child > button[aria-haspopup="menu"] {
+  height: 38px !important;
+  width: 38px !important;
+}
+
+.workspace-sidebar [role="menu"],
+.workspace-sidebar > div:last-child > div {
+  padding: 8px !important;
+}
+
+.workspace-header,
+.chat-topbar {
+  min-height: 48px !important;
+  height: 48px !important;
+  padding-inline: 14px !important;
+}
+
+.workspace-header .icon-button-dark,
+.chat-topbar .icon-button-dark {
+  height: 34px !important;
+  width: 34px !important;
+}
+
+.chat-topbar {
+  gap: 10px;
+}
+
+.chat-topbar-action,
+.generation-action {
+  min-height: 32px;
+  padding-inline: 10px;
+  font-size: 12px;
+}
+
+.chat-scroll {
+  padding: 10px 0 6px;
+}
+
+.empty-chat-hero {
+  min-height: 0 !important;
+  align-content: start;
+  padding: 16px 16px 8px !important;
+}
+
+.empty-chat-content {
+  max-width: 760px;
+  max-height: 220px;
+  overflow: hidden;
+}
+
+.empty-chat-orb {
+  height: 44px !important;
+  width: 44px !important;
+  margin-bottom: 10px !important;
+}
+
+.empty-chat-orb svg {
+  height: 21px;
+  width: 21px;
+}
+
+.empty-chat-kicker {
+  margin-bottom: 8px !important;
+  padding: 5px 9px !important;
+  font-size: 11px !important;
+}
+
+.empty-chat-title {
+  font-size: clamp(30px, 3.2vw, 42px) !important;
+  line-height: 1.08 !important;
+}
+
+.empty-chat-subtitle {
+  margin-top: 10px !important;
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+}
+
+.empty-chat-grid {
+  margin-top: 12px !important;
+  gap: 8px !important;
+}
+
+.empty-chat-chip {
+  padding: 9px 10px !important;
+  font-size: 13px !important;
+}
+
+.message-row {
+  width: min(880px, 100%);
+  gap: 10px;
+  padding: 10px 16px;
+}
+
+.message-card {
+  width: min(720px, 100%);
+  max-width: min(720px, calc(100vw - 58px));
+}
+
+.message-card-ai,
+.thinking-panel {
+  padding: 12px !important;
+}
+
+.message-card-user {
+  max-width: min(620px, 78%) !important;
+  padding: 10px 12px !important;
+}
+
+.streaming-plain-text,
+.prose {
+  font-size: 14px;
+  line-height: 1.58;
+}
+
+.prose :where(p, ul, ol, pre):not(:where([class~="not-prose"] *)) {
+  margin-top: 0.55em;
+  margin-bottom: 0.55em;
+}
+
+.message-actions {
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.message-action {
+  height: 28px !important;
+  width: 28px !important;
+  min-height: 28px;
+  min-width: 28px;
+}
+
+.source-panel {
+  margin-top: 10px;
+}
+
+.source-grid {
+  gap: 7px;
+}
+
+.source-card {
+  gap: 5px;
+  padding: 8px !important;
+}
+
+.source-snippet {
+  -webkit-line-clamp: 2;
+}
+
+.composer-shell {
+  padding: 8px 12px !important;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom)) !important;
+}
+
+.composer-card {
+  max-width: 860px;
+  padding: 8px !important;
+  box-shadow: var(--compact-shadow), var(--holo-inner) !important;
+}
+
+.composer-card:focus-within,
+.composer-card-active {
+  box-shadow: 0 16px 38px rgba(124, 58, 237, 0.2), var(--holo-inner) !important;
+}
+
+.composer-top-row {
+  gap: 7px !important;
+  padding-top: 0;
+}
+
+.composer-plus-button,
+.composer-pill {
+  height: 38px !important;
+}
+
+.composer-plus-button {
+  width: 38px !important;
+}
+
+.composer-pill {
+  min-width: 126px;
+  gap: 7px;
+  padding-inline: 10px;
+}
+
+.composer-mode-pill {
+  min-width: 150px;
+}
+
+.composer-pill-select {
+  font-size: 13px !important;
+}
+
+.model-menu-trigger {
+  max-width: 190px;
+}
+
+.model-menu-item {
+  min-height: 31px;
+  font-size: 11px;
+}
+
+.model-menu-panel,
+.attachment-menu-panel {
+  padding: 6px !important;
+}
+
+.composer-input-row {
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.composer-textarea {
+  min-height: 52px !important;
+  max-height: 128px;
+  padding: 2px 8px 6px !important;
+  font-size: 15px !important;
+  line-height: 1.45;
+}
+
+.composer-inline-actions {
+  gap: 8px;
+  padding: 0 2px 5px 0;
+}
+
+.composer-inline-actions .icon-button-dark,
+.composer-inline-actions .icon-button-danger,
+.composer-send-round {
+  height: 42px !important;
+  width: 42px !important;
+}
+
+.scroll-bottom-button {
+  right: max(14px, env(safe-area-inset-right));
+  bottom: calc(104px + env(safe-area-inset-bottom));
+  height: 34px !important;
+  width: 34px !important;
+}
+
+.chat-notice {
+  bottom: calc(104px + env(safe-area-inset-bottom));
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.generation-status-bar {
+  min-height: 36px;
+  width: min(860px, calc(100% - 24px));
+  font-size: 12px;
+}
+
+.context-panel {
+  width: min(320px, 88vw) !important;
+  max-width: min(320px, 88vw) !important;
+  padding: 10px !important;
+}
+
+.context-panel-card {
+  padding: 0 !important;
+}
+
+.context-panel-card > .border-b {
+  padding: 10px !important;
+}
+
+.context-panel-body {
+  padding: 10px !important;
+}
+
+.context-panel h2 {
+  font-size: 13px !important;
+}
+
+.context-panel .segmented-button {
+  height: 30px;
+  font-size: 11px;
+}
+
+.context-panel :is(.p-3, .p-5) {
+  padding: 10px !important;
+}
+
+.context-panel .space-y-3\.5,
+.context-panel .space-y-2\.5,
+.context-panel .space-y-2 {
+  gap: 8px !important;
+}
+
+.context-panel textarea {
+  min-height: 58px !important;
+  font-size: 12px !important;
+  line-height: 1.45;
+}
+
+.context-panel input,
+.context-panel select {
+  min-height: 34px !important;
+  font-size: 12px !important;
+}
+
+.context-panel .h-2 {
+  height: 5px !important;
+}
+
+.context-panel .icon-button-dark {
+  height: 32px !important;
+  width: 32px !important;
+}
+
+.context-panel [class*="line-clamp"] {
+  -webkit-line-clamp: 2;
+}
+
+.settings-page,
+.admin-dashboard-page {
+  padding: var(--compact-page-pad) !important;
+}
+
+.settings-card,
+.admin-dashboard-page section,
+.admin-stat-tile,
+.billing-current-card,
+.billing-side-card,
+.billing-plan-card,
+.billing-tool-card,
+.billing-history-card {
+  padding: var(--compact-card-pad) !important;
+  box-shadow: var(--compact-shadow), var(--holo-inner) !important;
+}
+
+.settings-row {
+  padding: 9px 10px !important;
+}
+
+.settings-select,
+.settings-page select,
+.settings-page input {
+  min-height: 34px !important;
+}
+
+.admin-dashboard-page table {
+  font-size: 12px;
+}
+
+.admin-dashboard-page th,
+.admin-dashboard-page td,
+.billing-history-table th,
+.billing-history-table td {
+  padding: 8px !important;
+}
+
+.landing-nav,
+.download-nav {
+  padding: 10px clamp(14px, 4vw, 42px);
+}
+
+.theme-toggle-button {
+  height: 36px;
+  width: 36px;
+}
+
+.landing-hero,
+.download-hero {
+  min-height: auto;
+  gap: clamp(18px, 3vw, 36px);
+  padding: 34px clamp(14px, 4vw, 54px) 30px;
+}
+
+.hero-copy h1,
+.download-copy h1 {
+  font-size: clamp(34px, 5.4vw, 64px) !important;
+  line-height: 1.02 !important;
+}
+
+.hero-subtitle,
+.download-version {
+  margin-top: 14px !important;
+  font-size: 15px !important;
+  line-height: 1.5 !important;
+}
+
+.hero-kicker,
+.mobile-feature-strip span,
+.mobile-release-strip span {
+  padding: 6px 9px !important;
+  font-size: 11px !important;
+}
+
+.product-preview {
+  min-height: 360px;
+}
+
+.preview-main {
+  gap: 12px;
+  padding: 18px;
+}
+
+.preview-sidebar {
+  gap: 8px;
+  padding: 16px;
+}
+
+.preview-message {
+  padding: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.landing-section,
+.download-section {
+  padding: 42px clamp(14px, 4vw, 54px);
+}
+
+.section-heading {
+  margin-bottom: 20px;
+}
+
+.section-heading h2,
+.capability-band h2,
+.android-promo h2,
+.section-heading-left h2,
+.pricing-main h1 {
+  font-size: clamp(26px, 3.5vw, 44px) !important;
+  line-height: 1.08 !important;
+}
+
+.premium-feature,
+.testimonial-grid figure,
+.pricing-card,
+.capability-band,
+.faq-list details,
+.release-panel,
+.screenshot-card,
+.download-meta-grid article,
+.android-promo {
+  padding: 16px !important;
+  box-shadow: var(--compact-shadow), var(--holo-inner) !important;
+}
+
+.premium-feature h3 {
+  margin-top: 12px;
+  font-size: 17px;
+}
+
+.premium-feature p,
+.testimonial-grid figcaption,
+.pricing-card span,
+.faq-list p,
+.landing-footer p {
+  margin-top: 7px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.pricing-main {
+  padding-top: 30px;
+}
+
+.pricing-card {
+  min-height: 230px;
+}
+
+.pricing-price {
+  margin-top: 10px;
+  font-size: 34px;
+}
+
+.pricing-list {
+  gap: 7px;
+  margin: 16px 0 18px;
+  font-size: 13px;
+}
+
+.download-meta-grid article {
+  min-height: 104px;
+}
+
+.device-phone-main {
+  width: min(285px, 64vw);
+}
+
+.device-screen {
+  min-height: 430px;
+  gap: 9px;
+  padding: 12px;
+}
+
+.mini-phone-screen {
+  min-height: 320px;
+}
+
+.message-card:hover,
+.premium-feature:hover,
+.pricing-card:hover,
+.download-meta-grid article:hover,
+.screenshot-card:hover,
+.admin-stat-tile:hover,
+.billing-plan-card:hover {
+  transform: perspective(800px) rotateX(0.35deg) translateY(-2px);
+  box-shadow: 0 14px 34px rgba(124, 58, 237, 0.18), var(--holo-inner) !important;
+}
+
+@media (min-width: 1280px) {
+  .context-panel {
+    width: clamp(280px, 20vw, 320px) !important;
+    max-width: 320px !important;
+  }
+}
+
+@media (min-width: 1600px) {
+  .message-row,
+  .composer-card,
+  .generation-status-bar {
+    max-width: 920px;
+  }
+
+  .chat-scroll {
+    padding-top: 12px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .workspace-sidebar {
+    width: min(268px, 88vw) !important;
+  }
+
+  .landing-hero,
+  .download-hero,
+  .landing-section,
+  .download-section {
+    padding-inline: 16px;
+  }
+
+  .product-preview {
+    min-height: 300px;
+  }
+}
+
+@media (max-width: 768px) {
+  .workspace-header,
+  .chat-topbar {
+    height: 46px !important;
+    min-height: 46px !important;
+  }
+
+  .chat-scroll {
+    padding-top: 6px;
+  }
+
+  .empty-chat-hero {
+    padding: 12px 12px 4px !important;
+  }
+
+  .empty-chat-content {
+    max-height: 160px;
+  }
+
+  .empty-chat-orb {
+    height: 38px !important;
+    width: 38px !important;
+    margin-bottom: 8px !important;
+  }
+
+  .empty-chat-kicker {
+    padding: 4px 8px !important;
+    font-size: 10px !important;
+  }
+
+  .empty-chat-title {
+    font-size: clamp(24px, 8vw, 30px) !important;
+  }
+
+  .empty-chat-subtitle,
+  .empty-chat-grid {
+    display: none !important;
+  }
+
+  .message-row {
+    padding: 8px 10px;
+  }
+
+  .message-card {
+    max-width: calc(100vw - 42px);
+  }
+
+  .message-card-user {
+    max-width: calc(100vw - 72px) !important;
+  }
+
+  .message-card-ai,
+  .thinking-panel {
+    padding: 10px !important;
+  }
+
+  .streaming-plain-text,
+  .prose {
+    font-size: 13px;
+    line-height: 1.52;
+  }
+
+  .composer-shell {
+    padding: 7px 8px !important;
+    padding-bottom: calc(7px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .composer-card {
+    padding: 7px !important;
+  }
+
+  .composer-top-row {
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .composer-plus-button,
+  .composer-pill {
+    height: var(--compact-touch) !important;
+  }
+
+  .composer-plus-button,
+  .composer-inline-actions .icon-button-dark,
+  .composer-inline-actions .icon-button-danger,
+  .composer-send-round {
+    width: var(--compact-touch) !important;
+    height: var(--compact-touch) !important;
+  }
+
+  .composer-mode-pill {
+    min-width: 96px;
+  }
+
+  .model-menu-trigger {
+    min-width: 104px;
+    max-width: 126px;
+  }
+
+  .composer-input-row {
+    gap: 7px;
+    margin-top: 8px;
+  }
+
+  .composer-textarea {
+    min-height: 48px !important;
+    max-height: 104px;
+    font-size: 14px !important;
+  }
+
+  .scroll-bottom-button,
+  .chat-notice {
+    bottom: calc(92px + env(safe-area-inset-bottom));
+  }
+
+  .context-panel {
+    width: min(320px, 92vw) !important;
+    max-width: min(320px, 92vw) !important;
+    padding: 8px !important;
+  }
+
+  .landing-hero,
+  .download-hero {
+    padding-block: 24px;
+  }
+
+  .hero-copy h1,
+  .download-copy h1 {
+    font-size: clamp(28px, 9vw, 42px) !important;
+  }
+
+  .product-preview,
+  .device-screen {
+    min-height: 300px;
+  }
+
+  .premium-feature,
+  .testimonial-grid figure,
+  .pricing-card,
+  .capability-band,
+  .faq-list details,
+  .release-panel,
+  .screenshot-card,
+  .download-meta-grid article,
+  .android-promo {
+    padding: 12px !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .workspace-sidebar {
+    width: min(264px, 88vw) !important;
+  }
+
+  .message-row {
+    padding-inline: 8px;
+  }
+
+  .composer-top-row {
+    gap: 5px !important;
+  }
+
+  .composer-pill {
+    padding-inline: 8px;
+  }
+
+  .composer-pill svg {
+    height: 14px;
+    width: 14px;
+  }
+
+  .model-menu-trigger span {
+    max-width: 56px;
+  }
+
+  .landing-nav,
+  .download-nav {
+    padding-inline: 10px;
+  }
+
+  .nav-actions {
+    gap: 6px;
+  }
+
+  .nav-actions .btn-primary,
+  .nav-actions .btn-secondary {
+    padding-inline: 9px !important;
+  }
+
+  .theme-toggle-button {
+    height: var(--compact-touch);
+    width: var(--compact-touch);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-card,
+  .premium-feature,
+  .pricing-card,
+  .download-meta-grid article,
+  .screenshot-card,
+  .admin-stat-tile,
+  .billing-plan-card,
+  .composer-card,
+  .icon-button,
+  .icon-button-dark,
+  .compact-button,
+  .composer-pill,
+  .composer-plus-button {
+    transition: none !important;
+  }
+
+  .message-card:hover,
+  .premium-feature:hover,
+  .pricing-card:hover,
+  .download-meta-grid article:hover,
+  .screenshot-card:hover,
+  .admin-stat-tile:hover,
+  .billing-plan-card:hover {
+    transform: none !important;
   }
 }

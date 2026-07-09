@@ -15,6 +15,7 @@ import {
 import { api, resolveApkDownloadUrl } from "../../api/client";
 import type { ApkRelease, ApkStats } from "../../types";
 import { LogoIcon } from "../brand/LogoIcon";
+import { ThemeToggleButton } from "../layout/ThemeToggleButton";
 
 const screenshots = [
   { title: "Memory chat", lines: ["Project context loaded", "Tone profile active", "Sources ready"] },
@@ -119,10 +120,13 @@ export function DownloadPage() {
           <span className="brand-icon"><LogoIcon /></span>
           Auto-AI
         </Link>
-        <Link className="btn-secondary" to="/">
-          <ArrowLeft size={16} />
-          Home
-        </Link>
+        <div className="nav-actions">
+          <Link className="btn-secondary" to="/">
+            <ArrowLeft size={16} />
+            Home
+          </Link>
+          <ThemeToggleButton />
+        </div>
       </header>
 
       <main>

@@ -29,6 +29,11 @@ class ApkService:
     response_tz = kolkata_timezone()
 
     @staticmethod
+    def set_release_file_name(release: ApkRelease, file_name: str) -> None:
+        release.file_name = file_name
+        release.filename = file_name
+
+    @staticmethod
     def _db_datetime(value: datetime | None = None) -> datetime:
         timestamp = value or datetime.utcnow()
         if timestamp.tzinfo:
@@ -186,7 +191,7 @@ class ApkService:
             existing.version_code = version_code
             existing.version_name = version_name
             existing.apk_url = self._download_url(version_name)
-            existing.file_name = settings.APK_FILENAME
+            self.set_release_file_name(existing, settings.APK_FILENAME)
             existing.file_path = str(path)
             existing.file_size = path.stat().st_size
             existing.sha256 = checksum
@@ -207,6 +212,7 @@ class ApkService:
                     version_name=version_name,
                     apk_url=self._download_url(version_name),
                     file_name=settings.APK_FILENAME,
+                    filename=settings.APK_FILENAME,
                     file_path=str(path),
                     file_size=path.stat().st_size,
                     sha256=checksum,
@@ -328,6 +334,7 @@ class ApkService:
             version_name=next_version,
             apk_url=self._download_url(next_version),
             file_name=filename,
+            filename=filename,
             file_path=str(path),
             file_size=path.stat().st_size,
             sha256=checksum,
@@ -387,7 +394,7 @@ class ApkService:
         if apk_url is not None:
             release.apk_url = apk_url.strip() or self._download_url(release.version_name)
         if file_name is not None:
-            release.file_name = file_name.strip() or self.file_name_from_url(release.apk_url)
+            self.set_release_file_name(release, file_name.strip() or self.file_name_from_url(release.apk_url))
         if file_size is not None:
             release.file_size = file_size
         if changelog is not None:
@@ -460,6 +467,7 @@ class ApkService:
             version_name=version_name,
             apk_url=apk_url,
             file_name=file_name or self.file_name_from_url(apk_url),
+            filename=file_name or self.file_name_from_url(apk_url),
             file_path="",
             file_size=file_size,
             sha256="",

@@ -2,7 +2,7 @@ from datetime import datetime
 import uuid
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text
-from sqlalchemy.orm import Mapped, mapped_column, synonym
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 
@@ -15,6 +15,7 @@ class ApkRelease(Base):
     version_name: Mapped[str] = mapped_column(String(40), unique=True, index=True, nullable=False)
     apk_url: Mapped[str] = mapped_column(String(500), nullable=False)
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
     file_size: Mapped[int] = mapped_column(Integer, default=0)
     force_update: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     changelog: Mapped[str] = mapped_column(Text, default="")
@@ -28,8 +29,6 @@ class ApkRelease(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
     release_date: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     released_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
-
-    filename = synonym("file_name")
 
 
 class ApkDownload(Base):

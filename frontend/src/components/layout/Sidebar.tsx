@@ -10,9 +10,9 @@ import { isMobileAppRuntime } from "../../utils/runtime";
 import { LogoIcon } from "../brand/LogoIcon";
 
 const accountMenuItemClass =
-  "flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-medium text-white transition hover:border-cyan-200/30 hover:bg-cyan-200/10";
+  "compact-button flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-medium text-white transition hover:border-cyan-200/30 hover:bg-cyan-200/10";
 const accountMenuDangerClass =
-  "flex w-full items-center justify-center gap-2 rounded-lg border border-red-300/30 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-100 transition hover:bg-red-500/20";
+  "compact-button flex w-full items-center justify-center gap-2 rounded-lg border border-red-300/30 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-100 transition hover:bg-red-500/20";
 
 export function Sidebar() {
   const { user, logout } = useAuth();
@@ -117,7 +117,7 @@ export function Sidebar() {
       {isSidebarOpen && <div className="fixed inset-0 z-40 bg-slate-950/65 backdrop-blur-sm md:hidden" onClick={closeSidebar} />}
       <aside
         className={clsx(
-          "fixed inset-y-0 left-0 z-50 flex w-80 shrink-0 flex-col border-r border-white/10 bg-slate-950/95 text-white shadow-[18px_0_60px_rgba(0,0,0,0.35)] backdrop-blur-xl transition-transform duration-300 md:static md:z-auto md:translate-x-0",
+          "workspace-sidebar compact-panel fixed inset-y-0 left-0 z-50 flex w-80 shrink-0 flex-col border-r border-white/10 bg-slate-950/95 text-white shadow-[18px_0_60px_rgba(0,0,0,0.35)] backdrop-blur-xl transition-transform duration-300 md:static md:z-auto md:translate-x-0",
           isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}
       >
@@ -136,14 +136,14 @@ export function Sidebar() {
         </div>
         <div className="space-y-3 p-3">
           <button
-            className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-cyan-200/30 bg-cyan-200 px-3 text-sm font-bold text-slate-950 transition hover:bg-white"
+            className="compact-button premium-gradient-button flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-cyan-200/30 bg-cyan-200 px-3 text-sm font-bold text-slate-950 transition hover:bg-white"
             onClick={createNewChat}
             type="button"
           >
             <MessageSquarePlus size={17} />
             New chat
           </button>
-          <label className="flex h-10 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.055] px-3 text-sm text-slate-300 focus-within:border-cyan-200/40">
+          <label className="compact-input flex h-10 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.055] px-3 text-sm text-slate-300 focus-within:border-cyan-200/40">
             <Search size={15} className="shrink-0 text-slate-500" />
             <input
               className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-slate-500"
@@ -166,9 +166,9 @@ export function Sidebar() {
             <div
               key={chat.id}
               className={clsx(
-                "group flex items-center rounded-lg border border-transparent transition",
+                "compact-sidebar-item group flex items-center rounded-lg border border-transparent transition",
                 activeChat?.id === chat.id && location.pathname === "/chat"
-                  ? "border-cyan-200/20 bg-cyan-200/12"
+                  ? "glow-active border-cyan-200/20 bg-cyan-200/12"
                   : "hover:bg-white/10"
               )}
             >

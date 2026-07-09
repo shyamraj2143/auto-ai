@@ -104,7 +104,7 @@ const planLimitEditableFields: PlanLimitEditableField[] = [
 
 function StatTile({ icon, label, value }: { icon: ReactNode; label: string; value: string | number }) {
   return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.055] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.22)] backdrop-blur">
+    <div className="admin-stat-tile rounded-lg border border-white/10 bg-white/[0.055] p-4 shadow-[0_18px_45px_rgba(0,0,0,0.22)] backdrop-blur">
       <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-md bg-cyan-200 text-slate-950">{icon}</div>
       <p className="text-xs font-semibold uppercase text-slate-400">{label}</p>
       <p className="mt-1 text-2xl font-semibold text-white">{value}</p>
@@ -819,11 +819,11 @@ export function AdminDashboard() {
   }
 
   if (!isAdmin) {
-    return <div className="min-h-0 flex-1 overflow-y-auto p-6 text-sm text-slate-300">Admin access required.</div>;
+    return <div className="admin-dashboard-page min-h-0 flex-1 overflow-y-auto p-6 text-sm text-slate-300">Admin access required.</div>;
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+    <div className="admin-dashboard-page min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-white">Admin Control Center</h1>

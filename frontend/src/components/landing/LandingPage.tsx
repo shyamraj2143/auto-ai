@@ -16,6 +16,7 @@ import { api, resolveApkDownloadUrl } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import type { ApkRelease, ApkStats } from "../../types";
 import { LogoIcon } from "../brand/LogoIcon";
+import { ThemeToggleButton } from "../layout/ThemeToggleButton";
 
 const features = [
   { icon: <Brain size={18} />, title: "Adaptive memory", body: "Preference, project, and style signals shape future replies without making the assistant feel scripted." },
@@ -107,10 +108,13 @@ export function LandingPage() {
           <Link to="/admin/login">Admin</Link>
           <a href="#faq">FAQ</a>
         </nav>
-        <Link className="btn-primary" to={user ? "/chat" : "/login"}>
-          {user ? "Open app" : "Sign in"}
-          <ArrowRight size={16} />
-        </Link>
+        <div className="nav-actions">
+          <Link className="btn-primary" to={user ? "/chat" : "/login"}>
+            {user ? "Open app" : "Sign in"}
+            <ArrowRight size={16} />
+          </Link>
+          <ThemeToggleButton />
+        </div>
       </header>
 
       <main>

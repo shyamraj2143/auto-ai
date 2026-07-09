@@ -216,7 +216,7 @@ export function ContextPanel({
       {/* Main Panel Container */}
       <aside
         className={clsx(
-          "shrink-0 border-white/10 bg-slate-950/60 backdrop-blur-2xl transition-all duration-300 flex flex-col overflow-hidden",
+          "context-panel compact-panel shrink-0 border-white/10 bg-slate-950/60 backdrop-blur-2xl transition-all duration-300 flex flex-col overflow-hidden",
           // Desktop positioning
           "xl:static xl:block xl:w-[21.5rem] xl:h-full xl:border-l xl:p-3 xl:translate-x-0 xl:z-0",
           // Mobile drawer positioning
@@ -225,7 +225,7 @@ export function ContextPanel({
           !isOpen && "hidden xl:flex"
         )}
       >
-        <div className="glass-panel flex h-full flex-col overflow-hidden">
+        <div className="context-panel-card glass-panel compact-card flex h-full flex-col overflow-hidden">
           {/* Header */}
           <div className="border-b border-white/10 p-3">
             <div className="mb-3 flex items-center justify-between">
@@ -285,7 +285,7 @@ export function ContextPanel({
           </div>
 
           {/* Body Content */}
-          <div className="min-h-0 flex-1 overflow-y-auto p-3 custom-scrollbar">
+          <div className="context-panel-body min-h-0 flex-1 overflow-y-auto p-3 custom-scrollbar">
             <AnimatePresence mode="wait">
               {tab === "documents" ? (
                 <motion.div

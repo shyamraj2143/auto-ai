@@ -41,7 +41,7 @@ export function Header() {
   return (
     <header
       className={clsx(
-        "h-14 shrink-0 items-center justify-between border-b border-white/10 bg-slate-950/70 px-4 text-white backdrop-blur-xl",
+        "workspace-header h-14 shrink-0 items-center justify-between border-b border-white/10 bg-slate-950/70 px-4 text-white backdrop-blur-xl",
         isChatWorkspace || isSettingsWorkspace ? "hidden md:flex" : "flex"
       )}
     >

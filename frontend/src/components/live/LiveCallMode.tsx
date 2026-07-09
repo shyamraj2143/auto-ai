@@ -122,8 +122,10 @@ export function LiveCallMode({ onClose }: { onClose: () => void }) {
           z-index: 150;
           overflow: hidden;
           font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
-          color: #f1f5f9;
-          background: #000;
+          color: #f8f5ff;
+          background:
+            radial-gradient(circle at 50% 20%, rgba(192,132,252,0.3), transparent 32%),
+            linear-gradient(135deg, #171326 0%, #241842 50%, #0f1020 100%);
         }
 
         /* ── Full-screen camera ── */
@@ -140,7 +142,8 @@ export function LiveCallMode({ onClose }: { onClose: () => void }) {
         .lcm-camera-off {
           width: 100%;
           height: 100%;
-          background: radial-gradient(ellipse at center, #0f172a 0%, #020617 100%);
+          background:
+            radial-gradient(ellipse at center, rgba(124,58,237,0.34) 0%, rgba(30,27,75,0.92) 56%, #0f1020 100%);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -156,10 +159,10 @@ export function LiveCallMode({ onClose }: { onClose: () => void }) {
           z-index: 1;
           background:
             linear-gradient(to bottom,
-              rgba(0,0,0,0.55) 0%,
+              rgba(30,27,75,0.58) 0%,
               transparent 30%,
               transparent 55%,
-              rgba(0,0,0,0.7) 100%);
+              rgba(15,16,32,0.82) 100%);
           pointer-events: none;
         }
 
@@ -179,15 +182,17 @@ export function LiveCallMode({ onClose }: { onClose: () => void }) {
           justify-content: center;
           width: 40px; height: 40px;
           border-radius: 50%;
-          background: rgba(0,0,0,0.35);
-          backdrop-filter: blur(10px);
-          border: 1px solid rgba(255,255,255,0.12);
-          color: #fff;
+          background: rgba(255,255,255,0.14);
+          backdrop-filter: blur(18px) saturate(1.18);
+          border: 1px solid rgba(255,255,255,0.24);
+          color: #f8f5ff;
+          box-shadow: 5px 5px 14px rgba(76,29,149,0.24), -5px -5px 14px rgba(255,255,255,0.12);
           cursor: pointer;
-          transition: background 0.2s, transform 0.15s;
+          transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
         }
-        .lcm-icon-btn:hover { background: rgba(0,0,0,0.55); transform: scale(1.05); }
-        .lcm-icon-btn-active { background: rgba(6,182,212,0.25); border-color: rgba(6,182,212,0.5); color: #67e8f9; }
+        .lcm-icon-btn:hover { background: rgba(192,132,252,0.22); transform: translateY(-2px) scale(1.04); }
+        .lcm-icon-btn:active { box-shadow: inset 4px 4px 10px rgba(76,29,149,0.28), inset -4px -4px 10px rgba(255,255,255,0.12); transform: scale(0.96); }
+        .lcm-icon-btn-active { background: rgba(124,58,237,0.28); border-color: rgba(192,132,252,0.6); color: #ddd6fe; }
         .lcm-icon-btn-danger { background: rgba(239,68,68,0.25); border-color: rgba(239,68,68,0.5); color: #fca5a5; }
 
         .lcm-call-info {
@@ -202,12 +207,12 @@ export function LiveCallMode({ onClose }: { onClose: () => void }) {
           letter-spacing: 0.08em;
           text-transform: uppercase;
           color: #fff;
-          text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+          text-shadow: 0 1px 4px rgba(76,29,149,0.5);
         }
         .lcm-call-timer {
           font-size: 11px;
           font-variant-numeric: tabular-nums;
-          color: rgba(255,255,255,0.6);
+          color: rgba(248,245,255,0.68);
           font-family: 'SF Mono', 'Fira Code', monospace;
         }
 
@@ -215,7 +220,7 @@ export function LiveCallMode({ onClose }: { onClose: () => void }) {
         .lcm-signal { display: flex; align-items: flex-end; gap: 2px; }
         .lcm-signal span {
           width: 3px;
-          background: #10b981;
+          background: #c084fc;
           border-radius: 2px;
           animation: lcm-signal-bounce 1.2s ease-in-out infinite;
         }
@@ -259,20 +264,20 @@ export function LiveCallMode({ onClose }: { onClose: () => void }) {
 
         /* orb color themes */
         .orb-blue {
-          background: radial-gradient(circle at 35% 35%, #93c5fd, #2563eb 60%, #1e3a8a);
-          box-shadow: 0 0 20px rgba(59,130,246,0.7), 0 0 40px rgba(59,130,246,0.3);
+          background: radial-gradient(circle at 35% 35%, #f5f0ff, #a855f7 52%, #4f46e5);
+          box-shadow: 0 0 24px rgba(192,132,252,0.76), 0 0 48px rgba(124,58,237,0.38);
           animation: lcm-pulse 2s ease-in-out infinite;
         }
-        .orb-blue::before { background: #3b82f6; }
+        .orb-blue::before { background: #c084fc; }
         .orb-amber {
-          background: radial-gradient(circle at 35% 35%, #fde68a, #d97706 60%, #92400e);
-          box-shadow: 0 0 20px rgba(245,158,11,0.7), 0 0 40px rgba(245,158,11,0.3);
+          background: radial-gradient(circle at 35% 35%, #fef3c7, #c084fc 48%, #7c3aed);
+          box-shadow: 0 0 22px rgba(216,180,254,0.72), 0 0 44px rgba(124,58,237,0.34);
           animation: lcm-spin 2.5s linear infinite;
         }
-        .orb-amber::before { background: #f59e0b; }
+        .orb-amber::before { background: #d8b4fe; }
         .orb-green {
-          background: radial-gradient(circle at 35% 35%, #6ee7b7, #059669 60%, #064e3b);
-          box-shadow: 0 0 20px rgba(16,185,129,0.7), 0 0 40px rgba(16,185,129,0.3);
+          background: radial-gradient(circle at 35% 35%, #dcfce7, #22c55e 54%, #166534);
+          box-shadow: 0 0 20px rgba(34,197,94,0.66), 0 0 40px rgba(124,58,237,0.24);
           animation: lcm-pulse 1s ease-in-out infinite;
         }
         .orb-green::before { background: #10b981; }
@@ -296,14 +301,14 @@ export function LiveCallMode({ onClose }: { onClose: () => void }) {
           font-size: 10px;
           font-weight: 600;
           letter-spacing: 0.04em;
-          color: rgba(255,255,255,0.85);
-          background: rgba(0,0,0,0.45);
-          backdrop-filter: blur(8px);
-          border: 1px solid rgba(255,255,255,0.1);
+          color: rgba(248,245,255,0.9);
+          background: rgba(255,255,255,0.14);
+          backdrop-filter: blur(14px) saturate(1.18);
+          border: 1px solid rgba(255,255,255,0.22);
           border-radius: 20px;
           padding: 2px 8px;
           white-space: nowrap;
-          text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+          text-shadow: 0 1px 2px rgba(76,29,149,0.5);
         }
 
         /* ── Interim transcript bubble ── */
@@ -313,13 +318,13 @@ export function LiveCallMode({ onClose }: { onClose: () => void }) {
           left: 16px;
           right: 90px;
           z-index: 24;
-          background: rgba(0,0,0,0.5);
-          backdrop-filter: blur(12px);
-          border: 1px solid rgba(255,255,255,0.1);
-          border-radius: 12px;
+          background: rgba(255,255,255,0.16);
+          backdrop-filter: blur(18px) saturate(1.18);
+          border: 1px solid rgba(255,255,255,0.22);
+          border-radius: 8px;
           padding: 8px 12px;
           font-size: 12px;
-          color: rgba(255,255,255,0.7);
+          color: rgba(248,245,255,0.82);
           font-style: italic;
           max-lines: 2;
           overflow: hidden;
@@ -348,17 +353,17 @@ export function LiveCallMode({ onClose }: { onClose: () => void }) {
           align-items: center;
           justify-content: space-between;
           padding: 8px 16px;
-          background: rgba(8,8,18,0.6);
-          backdrop-filter: blur(20px);
-          border-top: 1px solid rgba(255,255,255,0.08);
-          border-radius: 18px 18px 0 0;
+          background: rgba(255,255,255,0.15);
+          backdrop-filter: blur(24px) saturate(1.2);
+          border-top: 1px solid rgba(255,255,255,0.22);
+          border-radius: 8px 8px 0 0;
           cursor: pointer;
           user-select: none;
         }
         .lcm-chat-handle {
           width: 36px; height: 4px;
           border-radius: 2px;
-          background: rgba(255,255,255,0.25);
+          background: rgba(216,180,254,0.5);
           position: absolute;
           left: 50%; transform: translateX(-50%);
           top: 8px;
@@ -368,7 +373,7 @@ export function LiveCallMode({ onClose }: { onClose: () => void }) {
           font-weight: 700;
           letter-spacing: 0.1em;
           text-transform: uppercase;
-          color: rgba(255,255,255,0.5);
+          color: rgba(248,245,255,0.72);
         }
 
         /* messages list */
@@ -380,8 +385,8 @@ export function LiveCallMode({ onClose }: { onClose: () => void }) {
           gap: 8px;
           padding: 12px 14px;
           max-height: 42vh;
-          background: rgba(8,8,18,0.78);
-          backdrop-filter: blur(24px);
+          background: rgba(30,27,75,0.58);
+          backdrop-filter: blur(26px) saturate(1.18);
           overscroll-behavior: contain;
         }
         .lcm-messages::-webkit-scrollbar { width: 3px; }
@@ -409,31 +414,32 @@ export function LiveCallMode({ onClose }: { onClose: () => void }) {
           margin-bottom: 3px;
           opacity: 0.5;
         }
-        .lcm-bubble-user .lcm-bubble-role { color: #93c5fd; }
-        .lcm-bubble-assistant .lcm-bubble-role { color: #6ee7b7; }
+        .lcm-bubble-user .lcm-bubble-role { color: #ddd6fe; }
+        .lcm-bubble-assistant .lcm-bubble-role { color: #f5d0fe; }
 
         .lcm-bubble-text {
           padding: 9px 13px;
-          border-radius: 16px;
+          border-radius: 8px;
           font-size: 13px;
           line-height: 1.45;
         }
         .lcm-bubble-user .lcm-bubble-text {
-          background: rgba(59,130,246,0.22);
-          border: 1px solid rgba(59,130,246,0.3);
-          color: #e0f2fe;
+          background: linear-gradient(135deg, #7c3aed, #4f46e5);
+          border: 1px solid rgba(255,255,255,0.18);
+          color: #ffffff;
+          box-shadow: 0 10px 24px rgba(124,58,237,0.32);
           border-bottom-right-radius: 4px;
         }
         .lcm-bubble-assistant .lcm-bubble-text {
-          background: rgba(255,255,255,0.07);
-          border: 1px solid rgba(255,255,255,0.1);
-          color: #f1f5f9;
+          background: rgba(255,255,255,0.16);
+          border: 1px solid rgba(255,255,255,0.22);
+          color: #f8f5ff;
           border-bottom-left-radius: 4px;
         }
         .lcm-bubble-system .lcm-bubble-text {
           background: transparent;
           font-size: 10px;
-          color: rgba(255,255,255,0.35);
+          color: rgba(248,245,255,0.48);
           border: none;
           padding: 2px 8px;
         }
@@ -443,39 +449,39 @@ export function LiveCallMode({ onClose }: { onClose: () => void }) {
           display: flex;
           gap: 8px;
           padding: 10px 14px calc(12px + env(safe-area-inset-bottom, 0px));
-          background: rgba(8,8,18,0.9);
-          backdrop-filter: blur(24px);
-          border-top: 1px solid rgba(255,255,255,0.06);
+          background: rgba(30,27,75,0.72);
+          backdrop-filter: blur(26px) saturate(1.2);
+          border-top: 1px solid rgba(255,255,255,0.18);
         }
         .lcm-text-input {
           flex: 1;
-          background: rgba(255,255,255,0.06);
-          border: 1px solid rgba(255,255,255,0.12);
-          border-radius: 22px;
+          background: rgba(255,255,255,0.16);
+          border: 1px solid rgba(255,255,255,0.24);
+          border-radius: 8px;
           padding: 9px 16px;
           font-size: 13px;
-          color: #f1f5f9;
+          color: #f8f5ff;
           outline: none;
           transition: border-color 0.2s;
           font-family: inherit;
         }
-        .lcm-text-input::placeholder { color: rgba(255,255,255,0.3); }
-        .lcm-text-input:focus { border-color: rgba(6,182,212,0.5); }
+        .lcm-text-input::placeholder { color: rgba(248,245,255,0.72); }
+        .lcm-text-input:focus { border-color: rgba(192,132,252,0.72); box-shadow: 0 0 0 3px rgba(192,132,252,0.16); }
         .lcm-send-btn {
           display: flex;
           align-items: center;
           justify-content: center;
           width: 40px; height: 40px;
           border-radius: 50%;
-          background: #0891b2;
+          background: linear-gradient(135deg, #7c3aed, #4f46e5);
           color: #fff;
           cursor: pointer;
           border: none;
           flex-shrink: 0;
           transition: background 0.2s, transform 0.15s;
         }
-        .lcm-send-btn:hover:not(:disabled) { background: #06b6d4; transform: scale(1.05); }
-        .lcm-send-btn:disabled { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.25); cursor: default; }
+        .lcm-send-btn:hover:not(:disabled) { background: linear-gradient(135deg, #8b5cf6, #4f46e5); transform: translateY(-2px) scale(1.04); }
+        .lcm-send-btn:disabled { background: rgba(255,255,255,0.14); color: rgba(248,245,255,0.54); cursor: default; }
 
         /* ── Bottom control bar ── */
         .lcm-controls {
@@ -493,9 +499,9 @@ export function LiveCallMode({ onClose }: { onClose: () => void }) {
           position: absolute;
           left: 0; right: 0;
           z-index: 22;
-          background: rgba(8,8,18,0.92);
-          backdrop-filter: blur(20px);
-          border-top: 1px solid rgba(255,255,255,0.08);
+          background: rgba(30,27,75,0.78);
+          backdrop-filter: blur(24px) saturate(1.2);
+          border-top: 1px solid rgba(255,255,255,0.18);
           padding: 12px 16px;
           display: flex;
           gap: 10px;
@@ -507,11 +513,11 @@ export function LiveCallMode({ onClose }: { onClose: () => void }) {
 
         .lcm-select {
           font-size: 12px;
-          background: rgba(255,255,255,0.07);
-          border: 1px solid rgba(255,255,255,0.12);
-          border-radius: 20px;
+          background: rgba(255,255,255,0.16);
+          border: 1px solid rgba(255,255,255,0.24);
+          border-radius: 8px;
           padding: 5px 12px;
-          color: #f1f5f9;
+          color: #f8f5ff;
           outline: none;
           cursor: pointer;
         }
@@ -520,13 +526,13 @@ export function LiveCallMode({ onClose }: { onClose: () => void }) {
           align-items: center;
           gap: 6px;
           font-size: 11px;
-          color: rgba(255,255,255,0.5);
-          background: rgba(255,255,255,0.07);
-          border: 1px solid rgba(255,255,255,0.12);
-          border-radius: 20px;
+          color: rgba(248,245,255,0.72);
+          background: rgba(255,255,255,0.16);
+          border: 1px solid rgba(255,255,255,0.24);
+          border-radius: 8px;
           padding: 5px 12px;
         }
-        .lcm-speed-label input { accent-color: #06b6d4; width: 72px; }
+        .lcm-speed-label input { accent-color: #a855f7; width: 72px; }
 
         /* ── End call button (centered circle) ── */
         .lcm-end-btn {
@@ -553,12 +559,12 @@ export function LiveCallMode({ onClose }: { onClose: () => void }) {
           font-weight: 600;
           letter-spacing: 0.1em;
           text-transform: uppercase;
-          background: rgba(0,0,0,0.5);
-          backdrop-filter: blur(8px);
-          border: 1px solid rgba(255,255,255,0.1);
-          border-radius: 20px;
+          background: rgba(255,255,255,0.16);
+          backdrop-filter: blur(14px) saturate(1.18);
+          border: 1px solid rgba(255,255,255,0.22);
+          border-radius: 8px;
           padding: 3px 10px;
-          color: rgba(255,255,255,0.6);
+          color: rgba(248,245,255,0.72);
           z-index: 5;
         }
 
@@ -574,7 +580,7 @@ export function LiveCallMode({ onClose }: { onClose: () => void }) {
           background: rgba(239,68,68,0.15);
           backdrop-filter: blur(12px);
           border: 1px solid rgba(239,68,68,0.3);
-          border-radius: 16px;
+          border-radius: 8px;
           color: #fca5a5;
           font-size: 13px;
           cursor: pointer;
@@ -587,9 +593,9 @@ export function LiveCallMode({ onClose }: { onClose: () => void }) {
           justify-content: center;
           padding: 7px 16px;
           border-radius: 20px;
-          background: rgba(6,182,212,0.2);
-          border: 1px solid rgba(6,182,212,0.4);
-          color: #67e8f9;
+          background: rgba(124,58,237,0.26);
+          border: 1px solid rgba(192,132,252,0.46);
+          color: #f5d0fe;
           font-size: 11px;
           font-weight: 700;
           letter-spacing: 0.1em;
@@ -598,7 +604,7 @@ export function LiveCallMode({ onClose }: { onClose: () => void }) {
           transition: background 0.2s;
           white-space: nowrap;
         }
-        .lcm-scan-btn:hover { background: rgba(6,182,212,0.35); }
+        .lcm-scan-btn:hover { background: rgba(192,132,252,0.35); }
       `}</style>
 
       {/* ── Full-screen camera background ── */}

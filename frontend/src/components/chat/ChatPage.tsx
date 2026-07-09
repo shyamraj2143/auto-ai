@@ -995,25 +995,25 @@ export function ChatPage() {
               <motion.div
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="grid min-h-full place-items-center px-4 py-12"
+                className="empty-chat-hero grid min-h-full place-items-center px-4 py-12"
               >
-                <div className="max-w-3xl text-center">
-                  <div className="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-lg border border-cyan-200/30 bg-cyan-200/15 text-cyan-100 shadow-[0_0_38px_rgba(34,211,238,0.25)]">
+                <div className="empty-chat-content max-w-3xl text-center">
+                  <div className="empty-chat-orb mx-auto mb-5 grid h-14 w-14 place-items-center rounded-lg border border-cyan-200/30 bg-cyan-200/15 text-cyan-100 shadow-[0_0_38px_rgba(34,211,238,0.25)]">
                     <Bot size={25} />
                   </div>
-                  <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs uppercase text-cyan-100">
+                  <p className="empty-chat-kicker mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs uppercase text-cyan-100">
                     <Sparkles size={13} />
                     Ultra human mode
                   </p>
-                  <h1 className="text-3xl font-semibold text-white md:text-5xl">
+                  <h1 className="empty-chat-title text-3xl font-semibold text-white md:text-5xl">
                     Ask, upload, speak, and keep the thread alive.
                   </h1>
-                  <p className="mx-auto mt-4 max-w-2xl text-sm leading-6 text-slate-300 md:text-base">
+                  <p className="empty-chat-subtitle mx-auto mt-4 max-w-2xl text-sm leading-6 text-slate-300 md:text-base">
                     Auto-AI adapts to tone, remembers useful preferences, streams answers smoothly, and can reason across your documents and images.
                   </p>
-                  <div className="mt-6 grid gap-3 text-left md:grid-cols-3">
+                  <div className="empty-chat-grid mt-6 grid gap-3 text-left md:grid-cols-3">
                     {["Document-aware", "Emotion-aware", "Action-ready"].map((label) => (
-                      <div key={label} className="rounded-lg border border-white/10 bg-white/[0.04] p-3 text-sm text-slate-200">
+                      <div key={label} className="empty-chat-chip compact-card rounded-lg border border-white/10 bg-white/[0.04] p-3 text-sm text-slate-200">
                         {label}
                       </div>
                     ))}
