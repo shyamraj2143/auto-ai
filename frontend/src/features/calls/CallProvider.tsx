@@ -16,6 +16,11 @@ const TERMINAL_EVENT_STATES: Record<string, CallSessionState> = {
   "call.busy": "busy",
   "call.ended": "ended",
 };
+const CALL_RECONNECT_GRACE_MS = 15_000;
+
+function callDebug(label: string, details: Record<string, unknown> = {}) {
+  console.debug(`[AutoAI Call] ${label}`, details);
+}
 
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message.replace(/^Request failed \(\d+\):\s*/, "") : fallback;
@@ -58,6 +63,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const cleanupRef = useRef<(terminalState?: CallSessionState, detail?: string) => Promise<void>>(async () => undefined);
   const deviceIdRef = useRef<string | null>(null);
   const startPendingRef = useRef(false);
+  const cleanupRunningRef = useRef(false);
+  const intentionalPeerCloseRef = useRef(false);
+  const acceptedCallIdsRef = useRef(new Set<string>());
+  const nativeAcceptIdsRef = useRef(new Set<string>());
+  const acceptCallRef = useRef<(audioOnly?: boolean) => Promise<void>>(async () => undefined);
   const originalTitleRef = useRef(document.title);
 
   const transition = useCallback((next: CallSessionState) => {
@@ -93,6 +103,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
     ringtoneContextRef.current = null;
     navigator.vibrate?.(0);
     document.title = originalTitleRef.current;
+  }, []);
+
+  const clearRingTimer = useCallback(() => {
+    window.clearTimeout(ringTimerRef.current);
+    ringTimerRef.current = 0;
   }, []);
 
   const startRingtone = useCallback((silent: boolean) => {
@@ -141,6 +156,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
           setLocalStream(stream);
           setCameraEnabled(false);
           setError("Camera permission was not granted. Continuing with audio only.");
+          callDebug("camera_unavailable_audio_fallback", { call_id: callRef.current?.id, role: callRef.current?.direction });
           return stream;
         } catch {
           mediaResourceCoordinator.release("person-call");
@@ -198,11 +214,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
     }
     reconnectAttemptsRef.current += 1;
     transition("reconnecting");
+    callDebug("ice_restart_attempt", { call_id: currentCall.id, attempt: reconnectAttemptsRef.current, state: peer.connectionState });
     try {
       peer.restartIce();
       makingOfferRef.current = true;
       await peer.setLocalDescription(await peer.createOffer({ iceRestart: true }));
       signaling.send("webrtc.offer", currentCall.id, { ...(peer.localDescription?.toJSON() ?? {}) });
+      callDebug("offer_sent", { call_id: currentCall.id, role: currentCall.direction, ice_restart: true });
     } catch {
       window.clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = window.setTimeout(() => void attemptReconnect(), 2500 * reconnectAttemptsRef.current);
@@ -213,8 +231,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   const ensurePeerConnection = useCallback(async (currentCall: CallRecord) => {
     if (peerConnectionRef.current && peerCallIdRef.current === currentCall.id) return peerConnectionRef.current;
+    intentionalPeerCloseRef.current = true;
     peerConnectionRef.current?.close();
+    intentionalPeerCloseRef.current = false;
     const credentials = await callApi.turnCredentials(token || "");
+    if (credentials.warning) setError(credentials.warning);
+    callDebug("turn_credentials_loaded", { call_id: currentCall.id, relay_configured: credentials.relay_configured, ice_servers: credentials.ice_servers.length });
     const peer = new RTCPeerConnection({
       iceServers: credentials.ice_servers,
       iceTransportPolicy: localStorage.getItem("auto-ai-force-relay") === "true" ? "relay" : "all",
@@ -234,13 +256,21 @@ export function CallProvider({ children }: { children: ReactNode }) {
       }
     };
     peer.onicecandidate = (event) => {
-      if (event.candidate) signaling.send("webrtc.ice_candidate", currentCall.id, { ...event.candidate.toJSON() });
+      if (event.candidate) {
+        signaling.send("webrtc.ice_candidate", currentCall.id, { ...event.candidate.toJSON() });
+        callDebug("ice_candidate_sent", { call_id: currentCall.id, role: currentCall.direction });
+      }
     };
     peer.onnegotiationneeded = async () => {
+      if (currentCall.direction === "incoming" && !peer.remoteDescription) {
+        callDebug("receiver_waiting_for_offer", { call_id: currentCall.id, role: currentCall.direction });
+        return;
+      }
       try {
         makingOfferRef.current = true;
         await peer.setLocalDescription();
         if (peer.localDescription) signaling.send(`webrtc.${peer.localDescription.type}`, currentCall.id, { ...peer.localDescription.toJSON() });
+        if (peer.localDescription) callDebug(`${peer.localDescription.type}_sent`, { call_id: currentCall.id, role: currentCall.direction });
       } catch (offerError) {
         setError(errorMessage(offerError, "Unable to negotiate the call."));
       } finally {
@@ -248,24 +278,29 @@ export function CallProvider({ children }: { children: ReactNode }) {
       }
     };
     peer.onconnectionstatechange = () => {
-      window.clearTimeout(reconnectTimerRef.current);
+      callDebug("peer_connection_state", { call_id: currentCall.id, role: currentCall.direction, state: peer.connectionState });
+      if (peer.connectionState !== "disconnected") window.clearTimeout(reconnectTimerRef.current);
       if (peer.connectionState === "connected") {
         reconnectAttemptsRef.current = 0;
+        clearRingTimer();
         transition("active");
         signaling.send("call.connected", currentCall.id);
         beginStats();
         void callNative.startActiveCall({ callId: currentCall.id, displayName: currentCall.peer.display_name, startedAt: Date.now(), video: currentCall.call_type === "video" });
       } else if (peer.connectionState === "disconnected") {
         transition("reconnecting");
-        reconnectTimerRef.current = window.setTimeout(() => void attemptReconnect(), (configRef.current?.reconnect_grace_seconds ?? 18) * 1000);
+        reconnectTimerRef.current = window.setTimeout(() => void attemptReconnect(), Math.max(CALL_RECONNECT_GRACE_MS, (configRef.current?.reconnect_grace_seconds ?? 15) * 1000));
       } else if (peer.connectionState === "failed") {
         void attemptReconnect();
-      } else if (peer.connectionState === "closed" && !["ending", "ended", "idle"].includes(sessionStateRef.current)) {
+      } else if (peer.connectionState === "closed" && !intentionalPeerCloseRef.current && !cleanupRunningRef.current && !["ending", "ended", "idle"].includes(sessionStateRef.current)) {
         void cleanupRef.current("failed", "Call connection closed.");
       }
     };
+    peer.oniceconnectionstatechange = () => {
+      callDebug("ice_connection_state", { call_id: currentCall.id, role: currentCall.direction, state: peer.iceConnectionState });
+    };
     return peer;
-  }, [attemptReconnect, beginStats, signaling, token, transition]);
+  }, [attemptReconnect, beginStats, clearRingTimer, signaling, token, transition]);
 
   const applyDescription = useCallback(async (event: SignalEnvelope) => {
     const currentCall = callRef.current;
@@ -279,13 +314,17 @@ export function CallProvider({ children }: { children: ReactNode }) {
     if (ignoreOfferRef.current) return;
     settingRemoteAnswerRef.current = description.type === "answer";
     try {
+      callDebug(`${description.type}_received`, { call_id: currentCall.id, role: currentCall.direction });
       await peer.setRemoteDescription(description);
+      callDebug("remote_description_set", { call_id: currentCall.id, role: currentCall.direction, type: description.type });
       settingRemoteAnswerRef.current = false;
       const queued = pendingIceRef.current.splice(0);
       for (const candidate of queued) await peer.addIceCandidate(candidate).catch(() => undefined);
+      if (queued.length) callDebug("queued_ice_applied", { call_id: currentCall.id, count: queued.length });
       if (description.type === "offer") {
         await peer.setLocalDescription(await peer.createAnswer());
         if (peer.localDescription) signaling.send("webrtc.answer", currentCall.id, { ...peer.localDescription.toJSON() });
+        callDebug("answer_sent", { call_id: currentCall.id, role: currentCall.direction });
       }
     } catch (descriptionError) {
       settingRemoteAnswerRef.current = false;
@@ -297,18 +336,26 @@ export function CallProvider({ children }: { children: ReactNode }) {
     if (ignoreOfferRef.current || event.call_id !== callRef.current?.id) return;
     const candidate = event.payload as RTCIceCandidateInit;
     const peer = peerConnectionRef.current;
+    callDebug("ice_candidate_received", { call_id: event.call_id, has_remote_description: Boolean(peer?.remoteDescription) });
     if (!peer?.remoteDescription) pendingIceRef.current.push(candidate);
     else await peer.addIceCandidate(candidate).catch(() => undefined);
   }, []);
 
   const cleanup = useCallback(async (terminalState: CallSessionState = "ended", detail = "") => {
     if (sessionStateRef.current === "idle" && !callRef.current && !localStreamRef.current) return;
+    if (cleanupRunningRef.current) return;
+    cleanupRunningRef.current = true;
+    callDebug("cleanup", { call_id: callRef.current?.id, state: sessionStateRef.current, terminal_state: terminalState, reason: detail });
     stopRingtone();
-    window.clearTimeout(ringTimerRef.current);
+    clearRingTimer();
     window.clearTimeout(reconnectTimerRef.current);
     window.clearInterval(statsTimerRef.current);
+    setSessionState(terminalState);
+    sessionStateRef.current = terminalState;
+    intentionalPeerCloseRef.current = true;
     peerConnectionRef.current?.getSenders().forEach((sender) => { sender.track?.stop(); });
     peerConnectionRef.current?.close();
+    intentionalPeerCloseRef.current = false;
     peerConnectionRef.current = null;
     peerCallIdRef.current = null;
     pendingIceRef.current = [];
@@ -324,8 +371,6 @@ export function CallProvider({ children }: { children: ReactNode }) {
     mediaResourceCoordinator.release("person-call");
     await callNative.stopActiveCall().catch(() => undefined);
     if (detail) setError(detail);
-    setSessionState(terminalState);
-    sessionStateRef.current = terminalState;
     window.clearTimeout(terminalTimerRef.current);
     terminalTimerRef.current = window.setTimeout(() => {
       setSessionState("idle");
@@ -333,12 +378,17 @@ export function CallProvider({ children }: { children: ReactNode }) {
       setCall(null);
       callRef.current = null;
       setPendingPeer(null);
+      cleanupRunningRef.current = false;
     }, terminalState === "ended" ? 900 : 2200);
-  }, [stopRingtone]);
+  }, [clearRingTimer, stopRingtone]);
   cleanupRef.current = cleanup;
 
   const receiveIncomingCall = useCallback(async (callId: string, payload?: IncomingCallPayload) => {
-    if (!token || (sessionStateRef.current !== "idle" && callRef.current?.id !== callId)) return;
+    if (!token) return;
+    if (sessionStateRef.current !== "idle") {
+      if (callRef.current?.id === callId && sessionStateRef.current === "incoming") return;
+      return;
+    }
     try {
       const incomingCall = await callApi.get(token, callId);
       if (!["initiated", "ringing"].includes(incomingCall.status)) return;
@@ -348,18 +398,19 @@ export function CallProvider({ children }: { children: ReactNode }) {
       setSessionState("incoming");
       sessionStateRef.current = "incoming";
       signaling.send("call.ringing", callId);
+      callDebug("incoming", { call_id: callId, role: "incoming", signaling_connected: signaling.isConnected() });
       const silent = Boolean(payload?.silent ?? incomingCall.silent);
       startRingtone(silent);
       if (document.visibilityState === "hidden" && "Notification" in window && Notification.permission === "granted") {
         const notification = new Notification(`Incoming ${incomingCall.call_type} call`, { body: incomingCall.peer.display_name, icon: resolveApiAssetUrl(incomingCall.peer.avatar_url) || "/icons/icon-192.png", tag: `call-${callId}`, requireInteraction: true });
         notification.onclick = () => { window.focus(); notification.close(); };
       }
-      window.clearTimeout(ringTimerRef.current);
+      clearRingTimer();
       ringTimerRef.current = window.setTimeout(() => void cleanup("missed", "Missed call"), (configRef.current?.ring_timeout_seconds ?? 30) * 1000);
     } catch {
       // Expired or cancelled native notifications are dismissed without showing a stale call.
     }
-  }, [cleanup, signaling, startRingtone, token]);
+  }, [cleanup, clearRingTimer, signaling, startRingtone, token]);
 
   const handleSignalEvent = useCallback((event: SignalEnvelope) => {
     if (event.type === "presence.user_updated" || event.type === "presence.snapshot") {
@@ -373,7 +424,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
     if (event.type === "call.ringing") transition("ringing");
     else if (event.type === "call.accepted") {
       stopRingtone();
+      clearRingTimer();
       transition("connecting");
+      callDebug("accepted_received", { call_id: event.call_id, state: sessionStateRef.current, role: callRef.current?.direction });
       if (callRef.current) {
         callRef.current = { ...callRef.current, status: "accepted" };
         setCall(callRef.current);
@@ -386,7 +439,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     else if (event.type === "call.media_state") setRemoteCameraEnabled(event.payload.camera_enabled !== false);
     else if (TERMINAL_EVENT_STATES[event.type]) void cleanup(TERMINAL_EVENT_STATES[event.type], String(event.payload.end_reason || ""));
     else if (event.type === "call.error") setError(String(event.payload.detail || "Call error"));
-  }, [applyDescription, applyIceCandidate, attemptReconnect, cleanup, ensurePeerConnection, receiveIncomingCall, stopRingtone, transition]);
+  }, [applyDescription, applyIceCandidate, attemptReconnect, cleanup, clearRingTimer, ensurePeerConnection, receiveIncomingCall, stopRingtone, transition]);
   eventHandlerRef.current = handleSignalEvent;
 
   useEffect(() => {
@@ -406,15 +459,34 @@ export function CallProvider({ children }: { children: ReactNode }) {
       const nativeCall: { callId?: string | null; action?: "accept" | "reject" | null } = await callNative.consumeIncomingCall().catch(() => ({}));
       if (nativeCall.callId) {
         if (nativeCall.action === "reject") await callApi.reject(token, nativeCall.callId).catch(() => undefined);
-        else await receiveIncomingCall(nativeCall.callId);
+        else {
+          await receiveIncomingCall(nativeCall.callId);
+          if (nativeCall.action === "accept" && !nativeAcceptIdsRef.current.has(nativeCall.callId)) {
+            nativeAcceptIdsRef.current.add(nativeCall.callId);
+            await acceptCallRef.current(false);
+          }
+        }
       }
     }).catch((configError) => {
       if (active) setError(errorMessage(configError, "Calling setup is unavailable."));
     });
     const visibility = () => signaling.updatePresence(document.visibilityState === "hidden" ? "background" : "online");
     const nativeIncoming = (event: Event) => {
-      const detail = event instanceof CustomEvent ? event.detail as NativeIncomingCallEvent : null;
-      if (detail?.callId) void receiveIncomingCall(detail.callId);
+      const rawDetail = event instanceof CustomEvent ? event.detail : null;
+      let detail: NativeIncomingCallEvent | null = null;
+      try {
+        detail = typeof rawDetail === "string" ? JSON.parse(rawDetail) as NativeIncomingCallEvent : rawDetail as NativeIncomingCallEvent | null;
+      } catch {
+        detail = null;
+      }
+      if (!detail?.callId) return;
+      void (async () => {
+        await receiveIncomingCall(detail.callId!);
+        if (detail.action === "accept" && !nativeAcceptIdsRef.current.has(detail.callId!)) {
+          nativeAcceptIdsRef.current.add(detail.callId!);
+          await acceptCallRef.current(false);
+        }
+      })();
     };
     document.addEventListener("visibilitychange", visibility);
     window.addEventListener("auto-ai-incoming-call", nativeIncoming);
@@ -479,25 +551,43 @@ export function CallProvider({ children }: { children: ReactNode }) {
     if (!token || !currentCall || sessionStateRef.current !== "incoming" || startPendingRef.current) return;
     startPendingRef.current = true;
     stopRingtone();
+    clearRingTimer();
     setSessionState("accepting");
     sessionStateRef.current = "accepting";
+    let acceptedSent = false;
     try {
       const fresh = await callApi.get(token, currentCall.id);
       if (!["initiated", "ringing"].includes(fresh.status)) throw new Error("This call is no longer available.");
+      callDebug("accepting", { call_id: fresh.id, role: "incoming", state: fresh.status, signaling_connected: signaling.isConnected() });
+      await signaling.connect(token);
+      if (!await signaling.waitUntilConnected()) throw new Error("Call signaling is not connected.");
       await requestLocalMedia(fresh.call_type, audioOnly);
+      callDebug("local_media_ready", {
+        call_id: fresh.id,
+        audio_tracks: localStreamRef.current?.getAudioTracks().length ?? 0,
+        video_tracks: localStreamRef.current?.getVideoTracks().length ?? 0,
+      });
+      if (acceptedCallIdsRef.current.has(fresh.id)) return;
+      acceptedCallIdsRef.current.add(fresh.id);
       const accepted = await callApi.accept(token, fresh.id, deviceIdRef.current);
+      acceptedSent = true;
+      clearRingTimer();
       callRef.current = accepted;
       setCall(accepted);
       setSessionState("connecting");
       sessionStateRef.current = "connecting";
+      callDebug("accepted_sent", { call_id: accepted.id, role: "incoming", signaling_connected: signaling.isConnected() });
       await ensurePeerConnection(accepted);
     } catch (acceptError) {
-      await callApi.end(token, currentCall.id, "permission_denied").catch(() => callApi.reject(token, currentCall.id).catch(() => undefined));
+      acceptedCallIdsRef.current.delete(currentCall.id);
+      if (acceptedSent) await callApi.end(token, currentCall.id, "network_failed").catch(() => undefined);
+      else await callApi.reject(token, currentCall.id).catch(() => undefined);
       await cleanup("failed", errorMessage(acceptError, "Unable to accept the call."));
     } finally {
       startPendingRef.current = false;
     }
-  }, [cleanup, ensurePeerConnection, requestLocalMedia, stopRingtone, token]);
+  }, [cleanup, clearRingTimer, ensurePeerConnection, requestLocalMedia, signaling, stopRingtone, token]);
+  acceptCallRef.current = acceptCall;
 
   const rejectCall = useCallback(async () => {
     const currentCall = callRef.current;
@@ -589,4 +679,4 @@ export function CallProvider({ children }: { children: ReactNode }) {
   return <CallContext.Provider value={value}>{children}</CallContext.Provider>;
 }
 
-type NativeIncomingCallEvent = { callId?: string };
+type NativeIncomingCallEvent = { callId?: string; action?: "accept" | "reject" | null };

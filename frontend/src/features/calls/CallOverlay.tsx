@@ -1,8 +1,8 @@
 import { Camera, CameraOff, Mic, MicOff, Phone, PhoneOff, RefreshCw, Settings, SwitchCamera, Volume2, VolumeX, Wifi } from "lucide-react";
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { resolveApiAssetUrl } from "../../api/client";
-import { callNative } from "./services/callNative";
 import { useCallSession } from "./hooks/useCallSession";
+import { callNative } from "./services/callNative";
 
 function VideoSurface({ stream, muted, className }: { stream: MediaStream | null; muted?: boolean; className: string }) {
   const ref = useRef<HTMLVideoElement | null>(null);
@@ -16,13 +16,13 @@ function Avatar({ name, url }: { name: string; url?: string | null }) {
 }
 
 function statusLabel(state: ReturnType<typeof useCallSession>["sessionState"]) {
-  if (state === "preparing") return "Preparing…";
-  if (state === "dialing") return "Calling…";
-  if (state === "notifying") return "Notifying…";
-  if (state === "ringing") return "Ringing…";
-  if (state === "accepting") return "Accepting…";
-  if (state === "connecting") return "Connecting…";
-  if (state === "reconnecting") return "Reconnecting…";
+  if (state === "preparing") return "Preparing...";
+  if (state === "dialing") return "Calling...";
+  if (state === "notifying") return "Notifying...";
+  if (state === "ringing") return "Ringing...";
+  if (state === "accepting") return "Accepting...";
+  if (state === "connecting") return "Connecting...";
+  if (state === "reconnecting") return "Reconnecting...";
   if (state === "rejected") return "Call rejected";
   if (state === "cancelled") return "Call cancelled";
   if (state === "missed") return "No answer";
@@ -46,9 +46,11 @@ export function CallOverlay() {
   }, [sessionState]);
 
   if (sessionState === "idle" || !peer) return null;
+
   const time = `${Math.floor(seconds / 60).toString().padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
   const incoming = sessionState === "incoming";
   const activeLike = ["connecting", "active", "reconnecting", "ending"].includes(sessionState);
+  const avatarUrl = resolveApiAssetUrl(peer.avatar_url);
 
   function movePip(event: ReactPointerEvent<HTMLDivElement>) {
     if (!dragRef.current) return;
@@ -63,11 +65,14 @@ export function CallOverlay() {
   if (incoming) {
     return (
       <div className="incoming-call-screen" role="dialog" aria-modal="true" aria-label={`Incoming call from ${peer.display_name}`}>
+        {avatarUrl && <div className="incoming-call-backdrop" style={{ backgroundImage: `url(${avatarUrl})` }} />}
+        <div className="call-orbit-bg" aria-hidden="true" />
         <div className="incoming-call-content">
-          <Avatar name={peer.display_name} url={peer.avatar_url} />
-          <p>Incoming {call?.call_type === "audio" ? "audio" : "video"} call</p>
+          <div className="incoming-avatar-wrap"><span className="incoming-pulse" /><Avatar name={peer.display_name} url={peer.avatar_url} /></div>
+          <p>Incoming Auto-AI {call?.call_type === "audio" ? "Audio" : "Video"} Call</p>
           <h2>{peer.display_name}</h2>
           <span>@{peer.username}</span>
+          <small className="call-privacy-note">Your email and mobile number remain private.</small>
           {error && <div className="call-screen-error">{error}</div>}
           <div className="incoming-call-actions">
             <button type="button" className="reject" onClick={() => void callSession.rejectCall()} aria-label="Reject call"><PhoneOff size={23} /><span>Reject</span></button>
@@ -79,15 +84,34 @@ export function CallOverlay() {
     );
   }
 
+  if (!activeLike) {
+    return (
+      <div className="outgoing-call-screen" role="dialog" aria-modal="true" aria-label={`Calling ${peer.display_name}`}>
+        <div className="call-orbit-bg" aria-hidden="true" />
+        <div className="auto-ai-watermark" aria-hidden="true">Auto-AI</div>
+        <section className="outgoing-profile-card">
+          <div className="outgoing-avatar-orbit"><Avatar name={peer.display_name} url={peer.avatar_url} /></div>
+          <h2>{peer.display_name}</h2>
+          <span>@{peer.username}</span>
+          <p>{call?.call_type === "audio" ? "Audio Call" : "Video Call"}</p>
+          <strong>{statusLabel(sessionState)}</strong>
+          <small className={`call-quality ${networkQuality}`}><Wifi size={14} /> {networkQuality === "unknown" ? "Network ready" : `${networkQuality} network`}</small>
+        </section>
+        {localStream && call?.call_type === "video" && <div className="outgoing-local-preview"><VideoSurface stream={localStream} muted className="local-call-video" /></div>}
+        {error && <div className="call-screen-error floating"><span>{error}</span></div>}
+        <button type="button" className="outgoing-cancel-call" onClick={() => void callSession.endCall()} aria-label="Cancel call"><PhoneOff size={22} /><span>Cancel Call</span></button>
+      </div>
+    );
+  }
+
   return (
     <div className="active-call-screen" role="dialog" aria-modal="true" aria-label={`Call with ${peer.display_name}`}>
-      {activeLike && remoteStream && remoteCameraEnabled ? <VideoSurface stream={remoteStream} className="remote-call-video" /> : <div className="remote-call-placeholder"><Avatar name={peer.display_name} url={peer.avatar_url} /></div>}
+      {remoteStream && remoteCameraEnabled ? <VideoSurface stream={remoteStream} className="remote-call-video" /> : <div className="remote-call-placeholder"><Avatar name={peer.display_name} url={peer.avatar_url} /></div>}
       <div className="call-screen-shade" />
       <header className="active-call-header">
         <span><strong>{peer.display_name}</strong><small>{sessionState === "active" ? time : statusLabel(sessionState)}</small></span>
         <span className={`call-quality ${networkQuality}`} title={`${networkQuality} network quality`}><Wifi size={16} /> {networkQuality === "unknown" ? "Connecting" : networkQuality}</span>
       </header>
-      {!activeLike && <div className="outgoing-call-identity"><Avatar name={peer.display_name} url={peer.avatar_url} /><h2>{peer.display_name}</h2><p>{statusLabel(sessionState)}</p></div>}
       {localStream && cameraEnabled && (
         <div
           className="local-call-preview"

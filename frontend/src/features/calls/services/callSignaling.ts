@@ -22,6 +22,7 @@ export class CallSignaling {
   private token = "";
   private closed = false;
   private seenEvents = new Set<string>();
+  private connectedWaiters: Array<(connected: boolean) => void> = [];
 
   constructor(
     private readonly onEvent: (event: SignalEnvelope) => void,
@@ -44,6 +45,7 @@ export class CallSignaling {
         if (socket !== this.socket) return;
         this.reconnectAttempt = 0;
         this.onState("connected");
+        this.connectedWaiters.splice(0).forEach((resolve) => resolve(true));
         this.send("presence.ready", null, { state: document.visibilityState === "hidden" ? "background" : "online" });
         this.startHeartbeat();
       };
@@ -95,6 +97,25 @@ export class CallSignaling {
     return true;
   }
 
+  isConnected() {
+    return this.socket?.readyState === WebSocket.OPEN;
+  }
+
+  async waitUntilConnected(timeoutMs = 7000) {
+    if (this.isConnected()) return true;
+    return new Promise<boolean>((resolve) => {
+      const done = (value: boolean) => {
+        window.clearTimeout(timer);
+        const index = this.connectedWaiters.indexOf(waiter);
+        if (index >= 0) this.connectedWaiters.splice(index, 1);
+        resolve(value);
+      };
+      const waiter = (connected: boolean) => done(connected);
+      const timer = window.setTimeout(() => done(false), timeoutMs);
+      this.connectedWaiters.push(waiter);
+    });
+  }
+
   updatePresence(state: "online" | "away" | "background") {
     this.send("presence.status", null, { state });
   }
@@ -103,6 +124,7 @@ export class CallSignaling {
     this.closed = true;
     this.connectionAttempt += 1;
     window.clearTimeout(this.reconnectTimer);
+    this.connectedWaiters.splice(0).forEach((resolve) => resolve(false));
     this.stopHeartbeat();
     const socket = this.socket;
     this.socket = null;

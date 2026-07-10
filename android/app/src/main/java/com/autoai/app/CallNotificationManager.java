@@ -112,10 +112,14 @@ public final class CallNotificationManager {
     }
 
     public static void cancel(Context context, String callId) {
-        NotificationManager manager = manager(context);
-        if (manager != null && callId != null) manager.cancel(notificationId(callId));
+        cancelNotification(context, callId);
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         if (callId != null && callId.equals(prefs.getString(PENDING_CALL_ID, null))) prefs.edit().clear().apply();
+    }
+
+    public static void cancelNotification(Context context, String callId) {
+        NotificationManager manager = manager(context);
+        if (manager != null && callId != null) manager.cancel(notificationId(callId));
     }
 
     public static String pendingCallId(Context context) {

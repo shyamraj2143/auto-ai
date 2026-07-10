@@ -6,6 +6,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -65,7 +66,7 @@ public class IncomingCallActivity extends Activity {
         root.setOrientation(LinearLayout.VERTICAL);
         root.setGravity(Gravity.CENTER);
         root.setPadding(dp(24), dp(40), dp(24), dp(32));
-        root.setBackgroundColor(Color.rgb(5, 13, 27));
+        root.setBackground(gradient(GradientDrawable.Orientation.TL_BR, Color.rgb(8, 13, 35), Color.rgb(28, 18, 61), Color.rgb(2, 6, 23), 0));
 
         ImageView avatar = new ImageView(this);
         avatar.setImageResource(R.mipmap.ic_launcher);
@@ -84,12 +85,16 @@ public class IncomingCallActivity extends Activity {
             TextView username = label("@" + callerUsername, 15, Color.rgb(148, 163, 184));
             root.addView(username);
         }
+        TextView privacy = label("Your email and mobile number remain private.", 12, Color.rgb(203, 213, 225));
+        LinearLayout.LayoutParams privacyParams = new LinearLayout.LayoutParams(-2, -2);
+        privacyParams.topMargin = dp(18);
+        root.addView(privacy, privacyParams);
 
         LinearLayout actions = new LinearLayout(this);
         actions.setGravity(Gravity.CENTER);
         actions.setPadding(0, dp(64), 0, 0);
-        Button reject = actionButton("Reject", Color.rgb(220, 38, 38));
-        Button accept = actionButton("Accept", Color.rgb(22, 163, 74));
+        Button reject = actionButton("Reject", Color.rgb(220, 38, 38), Color.rgb(127, 29, 29));
+        Button accept = actionButton("Accept", Color.rgb(34, 211, 238), Color.rgb(37, 99, 235));
         actions.addView(reject, actionParams());
         actions.addView(accept, actionParams());
         root.addView(actions, new LinearLayout.LayoutParams(-1, -2));
@@ -117,7 +122,7 @@ public class IncomingCallActivity extends Activity {
 
     private void acceptCall() {
         CallNotificationManager.savePending(this, callId, "accept", expiresAt);
-        CallNotificationManager.cancel(this, callId);
+        CallNotificationManager.cancelNotification(this, callId);
         Intent intent = new Intent(this, MainActivity.class);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         intent.putExtra(CallNotificationManager.EXTRA_CALL_ID, callId);
@@ -164,12 +169,13 @@ public class IncomingCallActivity extends Activity {
         return view;
     }
 
-    private Button actionButton(String text, int color) {
+    private Button actionButton(String text, int startColor, int endColor) {
         Button button = new Button(this);
         button.setText(text);
         button.setTextColor(Color.WHITE);
         button.setTextSize(13);
-        button.setBackgroundColor(color);
+        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setBackground(gradient(GradientDrawable.Orientation.LEFT_RIGHT, startColor, endColor, endColor, dp(18)));
         button.setMinWidth(dp(112));
         button.setMinHeight(dp(54));
         return button;
@@ -183,6 +189,12 @@ public class IncomingCallActivity extends Activity {
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private GradientDrawable gradient(GradientDrawable.Orientation orientation, int startColor, int centerColor, int endColor, int radius) {
+        GradientDrawable drawable = new GradientDrawable(orientation, new int[] {startColor, centerColor, endColor});
+        drawable.setCornerRadius(radius);
+        return drawable;
     }
 
     private String clean(String value) {
