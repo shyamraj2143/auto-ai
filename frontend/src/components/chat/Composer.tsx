@@ -566,6 +566,7 @@ export function Composer({
 
   const selectedModeValue =
     MODE_OPTIONS.find((option) => option.searchMode === searchMode && option.chatMode === chatMode)?.value ?? "auto";
+  const selectedModeLabel = MODE_OPTIONS.find((option) => option.value === selectedModeValue)?.label ?? "Normal";
 
   return (
     <form
@@ -682,9 +683,10 @@ export function Composer({
           </div>
           <div className={clsx("composer-pill composer-mode-pill", (searchMode !== "off" || researchModeActive) && "composer-pill-active")} title="Mode">
             <Sparkles size={18} />
+            <span className="composer-mode-label">{selectedModeLabel}</span>
             <select
               aria-label="Mode"
-              className="composer-pill-select"
+              className="composer-pill-select composer-pill-select-native"
               value={selectedModeValue}
               onChange={(event) => updateCombinedMode(event.target.value)}
             >

@@ -512,7 +512,38 @@ button:disabled {
 }
 
 .composer-mode-pill {
+  position: relative;
   min-width: 218px;
+  cursor: pointer;
+  padding-right: 30px;
+}
+
+.composer-mode-pill svg {
+  pointer-events: none;
+}
+
+.composer-mode-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 650;
+  pointer-events: none;
+}
+
+.composer-mode-pill::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  pointer-events: none;
+  transform: translateY(-62%) rotate(45deg);
 }
 
 .composer-pill-select {
@@ -524,6 +555,17 @@ button:disabled {
   outline: none;
   font-size: 16px;
   font-weight: 650;
+}
+
+.composer-pill-select-native {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  min-height: 100% !important;
+  opacity: 0;
+  cursor: pointer;
 }
 
 .composer-pill-select option {
@@ -3468,11 +3510,19 @@ button:disabled {
     width: 88px;
     min-width: 88px;
     max-width: 88px;
+    padding-right: 24px;
   }
 
-  .composer-pill-select {
+  .composer-pill-select,
+  .composer-mode-label {
     font-size: 12px;
     font-weight: 650;
+  }
+
+  .composer-mode-pill::after {
+    right: 9px;
+    width: 6px;
+    height: 6px;
   }
 
   .model-menu-trigger {
@@ -5480,7 +5530,8 @@ a.btn-secondary:active {
   }
 
   .composer-top-row {
-    overflow-x: auto;
+    flex-wrap: wrap;
+    overflow: visible;
     padding-bottom: 2px;
   }
 
@@ -5499,11 +5550,41 @@ a.btn-secondary:active {
 
   .composer-mode-pill {
     min-width: 96px;
+    padding-right: 26px;
   }
 
   .model-menu-trigger {
     min-width: 104px;
     max-width: 126px;
+  }
+
+  .attachment-menu,
+  .model-menu {
+    z-index: 80;
+  }
+
+  .attachment-menu-panel,
+  .model-menu-panel {
+    position: fixed;
+    right: 10px;
+    bottom: calc(104px + env(safe-area-inset-bottom));
+    left: auto;
+    z-index: 220;
+    max-width: calc(100vw - 20px);
+    max-height: min(360px, calc(100vh - 140px));
+    overflow-y: auto;
+  }
+
+  .attachment-menu-panel {
+    right: auto;
+    left: 10px;
+  }
+
+  .model-menu-subpanel {
+    position: static;
+    width: 100%;
+    max-height: 180px;
+    margin-top: 6px;
   }
 
   .composer-input-row {
@@ -5571,6 +5652,10 @@ a.btn-secondary:active {
 
   .composer-pill {
     padding-inline: 8px;
+  }
+
+  .composer-mode-pill {
+    padding-right: 26px;
   }
 
   .composer-pill svg {
