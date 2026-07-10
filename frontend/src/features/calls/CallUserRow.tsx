@@ -21,8 +21,8 @@ export function CallUserRow({
   const [menuOpen, setMenuOpen] = useState(false);
   const statusClass = user.presence === "online" ? "online" : user.presence === "away" ? "away" : user.presence === "busy" ? "busy" : "offline";
   const busy = user.presence === "busy";
-  const audioDisabled = !callingAvailable || busy || !user.can_audio_call;
-  const videoDisabled = !callingAvailable || busy || !user.can_video_call;
+  const audioDisabled = busy || !user.can_audio_call;
+  const videoDisabled = busy || !user.can_video_call;
   const disabledTitle = !callingAvailable
     ? "Calling service is temporarily unavailable."
     : busy

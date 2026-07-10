@@ -19,7 +19,7 @@ function errorText(error: unknown, fallback: string) {
 
 export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps) {
   const { token, user: currentUser } = useAuth();
-  const { config, refreshRealtime, signalingState, startCall } = useCallSession();
+  const { config, error, clearError, refreshRealtime, signalingState, startCall } = useCallSession();
   const [query, setQuery] = useState("");
   const [discoverable, setDiscoverable] = useState<PublicCallUser[]>([]);
   const [online, setOnline] = useState<PublicCallUser[]>([]);
@@ -42,6 +42,12 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
     setToast(text);
     window.setTimeout(() => setToast(""), 4500);
   }, []);
+
+  useEffect(() => {
+    if (!error) return;
+    showErrorToast(error);
+    clearError();
+  }, [clearError, error, showErrorToast]);
 
   const runSearch = useCallback(async (searchQuery: string) => {
     const normalized = searchQuery.trim();
@@ -148,6 +154,10 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
   }
 
   function placeCall(user: PublicCallUser, type: CallType) {
+    if (!callingAvailable) {
+      showErrorToast(config?.diagnostic || "Calling service is temporarily unavailable.");
+      return;
+    }
     void startCall(user, type);
   }
 
@@ -185,6 +195,7 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
         <button type="button" className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}><Settings size={14} /> Settings</button>
       </div>
       {presenceUnavailable && <div className="calls-inline-alert"><WifiOff size={14} /> Realtime calling is temporarily unavailable.</div>}
+      {!presenceUnavailable && config?.diagnostic && <div className="calls-inline-alert"><ShieldAlert size={14} /> {config.diagnostic}</div>}
       {!presenceUnavailable && featureEnabled && config?.realtime_configured && signalingState !== "connected" && <div className="calls-inline-alert"><WifiOff size={14} /> Reconnecting to calls…</div>}
       {!featureEnabled && <div className="calls-inline-alert"><WifiOff size={14} /> Calls are disabled.</div>}
       {message && <div className="calls-inline-alert"><ShieldAlert size={14} /> {message}</div>}
@@ -214,7 +225,7 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
         <div className="calls-list">
           <p className="calls-section-label">Call history</p>
           {history.map((item) => {
-            const disabled = !callingAvailable || item.peer.presence === "busy" || (item.call_type === "video" ? !item.peer.can_video_call : !item.peer.can_audio_call);
+            const disabled = item.peer.presence === "busy" || (item.call_type === "video" ? !item.peer.can_video_call : !item.peer.can_audio_call);
             const avatarUrl = resolveApiAssetUrl(item.peer.avatar_url);
             return (
               <div className="call-history-row" key={item.id}>
