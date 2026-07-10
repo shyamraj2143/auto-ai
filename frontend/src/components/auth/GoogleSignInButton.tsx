@@ -7,6 +7,7 @@ import { isLocalPageWithRemoteApi, isMobileAppRuntime } from "../../utils/runtim
 
 type GoogleSignInButtonProps = {
   disabled?: boolean;
+  intent?: "signin" | "signup";
   onCredential: (idToken: string) => Promise<void>;
   onError: (message: string) => void;
 };
@@ -72,13 +73,15 @@ function loadGoogleIdentityScript() {
   });
 }
 
-export function GoogleSignInButton({ disabled = false, onCredential, onError }: GoogleSignInButtonProps) {
+export function GoogleSignInButton({ disabled = false, intent = "signin", onCredential, onError }: GoogleSignInButtonProps) {
   const buttonRef = useRef<HTMLDivElement | null>(null);
   const [clientId, setClientId] = useState<string | null>(ENV_GOOGLE_CLIENT_ID || null);
   const [loading, setLoading] = useState(!ENV_GOOGLE_CLIENT_ID);
   const [busy, setBusy] = useState(false);
   const nativeAuth = nativeGoogleAuth();
   const mobileApp = isMobileAppRuntime();
+  const googleButtonText = intent === "signup" ? "signup_with" : "signin_with";
+  const nativeButtonText = intent === "signup" ? "Sign up with Google" : "Sign in with Google";
 
   useEffect(() => {
     let active = true;
@@ -133,7 +136,7 @@ export function GoogleSignInButton({ disabled = false, onCredential, onError }: 
           theme: "outline",
           size: "large",
           shape: "rectangular",
-          text: "continue_with",
+          text: googleButtonText,
           width: buttonRef.current.offsetWidth || 320
         });
       })
@@ -141,7 +144,7 @@ export function GoogleSignInButton({ disabled = false, onCredential, onError }: 
     return () => {
       active = false;
     };
-  }, [clientId, nativeAuth, onCredential, onError]);
+  }, [clientId, googleButtonText, nativeAuth, onCredential, onError]);
 
   async function signInWithNativeGoogle() {
     const auth = nativeGoogleAuth();
@@ -169,7 +172,7 @@ export function GoogleSignInButton({ disabled = false, onCredential, onError }: 
     return (
       <button className="google-auth-button" disabled={disabled || loading || busy} onClick={signInWithNativeGoogle} type="button">
         <Chrome size={18} />
-        {busy ? "Connecting Google" : "Continue with Google"}
+        {busy ? "Connecting Google" : nativeButtonText}
       </button>
     );
   }

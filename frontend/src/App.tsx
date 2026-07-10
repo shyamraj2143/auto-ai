@@ -18,6 +18,7 @@ const PaymentCheckoutPage = lazy(() => import("./components/payments/PaymentChec
 const PaymentStatusPage = lazy(() => import("./components/payments/PaymentStatusPage").then((module) => ({ default: module.PaymentStatusPage })));
 const PricingPage = lazy(() => import("./components/pricing/PricingPage").then((module) => ({ default: module.PricingPage })));
 const RegisterPage = lazy(() => import("./components/auth/RegisterPage").then((module) => ({ default: module.RegisterPage })));
+const ResetPasswordPage = lazy(() => import("./components/auth/ResetPasswordPage").then((module) => ({ default: module.ResetPasswordPage })));
 const SettingsPage = lazy(() => import("./components/settings/SettingsPage").then((module) => ({ default: module.SettingsPage })));
 
 /** Shows LandingPage for guests, redirects logged-in users to /chat */
@@ -68,6 +69,7 @@ export default function App() {
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/admin/login" element={<AdminLoginPage />} />
                 <Route path="/register" element={<RegisterPage />} />
+                <Route path="/reset-password" element={<ResetPasswordPage />} />
                 <Route path="/payment/checkout" element={<PaymentCheckoutPage />} />
                 <Route path="/payment/success" element={<PaymentStatusPage status="success" />} />
                 <Route path="/payment/failed" element={<PaymentStatusPage status="failed" />} />

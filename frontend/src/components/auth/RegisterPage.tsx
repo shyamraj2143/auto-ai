@@ -62,7 +62,7 @@ export function RegisterPage() {
           <h2 className="mt-2 text-2xl font-semibold text-white">Launch Auto-AI</h2>
         </div>
         {error && <p className="mb-4 rounded-md border border-red-300/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">{error}</p>}
-        <GoogleSignInButton disabled={loading} onCredential={handleGoogleCredential} onError={handleGoogleError} />
+        <GoogleSignInButton disabled={loading} intent="signup" onCredential={handleGoogleCredential} onError={handleGoogleError} />
         <div className="auth-divider"><span>or use email</span></div>
         <label className="mb-3 block">
           <span className="mb-1 block text-sm font-medium text-slate-200">Name</span>

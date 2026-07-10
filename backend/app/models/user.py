@@ -48,6 +48,7 @@ class User(Base):
     )
     memories = relationship("UserMemory", back_populates="user", cascade="all, delete-orphan")
     refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
+    password_reset_tokens = relationship("PasswordResetToken", back_populates="user", cascade="all, delete-orphan")
     turn_analyses = relationship(
         "ConversationTurnAnalysis",
         back_populates="user",

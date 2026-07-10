@@ -110,6 +110,7 @@ Important environment variables:
 - `MYSQL_URL`: Railway MySQL URL fallback when `DATABASE_URL` is not used
 - `SQLITE_PATH`: SQLite database path; production SQLite must use a mounted volume path
 - `BACKEND_CORS_ORIGINS`: frontend origins allowed by FastAPI
+- `PASSWORD_RESET_*`, `SMTP_*`: forgot-password reset token lifetime and SMTP email delivery settings
 
 ## Production Data Persistence
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Bot, CreditCard, Eraser, LogOut, MessageSquarePlus, Pencil, Search, Settings, Shield, Trash2, UserCircle2, X } from "lucide-react";
+import { Bot, CreditCard, Eraser, LogOut, MessageSquarePlus, PanelLeftClose, Pencil, Search, Settings, Shield, Trash2, UserCircle2, X } from "lucide-react";
 import clsx from "clsx";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
@@ -17,7 +17,7 @@ const accountMenuDangerClass =
 export function Sidebar() {
   const { user, logout } = useAuth();
   const { chats, activeChat, createChat, deleteChat, loadingChats, openChat, updateChat } = useChat();
-  const { isSidebarOpen, closeSidebar } = useShell();
+  const { isSidebarOpen, isSidebarCollapsed, closeSidebar, collapseSidebar } = useShell();
   const openSettings = useSettingsNavigation();
   const location = useLocation();
   const [query, setQuery] = useState("");
@@ -118,6 +118,7 @@ export function Sidebar() {
       <aside
         className={clsx(
           "workspace-sidebar compact-panel fixed inset-y-0 left-0 z-50 flex w-80 shrink-0 flex-col border-r border-white/10 bg-slate-950/95 text-white shadow-[18px_0_60px_rgba(0,0,0,0.35)] backdrop-blur-xl transition-transform duration-300 md:static md:z-auto md:translate-x-0",
+          isSidebarCollapsed && "workspace-sidebar-collapsed md:hidden",
           isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}
       >
@@ -130,8 +131,20 @@ export function Sidebar() {
               Auto-AI
             </Link>
           </div>
-          <button className="icon-button-dark md:hidden" onClick={closeSidebar} title="Close menu" type="button">
-            <X size={16} />
+          <button
+            className="icon-button-dark sidebar-collapse-button"
+            onClick={() => {
+              if (window.matchMedia("(max-width: 767px)").matches) {
+                closeSidebar();
+                return;
+              }
+              collapseSidebar();
+            }}
+            title="Hide chat history"
+            type="button"
+          >
+            <PanelLeftClose className="hidden md:block" size={16} />
+            <X className="md:hidden" size={16} />
           </button>
         </div>
         <div className="space-y-3 p-3">

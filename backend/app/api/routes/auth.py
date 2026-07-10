@@ -1,9 +1,14 @@
+import logging
+import smtplib
 import secrets
 import uuid
 from datetime import datetime, timedelta
+from email.message import EmailMessage
+from email.utils import formataddr
+from urllib.parse import quote
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -19,13 +24,16 @@ from app.core.security import (
     verify_password,
 )
 from app.db.session import get_db
-from app.models.auth import RefreshToken
+from app.models.auth import PasswordResetToken, RefreshToken
 from app.models.user import User
 from app.repositories.sqlalchemy import SQLAlchemyUserRepository
 from app.schemas.auth import (
     GoogleConfig,
     GoogleTokenRequest,
     LogoutRequest,
+    PasswordResetConfirm,
+    PasswordResetRequest,
+    PasswordResetResult,
     RefreshRequest,
     Token,
     UserCreate,
@@ -43,6 +51,8 @@ from app.services.google_auth import (
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger("auto_ai.auth")
+PASSWORD_RESET_MESSAGE = "If an account exists, a password reset link has been sent."
 
 
 def normalize_email(email: str) -> str:
@@ -196,6 +206,51 @@ def create_google_user(identity: GoogleIdentity) -> User:
     )
 
 
+def password_reset_origin(request: Request) -> str:
+    origin = (request.headers.get("origin") or "").strip().rstrip("/")
+    if origin and not settings.is_production:
+        return origin
+    return settings.frontend_url
+
+
+def password_reset_url(request: Request, token: str) -> str:
+    return f"{password_reset_origin(request)}/reset-password?token={quote(token)}"
+
+
+def send_password_reset_email(email: str, reset_url: str) -> bool:
+    if not settings.password_reset_email_enabled:
+        return False
+    from_email = settings.password_reset_from_email
+    if not from_email:
+        return False
+
+    message = EmailMessage()
+    message["Subject"] = "Reset your Auto-AI password"
+    message["From"] = formataddr((settings.PASSWORD_RESET_FROM_NAME, from_email))
+    message["To"] = email
+    message.set_content(
+        "We received a request to reset your Auto-AI password.\n\n"
+        f"Open this link within {settings.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES} minutes:\n{reset_url}\n\n"
+        "If you did not request this, you can ignore this email."
+    )
+
+    try:
+        if settings.SMTP_USE_SSL:
+            smtp = smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15)
+        else:
+            smtp = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15)
+        with smtp:
+            if settings.SMTP_USE_TLS and not settings.SMTP_USE_SSL:
+                smtp.starttls()
+            if settings.SMTP_USERNAME:
+                smtp.login(settings.SMTP_USERNAME, settings.smtp_password or "")
+            smtp.send_message(message)
+        return True
+    except Exception:
+        logger.exception("Password reset email could not be sent.")
+        return False
+
+
 @router.get("/google/config", response_model=GoogleConfig)
 def google_config() -> GoogleConfig:
     client_id = settings.google_web_client_id
@@ -261,6 +316,82 @@ def login(
     if password_needs_rehash(user.hashed_password):
         user.hashed_password = get_password_hash(payload.password)
     return issue_session(db, user, request, response)
+
+
+@router.post("/password/forgot", response_model=PasswordResetResult)
+def request_password_reset(
+    payload: PasswordResetRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> PasswordResetResult:
+    repo = SQLAlchemyUserRepository(db)
+    user = repo.get_by_email(normalize_email(str(payload.email)))
+    response_reset_url: str | None = None
+
+    if user and user.is_active:
+        now = datetime.utcnow()
+        raw_token = secrets.token_urlsafe(48)
+        reset_link = password_reset_url(request, raw_token)
+        try:
+            db.execute(
+                update(PasswordResetToken)
+                .where(
+                    PasswordResetToken.user_id == user.id,
+                    PasswordResetToken.used_at.is_(None),
+                    PasswordResetToken.revoked_at.is_(None),
+                )
+                .values(revoked_at=now)
+            )
+            db.add(
+                PasswordResetToken(
+                    user_id=user.id,
+                    token_hash=hash_token(raw_token),
+                    user_agent=(request.headers.get("user-agent") or "")[:255],
+                    request_ip=(request.client.host if request.client else "")[:45],
+                    expires_at=now + timedelta(minutes=settings.PASSWORD_RESET_TOKEN_EXPIRE_MINUTES),
+                )
+            )
+            db.commit()
+        except SQLAlchemyError as exc:
+            db.rollback()
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to create password reset link.") from exc
+
+        send_password_reset_email(user.email, reset_link)
+        if not settings.is_production:
+            response_reset_url = reset_link
+
+    return PasswordResetResult(message=PASSWORD_RESET_MESSAGE, reset_url=response_reset_url)
+
+
+@router.post("/password/reset", response_model=PasswordResetResult)
+def reset_password(payload: PasswordResetConfirm, db: Session = Depends(get_db)) -> PasswordResetResult:
+    now = datetime.utcnow()
+    record = db.scalar(select(PasswordResetToken).where(PasswordResetToken.token_hash == hash_token(payload.token)))
+    if not record or record.used_at or record.revoked_at or record.expires_at <= now:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password reset link is invalid or expired.")
+
+    user = db.get(User, record.user_id)
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Password reset link is invalid or expired.")
+
+    try:
+        user.hashed_password = get_password_hash(payload.password)
+        if (user.provider or "").strip().lower() == "google":
+            user.provider = "email_google"
+        user.updated_at = now
+        record.used_at = now
+        record.revoked_at = now
+        db.execute(
+            update(RefreshToken)
+            .where(RefreshToken.user_id == user.id, RefreshToken.revoked_at.is_(None))
+            .values(revoked_at=now)
+        )
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to reset password.") from exc
+
+    return PasswordResetResult(message="Password has been reset. Please log in with your new password.")
 
 
 @router.post("/google", response_model=Token)

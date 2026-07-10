@@ -34,6 +34,15 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+    PASSWORD_RESET_TOKEN_EXPIRE_MINUTES: int = 45
+    PASSWORD_RESET_FROM_EMAIL: str | None = None
+    PASSWORD_RESET_FROM_NAME: str = "Auto-AI"
+    SMTP_HOST: str | None = None
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str | None = None
+    SMTP_PASSWORD: SecretStr | None = None
+    SMTP_USE_TLS: bool = True
+    SMTP_USE_SSL: bool = False
 
     GOOGLE_CLIENT_ID: str | None = None
     GOOGLE_ANDROID_CLIENT_ID: str | None = None
@@ -460,6 +469,22 @@ class Settings(BaseSettings):
     @property
     def jwt_secret_key(self) -> str:
         return self.JWT_SECRET_KEY or self.SECRET_KEY
+
+    @property
+    def smtp_password(self) -> str | None:
+        return self.SMTP_PASSWORD.get_secret_value() if self.SMTP_PASSWORD else None
+
+    @property
+    def password_reset_from_email(self) -> str | None:
+        for value in (self.PASSWORD_RESET_FROM_EMAIL, str(self.ADMIN_EMAIL) if self.ADMIN_EMAIL else None):
+            candidate = (value or "").strip()
+            if candidate:
+                return candidate
+        return None
+
+    @property
+    def password_reset_email_enabled(self) -> bool:
+        return bool((self.SMTP_HOST or "").strip() and self.password_reset_from_email)
 
     @property
     def google_client_ids(self) -> list[str]:

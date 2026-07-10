@@ -2771,6 +2771,55 @@ button:disabled {
   background: rgba(255, 255, 255, 0.1);
 }
 
+.auth-inline-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 16px;
+}
+
+.auth-link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  padding: 4px 0;
+  color: #67e8f9;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.auth-link-button:hover {
+  color: #ffffff;
+}
+
+.auth-reset-panel {
+  margin: 0 0 18px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.5);
+  padding: 12px;
+}
+
+.auth-status {
+  margin-top: 10px;
+  color: #cbd5e1;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.auth-reset-link {
+  display: inline-flex;
+  margin-top: 10px;
+  color: #67e8f9;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.auth-reset-link:hover {
+  color: #ffffff;
+}
+
 .google-auth-shell,
 .google-auth-rendered,
 .google-auth-button {
@@ -4246,6 +4295,21 @@ a.btn-secondary:active {
   box-shadow: var(--holo-inner), 0 10px 26px rgba(124, 58, 237, 0.12) !important;
 }
 
+.auth-reset-panel {
+  border-color: var(--holo-border) !important;
+  background: var(--holo-card-strong) !important;
+  box-shadow: var(--holo-inner);
+}
+
+.auth-status {
+  color: var(--holo-muted) !important;
+}
+
+.auth-link-button,
+.auth-reset-link {
+  color: var(--holo-primary) !important;
+}
+
 .chip-active,
 .chip-dark-active,
 .composer-pill-active,
@@ -4930,6 +4994,60 @@ a.btn-secondary:active {
   padding: 8px !important;
 }
 
+.sidebar-collapse-button {
+  display: inline-flex !important;
+  opacity: 1 !important;
+}
+
+.sidebar-restore-button {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  z-index: 45;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  width: 34px;
+  border: 1px solid var(--holo-border);
+  border-radius: 8px;
+  background: var(--holo-card-strong);
+  color: var(--holo-primary);
+  box-shadow: var(--compact-shadow), var(--holo-inner);
+  backdrop-filter: blur(18px) saturate(1.16);
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.sidebar-restore-button:hover {
+  transform: translateY(-1px);
+  border-color: var(--holo-border-strong);
+  background: rgba(192, 132, 252, 0.18);
+}
+
+.workspace-sidebar .compact-sidebar-item [title="Rename chat"],
+.workspace-sidebar .compact-sidebar-item [title="Delete chat"] {
+  display: grid;
+  place-items: center;
+  height: 28px;
+  width: 28px;
+  flex: 0 0 auto;
+  border: 1px solid var(--holo-border);
+  border-radius: 7px;
+  background: var(--holo-card-strong);
+  color: var(--holo-primary) !important;
+  opacity: 1 !important;
+  box-shadow: var(--holo-inner);
+}
+
+.workspace-sidebar .compact-sidebar-item [title="Delete chat"] {
+  color: var(--theme-danger) !important;
+}
+
+.workspace-sidebar .compact-sidebar-item [title="Rename chat"]:hover,
+.workspace-sidebar .compact-sidebar-item [title="Delete chat"]:hover {
+  border-color: var(--holo-border-strong);
+  background: rgba(192, 132, 252, 0.16);
+}
+
 .workspace-header,
 .chat-topbar {
   min-height: 48px !important;
@@ -5231,6 +5349,76 @@ a.btn-secondary:active {
 
 .context-panel [class*="line-clamp"] {
   -webkit-line-clamp: 2;
+}
+
+.context-panel,
+.context-panel-card {
+  color: var(--theme-text-primary) !important;
+}
+
+.context-panel-card,
+.context-panel-card > .border-b,
+.context-panel-body,
+.context-panel form,
+.context-panel [class*="bg-white"],
+.context-panel [class*="bg-slate"],
+.context-panel [class*="from-fuchsia"],
+.context-panel [class*="to-slate"],
+.context-panel .group,
+.context-panel .rounded-lg {
+  border-color: var(--holo-border) !important;
+  background: var(--holo-card) !important;
+  color: var(--theme-text-primary) !important;
+  box-shadow: var(--holo-inner);
+}
+
+.context-panel :is(h2, p, span, label, strong, button, div) {
+  color: inherit;
+}
+
+.context-panel :is(.text-white, .text-slate-100, .text-slate-200, .text-slate-300, .text-cyan-100, .text-cyan-200, .text-fuchsia-200, .text-fuchsia-300) {
+  color: var(--theme-text-primary) !important;
+}
+
+.context-panel :is(.text-slate-400, .text-slate-500, .text-cyan-400\/80) {
+  color: var(--theme-text-muted) !important;
+}
+
+.context-panel :is(.text-cyan-300, .text-cyan-400, .text-violet-400, .text-rose-400, .text-amber-400) {
+  color: var(--holo-primary) !important;
+}
+
+.context-panel .segmented-button {
+  background: var(--theme-input-background) !important;
+  color: var(--theme-text-secondary) !important;
+}
+
+.context-panel .segmented-button-active {
+  border-color: var(--holo-border-strong) !important;
+  background: var(--holo-gradient-soft) !important;
+  color: var(--holo-primary) !important;
+}
+
+.context-panel input,
+.context-panel textarea,
+.context-panel select {
+  border-color: var(--holo-border) !important;
+  background: var(--theme-input-background) !important;
+  color: var(--theme-text-primary) !important;
+}
+
+.context-panel ::placeholder {
+  color: var(--holo-placeholder) !important;
+  opacity: 1 !important;
+}
+
+.context-panel .btn-primary {
+  color: #ffffff !important;
+}
+
+.context-panel .h-2,
+.context-panel [class*="bg-gradient-to-r"] {
+  box-shadow: none !important;
 }
 
 .settings-page,

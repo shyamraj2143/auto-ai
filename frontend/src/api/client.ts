@@ -74,6 +74,11 @@ export type AuthSession = {
   user: User;
 };
 
+export type PasswordResetResult = {
+  message: string;
+  reset_url?: string | null;
+};
+
 type RequestMeta = {
   path?: string;
   method?: string;
@@ -469,6 +474,18 @@ export const api = {
     apiFetch<AuthSession>("/auth/login", {
       method: "POST",
       operation: "auth.login",
+      body: JSON.stringify(payload)
+    }),
+  requestPasswordReset: (payload: { email: string }) =>
+    apiFetch<PasswordResetResult>("/auth/password/forgot", {
+      method: "POST",
+      operation: "auth.password.forgot",
+      body: JSON.stringify(payload)
+    }),
+  resetPassword: (payload: { token: string; password: string }) =>
+    apiFetch<PasswordResetResult>("/auth/password/reset", {
+      method: "POST",
+      operation: "auth.password.reset",
       body: JSON.stringify(payload)
     }),
   googleConfig: () =>

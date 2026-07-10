@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
-import { ArrowRight, Lock } from "lucide-react";
+import { ArrowRight, KeyRound, Lock } from "lucide-react";
+import { api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { authErrorMessage } from "../../utils/apiErrors";
 import { isMobileAppRuntime } from "../../utils/runtime";
@@ -13,6 +14,11 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetLink, setResetLink] = useState<string | null>(null);
+  const [resetMessage, setResetMessage] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -43,6 +49,35 @@ export function LoginPage() {
     setError(message);
   }, []);
 
+  function toggleForgotPassword() {
+    setForgotOpen((current) => !current);
+    setResetEmail((current) => current || email);
+    setResetLink(null);
+    setResetMessage("");
+    setError("");
+  }
+
+  async function requestPasswordReset() {
+    const targetEmail = (resetEmail || email).trim();
+    if (!targetEmail) {
+      setError("Enter your email to receive a reset link.");
+      return;
+    }
+    setError("");
+    setResetMessage("");
+    setResetLink(null);
+    setResetLoading(true);
+    try {
+      const result = await api.requestPasswordReset({ email: targetEmail });
+      setResetMessage(result.message);
+      setResetLink(result.reset_url ?? null);
+    } catch (err) {
+      setError(authErrorMessage(err, "Unable to send password reset link"));
+    } finally {
+      setResetLoading(false);
+    }
+  }
+
   if (user) return <Navigate to="/chat" replace />;
 
   return (
@@ -62,16 +97,48 @@ export function LoginPage() {
           <h2 className="mt-2 text-2xl font-semibold text-white">Enter Auto-AI</h2>
         </div>
         {error && <p className="mb-4 rounded-md border border-red-300/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">{error}</p>}
-        <GoogleSignInButton disabled={loading} onCredential={handleGoogleCredential} onError={handleGoogleError} />
+        <GoogleSignInButton disabled={loading} intent="signin" onCredential={handleGoogleCredential} onError={handleGoogleError} />
         <div className="auth-divider"><span>or use email</span></div>
         <label className="mb-3 block">
           <span className="mb-1 block text-sm font-medium text-slate-200">Email</span>
           <input className="input-dark" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
         </label>
-        <label className="mb-5 block">
+        <label className="mb-2 block">
           <span className="mb-1 block text-sm font-medium text-slate-200">Password</span>
           <input className="input-dark" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />
         </label>
+        <div className="auth-inline-row">
+          <button className="auth-link-button" type="button" onClick={toggleForgotPassword}>
+            <KeyRound size={14} />
+            Forgot password?
+          </button>
+        </div>
+        {forgotOpen && (
+          <div className="auth-reset-panel">
+            <label className="mb-3 block">
+              <span className="mb-1 block text-sm font-medium text-slate-200">Reset email</span>
+              <input
+                className="input-dark"
+                type="email"
+                value={resetEmail}
+                onChange={(event) => setResetEmail(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void requestPasswordReset();
+                  }
+                }}
+                autoComplete="email"
+                placeholder="you@example.com"
+              />
+            </label>
+            <button className="btn-secondary h-10 w-full" disabled={resetLoading} onClick={requestPasswordReset} type="button">
+              {resetLoading ? "Sending reset link" : "Send reset link"}
+            </button>
+            {resetMessage && <p className="auth-status">{resetMessage}</p>}
+            {resetLink && <a className="auth-reset-link" href={resetLink}>Open reset page</a>}
+          </div>
+        )}
         <button className="btn-primary h-11 w-full" disabled={loading}>
           {loading ? "Signing in" : "Login"}
           <ArrowRight size={17} />
