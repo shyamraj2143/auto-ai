@@ -385,3 +385,20 @@ async def test_ringing_ack_endpoint_marks_call_ringing(db: Session, monkeypatch:
 
     assert result.status == "ringing"
     assert result.ringing_at is not None
+
+
+@pytest.mark.asyncio
+async def test_accepted_call_is_not_expired_as_missed(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    caller = create_user(db, "caller_user", "Caller")
+    callee = create_user(db, "callee_user", "Callee")
+    call = Call(caller_id=caller.id, callee_id=callee.id, call_type="video", status="ringing")
+    db.add(call)
+    db.commit()
+    monkeypatch.setattr(global_presence_service, "publish", AsyncMock(return_value=1))
+    monkeypatch.setattr(global_presence_service, "release_call_locks", AsyncMock(return_value=None))
+
+    accepted = await CallService().accept(db, call.id, callee.id)
+    expired = await CallService().accept(db, call.id, callee.id)
+
+    assert accepted.status == "accepted"
+    assert expired.status == "accepted"
