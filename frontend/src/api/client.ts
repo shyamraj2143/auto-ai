@@ -52,6 +52,8 @@ declare global {
 }
 
 const PUBLIC_API_BASE_URL = "https://auto-ai-production-c510.up.railway.app/api/v1";
+const DEFAULT_API_TIMEOUT_MS = 8000;
+const API_DIAGNOSTIC_TIMEOUT_MS = 2500;
 
 export type ApiErrorKind =
   | "network_unavailable"
@@ -285,30 +287,40 @@ function healthProbeUrl() {
 
 async function canReachApiHostWithoutCors() {
   if (!isBrowser()) return false;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_DIAGNOSTIC_TIMEOUT_MS);
   try {
     await fetch(healthProbeUrl(), {
       method: "GET",
       mode: "no-cors",
       cache: "no-store",
-      credentials: "omit"
+      credentials: "omit",
+      signal: controller.signal
     });
     return true;
   } catch {
     return false;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
 async function canReachApiWithCors() {
   if (!isBrowser()) return false;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), API_DIAGNOSTIC_TIMEOUT_MS);
   try {
     const response = await fetch(healthProbeUrl(), {
       method: "GET",
       cache: "no-store",
-      credentials: "omit"
+      credentials: "omit",
+      signal: controller.signal
     });
     return response.ok;
   } catch {
     return false;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -463,7 +475,7 @@ async function fetchWithNetworkMessage(input: string, init: RequestInit = {}, me
 }
 
 export async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
-  const { token, operation, timeoutMs = 15000, ...requestOptions } = options;
+  const { token, operation, timeoutMs = DEFAULT_API_TIMEOUT_MS, ...requestOptions } = options;
   const headers = new Headers(requestOptions.headers);
   const method = requestOptions.method ?? "GET";
   const url = `${API_BASE_URL}${path}`;
@@ -531,7 +543,8 @@ export const api = {
     }),
   googleConfig: () =>
     apiFetch<{ enabled: boolean; client_id?: string | null }>("/auth/google/config", {
-      operation: "auth.google.config"
+      operation: "auth.google.config",
+      timeoutMs: 5000
     }),
   googleLogin: (payload: { id_token: string }) =>
     apiFetch<AuthSession>("/auth/google", {
@@ -543,7 +556,8 @@ export const api = {
     apiFetch<AuthSession>("/auth/refresh", {
       method: "POST",
       operation: "auth.refresh",
-      body: refreshToken ? JSON.stringify({ refresh_token: refreshToken }) : undefined
+      body: refreshToken ? JSON.stringify({ refresh_token: refreshToken }) : undefined,
+      timeoutMs: 8000
     }),
   logout: (token?: string | null, refreshToken?: string | null) =>
     apiFetch<void>("/auth/logout", {
@@ -552,7 +566,7 @@ export const api = {
       operation: "auth.logout",
       body: refreshToken ? JSON.stringify({ refresh_token: refreshToken }) : undefined
     }),
-  me: (token: string) => apiFetch<User>("/auth/me", { token, operation: "auth.me" }),
+  me: (token: string) => apiFetch<User>("/auth/me", { token, operation: "auth.me", timeoutMs: 6000 }),
   profile: (token: string) => apiFetch<User>("/users/me", { token, operation: "users.me" }),
   updateProfile: (token: string, payload: Partial<Pick<User, "name" | "username" | "phone_number" | "phone_country_code">>) =>
     apiFetch<User>("/users/me", { method: "PATCH", token, operation: "users.me.update", body: JSON.stringify(payload) }),
@@ -900,12 +914,14 @@ export const api = {
   activeChatGenerations: (token: string) =>
     apiFetch<ChatGeneration[]>("/ai/chat/generations/active", {
       token,
-      operation: "ai.chat.generations.active"
+      operation: "ai.chat.generations.active",
+      timeoutMs: 5000
     }),
   getChatGeneration: (token: string, generationId: string) =>
     apiFetch<ChatGeneration>(`/ai/chat/generations/${generationId}`, {
       token,
-      operation: "ai.chat.generations.get"
+      operation: "ai.chat.generations.get",
+      timeoutMs: 5000
     }),
   cancelChatGeneration: (token: string, generationId: string) =>
     apiFetch<ChatGeneration>(`/ai/chat/generations/${generationId}/cancel`, {
