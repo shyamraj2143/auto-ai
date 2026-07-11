@@ -9,6 +9,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
@@ -24,6 +25,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class IncomingCallActivity extends Activity {
+    private static final String TAG = "AutoAiIncomingCall";
     private final ExecutorService avatarExecutor = Executors.newSingleThreadExecutor();
     private String callId;
     private long expiresAt;
@@ -40,6 +42,7 @@ public class IncomingCallActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         Intent callIntent = getIntent();
         if (callIntent == null) {
+            Log.w(TAG, "Incoming call activity finished: missing intent.");
             finish();
             return;
         }
@@ -56,6 +59,7 @@ public class IncomingCallActivity extends Activity {
         if (callId == null || invalidCallerId || invalidAction
             || (!"audio".equals(callType) && !"video".equals(callType))
             || expiresAt <= System.currentTimeMillis()) {
+            Log.w(TAG, "Incoming call activity rejected invalid payload callId=" + callId);
             CallNotificationManager.cancel(this, callId);
             finish();
             return;
@@ -125,6 +129,7 @@ public class IncomingCallActivity extends Activity {
         String action = audioOnly ? "audio_only" : "accept";
         CallNotificationManager.savePending(this, callId, action, expiresAt);
         CallNotificationManager.cancelNotification(this, callId);
+        Log.i(TAG, "Incoming call accepted callId=" + callId + " action=" + action);
         Intent intent = new Intent(this, MainActivity.class);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         intent.putExtra(CallNotificationManager.EXTRA_CALL_ID, callId);
@@ -136,6 +141,7 @@ public class IncomingCallActivity extends Activity {
     private void rejectCall() {
         Intent intent = new Intent(this, CallActionReceiver.class).setAction(CallNotificationManager.ACTION_REJECT);
         intent.putExtra(CallNotificationManager.EXTRA_CALL_ID, callId);
+        Log.i(TAG, "Incoming call rejected callId=" + callId);
         sendBroadcast(intent);
         finish();
     }

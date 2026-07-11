@@ -3,6 +3,7 @@ package com.autoai.app;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.util.Log;
 
 import org.json.JSONObject;
 
@@ -14,6 +15,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class CallActionReceiver extends BroadcastReceiver {
+    private static final String TAG = "AutoAiCallAction";
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
 
     @Override
@@ -24,6 +26,7 @@ public class CallActionReceiver extends BroadcastReceiver {
         String action = intent.getAction();
         if (!CallNotificationManager.ACTION_REJECT.equals(action) && !CallNotificationManager.ACTION_END.equals(action)) return;
         String endpoint = CallNotificationManager.ACTION_REJECT.equals(action) ? "reject" : "end";
+        Log.i(TAG, "Call notification action received callId=" + callId + " action=" + endpoint);
         CallNotificationManager.cancel(context, callId);
         context.stopService(new Intent(context, CallForegroundService.class));
         PendingResult pendingResult = goAsync();
@@ -47,12 +50,13 @@ public class CallActionReceiver extends BroadcastReceiver {
             connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
             connection.setDoOutput(true);
             JSONObject body = new JSONObject();
-            if ("end".equals(action)) body.put("end_reason", "app_closed");
             try (OutputStream output = connection.getOutputStream()) {
                 output.write(body.toString().getBytes(StandardCharsets.UTF_8));
             }
-            connection.getResponseCode();
+            int status = connection.getResponseCode();
+            Log.i(TAG, "Call notification action sent callId=" + callId + " action=" + action + " status=" + status);
         } catch (Exception ignored) {
+            Log.w(TAG, "Call notification action failed callId=" + callId + " action=" + action, ignored);
             // The web client revalidates and repeats the action when connectivity returns.
         } finally {
             if (connection != null) connection.disconnect();

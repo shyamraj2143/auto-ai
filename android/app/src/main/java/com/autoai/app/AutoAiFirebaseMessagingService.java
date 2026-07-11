@@ -10,6 +10,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.util.Log;
 
 import androidx.annotation.NonNull;
 
@@ -19,6 +20,7 @@ import com.google.firebase.messaging.RemoteMessage;
 import java.util.Map;
 
 public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
+    private static final String TAG = "AutoAiFcm";
     private static final int UPDATE_NOTIFICATION_ID = 1001;
     private static final String UPDATE_NOTIFICATION_CHANNEL_ID = "auto_ai_updates";
     private static final String CHAT_NOTIFICATION_CHANNEL_ID = "auto_ai_messages";
@@ -30,6 +32,7 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
     @Override
     public void onNewToken(@NonNull String token) {
         super.onNewToken(token);
+        Log.i(TAG, "FCM token rotated; scheduling backend registration.");
         PushTokenRegistrar.registerAsync(this, token);
     }
 
@@ -38,6 +41,7 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         super.onMessageReceived(message);
         Map<String, String> data = message.getData();
         String messageType = data.get("type");
+        Log.i(TAG, "FCM received type=" + messageType + " callId=" + data.get("call_id"));
         if ("incoming_call".equals(messageType)) {
             CallNotificationManager.showIncoming(this, data);
             return;

@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api, type AuthSession } from "../api/client";
 import { nativeGoogleAuth, readStoredSession, removeStoredSession, writeStoredSession } from "../auth/sessionStorage";
+import { callApi } from "../features/calls/services/callApi";
+import { callNative } from "../features/calls/services/callNative";
 import type { User } from "../types";
 
 type AuthContextValue = {
@@ -101,6 +103,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       logout: async () => {
         const activeToken = token;
         const activeRefreshToken = refreshToken;
+        const registration = activeToken ? await callNative.registration().catch(() => null) : null;
+        if (activeToken && registration?.device_id) {
+          await callApi.removeDevice(activeToken, registration.device_id).catch((error) => {
+            console.warn("[Auto-AI Auth] Call device token cleanup failed during logout.", error);
+          });
+        }
         await removeStoredSession();
         setToken(null);
         setRefreshToken(null);

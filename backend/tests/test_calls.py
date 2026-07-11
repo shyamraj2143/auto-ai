@@ -17,6 +17,7 @@ from app.models.call import BlockedUser, Call, UserCallSettings, UserDevice
 from app.models.user import User
 from app.schemas.call import CallActionRequest, DeviceRegisterRequest, PublicCallUser, SignalEvent
 from app.services.call_permission_service import call_allowed, get_or_create_call_settings, users_blocked
+from app.services.call_notification_service import send_incoming_call_notifications
 from app.services.call_service import CallService
 from app.services.device_token_security import decrypt_token, encrypt_token, token_hash
 from app.services.presence_service import PresenceService, RealtimeUnavailable
@@ -141,6 +142,48 @@ def test_authenticated_device_registration_transfers_rotated_token(db: Session) 
     assert devices[0].fcm_token_hash == token_hash(payload.fcm_token)
     assert devices[0].app_version_code == 20
     assert devices[0].device_name == "Pixel Test"
+
+
+def test_incoming_call_fcm_payload_has_event_id_and_high_priority_path(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    caller = create_user(db, "caller_user", "Caller")
+    callee = create_user(db, "callee_user", "Callee")
+    call = Call(caller_id=caller.id, callee_id=callee.id, call_type="video", status="initiated")
+    db.add_all(
+        [
+            call,
+            UserCallSettings(user_id=callee.id),
+            UserDevice(
+                user_id=callee.id,
+                device_id="callee-android",
+                platform="android",
+                is_active=True,
+                fcm_token_ciphertext=encrypt_token("callee-fcm-token"),
+                fcm_token_hash=token_hash("callee-fcm-token"),
+            ),
+        ]
+    )
+    db.commit()
+    sent_payloads: list[dict[str, str]] = []
+
+    class FakeFirebase:
+        configured = True
+
+        def send_call_data(self, token: str, data: dict[str, str], ttl_seconds: int):
+            assert token == "callee-fcm-token"
+            assert ttl_seconds == settings.CALL_NOTIFICATION_TTL_SECONDS
+            sent_payloads.append(data)
+            return type("Result", (), {"ok": True, "inactive": False, "detail": ""})()
+
+    monkeypatch.setattr("app.services.call_notification_service.firebase_notification_service", FakeFirebase())
+
+    sent = send_incoming_call_notifications(db, call, caller, UserCallSettings(user_id=callee.id), silent=False)
+
+    assert sent == 1
+    assert sent_payloads[0]["type"] == "incoming_call"
+    assert sent_payloads[0]["call_id"] == call.id
+    assert sent_payloads[0]["event_id"]
 
 
 @pytest.mark.asyncio
@@ -428,6 +471,27 @@ async def test_accepted_call_is_not_expired_as_missed(db: Session, monkeypatch: 
 
     assert accepted.status == "accepted"
     assert expired.status == "accepted"
+
+
+@pytest.mark.asyncio
+async def test_accepting_call_sends_dismiss_push_for_other_devices(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    caller = create_user(db, "caller_user", "Caller")
+    callee = create_user(db, "callee_user", "Callee")
+    call = Call(caller_id=caller.id, callee_id=callee.id, call_type="video", status="ringing")
+    db.add(call)
+    db.commit()
+    dismisses: list[tuple[str, str]] = []
+    monkeypatch.setattr(global_presence_service, "publish", AsyncMock(return_value=1))
+    monkeypatch.setattr(
+        "app.services.call_service.send_call_dismiss_notifications",
+        lambda _db, next_call, event_type: dismisses.append((next_call.id, event_type)) or 1,
+    )
+
+    accepted = await CallService().accept(db, call.id, callee.id, device_id="callee-android")
+
+    assert accepted.status == "accepted"
+    assert accepted.callee_device_id == "callee-android"
+    assert dismisses == [(call.id, "call_accepted")]
 
 
 @pytest.mark.asyncio

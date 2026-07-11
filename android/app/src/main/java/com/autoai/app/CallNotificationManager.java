@@ -15,12 +15,15 @@ import android.media.AudioAttributes;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
+import android.util.Log;
 
 import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -29,6 +32,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class CallNotificationManager {
+    private static final String TAG = "AutoAiCallNotif";
     public static final String CHANNEL_INCOMING = "auto_ai_incoming_calls";
     public static final String CHANNEL_ACTIVE = "auto_ai_active_calls";
     public static final String EXTRA_CALL_ID = "call_id";
@@ -47,20 +51,48 @@ public final class CallNotificationManager {
     private static final String PENDING_CALL_ID = "pending_call_id";
     private static final String PENDING_ACTION = "pending_action";
     private static final String PENDING_EXPIRES_AT = "pending_expires_at";
+    private static final String SEEN_EVENT_IDS = "seen_event_ids";
+    private static final int MAX_SEEN_EVENTS = 80;
     private static final ExecutorService ACK_EXECUTOR = Executors.newSingleThreadExecutor();
 
     private CallNotificationManager() {}
 
     public static void showIncoming(Context context, Map<String, String> data) {
-        if (data == null) return;
+        if (data == null) {
+            Log.w(TAG, "Incoming call FCM ignored: missing data.");
+            return;
+        }
         String callId = value(data, "call_id");
         String callerId = value(data, "caller_id");
         String name = value(data, "caller_name");
         String username = value(data, "caller_username");
         String callType = value(data, "call_type");
+        String eventId = value(data, "event_id");
         long expiresAt = parseLong(data.get("expires_at_epoch_ms"));
-        if (callId.isEmpty() || (!"audio".equals(callType) && !"video".equals(callType)) || expiresAt <= System.currentTimeMillis() || !canPostNotifications(context)) return;
-        if (!validateIncomingCall(context, callId)) return;
+        if (callId.isEmpty()) {
+            Log.w(TAG, "Incoming call FCM ignored: missing call_id.");
+            return;
+        }
+        if (isEventSeen(context, eventId) || callId.equals(pendingCallId(context))) {
+            Log.i(TAG, "Incoming call FCM duplicate ignored callId=" + callId);
+            return;
+        }
+        if (!"audio".equals(callType) && !"video".equals(callType)) {
+            Log.w(TAG, "Incoming call FCM ignored callId=" + callId + " reason=invalid_type");
+            return;
+        }
+        if (expiresAt <= System.currentTimeMillis()) {
+            Log.i(TAG, "Incoming call FCM ignored callId=" + callId + " reason=expired");
+            return;
+        }
+        if (!canPostNotifications(context)) {
+            Log.w(TAG, "Incoming call FCM ignored callId=" + callId + " reason=post_notifications_denied");
+            return;
+        }
+        if (!validateIncomingCall(context, callId)) {
+            Log.w(TAG, "Incoming call FCM ignored callId=" + callId + " reason=backend_validation_failed");
+            return;
+        }
         boolean silent = Boolean.parseBoolean(data.get("silent"));
         savePending(context, callId, null, expiresAt);
         createChannels(context);
@@ -95,8 +127,12 @@ public final class CallNotificationManager {
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOngoing(true)
             .setAutoCancel(false)
-            .setContentIntent(fullScreen)
-            .setFullScreenIntent(fullScreen, true);
+            .setContentIntent(fullScreen);
+        if (canUseFullScreenIntent(context)) {
+            builder.setFullScreenIntent(fullScreen, true);
+        } else {
+            Log.w(TAG, "Full-screen incoming call intent not allowed; using heads-up notification callId=" + callId);
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             builder.setTimeoutAfter(Math.max(1000, expiresAt - System.currentTimeMillis()));
         }
@@ -114,14 +150,18 @@ public final class CallNotificationManager {
         NotificationManager manager = manager(context);
         if (manager != null) {
             manager.notify(notificationId(callId), builder.build());
+            markEventSeen(context, eventId);
+            Log.i(TAG, "Incoming call notification shown callId=" + callId + " silent=" + silent);
             acknowledgeRinging(context, callId);
+        } else {
+            Log.w(TAG, "Incoming call notification not shown callId=" + callId + " reason=no_notification_manager");
         }
     }
 
     public static void cancel(Context context, String callId) {
         cancelNotification(context, callId);
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        if (callId != null && callId.equals(prefs.getString(PENDING_CALL_ID, null))) prefs.edit().clear().apply();
+        if (callId != null && callId.equals(prefs.getString(PENDING_CALL_ID, null))) clearPending(prefs);
     }
 
     public static void cancelNotification(Context context, String callId) {
@@ -133,7 +173,7 @@ public final class CallNotificationManager {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         long expiresAt = prefs.getLong(PENDING_EXPIRES_AT, 0L);
         if (expiresAt > 0 && expiresAt <= System.currentTimeMillis()) {
-            prefs.edit().clear().apply();
+            clearPending(prefs);
             return null;
         }
         return prefs.getString(PENDING_CALL_ID, null);
@@ -184,6 +224,36 @@ public final class CallNotificationManager {
             || context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
     }
 
+    private static boolean canUseFullScreenIntent(Context context) {
+        NotificationManager notificationManager = manager(context);
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+            || (notificationManager != null && notificationManager.canUseFullScreenIntent());
+    }
+
+    private static boolean isEventSeen(Context context, String eventId) {
+        if (eventId == null || eventId.trim().isEmpty()) return false;
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        Set<String> seen = new HashSet<>(prefs.getStringSet(SEEN_EVENT_IDS, new HashSet<>()));
+        return seen.contains(eventId);
+    }
+
+    private static void markEventSeen(Context context, String eventId) {
+        if (eventId == null || eventId.trim().isEmpty()) return;
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        Set<String> seen = new HashSet<>(prefs.getStringSet(SEEN_EVENT_IDS, new HashSet<>()));
+        if (seen.size() >= MAX_SEEN_EVENTS) seen.clear();
+        seen.add(eventId);
+        prefs.edit().putStringSet(SEEN_EVENT_IDS, seen).apply();
+    }
+
+    private static void clearPending(SharedPreferences prefs) {
+        prefs.edit()
+            .remove(PENDING_CALL_ID)
+            .remove(PENDING_ACTION)
+            .remove(PENDING_EXPIRES_AT)
+            .apply();
+    }
+
     private static void acknowledgeRinging(Context context, String callId) {
         ACK_EXECUTOR.execute(() -> {
             String accessToken = AutoAiSecureStoragePlugin.readStoredValue(context, "auto-ai-access-token");
@@ -202,7 +272,9 @@ public final class CallNotificationManager {
                     output.write("{}".getBytes(StandardCharsets.UTF_8));
                 }
                 connection.getResponseCode();
+                Log.i(TAG, "Ringing ACK sent callId=" + callId);
             } catch (Exception ignored) {
+                Log.w(TAG, "Ringing ACK failed callId=" + callId, ignored);
                 // The WebView repeats validation when the user opens or accepts the call.
             } finally {
                 if (connection != null) connection.disconnect();
@@ -212,7 +284,10 @@ public final class CallNotificationManager {
 
     private static boolean validateIncomingCall(Context context, String callId) {
         String accessToken = AutoAiSecureStoragePlugin.readStoredValue(context, "auto-ai-access-token");
-        if (accessToken == null || accessToken.trim().isEmpty()) return false;
+        if (accessToken == null || accessToken.trim().isEmpty()) {
+            Log.w(TAG, "Incoming call validation failed callId=" + callId + " reason=no_access_token");
+            return false;
+        }
         HttpURLConnection connection = null;
         try {
             URL url = new URL(trimTrailingSlash(BuildConfig.AUTO_AI_API_BASE_URL) + "/calls/" + callId);
@@ -223,11 +298,17 @@ public final class CallNotificationManager {
             connection.setRequestProperty("Authorization", "Bearer " + accessToken.trim());
             connection.setRequestProperty("Accept", "application/json");
             int status = connection.getResponseCode();
-            if (status < 200 || status >= 300) return false;
+            if (status < 200 || status >= 300) {
+                Log.w(TAG, "Incoming call validation failed callId=" + callId + " status=" + status);
+                return false;
+            }
             JSONObject payload = new JSONObject(readResponseBody(connection));
             String callStatus = payload.optString("status", "");
-            return "initiated".equals(callStatus) || "ringing".equals(callStatus);
+            boolean valid = "initiated".equals(callStatus) || "ringing".equals(callStatus);
+            Log.i(TAG, "Incoming call validation callId=" + callId + " status=" + callStatus + " valid=" + valid);
+            return valid;
         } catch (Exception ignored) {
+            Log.w(TAG, "Incoming call validation failed callId=" + callId, ignored);
             return false;
         } finally {
             if (connection != null) connection.disconnect();

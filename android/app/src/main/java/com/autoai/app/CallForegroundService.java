@@ -12,10 +12,12 @@ import android.content.pm.ServiceInfo;
 import android.media.AudioManager;
 import android.os.Build;
 import android.os.IBinder;
+import android.util.Log;
 
 import androidx.annotation.Nullable;
 
 public class CallForegroundService extends Service {
+    private static final String TAG = "AutoAiCallService";
     public static final String ACTION_START = "com.autoai.app.call.service.START";
     public static final String ACTION_STOP = "com.autoai.app.call.service.STOP";
     private AudioManager audioManager;
@@ -32,6 +34,7 @@ public class CallForegroundService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent == null || !ACTION_START.equals(intent.getAction())) {
+            Log.i(TAG, "Stopping foreground call service: missing start action.");
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -39,6 +42,7 @@ public class CallForegroundService extends Service {
         String displayName = clean(intent.getStringExtra(CallNotificationManager.EXTRA_CALLER_NAME));
         String callType = clean(intent.getStringExtra(CallNotificationManager.EXTRA_CALL_TYPE));
         if (activeCallId == null || (!"audio".equals(callType) && !"video".equals(callType)) || !hasCallPermissions(callType)) {
+            Log.w(TAG, "Foreground call service rejected start callId=" + activeCallId + " type=" + callType);
             activeCallId = null;
             stopSelf();
             return START_NOT_STICKY;
@@ -54,12 +58,14 @@ public class CallForegroundService extends Service {
                 startForeground(notificationId, notification);
             }
         } catch (RuntimeException error) {
+            Log.e(TAG, "Foreground call service startForeground failed callId=" + activeCallId, error);
             activeCallId = null;
             stopSelf();
             return START_NOT_STICKY;
         }
         initializeAudio();
-        return START_NOT_STICKY;
+        Log.i(TAG, "Foreground call service running callId=" + activeCallId + " type=" + callType);
+        return START_STICKY;
     }
 
     @Nullable
@@ -76,6 +82,7 @@ public class CallForegroundService extends Service {
             audioManager.setMode(previousAudioMode);
         }
         if (activeCallId != null) {
+            Log.i(TAG, "Foreground call service destroyed callId=" + activeCallId);
             NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (manager != null) manager.cancel(CallNotificationManager.notificationId(activeCallId) + 100000);
         }

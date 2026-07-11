@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,6 +12,8 @@ import httpx
 from jose import jwt
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
@@ -114,12 +117,18 @@ class FirebaseNotificationService:
         try:
             service_account = self._service_account()
         except (ValueError, TypeError, KeyError):
+            logger.warning("fcm_send_skipped reason=invalid_service_account")
             return FcmSendResult(ok=False, detail="Firebase service account configuration is invalid.")
         if not service_account:
+            logger.info("fcm_send_skipped reason=unconfigured")
             return FcmSendResult(ok=False, detail="Firebase service account is not configured.")
         project_id = settings.FIREBASE_PROJECT_ID or str(service_account.get("project_id") or "")
         if not project_id:
+            logger.warning("fcm_send_skipped reason=missing_project_id")
             return FcmSendResult(ok=False, detail="Firebase project id is missing.")
+        data = message.get("message", {}).get("data", {})
+        message_type = data.get("type") if isinstance(data, dict) else None
+        call_id = data.get("call_id") if isinstance(data, dict) else None
         try:
             response = httpx.post(
                 f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send",
@@ -131,11 +140,14 @@ class FirebaseNotificationService:
                 timeout=20.0,
             )
         except httpx.HTTPError as exc:
+            logger.warning("fcm_send_failed project_id=%s type=%s call_id=%s detail=%s", project_id, message_type, call_id, str(exc)[:160])
             return FcmSendResult(ok=False, detail=str(exc))
         if 200 <= response.status_code < 300:
+            logger.info("fcm_send_ok project_id=%s type=%s call_id=%s", project_id, message_type, call_id)
             return FcmSendResult(ok=True)
         error_text = response.text
         inactive = response.status_code == 404 or "UNREGISTERED" in error_text or "not a valid FCM" in error_text
+        logger.warning("fcm_send_http_error project_id=%s type=%s call_id=%s status=%d inactive=%s detail=%s", project_id, message_type, call_id, response.status_code, inactive, error_text[:160])
         return FcmSendResult(ok=False, inactive=inactive, detail=error_text[:500])
 
     def _access_token_for(self, service_account: dict[str, Any]) -> str:

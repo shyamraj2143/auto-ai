@@ -680,22 +680,26 @@ export function CallProvider({ children }: { children: ReactNode }) {
       document.removeEventListener("visibilitychange", visibility);
       window.removeEventListener("auto-ai-incoming-call", nativeIncoming);
       signaling.close();
-      if (deviceIdRef.current) void callApi.removeDevice(token, deviceIdRef.current).catch(() => undefined);
-      void cleanup("ended");
+      callDebug("provider_unmount_preserve_call", {
+        call_id: callRef.current?.id,
+        state: sessionStateRef.current,
+      });
     };
   }, [cleanup, processNativeCallAction, receiveIncomingCall, signaling, token, user]);
 
   useEffect(() => {
     const unload = () => {
       if (callRef.current && !["idle", "ended"].includes(sessionStateRef.current)) {
-        callDebug("call_end_source", { call_id: callRef.current.id, role: callRef.current.direction, source: "beforeunload", end_reason: "app_closed" });
-        signaling.send("call.end", callRef.current.id, { end_reason: "app_closed" });
+        callDebug("beforeunload_preserve_call", {
+          call_id: callRef.current.id,
+          role: callRef.current.direction,
+          state: sessionStateRef.current,
+        });
       }
-      localStreamRef.current?.getTracks().forEach((track) => track.stop());
     };
     window.addEventListener("beforeunload", unload);
     return () => window.removeEventListener("beforeunload", unload);
-  }, [signaling]);
+  }, []);
 
   const startCall = useCallback(async (peer: PublicCallUser, callType: CallType = "video") => {
     if (!token || startPendingRef.current || sessionStateRef.current !== "idle") return;
@@ -720,6 +724,17 @@ export function CallProvider({ children }: { children: ReactNode }) {
       setCall(created);
       setSessionState("notifying");
       sessionStateRef.current = "notifying";
+      void callNative.startActiveCall({
+        callId: created.id,
+        displayName: created.peer.display_name,
+        startedAt: Date.now(),
+        video: created.call_type === "video",
+      }).catch((nativeError) => {
+        callDebug("native_outgoing_service_failed", {
+          call_id: created.id,
+          reason: errorMessage(nativeError, "native start failed"),
+        });
+      });
       if (created.delivery === "unreachable") {
         callDebug("call_cancel_source", { call_id: created.id, role: created.direction, source: "delivery_unreachable" });
         await callApi.cancel(token, created.id).catch(() => undefined);

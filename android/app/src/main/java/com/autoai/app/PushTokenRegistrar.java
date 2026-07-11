@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.provider.Settings;
+import android.util.Log;
 
 import org.json.JSONObject;
 
@@ -17,6 +18,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class PushTokenRegistrar {
+    private static final String TAG = "AutoAiPushToken";
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int READ_TIMEOUT_MS = 30000;
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
@@ -27,6 +29,7 @@ public final class PushTokenRegistrar {
     public static void registerAsync(Context context, String token) {
         if (token == null || token.trim().isEmpty()) return;
         Context appContext = context.getApplicationContext();
+        Log.i(TAG, "Scheduling push token registration.");
         EXECUTOR.execute(() -> {
             String cleanToken = token.trim();
             registerUpdateToken(appContext, cleanToken);
@@ -78,7 +81,9 @@ public final class PushTokenRegistrar {
             if (status < 200 || status >= 300) {
                 throw new IllegalStateException("Push token register failed: " + status);
             }
+            Log.i(TAG, "Update push token registered status=" + status);
         } catch (Exception ignored) {
+            Log.w(TAG, "Update push token registration failed.", ignored);
             // Push token sync should never block normal app usage.
         } finally {
             if (connection != null) {
@@ -89,7 +94,10 @@ public final class PushTokenRegistrar {
 
     private static void registerUserDevice(Context context, String token) {
         String accessToken = AutoAiSecureStoragePlugin.readStoredValue(context, "auto-ai-access-token");
-        if (accessToken == null || accessToken.trim().isEmpty()) return;
+        if (accessToken == null || accessToken.trim().isEmpty()) {
+            Log.i(TAG, "User call device registration skipped; no stored access token.");
+            return;
+        }
         HttpURLConnection connection = null;
         try {
             URL url = new URL(trimTrailingSlash(BuildConfig.AUTO_AI_API_BASE_URL) + "/calls/devices/register");
@@ -116,7 +124,9 @@ public final class PushTokenRegistrar {
             if (status < 200 || status >= 300) {
                 throw new IllegalStateException(String.format(Locale.US, "User device register failed: %d", status));
             }
+            Log.i(TAG, "User call device registered status=" + status);
         } catch (Exception ignored) {
+            Log.w(TAG, "User call device registration failed.", ignored);
             // Background push registration must never block app startup or token rotation.
         } finally {
             if (connection != null) {
