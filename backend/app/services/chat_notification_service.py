@@ -43,6 +43,7 @@ def send_chat_message_notifications(db: Session, recipient_id: str, sender: User
     preview = message_preview(message)
     data = {
         "type": "chat_message",
+        "event_id": f"chat:{message.id}",
         "thread_id": message.thread_id,
         "message_id": message.id,
         "sender_id": sender.id,

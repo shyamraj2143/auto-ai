@@ -106,6 +106,10 @@
             android:exported="false" />
 
         <receiver
+            android:name=".MessageActionReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".UpdateScheduleReceiver"
             android:enabled="true"
             android:exported="false">

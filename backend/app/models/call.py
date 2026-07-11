@@ -47,6 +47,8 @@ class UserDevice(Base):
     fcm_token_ciphertext: Mapped[str] = mapped_column(Text, nullable=True)
     fcm_token_hash: Mapped[str] = mapped_column(String(64), index=True, nullable=True)
     app_version: Mapped[str] = mapped_column(String(64), nullable=True)
+    app_version_code: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    device_name: Mapped[str] = mapped_column(String(120), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True, nullable=False)
     last_registered_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)

@@ -21,7 +21,7 @@ export const callApi = {
   settings: (token: string) => apiFetch<CallSettings>("/calls/settings", { token, operation: "calls.settings" }),
   updateSettings: (token: string, payload: Partial<CallSettings>) =>
     apiFetch<CallSettings>("/calls/settings", { method: "PATCH", token, operation: "calls.settings.update", body: JSON.stringify(payload) }),
-  registerDevice: (token: string, payload: { device_id: string; platform: "android" | "web"; fcm_token?: string | null; app_version?: string | null }) =>
+  registerDevice: (token: string, payload: { device_id: string; platform: "android" | "web"; fcm_token?: string | null; app_version?: string | null; app_version_code?: number; device_name?: string | null }) =>
     apiFetch<{ device_id: string; registered: boolean }>("/calls/devices/register", { method: "POST", token, operation: "calls.devices.register", body: JSON.stringify(payload) }),
   removeDevice: (token: string, deviceId: string) =>
     apiFetch<void>(`/calls/devices/${encodeURIComponent(deviceId)}`, { method: "DELETE", token, operation: "calls.devices.remove" }),

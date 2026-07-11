@@ -45,6 +45,7 @@ def send_incoming_call_notifications(
     data = {
         "type": "incoming_call",
         "call_id": call.id,
+        "caller_id": caller.id,
         "caller_name": caller.name[:120],
         "caller_username": (caller.username or f"user_{caller.id.replace('-', '')[:8]}")[:48],
         "caller_avatar_url": absolute_public_avatar(caller),
@@ -64,9 +65,7 @@ def send_incoming_call_notifications(
             device.fcm_token_hash = None
             device.updated_at = datetime.utcnow()
             continue
-        result = firebase_notification_service.send_call_data(
-            token, data, settings.CALL_RING_TIMEOUT_SECONDS
-        )
+        result = firebase_notification_service.send_call_data(token, data, settings.CALL_NOTIFICATION_TTL_SECONDS)
         if result.ok:
             sent += 1
         elif result.inactive:
@@ -102,7 +101,13 @@ def send_call_dismiss_notifications(db: Session, call: Call, event_type: str) ->
             continue
         result = firebase_notification_service.send_call_data(
             token,
-            {"type": event_type, "call_id": call.id, "created_at": datetime.now(timezone.utc).isoformat()},
+            {
+                "type": event_type,
+                "call_id": call.id,
+                "call_type": call.call_type,
+                "show_missed": str(event_type == "call_missed" and device.user_id == call.callee_id).lower(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            },
             30,
         )
         if result.ok:

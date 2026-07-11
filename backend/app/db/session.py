@@ -144,6 +144,10 @@ def ensure_runtime_schema() -> None:
             add_column("user_devices", "fcm_token_ciphertext", "TEXT")
         if "fcm_token_hash" not in device_columns:
             add_column("user_devices", "fcm_token_hash", "VARCHAR(64)")
+        if "app_version_code" not in device_columns:
+            add_column("user_devices", "app_version_code", "INTEGER NOT NULL DEFAULT 0")
+        if "device_name" not in device_columns:
+            add_column("user_devices", "device_name", "VARCHAR(120)")
 
     if "payment_records" in table_names:
         payment_columns = {column["name"] for column in inspector.get_columns("payment_records")}

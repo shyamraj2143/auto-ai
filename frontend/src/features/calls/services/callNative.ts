@@ -6,7 +6,7 @@ type NativeIncomingCall = {
 };
 
 type NativeCallPlugin = {
-  getDeviceRegistration(): Promise<{ deviceId: string; fcmToken?: string | null; appVersion?: string | null }>;
+  getDeviceRegistration(): Promise<{ deviceId: string; fcmToken?: string | null; appVersion?: string | null; appVersionCode?: number | null; deviceName?: string | null }>;
   consumeIncomingCall(): Promise<NativeIncomingCall>;
   startActiveCall(options: { callId: string; displayName: string; startedAt: number; video: boolean }): Promise<void>;
   stopActiveCall(): Promise<void>;
@@ -31,9 +31,16 @@ export const callNative = {
   async registration() {
     if (Capacitor.getPlatform() === "android") {
       const registration = await NativeCalls.getDeviceRegistration();
-      return { device_id: registration.deviceId, platform: "android" as const, fcm_token: registration.fcmToken, app_version: registration.appVersion };
+      return {
+        device_id: registration.deviceId,
+        platform: "android" as const,
+        fcm_token: registration.fcmToken,
+        app_version: registration.appVersion,
+        app_version_code: registration.appVersionCode ?? 0,
+        device_name: registration.deviceName,
+      };
     }
-    return { device_id: browserDeviceId(), platform: "web" as const, fcm_token: null, app_version: null };
+    return { device_id: browserDeviceId(), platform: "web" as const, fcm_token: null, app_version: null, app_version_code: 0, device_name: null };
   },
   consumeIncomingCall: () => Capacitor.getPlatform() === "android" ? NativeCalls.consumeIncomingCall() : Promise.resolve({}),
   startActiveCall: (options: { callId: string; displayName: string; startedAt: number; video: boolean }) =>

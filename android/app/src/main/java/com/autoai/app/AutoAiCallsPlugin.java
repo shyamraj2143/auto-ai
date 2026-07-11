@@ -2,7 +2,6 @@ package com.autoai.app;
 
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.provider.Settings;
@@ -14,8 +13,6 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.google.firebase.messaging.FirebaseMessaging;
 
-import java.util.UUID;
-
 @CapacitorPlugin(name = "AutoAiCalls")
 public class AutoAiCallsPlugin extends Plugin {
     private static final String DEVICE_PREFERENCES = "auto_ai_call_device";
@@ -26,6 +23,8 @@ public class AutoAiCallsPlugin extends Plugin {
         JSObject result = new JSObject();
         result.put("deviceId", resolveDeviceId());
         result.put("appVersion", BuildConfig.VERSION_NAME);
+        result.put("appVersionCode", BuildConfig.VERSION_CODE);
+        result.put("deviceName", PushTokenRegistrar.deviceName());
 
         try {
             FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
@@ -41,16 +40,7 @@ public class AutoAiCallsPlugin extends Plugin {
     }
 
     private String resolveDeviceId() {
-        String androidId = Settings.Secure.getString(getContext().getContentResolver(), Settings.Secure.ANDROID_ID);
-        if (androidId != null && !androidId.trim().isEmpty()) return androidId;
-
-        SharedPreferences preferences = getContext().getSharedPreferences(DEVICE_PREFERENCES, Context.MODE_PRIVATE);
-        String fallbackId = preferences.getString(FALLBACK_DEVICE_ID, null);
-        if (fallbackId == null || fallbackId.trim().isEmpty()) {
-            fallbackId = UUID.randomUUID().toString();
-            preferences.edit().putString(FALLBACK_DEVICE_ID, fallbackId).apply();
-        }
-        return fallbackId;
+        return PushTokenRegistrar.deviceId(getContext(), DEVICE_PREFERENCES, FALLBACK_DEVICE_ID);
     }
 
     @PluginMethod

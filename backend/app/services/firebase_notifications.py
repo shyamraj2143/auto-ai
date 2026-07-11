@@ -31,6 +31,8 @@ class FirebaseNotificationService:
 
     @property
     def configured(self) -> bool:
+        if not settings.FCM_ENABLED:
+            return False
         try:
             return bool(self._service_account())
         except (ValueError, TypeError, KeyError):
@@ -169,6 +171,16 @@ class FirebaseNotificationService:
         return self._access_token
 
     def _service_account(self) -> dict[str, Any] | None:
+        client_email = (settings.FIREBASE_CLIENT_EMAIL or "").strip()
+        private_key = settings.FIREBASE_PRIVATE_KEY.get_secret_value() if settings.FIREBASE_PRIVATE_KEY else ""
+        project_id = (settings.FIREBASE_PROJECT_ID or "").strip()
+        if client_email and private_key and project_id:
+            return {
+                "project_id": project_id,
+                "client_email": client_email,
+                "private_key": private_key.replace("\\n", "\n"),
+                "token_uri": DEFAULT_TOKEN_URI,
+            }
         raw_json = settings.FIREBASE_SERVICE_ACCOUNT_JSON.get_secret_value() if settings.FIREBASE_SERVICE_ACCOUNT_JSON else ""
         if raw_json.strip():
             return json.loads(raw_json)

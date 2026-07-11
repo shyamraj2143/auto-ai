@@ -61,6 +61,13 @@ class DeviceRegisterRequest(BaseModel):
     platform: Literal["android", "web"] = "web"
     fcm_token: str | None = Field(default=None, min_length=16, max_length=512)
     app_version: str | None = Field(default=None, max_length=64)
+    app_version_code: int = Field(default=0, ge=0)
+    device_name: str | None = Field(default=None, max_length=120)
+
+    @field_validator("device_id", "fcm_token", "app_version", "device_name")
+    @classmethod
+    def normalize_text(cls, value: str | None) -> str | None:
+        return value.strip() if isinstance(value, str) else value
 
 
 class DeviceRegisterResult(BaseModel):

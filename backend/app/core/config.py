@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     FIREBASE_PROJECT_ID: str | None = Field(
         default=None, validation_alias=AliasChoices("FIREBASE_PROJECT_ID", "FCM_PROJECT_ID")
     )
+    FCM_ENABLED: bool = True
+    FIREBASE_CLIENT_EMAIL: str | None = None
+    FIREBASE_PRIVATE_KEY: SecretStr | None = None
     FIREBASE_SERVICE_ACCOUNT_JSON: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices("FIREBASE_SERVICE_ACCOUNT_JSON", "FCM_SERVICE_ACCOUNT_JSON"),
@@ -73,6 +76,7 @@ class Settings(BaseSettings):
     METERED_TURN_API_KEY: SecretStr | None = None
     METERED_TURN_TIMEOUT_SECONDS: float = 5.0
     CALL_RING_TIMEOUT_SECONDS: int = 30
+    CALL_NOTIFICATION_TTL_SECONDS: int = 45
     CALL_RECONNECT_GRACE_SECONDS: int = 18
     CALL_MAX_ATTEMPTS_PER_MINUTE: int = 8
     CALL_SEARCH_MAX_PER_MINUTE: int = 30

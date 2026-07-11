@@ -16,6 +16,10 @@ import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
 
+import org.json.JSONObject;
+
+import java.io.BufferedInputStream;
+import java.io.ByteArrayOutputStream;
 import java.util.Map;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -56,6 +60,7 @@ public final class CallNotificationManager {
         String callType = value(data, "call_type");
         long expiresAt = parseLong(data.get("expires_at_epoch_ms"));
         if (callId.isEmpty() || (!"audio".equals(callType) && !"video".equals(callType)) || expiresAt <= System.currentTimeMillis() || !canPostNotifications(context)) return;
+        if (!validateIncomingCall(context, callId)) return;
         boolean silent = Boolean.parseBoolean(data.get("silent"));
         savePending(context, callId, null, expiresAt);
         createChannels(context);
@@ -203,6 +208,40 @@ public final class CallNotificationManager {
                 if (connection != null) connection.disconnect();
             }
         });
+    }
+
+    private static boolean validateIncomingCall(Context context, String callId) {
+        String accessToken = AutoAiSecureStoragePlugin.readStoredValue(context, "auto-ai-access-token");
+        if (accessToken == null || accessToken.trim().isEmpty()) return false;
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL(trimTrailingSlash(BuildConfig.AUTO_AI_API_BASE_URL) + "/calls/" + callId);
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setConnectTimeout(5000);
+            connection.setReadTimeout(7000);
+            connection.setRequestMethod("GET");
+            connection.setRequestProperty("Authorization", "Bearer " + accessToken.trim());
+            connection.setRequestProperty("Accept", "application/json");
+            int status = connection.getResponseCode();
+            if (status < 200 || status >= 300) return false;
+            JSONObject payload = new JSONObject(readResponseBody(connection));
+            String callStatus = payload.optString("status", "");
+            return "initiated".equals(callStatus) || "ringing".equals(callStatus);
+        } catch (Exception ignored) {
+            return false;
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    private static String readResponseBody(HttpURLConnection connection) throws Exception {
+        try (BufferedInputStream input = new BufferedInputStream(connection.getInputStream());
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[2048];
+            int read;
+            while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
+            return output.toString("UTF-8");
+        }
     }
 
     private static String trimTrailingSlash(String value) {

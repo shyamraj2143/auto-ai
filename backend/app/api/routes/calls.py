@@ -234,6 +234,8 @@ def register_call_device(
     record.fcm_token_ciphertext = encrypt_token(payload.fcm_token)
     record.fcm_token_hash = fcm_hash
     record.app_version = payload.app_version
+    record.app_version_code = payload.app_version_code
+    record.device_name = payload.device_name
     record.is_active = True
     record.last_registered_at = now
     record.last_seen_at = now

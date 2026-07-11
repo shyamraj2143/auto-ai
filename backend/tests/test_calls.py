@@ -10,12 +10,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.api.routes.calls import call_health, discoverable_users_query, ringing_call, search_users
+from app.api.routes.calls import call_health, discoverable_users_query, register_call_device, ringing_call, search_users
 from app.core.config import settings
 from app.db.base import Base
 from app.models.call import BlockedUser, Call, UserCallSettings, UserDevice
 from app.models.user import User
-from app.schemas.call import CallActionRequest, PublicCallUser, SignalEvent
+from app.schemas.call import CallActionRequest, DeviceRegisterRequest, PublicCallUser, SignalEvent
 from app.services.call_permission_service import call_allowed, get_or_create_call_settings, users_blocked
 from app.services.call_service import CallService
 from app.services.device_token_security import decrypt_token, encrypt_token, token_hash
@@ -115,6 +115,32 @@ def test_fcm_token_encryption_roundtrip() -> None:
     assert encrypted != raw
     assert decrypt_token(encrypted) == raw
     assert token_hash(raw) == token_hash(raw)
+
+
+def test_authenticated_device_registration_transfers_rotated_token(db: Session) -> None:
+    old_user = create_user(db, "old_user", "Old User")
+    new_user = create_user(db, "new_user", "New User")
+    payload = DeviceRegisterRequest(
+        device_id="android-device-1",
+        platform="android",
+        fcm_token="fcm-token-value-123456",
+        app_version="1.0.18",
+        app_version_code=20,
+        device_name="Pixel Test",
+    )
+
+    register_call_device(payload, db=db, current_user=old_user)
+    register_call_device(payload, db=db, current_user=new_user)
+
+    devices = db.query(UserDevice).all()
+    assert len(devices) == 1
+    assert devices[0].user_id == new_user.id
+    assert devices[0].device_id == "android-device-1"
+    assert devices[0].fcm_token is None
+    assert devices[0].fcm_token_ciphertext != payload.fcm_token
+    assert devices[0].fcm_token_hash == token_hash(payload.fcm_token)
+    assert devices[0].app_version_code == 20
+    assert devices[0].device_name == "Pixel Test"
 
 
 @pytest.mark.asyncio
