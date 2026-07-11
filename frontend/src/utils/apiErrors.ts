@@ -13,6 +13,19 @@ export function loginErrorMessage(error: unknown) {
   return authErrorMessage(error, "Unable to log in");
 }
 
+export function registerErrorMessage(error: unknown) {
+  if (error instanceof ApiClientError) {
+    if (error.status === 404) return "Registration service is temporarily unavailable.";
+    if (error.status === 409) return "An account with this email already exists.";
+    if (error.status === 422) return "Please check the registration details.";
+    if (error.status && error.status >= 500) return "Server error. Please try again.";
+    if (["network_unavailable", "server_unreachable", "cors_blocked", "ssl_certificate_issue"].includes(error.kind)) {
+      return "Auto-AI server is unreachable.";
+    }
+  }
+  return authErrorMessage(error, "Unable to register");
+}
+
 export function authErrorMessage(error: unknown, fallback: string) {
   if (error instanceof ApiClientError) {
     const detail = error.details && typeof error.details === "object" && "detail" in error.details

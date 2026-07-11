@@ -2,7 +2,7 @@ import { FormEvent, useCallback, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { ArrowRight, Brain } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
-import { authErrorMessage } from "../../utils/apiErrors";
+import { authErrorMessage, registerErrorMessage } from "../../utils/apiErrors";
 import { LogoIcon } from "../brand/LogoIcon";
 import { GoogleSignInButton } from "./GoogleSignInButton";
 
@@ -16,12 +16,18 @@ export function RegisterPage() {
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
+    const trimmedName = name.trim();
+    const normalizedEmail = email.trim().toLowerCase();
     setError("");
+    if (!trimmedName || !normalizedEmail || !password) {
+      setError("Please check the registration details.");
+      return;
+    }
     setLoading(true);
     try {
-      await register(name, email, password);
+      await register(trimmedName, normalizedEmail, password);
     } catch (err) {
-      setError(authErrorMessage(err, "Unable to register"));
+      setError(registerErrorMessage(err));
     } finally {
       setLoading(false);
     }
