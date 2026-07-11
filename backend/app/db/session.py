@@ -95,6 +95,12 @@ def ensure_runtime_schema() -> None:
             add_column("users", "picture", "VARCHAR(500)")
         if "avatar" not in user_columns:
             add_column("users", "avatar", "VARCHAR(500)")
+        if "bio" not in user_columns:
+            add_column("users", "bio", "TEXT")
+        if "profile_visibility" not in user_columns:
+            add_column("users", "profile_visibility", "VARCHAR(16) NOT NULL DEFAULT 'public'")
+        if "message_permission" not in user_columns:
+            add_column("users", "message_permission", "VARCHAR(32) NOT NULL DEFAULT 'everyone'")
         if "provider" not in user_columns:
             add_column("users", "provider", "VARCHAR(32) NOT NULL DEFAULT 'email'")
         if "google_id" not in user_columns:
@@ -306,6 +312,8 @@ def ensure_runtime_schema() -> None:
                     {"username": username, "user_id": user_id},
                 )
             connection.execute(text(f"UPDATE {quote('users')} SET {quote('provider')} = 'email' WHERE {quote('provider')} IS NULL OR TRIM({quote('provider')}) = ''"))
+            connection.execute(text(f"UPDATE {quote('users')} SET {quote('profile_visibility')} = 'public' WHERE {quote('profile_visibility')} IS NULL OR TRIM({quote('profile_visibility')}) = ''"))
+            connection.execute(text(f"UPDATE {quote('users')} SET {quote('message_permission')} = 'everyone' WHERE {quote('message_permission')} IS NULL OR TRIM({quote('message_permission')}) = ''"))
             connection.execute(text(f"UPDATE {quote('users')} SET {quote('subscription_status')} = 'free' WHERE {quote('subscription_status')} IS NULL OR TRIM({quote('subscription_status')}) = ''"))
             connection.execute(text(f"UPDATE {quote('users')} SET {quote('role')} = 'user' WHERE {quote('role')} IS NULL OR TRIM({quote('role')}) = ''"))
             connection.execute(text(f"UPDATE {quote('users')} SET {quote('role')} = 'admin' WHERE {quote('is_admin')} = TRUE AND {quote('role')} NOT IN ('admin', 'super_admin')"))

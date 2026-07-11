@@ -2,6 +2,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.call import BlockedUser, Call, UserCallSettings
+from app.models.social import SocialFollow
 
 
 CONTACT_STATUSES = {"accepted", "connecting", "active", "ended"}
@@ -49,6 +50,22 @@ def previously_contacted(db: Session, first_user_id: str, second_user_id: str) -
     )
 
 
+def accepted_follow(db: Session, follower_id: str, following_id: str) -> bool:
+    return bool(
+        db.scalar(
+            select(SocialFollow.id).where(
+                SocialFollow.follower_id == follower_id,
+                SocialFollow.following_id == following_id,
+                SocialFollow.status == "accepted",
+            )
+        )
+    )
+
+
+def mutual_follow(db: Session, first_user_id: str, second_user_id: str) -> bool:
+    return accepted_follow(db, first_user_id, second_user_id) and accepted_follow(db, second_user_id, first_user_id)
+
+
 def call_allowed(db: Session, caller_id: str, callee_id: str, call_type: str) -> tuple[bool, bool]:
     if users_blocked(db, caller_id, callee_id):
         return False, False
@@ -59,6 +76,12 @@ def call_allowed(db: Session, caller_id: str, callee_id: str, call_type: str) ->
         return False, False
     known = previously_contacted(db, caller_id, callee_id)
     if settings_record.call_permission == "nobody":
+        return False, known
+    if settings_record.call_permission == "followers" and not accepted_follow(db, caller_id, callee_id):
+        return False, known
+    if settings_record.call_permission == "mutual_followers" and not mutual_follow(db, caller_id, callee_id):
+        return False, known
+    if settings_record.call_permission == "approved_contacts" and not accepted_follow(db, caller_id, callee_id):
         return False, known
     if settings_record.call_permission == "previous_contacts" and not known:
         return False, known

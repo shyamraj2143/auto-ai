@@ -22,6 +22,7 @@ from app.services.call_notification_service import (
 )
 from app.services.call_permission_service import call_allowed, get_or_create_call_settings
 from app.services.presence_service import RealtimeUnavailable, presence_service
+from app.services.social_service import social_service
 
 
 TERMINAL_STATUSES = {"rejected", "cancelled", "busy", "missed", "failed", "ended"}
@@ -206,6 +207,16 @@ class CallService:
             push_receivers = send_incoming_call_notifications(
                 db, call, caller, callee_settings, silent=silent
             )
+            social_service.create_notification(
+                db,
+                user_id=callee_id,
+                actor_id=caller.id,
+                notification_type="incoming_call",
+                target_type="call",
+                target_id=call.id,
+                title=f"Incoming {call.call_type} call from {caller.name}",
+                dedupe_key=f"incoming_call:{call.id}:{callee_id}",
+            )
             db.commit()
         except Exception:
             db.rollback()
@@ -344,6 +355,9 @@ class CallService:
 
     async def authorize_signaling(self, db: Session, call_id: str, user_id: str, event_type: str) -> tuple[Call, str]:
         call = self.get_authorized(db, call_id, user_id)
+        other_id = call.callee_id if user_id == call.caller_id else call.caller_id
+        if social_service.users_blocked(db, user_id, other_id):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Signaling is blocked for this call.")
         if call.status not in SIGNALING_STATUSES:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Call is not ready for WebRTC signaling.")
         if event_type in {"webrtc.offer", "webrtc.renegotiate", "webrtc.ice_restart"} and call.status == "accepted":
@@ -475,6 +489,16 @@ async def expire_stale_calls_once() -> int:
                 call, "call.missed", call.callee_id, {"status": "missed", "end_reason": "no_answer"}
             )
             send_call_dismiss_notifications(db, call, "call_missed")
+            social_service.create_notification(
+                db,
+                user_id=call.callee_id,
+                actor_id=call.caller_id,
+                notification_type="missed_call",
+                target_type="call",
+                target_id=call.id,
+                title="Missed call",
+                dedupe_key=f"missed_call:{call.id}:{call.callee_id}",
+            )
             db.commit()
             expired += 1
         return expired

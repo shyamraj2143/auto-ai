@@ -20,6 +20,7 @@ from app.services.call_permission_service import call_allowed, get_or_create_cal
 from app.services.call_service import call_service
 from app.services.chat_notification_service import send_chat_message_notifications
 from app.services.presence_service import RealtimeUnavailable, presence_service
+from app.services.social_service import social_service
 
 
 MAX_CHAT_ATTACHMENT_BYTES = 20 * 1024 * 1024
@@ -102,7 +103,7 @@ class UserChatService:
         )
 
     def can_message(self, db: Session, sender_id: str, recipient_id: str) -> bool:
-        if sender_id == recipient_id or self.blocked_between(db, sender_id, recipient_id):
+        if not social_service.can_message(db, sender_id, recipient_id):
             return False
         recipient_settings = self.get_or_create_settings(db, recipient_id)
         if recipient_settings.allow_messages_from == "nobody":
@@ -311,6 +312,17 @@ class UserChatService:
             await self.publish(item.user_id, chat_event("message.new", sender.id, {"message": serialized}, thread_id))
             await self.publish(item.user_id, chat_event("thread.updated", sender.id, {"thread_id": thread_id}, thread_id))
             if item.user_id != sender.id and not item.muted:
+                social_service.create_notification(
+                    db,
+                    user_id=item.user_id,
+                    actor_id=sender.id,
+                    notification_type="message",
+                    target_type="thread",
+                    target_id=thread_id,
+                    title=f"New message from {sender.name}",
+                    body=text_content,
+                    dedupe_key=f"message:{message.id}:{item.user_id}",
+                )
                 send_chat_message_notifications(db, item.user_id, sender, message)
         db.commit()
         return message

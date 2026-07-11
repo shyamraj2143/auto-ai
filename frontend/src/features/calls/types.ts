@@ -1,6 +1,6 @@
 export type PresenceState = "online" | "away" | "background" | "busy" | "offline" | "hidden";
 export type CallType = "audio" | "video";
-export type CallPermission = "everyone" | "previous_contacts" | "nobody";
+export type CallPermission = "everyone" | "followers" | "mutual_followers" | "approved_contacts" | "previous_contacts" | "nobody";
 export type CallSessionState =
   | "idle"
   | "preparing"
@@ -94,6 +94,36 @@ export type BlockedCallUser = {
   avatar_url?: string | null;
   blocked_at: string;
 };
+
+export type FollowStatus = "self" | "none" | "pending" | "following" | "blocked";
+export type SocialProfile = {
+  id: string;
+  display_name: string;
+  username: string;
+  avatar_url?: string | null;
+  bio?: string | null;
+  is_private: boolean;
+  follow_status: FollowStatus;
+  can_message: boolean;
+  can_audio_call: boolean;
+  can_video_call: boolean;
+  profile_restricted: boolean;
+};
+export type SocialUserPage = { items: SocialProfile[]; page: number; limit: number; has_more: boolean; unread_notifications: number };
+export type SocialRequest = { id: string; requested_at: string; user: SocialProfile };
+export type SocialRequestPage = { items: SocialRequest[]; page: number; limit: number; has_more: boolean };
+export type SocialNotification = {
+  id: string;
+  notification_type: string;
+  target_type: string;
+  target_id?: string | null;
+  title: string;
+  body?: string | null;
+  read_at?: string | null;
+  created_at: string;
+  actor?: SocialProfile | null;
+};
+export type SocialNotificationPage = { items: SocialNotification[]; page: number; limit: number; has_more: boolean; unread_count: number };
 
 export type SignalEventType =
   | "presence.snapshot"

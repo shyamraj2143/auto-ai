@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String
+from sqlalchemy import Boolean, DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -22,6 +22,9 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     picture: Mapped[str] = mapped_column(String(500), nullable=True)
     avatar: Mapped[str] = mapped_column(String(500), nullable=True)
+    bio: Mapped[str] = mapped_column(Text, nullable=True)
+    profile_visibility: Mapped[str] = mapped_column(String(16), default="public", nullable=False)
+    message_permission: Mapped[str] = mapped_column(String(32), default="everyone", nullable=False)
     provider: Mapped[str] = mapped_column(String(32), default="email", index=True, nullable=False)
     google_id: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

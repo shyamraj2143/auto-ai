@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, field_validator
 
 
 MessageType = Literal["text", "image", "file", "audio", "system"]
-MessagePermission = Literal["everyone", "known_users", "nobody"]
+MessagePermission = Literal["everyone", "followers", "mutual_followers", "known_users", "nobody"]
 
 
 class ChatPublicUser(BaseModel):

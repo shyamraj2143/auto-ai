@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, field_validator
 
 
 CallType = Literal["audio", "video"]
-CallPermission = Literal["everyone", "previous_contacts", "nobody"]
+CallPermission = Literal["everyone", "followers", "mutual_followers", "approved_contacts", "previous_contacts", "nobody"]
 PresenceState = Literal["online", "away", "background", "busy", "offline", "hidden"]
 
 
