@@ -52,6 +52,7 @@ declare global {
 }
 
 const PUBLIC_API_BASE_URL = "https://auto-ai-production-c510.up.railway.app/api/v1";
+const API_V1_PREFIX = "/api/v1";
 const DEFAULT_API_TIMEOUT_MS = 8000;
 const API_DIAGNOSTIC_TIMEOUT_MS = 2500;
 export const API_ENVIRONMENT = import.meta.env.MODE || "production";
@@ -151,13 +152,18 @@ function normalizeApiUrl(value?: string) {
     const url = new URL(trimmed, isBrowser() ? window.location.origin : PUBLIC_API_BASE_URL);
     url.pathname = `/${url.pathname
       .replace(/\/+/g, "/")
-      .replace(/\/api\/v1(?:\/api\/v1)+\/?$/i, "/api/v1")
+      .replace(/\/api\/v1(?:\/api\/v1)+\/?$/i, API_V1_PREFIX)
       .replace(/\/+$/g, "")}`;
-    if (!/\/api\/v1$/i.test(url.pathname)) url.pathname = `${url.pathname.replace(/\/+$/, "")}/api/v1`;
+    if (!/\/api\/v1$/i.test(url.pathname)) url.pathname = `${url.pathname.replace(/\/+$/, "")}${API_V1_PREFIX}`;
     return stripTrailingSlash(url.toString());
   } catch {
     return "";
   }
+}
+
+function normalizeApiPath(path: string) {
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  return normalized.replace(/^\/api\/v1(?=\/|$)/i, "") || "/";
 }
 
 function configuredApiUrl() {
@@ -178,6 +184,7 @@ function resolveApiBaseUrl() {
   const capacitorPlatform = (window as Window & { Capacitor?: { getPlatform?: () => string } }).Capacitor?.getPlatform?.();
   const mobileApp = capacitorPlatform === "android" || capacitorPlatform === "ios" || (pageUrl.protocol === "https:" && pageUrl.hostname === "localhost");
   if (mobileApp && (!configured || !/^https:\/\//i.test(rawConfigured))) return PUBLIC_API_BASE_URL;
+  if (!configured && import.meta.env.PROD) return PUBLIC_API_BASE_URL;
   if (!configured && localPage && pageUrl.protocol === "http:") {
     return "http://localhost:8000/api/v1";
   }
@@ -185,6 +192,7 @@ function resolveApiBaseUrl() {
 
   try {
     const configuredUrl = new URL(configured, pageUrl.origin);
+    if (mobileApp && ["localhost", "127.0.0.1"].includes(configuredUrl.hostname)) return PUBLIC_API_BASE_URL;
     if (pageUrl.protocol === "https:" && configuredUrl.protocol === "http:") return PUBLIC_API_BASE_URL;
   } catch {
     return PUBLIC_API_BASE_URL;
@@ -511,7 +519,8 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
   const { token, operation, timeoutMs = DEFAULT_API_TIMEOUT_MS, ...requestOptions } = options;
   const headers = new Headers(requestOptions.headers);
   const method = requestOptions.method ?? "GET";
-  const url = `${API_BASE_URL}${path}`;
+  const requestPath = normalizeApiPath(path);
+  const url = `${API_BASE_URL}${requestPath}`;
 
   if (!(requestOptions.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
@@ -527,7 +536,7 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
       credentials: requestOptions.credentials ?? "include",
       headers
     },
-    { path, method, operation },
+    { path: requestPath, method, operation },
     timeoutMs
   );
 
@@ -539,7 +548,7 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
       payload,
       url,
       response.headers.get("x-railway-request-id") ?? response.headers.get("x-request-id"),
-      { path, method, operation }
+      { path: requestPath, method, operation }
     );
   }
 

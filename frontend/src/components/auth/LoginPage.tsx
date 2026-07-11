@@ -3,7 +3,7 @@ import { Link, Navigate } from "react-router-dom";
 import { ArrowRight, KeyRound, Lock } from "lucide-react";
 import { api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
-import { authErrorMessage } from "../../utils/apiErrors";
+import { authErrorMessage, loginErrorMessage } from "../../utils/apiErrors";
 import { isMobileAppRuntime } from "../../utils/runtime";
 import { LogoIcon } from "../brand/LogoIcon";
 import { GoogleSignInButton } from "./GoogleSignInButton";
@@ -27,7 +27,7 @@ export function LoginPage() {
     try {
       await login(email, password);
     } catch (err) {
-      setError(authErrorMessage(err, "Unable to log in"));
+      setError(loginErrorMessage(err));
     } finally {
       setLoading(false);
     }
