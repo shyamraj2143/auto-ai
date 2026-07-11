@@ -66,6 +66,7 @@ type FetchOptions = Omit<RequestInit, "headers"> & {
   headers?: HeadersInit;
   token?: string | null;
   operation?: string;
+  timeoutMs?: number;
 };
 
 export type AuthSession = {
@@ -381,6 +382,17 @@ async function createConnectionError(input: string, originalError: unknown, meta
   return error;
 }
 
+function createTimeoutError(input: string, timeoutMs: number, meta: RequestMeta = {}) {
+  const context = getApiContext(input);
+  const seconds = Math.max(1, Math.round(timeoutMs / 1000));
+  const error = new ApiClientError(`Server timeout: Auto-AI API did not respond within ${seconds}s. Please retry.`, {
+    kind: "server_unreachable",
+    url: context.apiUrl,
+  });
+  logApiIssue(error, context, meta);
+  return error;
+}
+
 function createHttpError(
   status: number,
   statusText: string,
@@ -415,23 +427,43 @@ async function readErrorPayload(response: Response) {
   }
 }
 
-async function fetchWithNetworkMessage(input: string, init: RequestInit = {}, meta: RequestMeta = {}) {
+async function fetchWithNetworkMessage(input: string, init: RequestInit = {}, meta: RequestMeta = {}, timeoutMs = 0) {
   const method = meta.method ?? init.method ?? "GET";
+  const controller = timeoutMs > 0 ? new AbortController() : null;
+  const originalSignal = init.signal;
+  let timedOut = false;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  const abortFromOriginal = () => controller?.abort(originalSignal?.reason);
+  if (controller) {
+    if (originalSignal?.aborted) abortFromOriginal();
+    else originalSignal?.addEventListener("abort", abortFromOriginal, { once: true });
+    timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+  }
   try {
     return await fetch(input, {
       credentials: "omit",
-      ...init
+      ...init,
+      signal: controller?.signal ?? init.signal
     });
   } catch (error) {
+    if (timedOut) {
+      throw createTimeoutError(input, timeoutMs, { ...meta, method });
+    }
     if (error instanceof TypeError) {
       throw await createConnectionError(input, error, { ...meta, method });
     }
     throw error;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+    originalSignal?.removeEventListener("abort", abortFromOriginal);
   }
 }
 
 export async function apiFetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
-  const { token, operation, ...requestOptions } = options;
+  const { token, operation, timeoutMs = 15000, ...requestOptions } = options;
   const headers = new Headers(requestOptions.headers);
   const method = requestOptions.method ?? "GET";
   const url = `${API_BASE_URL}${path}`;
@@ -450,7 +482,8 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
       credentials: requestOptions.credentials ?? "include",
       headers
     },
-    { path, method, operation }
+    { path, method, operation },
+    timeoutMs
   );
 
   if (!response.ok) {
@@ -526,7 +559,7 @@ export const api = {
   uploadAvatar: (token: string, file: File) => {
     const formData = new FormData();
     formData.append("file", file);
-    return apiFetch<User>("/users/me/avatar", { method: "POST", token, operation: "users.me.avatar", body: formData });
+    return apiFetch<User>("/users/me/avatar", { method: "POST", token, operation: "users.me.avatar", body: formData, timeoutMs: 60000 });
   },
   deleteAvatar: (token: string) => apiFetch<void>("/users/me/avatar", { method: "DELETE", token, operation: "users.me.avatar.delete" }),
   usernameAvailable: (token: string, username: string) =>
@@ -542,7 +575,7 @@ export const api = {
 
   listDocuments: (token: string) => apiFetch<DocumentItem[]>("/documents", { token, operation: "documents.list" }),
   uploadDocument: (token: string, formData: FormData) =>
-    apiFetch<DocumentItem>("/documents/upload", { method: "POST", token, operation: "documents.upload", body: formData }),
+    apiFetch<DocumentItem>("/documents/upload", { method: "POST", token, operation: "documents.upload", body: formData, timeoutMs: 300000 }),
   uploadDocumentWithProgress: (
     token: string,
     formData: FormData,
@@ -601,7 +634,8 @@ export const api = {
       method: "POST",
       token,
       operation: "ai.imageAnalysis",
-      body: formData
+      body: formData,
+      timeoutMs: 120000
     });
   },
 
@@ -638,7 +672,8 @@ export const api = {
       method: "POST",
       token,
       operation: "voice.transcribe",
-      body: formData
+      body: formData,
+      timeoutMs: 120000
     });
   },
 
@@ -666,14 +701,16 @@ export const api = {
       method: "POST",
       token,
       operation: "live.message",
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      timeoutMs: 90000
     }),
   analyzeLiveVision: (token: string, formData: FormData) =>
     apiFetch<VisionAnalyzeResponse>("/live/vision/analyze", {
       method: "POST",
       token,
       operation: "live.vision.analyze",
-      body: formData
+      body: formData,
+      timeoutMs: 60000
     }),
   endLiveSession: (token: string, sessionId: string) =>
     apiFetch<{ session_id: string; status: string; ended_at: string }>("/live/end", {
@@ -692,7 +729,8 @@ export const api = {
       method: "POST",
       token,
       operation: "memory.face.enroll",
-      body: formData
+      body: formData,
+      timeoutMs: 60000
     }),
   deleteFaceMemory: (token: string) =>
     apiFetch<void>("/memory/face", {
@@ -706,7 +744,8 @@ export const api = {
       method: "POST",
       token,
       operation: "search.run",
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      timeoutMs: 60000
     }),
   searchHistory: (token: string) => apiFetch<SearchHistoryItem[]>("/search/history", { token, operation: "search.history" }),
 
@@ -724,7 +763,8 @@ export const api = {
       method: "POST",
       token,
       operation: "download.apk.upload",
-      body: formData
+      body: formData,
+      timeoutMs: 300000
     }),
   updateApkRelease: (
     token: string,
@@ -840,14 +880,16 @@ export const api = {
       method: "POST",
       token,
       operation: payload.chat_id ? "chat.sessions.messages.create" : "ai.chat.generations.start",
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      timeoutMs: 120000
     }),
   regenerateChatSession: (token: string, sessionId: string, payload: Omit<Partial<ChatRequest>, "message" | "chat_id"> & { message_id?: string }) =>
     apiFetch<ChatGeneration>(`/chat/sessions/${sessionId}/regenerate`, {
       method: "POST",
       token,
       operation: "chat.sessions.regenerate",
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      timeoutMs: 120000
     }),
   stopChatSession: (token: string, sessionId: string) =>
     apiFetch<ChatGeneration>(`/chat/sessions/${sessionId}/stop`, {
