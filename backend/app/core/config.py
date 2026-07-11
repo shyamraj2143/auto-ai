@@ -64,10 +64,14 @@ class Settings(BaseSettings):
 
     CALL_FEATURE_ENABLED: bool = True
     REDIS_URL: str | None = None
+    TURN_PROVIDER: str = "coturn"
     TURN_SERVER_URLS: list[str] = []
     TURN_SHARED_SECRET: SecretStr | None = None
     TURN_REALM: str | None = None
     TURN_CREDENTIAL_TTL: int = 3600
+    METERED_DOMAIN: str | None = None
+    METERED_TURN_API_KEY: SecretStr | None = None
+    METERED_TURN_TIMEOUT_SECONDS: float = 5.0
     CALL_RING_TIMEOUT_SECONDS: int = 30
     CALL_RECONNECT_GRACE_SECONDS: int = 18
     CALL_MAX_ATTEMPTS_PER_MINUTE: int = 8
@@ -544,7 +548,30 @@ class Settings(BaseSettings):
         return self.TURN_SHARED_SECRET.get_secret_value() if self.TURN_SHARED_SECRET else None
 
     @property
+    def turn_provider(self) -> str:
+        return (self.TURN_PROVIDER or "coturn").strip().lower()
+
+    @property
+    def metered_turn_api_key(self) -> str | None:
+        return self.METERED_TURN_API_KEY.get_secret_value() if self.METERED_TURN_API_KEY else None
+
+    @property
+    def metered_domain(self) -> str | None:
+        value = (self.METERED_DOMAIN or "").strip().strip("/")
+        if value.startswith("https://"):
+            value = value.removeprefix("https://").strip("/")
+        elif value.startswith("http://"):
+            value = value.removeprefix("http://").strip("/")
+        return value or None
+
+    @property
+    def metered_turn_configured(self) -> bool:
+        return self.turn_provider == "metered" and bool(self.metered_domain and self.metered_turn_api_key)
+
+    @property
     def turn_configured(self) -> bool:
+        if self.turn_provider == "metered":
+            return self.metered_turn_configured
         return bool(self.TURN_SERVER_URLS and self.turn_shared_secret and (self.TURN_REALM or "").strip())
 
     @property

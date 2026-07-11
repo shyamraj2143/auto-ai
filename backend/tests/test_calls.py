@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 
 import fakeredis.aioredis
 import pytest
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -21,6 +21,7 @@ from app.services.call_service import CallService
 from app.services.device_token_security import decrypt_token, encrypt_token, token_hash
 from app.services.presence_service import PresenceService, RealtimeUnavailable
 from app.services.presence_service import presence_service as global_presence_service
+from app.services.turn_credentials_service import TURN_UNAVAILABLE_MESSAGE, create_turn_credentials
 from app.websockets import call_signaling
 
 
@@ -114,6 +115,86 @@ def test_fcm_token_encryption_roundtrip() -> None:
     assert encrypted != raw
     assert decrypt_token(encrypted) == raw
     assert token_hash(raw) == token_hash(raw)
+
+
+@pytest.mark.asyncio
+async def test_metered_turn_credentials_are_fetched_and_validated(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> list[dict[str, str]]:
+            return [
+                {
+                    "urls": "turn:autoai.metered.live:80",
+                    "username": "metered-user",
+                    "credential": "metered-credential",
+                }
+            ]
+
+    class FakeAsyncClient:
+        def __init__(self, timeout: float) -> None:
+            captured["timeout"] = timeout
+
+        async def __aenter__(self) -> "FakeAsyncClient":
+            return self
+
+        async def __aexit__(self, *_: object) -> None:
+            return None
+
+        async def get(self, url: str, params: dict[str, str]) -> FakeResponse:
+            captured["url"] = url
+            captured["params"] = params
+            return FakeResponse()
+
+    monkeypatch.setattr(settings, "TURN_PROVIDER", "metered")
+    monkeypatch.setattr(settings, "METERED_DOMAIN", "autoai.metered.live")
+    monkeypatch.setattr(settings, "METERED_TURN_API_KEY", SecretStr("secret-key"))
+    monkeypatch.setattr(settings, "METERED_TURN_TIMEOUT_SECONDS", 2.5)
+    monkeypatch.setattr("app.services.turn_credentials_service.httpx.AsyncClient", FakeAsyncClient)
+
+    credentials = await create_turn_credentials("caller_user")
+
+    assert credentials.configured is True
+    assert credentials.provider == "metered"
+    assert credentials.ice_servers[0]["urls"] == "turn:autoai.metered.live:80"
+    assert captured["url"] == "https://autoai.metered.live/api/v1/turn/credentials"
+    assert captured["params"] == {"apiKey": "secret-key"}
+    assert captured["timeout"] == 2.5
+
+
+@pytest.mark.asyncio
+async def test_metered_turn_invalid_response_returns_controlled_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> list[dict[str, str]]:
+            return [{"urls": "turn:autoai.metered.live:80"}]
+
+    class FakeAsyncClient:
+        def __init__(self, timeout: float) -> None:
+            del timeout
+
+        async def __aenter__(self) -> "FakeAsyncClient":
+            return self
+
+        async def __aexit__(self, *_: object) -> None:
+            return None
+
+        async def get(self, url: str, params: dict[str, str]) -> FakeResponse:
+            del url, params
+            return FakeResponse()
+
+    monkeypatch.setattr(settings, "TURN_PROVIDER", "metered")
+    monkeypatch.setattr(settings, "METERED_DOMAIN", "autoai.metered.live")
+    monkeypatch.setattr(settings, "METERED_TURN_API_KEY", SecretStr("secret-key"))
+    monkeypatch.setattr("app.services.turn_credentials_service.httpx.AsyncClient", FakeAsyncClient)
+
+    with pytest.raises(RuntimeError, match=TURN_UNAVAILABLE_MESSAGE):
+        await create_turn_credentials("caller_user")
 
 
 @pytest.mark.parametrize(

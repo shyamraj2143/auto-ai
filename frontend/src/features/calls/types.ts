@@ -77,6 +77,8 @@ export type CallFeatureConfig = {
   diagnostic?: string | null;
 };
 export type TurnCredentials = {
+  configured?: boolean;
+  provider?: string;
   ice_servers?: RTCIceServer[];
   iceServers?: RTCIceServer[];
   expires_at?: string | null;

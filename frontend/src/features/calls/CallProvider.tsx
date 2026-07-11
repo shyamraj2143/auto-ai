@@ -18,7 +18,6 @@ const TERMINAL_EVENT_STATES: Record<string, CallSessionState> = {
 };
 const CALL_RECONNECT_GRACE_MS = 15_000;
 const CALL_RELAY_UNAVAILABLE_MESSAGE = "Calling network relay is temporarily unavailable.";
-const DEFAULT_STUN_SERVERS: RTCIceServer[] = [{ urls: ["stun:stun.l.google.com:19302"] }];
 
 function callDebug(label: string, details: Record<string, unknown> = {}) {
   if (!import.meta.env.DEV && localStorage.getItem("auto-ai-call-debug") !== "true") return;
@@ -27,6 +26,17 @@ function callDebug(label: string, details: Record<string, unknown> = {}) {
 
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message.replace(/^Request failed \(\d+\):\s*/, "") : fallback;
+}
+
+function normalizeIceServers(iceServers: RTCIceServer[] | undefined) {
+  return (iceServers ?? []).filter((server) => {
+    const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+    return urls.some((url) => typeof url === "string" && /^(stun|turns?):/.test(url));
+  });
+}
+
+function isRelayCandidate(candidate: RTCIceCandidate) {
+  return /\styp relay(\s|$)/.test(candidate.candidate);
 }
 
 export function CallProvider({ children }: { children: ReactNode }) {
@@ -228,24 +238,23 @@ export function CallProvider({ children }: { children: ReactNode }) {
     if (cached && cached.expiresAtMs - Date.now() > 60_000) return cached;
     try {
       const credentials = await callApi.turnCredentials(token || "");
-      const returnedServers = credentials.iceServers ?? credentials.ice_servers ?? [];
+      const returnedServers = normalizeIceServers(credentials.iceServers ?? credentials.ice_servers);
       const expiresValue = credentials.expiresAt ?? credentials.expires_at;
       const expiresAtMs = expiresValue ? Date.parse(expiresValue) : Date.now() + 5 * 60_000;
-      const relayConfigured = Boolean(credentials.relayConfigured ?? credentials.relay_configured);
-      const iceServers = [...DEFAULT_STUN_SERVERS, ...returnedServers];
-      if (!iceServers.length) throw new Error(CALL_RELAY_UNAVAILABLE_MESSAGE);
+      const relayConfigured = Boolean(credentials.configured ?? credentials.relayConfigured ?? credentials.relay_configured);
+      if (!returnedServers.length || !relayConfigured) throw new Error(CALL_RELAY_UNAVAILABLE_MESSAGE);
       if (!relayConfigured && configRef.current?.diagnostic === CALL_RELAY_UNAVAILABLE_MESSAGE) {
         throw new Error(CALL_RELAY_UNAVAILABLE_MESSAGE);
       }
       const next = {
-        iceServers,
+        iceServers: returnedServers,
         relayConfigured,
         warning: credentials.warning,
         expiresAtMs: Number.isFinite(expiresAtMs) ? expiresAtMs : Date.now() + 5 * 60_000,
       };
       turnCredentialsRef.current = next;
       if (credentials.warning) setError(CALL_RELAY_UNAVAILABLE_MESSAGE);
-      callDebug("turn_credentials_loaded", { relay_configured: relayConfigured, ice_servers: iceServers.length, credential_endpoint: "ok" });
+      callDebug("turn_credentials_loaded", { provider: credentials.provider, relay_configured: relayConfigured, ice_servers: returnedServers.length, credential_endpoint: "ok" });
       return next;
     } catch (turnError) {
       turnCredentialsRef.current = null;
@@ -286,16 +295,20 @@ export function CallProvider({ children }: { children: ReactNode }) {
     peerConnectionRef.current?.close();
     intentionalPeerCloseRef.current = false;
     const iceConfig = await loadIceConfiguration();
+    const verifyRelay = import.meta.env.DEV && localStorage.getItem("auto-ai-force-relay") === "true";
+    if (verifyRelay) localStorage.removeItem("auto-ai-force-relay");
+    let relayCandidateGathered = false;
     const peer = new RTCPeerConnection({
       iceServers: iceConfig.iceServers,
-      iceTransportPolicy: localStorage.getItem("auto-ai-force-relay") === "true" ? "relay" : "all",
+      iceTransportPolicy: verifyRelay ? "relay" : "all",
       bundlePolicy: "max-bundle",
     });
     callDebug("peer_connection_created", {
       call_id: currentCall.id,
       role: currentCall.direction,
       relay_configured: iceConfig.relayConfigured,
-      ice_transport_policy: localStorage.getItem("auto-ai-force-relay") === "true" ? "relay" : "all",
+      ice_transport_policy: verifyRelay ? "relay" : "all",
+      relay_verification: verifyRelay,
     });
     peerConnectionRef.current = peer;
     peerCallIdRef.current = currentCall.id;
@@ -312,6 +325,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
     };
     peer.onicecandidate = (event) => {
       if (event.candidate) {
+        if (verifyRelay && isRelayCandidate(event.candidate)) {
+          relayCandidateGathered = true;
+          callDebug("relay_candidate_verified", { call_id: currentCall.id, role: currentCall.direction });
+        }
         signaling.send("webrtc.ice_candidate", currentCall.id, { ...event.candidate.toJSON() });
         callDebug("ice_candidate_sent", { call_id: currentCall.id, role: currentCall.direction });
       }
@@ -356,6 +373,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
     };
     peer.onicegatheringstatechange = () => {
       callDebug("ice_gathering_state", { call_id: currentCall.id, role: currentCall.direction, state: peer.iceGatheringState });
+      if (verifyRelay && peer.iceGatheringState === "complete" && !relayCandidateGathered) {
+        setError(CALL_RELAY_UNAVAILABLE_MESSAGE);
+        callDebug("relay_candidate_missing", { call_id: currentCall.id, role: currentCall.direction });
+      }
     };
     peer.onicecandidateerror = (event) => {
       callDebug("ice_candidate_error", { call_id: currentCall.id, role: currentCall.direction, error_code: event.errorCode });

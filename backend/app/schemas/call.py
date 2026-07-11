@@ -112,9 +112,11 @@ class WebSocketTicket(BaseModel):
 
 
 class TurnCredentials(BaseModel):
+    configured: bool
+    provider: str
     ice_servers: list[dict[str, Any]] = Field(serialization_alias="iceServers")
     expires_at: datetime | None = Field(default=None, serialization_alias="expiresAt")
-    relay_configured: bool = Field(serialization_alias="relayConfigured")
+    relay_configured: bool = Field(default=False, serialization_alias="relayConfigured")
     warning: str | None = None
 
     model_config = {"populate_by_name": True}

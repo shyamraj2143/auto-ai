@@ -276,9 +276,9 @@ async def create_ws_ticket(current_user: User = Depends(get_current_user)) -> We
 
 
 @router.get("/turn-credentials", response_model=TurnCredentials)
-def turn_credentials(current_user: User = Depends(get_current_user)) -> TurnCredentials:
+async def turn_credentials(current_user: User = Depends(get_current_user)) -> TurnCredentials:
     try:
-        return create_turn_credentials(current_user.id)
+        return await create_turn_credentials(current_user.id)
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 
