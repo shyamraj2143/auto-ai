@@ -18,7 +18,7 @@ def releaseKeyPassword = signingValue('AUTO_AI_ANDROID_KEY_PASSWORD')
 def releaseSigningReady = releaseKeystorePath && releaseKeystorePassword && releaseKeyAlias && releaseKeyPassword
 def autoAiApiBaseUrl = signingValue('AUTO_AI_API_BASE_URL') ?: 'https://auto-ai-production-c510.up.railway.app/api/v1'
 def googleWebClientId = signingValue('AUTO_AI_GOOGLE_WEB_CLIENT_ID') ?: signingValue('GOOGLE_WEB_CLIENT_ID') ?: signingValue('VITE_GOOGLE_WEB_CLIENT_ID') ?: ''
-def autoAiVersionCode = (signingValue('AUTO_AI_ANDROID_VERSION_CODE') ?: '19') as Integer
+def autoAiVersionCode = (signingValue('AUTO_AI_ANDROID_VERSION_CODE') ?: '20') as Integer
 def autoAiVersionName = signingValue('AUTO_AI_ANDROID_VERSION_NAME') ?: '1.0.18'
 
 android {

@@ -21,6 +21,25 @@ from app.websockets import call_signaling, user_chat
 logger = logging.getLogger("auto_ai.startup")
 
 
+class NormalizeRequestPathMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") in {"http", "websocket"}:
+            path = scope.get("path", "")
+            if "//" in path:
+                normalized = path
+                while "//" in normalized:
+                    normalized = normalized.replace("//", "/")
+
+                scope = dict(scope)
+                scope["path"] = normalized
+                scope["raw_path"] = normalized.encode("utf-8")
+
+        await self.app(scope, receive, send)
+
+
 def get_cors_origins() -> list[str]:
     default_origins = {
         "https://autoai.site.je",
@@ -40,6 +59,8 @@ def create_app() -> FastAPI:
         version="1.0.0",
         description="Production-ready AI assistant backend powered by Groq.",
     )
+
+    app.add_middleware(NormalizeRequestPathMiddleware)
 
     # CORS
     app.add_middleware(

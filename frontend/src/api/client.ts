@@ -152,13 +152,25 @@ function normalizeBaseUrl(url: string) {
 function normalizeApiUrl(value?: string) {
   const trimmed = value?.trim();
   if (!trimmed) return "";
+
   try {
-    const url = new URL(trimmed, isBrowser() ? window.location.origin : PUBLIC_API_BASE_URL);
-    url.pathname = `/${url.pathname
+    const url = new URL(
+      trimmed,
+      isBrowser() ? window.location.origin : PUBLIC_API_BASE_URL
+    );
+
+    const normalizedPath = url.pathname
       .replace(/\/+/g, "/")
       .replace(/\/api\/v1(?:\/api\/v1)+\/?$/i, API_V1_PREFIX)
-      .replace(/\/+$/g, "")}`;
-    if (!/\/api\/v1$/i.test(url.pathname)) url.pathname = `${url.pathname.replace(/\/+$/, "")}${API_V1_PREFIX}`;
+      .replace(/^\/+|\/+$/g, "");
+
+    url.pathname = `/${normalizedPath}`;
+
+    if (!/\/api\/v1$/i.test(url.pathname)) {
+      url.pathname =
+        `${url.pathname.replace(/\/+$/, "")}${API_V1_PREFIX}`;
+    }
+
     return normalizeBaseUrl(url.toString());
   } catch {
     return "";
