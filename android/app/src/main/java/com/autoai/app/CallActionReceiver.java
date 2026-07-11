@@ -28,6 +28,7 @@ public class CallActionReceiver extends BroadcastReceiver {
         String endpoint = CallNotificationManager.ACTION_REJECT.equals(action) ? "reject" : "end";
         Log.i(TAG, "Call notification action received callId=" + callId + " action=" + endpoint);
         CallNotificationManager.cancel(context, callId);
+        AutoAiTelecomBridge.disconnectLocal(context, callId);
         context.stopService(new Intent(context, CallForegroundService.class));
         PendingResult pendingResult = goAsync();
         EXECUTOR.execute(() -> {

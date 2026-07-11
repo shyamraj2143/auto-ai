@@ -64,6 +64,7 @@ public class CallForegroundService extends Service {
             return START_NOT_STICKY;
         }
         initializeAudio();
+        AutoAiTelecomBridge.markActive(this, activeCallId);
         Log.i(TAG, "Foreground call service running callId=" + activeCallId + " type=" + callType);
         return START_STICKY;
     }
@@ -83,6 +84,7 @@ public class CallForegroundService extends Service {
         }
         if (activeCallId != null) {
             Log.i(TAG, "Foreground call service destroyed callId=" + activeCallId);
+            AutoAiTelecomBridge.disconnectLocal(this, activeCallId);
             NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (manager != null) manager.cancel(CallNotificationManager.notificationId(activeCallId) + 100000);
         }

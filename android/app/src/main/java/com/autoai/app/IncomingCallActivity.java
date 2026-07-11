@@ -129,6 +129,7 @@ public class IncomingCallActivity extends Activity {
         String action = audioOnly ? "audio_only" : "accept";
         CallNotificationManager.savePending(this, callId, action, expiresAt);
         CallNotificationManager.cancelNotification(this, callId);
+        AutoAiTelecomBridge.markActive(this, callId);
         Log.i(TAG, "Incoming call accepted callId=" + callId + " action=" + action);
         Intent intent = new Intent(this, MainActivity.class);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);

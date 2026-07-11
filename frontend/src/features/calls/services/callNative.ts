@@ -9,7 +9,7 @@ type NativeCallPlugin = {
   getDeviceRegistration(): Promise<{ deviceId: string; fcmToken?: string | null; appVersion?: string | null; appVersionCode?: number | null; deviceName?: string | null }>;
   consumeIncomingCall(): Promise<NativeIncomingCall>;
   startActiveCall(options: { callId: string; displayName: string; startedAt: number; video: boolean }): Promise<void>;
-  stopActiveCall(): Promise<void>;
+  stopActiveCall(options?: { callId?: string | null }): Promise<void>;
   setSpeaker(options: { enabled: boolean }): Promise<void>;
   openAppSettings(): Promise<void>;
 };
@@ -45,7 +45,7 @@ export const callNative = {
   consumeIncomingCall: () => Capacitor.getPlatform() === "android" ? NativeCalls.consumeIncomingCall() : Promise.resolve({}),
   startActiveCall: (options: { callId: string; displayName: string; startedAt: number; video: boolean }) =>
     Capacitor.getPlatform() === "android" ? NativeCalls.startActiveCall(options) : Promise.resolve(),
-  stopActiveCall: () => Capacitor.getPlatform() === "android" ? NativeCalls.stopActiveCall() : Promise.resolve(),
+  stopActiveCall: (callId?: string | null) => Capacitor.getPlatform() === "android" ? NativeCalls.stopActiveCall({ callId }) : Promise.resolve(),
   setSpeaker: (enabled: boolean) => Capacitor.getPlatform() === "android" ? NativeCalls.setSpeaker({ enabled }) : Promise.resolve(),
   openAppSettings: () => Capacitor.getPlatform() === "android" ? NativeCalls.openAppSettings() : Promise.resolve(),
 };

@@ -528,7 +528,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     setNetworkQuality("unknown");
     reconnectAttemptsRef.current = 0;
     mediaResourceCoordinator.release("person-call");
-    await callNative.stopActiveCall().catch(() => undefined);
+    await callNative.stopActiveCall(callRef.current?.id).catch(() => undefined);
     if (detail) setError(detail);
     setCallTimer("terminal", () => {
       setSessionState("idle");

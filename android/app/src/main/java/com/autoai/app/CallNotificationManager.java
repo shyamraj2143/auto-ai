@@ -96,6 +96,7 @@ public final class CallNotificationManager {
         boolean silent = Boolean.parseBoolean(data.get("silent"));
         savePending(context, callId, null, expiresAt);
         createChannels(context);
+        boolean telecomReported = AutoAiTelecomBridge.reportIncomingCall(context, data);
 
         Intent incomingIntent = new Intent(context, IncomingCallActivity.class);
         incomingIntent.putExtra(EXTRA_CALL_ID, callId);
@@ -151,7 +152,7 @@ public final class CallNotificationManager {
         if (manager != null) {
             manager.notify(notificationId(callId), builder.build());
             markEventSeen(context, eventId);
-            Log.i(TAG, "Incoming call notification shown callId=" + callId + " silent=" + silent);
+            Log.i(TAG, "Incoming call notification shown callId=" + callId + " silent=" + silent + " telecom=" + telecomReported);
             acknowledgeRinging(context, callId);
         } else {
             Log.w(TAG, "Incoming call notification not shown callId=" + callId + " reason=no_notification_manager");
@@ -160,6 +161,7 @@ public final class CallNotificationManager {
 
     public static void cancel(Context context, String callId) {
         cancelNotification(context, callId);
+        AutoAiTelecomBridge.disconnectLocal(context, callId);
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         if (callId != null && callId.equals(prefs.getString(PENDING_CALL_ID, null))) clearPending(prefs);
     }

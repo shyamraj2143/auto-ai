@@ -79,6 +79,7 @@ public class AutoAiCallsPlugin extends Plugin {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) getContext().startForegroundService(intent);
             else getContext().startService(intent);
+            AutoAiTelecomBridge.reportOutgoingCall(getContext(), callId, displayName, video ? "video" : "audio");
             Log.i(TAG, "Active call foreground service requested callId=" + callId);
             call.resolve();
         } catch (RuntimeException error) {
@@ -89,6 +90,8 @@ public class AutoAiCallsPlugin extends Plugin {
 
     @PluginMethod
     public void stopActiveCall(PluginCall call) {
+        String callId = call.getString("callId");
+        if (callId != null && !callId.trim().isEmpty()) AutoAiTelecomBridge.disconnectLocal(getContext(), callId);
         getContext().stopService(new Intent(getContext(), CallForegroundService.class));
         call.resolve();
     }
