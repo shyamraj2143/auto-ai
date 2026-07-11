@@ -103,6 +103,7 @@ $localPropertyLines += "AUTO_AI_ANDROID_KEYSTORE=$($keystore -replace "\\", "/")
 $localPropertyLines += "AUTO_AI_ANDROID_KEYSTORE_PASSWORD=$storePassword"
 $localPropertyLines += "AUTO_AI_ANDROID_KEY_ALIAS=$keyAlias"
 $localPropertyLines += "AUTO_AI_ANDROID_KEY_PASSWORD=$keyPassword"
+$localPropertyLines += "AUTO_AI_API_BASE_URL=$ApiUrl"
 if ($googleWebClientId) {
   $localPropertyLines += "AUTO_AI_GOOGLE_WEB_CLIENT_ID=$googleWebClientId"
 }

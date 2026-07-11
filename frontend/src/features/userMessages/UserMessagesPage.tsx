@@ -60,6 +60,7 @@ export function UserMessagesPage() {
   const [socketState, setSocketState] = useState<"connecting" | "connected" | "disconnected">("disconnected");
   const [error, setError] = useState("");
   const socketRef = useRef<UserMessageSocket | null>(null);
+  const retryingMessagesRef = useRef<Set<string>>(new Set());
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   const upsertThread = useCallback((thread: UserThread) => {
@@ -193,6 +194,45 @@ export function UserMessagesPage() {
     socketRef.current?.send({ type: started ? "typing.start" : "typing.stop", event_id: eventId(), thread_id: activeThread.id, payload: {} });
   }
 
+  const retryPendingTextMessages = useCallback(async () => {
+    if (!token) return;
+    const pending = messages.filter((message) =>
+      message.id.startsWith("local-") &&
+      message.sender_id === user?.id &&
+      message.message_type === "text" &&
+      Boolean(message.text_content?.trim()) &&
+      Boolean(message.client_message_id),
+    );
+    for (const message of pending) {
+      const clientId = message.client_message_id || "";
+      if (!clientId || retryingMessagesRef.current.has(clientId)) continue;
+      retryingMessagesRef.current.add(clientId);
+      try {
+        const sent = await userMessagesApi.sendMessage(token, message.thread_id, {
+          text_content: message.text_content || "",
+          client_message_id: clientId,
+        });
+        setMessages((current) => current.map((item) => item.client_message_id === clientId ? sent : item));
+        setError("");
+        void loadThreads();
+      } catch {
+        return;
+      } finally {
+        retryingMessagesRef.current.delete(clientId);
+      }
+    }
+  }, [loadThreads, messages, token, user?.id]);
+
+  useEffect(() => {
+    const retry = () => void retryPendingTextMessages();
+    window.addEventListener("online", retry);
+    const timer = window.setInterval(retry, 12000);
+    return () => {
+      window.removeEventListener("online", retry);
+      window.clearInterval(timer);
+    };
+  }, [retryPendingTextMessages]);
+
   async function sendMessage(event: FormEvent) {
     event.preventDefault();
     if (!token || !activeThread || (!composer.trim() && !attachment)) return;
@@ -222,8 +262,12 @@ export function UserMessagesPage() {
       setMessages((current) => current.map((item) => item.client_message_id === client_message_id ? sent : item));
       void loadThreads();
     } catch (sendError) {
-      setError(sendError instanceof Error ? sendError.message : "Message failed");
-      setMessages((current) => current.filter((item) => item.client_message_id !== client_message_id));
+      if (file) {
+        setError(sendError instanceof Error ? sendError.message : "Attachment failed");
+        setMessages((current) => current.filter((item) => item.client_message_id !== client_message_id));
+        return;
+      }
+      setError("Message pending. It will send automatically when the server is reachable.");
     }
   }
 
