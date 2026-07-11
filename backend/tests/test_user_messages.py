@@ -78,6 +78,28 @@ async def test_send_message_dedupes_and_read_resets_unread(db: Session, monkeypa
     assert sender_view.status == "read"
 
 
+@pytest.mark.asyncio
+async def test_pending_messages_are_delivered_when_recipient_reconnects(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    sender = create_user(db, "sender-user", "Sender")
+    recipient = create_user(db, "recipient-user", "Recipient")
+    publish = AsyncMock(return_value=0)
+    monkeypatch.setattr(global_presence_service, "publish", publish)
+    monkeypatch.setattr(service_module, "send_chat_message_notifications", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(global_presence_service, "presence_for_user", AsyncMock(return_value={"state": "offline", "last_seen_at": None, "reachable": False}))
+
+    thread = user_chat_service.create_or_get_thread(db, sender, recipient.id)
+    message = await user_chat_service.send_message(db, thread.id, sender, {"text_content": "offline hello", "client_message_id": "client-offline"})
+
+    assert user_chat_service.serialize_message(db, message, sender.id).status == "sent"
+
+    publish.reset_mock()
+    delivered = await user_chat_service.mark_pending_delivered_for_user(db, recipient.id)
+
+    assert delivered == 1
+    assert user_chat_service.serialize_message(db, message, sender.id).status == "delivered"
+    assert publish.await_count >= 2
+
+
 def test_blocked_user_cannot_start_thread(db: Session) -> None:
     sender = create_user(db, "sender-user", "Sender")
     recipient = create_user(db, "recipient-user", "Recipient")

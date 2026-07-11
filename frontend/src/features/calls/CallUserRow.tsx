@@ -1,4 +1,4 @@
-import { Ban, EllipsisVertical, Flag, Phone, Video } from "lucide-react";
+import { Ban, EllipsisVertical, Flag, MessageCircle, Phone, Video } from "lucide-react";
 import { useState } from "react";
 import { resolveApiAssetUrl } from "../../api/client";
 import type { CallType, PublicCallUser } from "./types";
@@ -6,6 +6,7 @@ import type { CallType, PublicCallUser } from "./types";
 export function CallUserRow({
   user,
   onCall,
+  onMessage,
   onBlock,
   onReport,
   callingAvailable,
@@ -13,6 +14,7 @@ export function CallUserRow({
 }: {
   user: PublicCallUser;
   onCall: (user: PublicCallUser, type: CallType) => void;
+  onMessage?: (user: PublicCallUser) => void;
   onBlock: (user: PublicCallUser) => void;
   onReport: (user: PublicCallUser) => void;
   callingAvailable: boolean;
@@ -34,8 +36,20 @@ export function CallUserRow({
       ? `Last seen ${new Date(user.last_seen_at).toLocaleString()}`
       : user.availability;
   const avatarUrl = resolveApiAssetUrl(user.avatar_url);
+  const openMessage = () => onMessage?.(user);
   return (
-    <div className="call-user-row">
+    <div
+      className={`call-user-row ${onMessage ? "clickable" : ""}`}
+      onClick={openMessage}
+      role={onMessage ? "button" : undefined}
+      tabIndex={onMessage ? 0 : undefined}
+      onKeyDown={(event) => {
+        if (onMessage && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          openMessage();
+        }
+      }}
+    >
       <span className="call-user-avatar">
         {avatarUrl ? <img src={avatarUrl} alt="" /> : <span>{user.display_name.slice(0, 1).toUpperCase()}</span>}
         <i className={`call-presence-dot ${statusClass}`} aria-label={user.availability} />
@@ -45,12 +59,13 @@ export function CallUserRow({
         <small>@{user.username} · {status}</small>
       </span>
       <span className="call-user-actions">
-        <button type="button" onClick={() => onCall(user, "audio")} disabled={audioDisabled} title={disabledTitle || "Audio call"} aria-label={`Audio call ${user.display_name}`}><Phone size={16} /></button>
-        <button type="button" onClick={() => onCall(user, "video")} disabled={videoDisabled} title={disabledTitle || "Video call"} aria-label={`Video call ${user.display_name}`}><Video size={17} /></button>
+        {onMessage && <button type="button" onClick={(event) => { event.stopPropagation(); openMessage(); }} title="Message" aria-label={`Message ${user.display_name}`}><MessageCircle size={16} /></button>}
+        <button type="button" onClick={(event) => { event.stopPropagation(); onCall(user, "audio"); }} disabled={audioDisabled} title={disabledTitle || "Audio call"} aria-label={`Audio call ${user.display_name}`}><Phone size={16} /></button>
+        <button type="button" onClick={(event) => { event.stopPropagation(); onCall(user, "video"); }} disabled={videoDisabled} title={disabledTitle || "Video call"} aria-label={`Video call ${user.display_name}`}><Video size={17} /></button>
         <span className="call-user-menu-wrap">
-          <button type="button" onClick={() => setMenuOpen((open) => !open)} title="More options" aria-label={`Options for ${user.display_name}`}><EllipsisVertical size={17} /></button>
+          <button type="button" onClick={(event) => { event.stopPropagation(); setMenuOpen((open) => !open); }} title="More options" aria-label={`Options for ${user.display_name}`}><EllipsisVertical size={17} /></button>
           {menuOpen && (
-            <span className="call-user-menu">
+            <span className="call-user-menu" onClick={(event) => event.stopPropagation()}>
               <button type="button" onClick={() => { setMenuOpen(false); onBlock(user); }}><Ban size={14} /> Block</button>
               <button type="button" onClick={() => { setMenuOpen(false); onReport(user); }}><Flag size={14} /> Report</button>
             </span>

@@ -14,6 +14,8 @@
 .calls-section-label { margin:2px 0 7px; color:#94a3b8; font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
 .calls-section-label-spaced{margin-top:14px}
 .call-user-row,.call-history-row { position:relative; display:flex; min-height:58px; align-items:center; gap:9px; border-bottom:1px solid rgba(148,163,184,.13); padding:7px 2px; }
+.call-user-row.clickable { cursor:pointer; border-radius:8px; padding-inline:6px; }
+.call-user-row.clickable:hover,.call-user-row.clickable:focus-visible { background:rgba(255,255,255,.06); outline:none; }
 .call-user-avatar { position:relative; display:grid; width:38px; height:38px; flex:0 0 38px; place-items:center; overflow:visible; border:1px solid rgba(148,163,184,.2); border-radius:50%; background:#1e293b; color:#e2e8f0; font-weight:800; }
 .call-user-avatar img,.call-screen-avatar img { width:100%; height:100%; border-radius:inherit; object-fit:cover; }
 .call-presence-dot { position:absolute; right:0; bottom:0; width:10px; height:10px; border:2px solid #0f172a; border-radius:50%; background:#64748b; }

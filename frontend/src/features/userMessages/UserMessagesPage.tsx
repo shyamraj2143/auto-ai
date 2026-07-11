@@ -53,6 +53,7 @@ export function UserMessagesPage() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<(typeof filters)[number]>("all");
   const [searchResults, setSearchResults] = useState<ChatPublicUser[]>([]);
+  const [openingPeerId, setOpeningPeerId] = useState("");
   const [composer, setComposer] = useState("");
   const [attachment, setAttachment] = useState<File | null>(null);
   const [typingUsers, setTypingUsers] = useState<Record<string, number>>({});
@@ -76,13 +77,19 @@ export function UserMessagesPage() {
 
   const loadThread = useCallback(async (id: string) => {
     if (!token) return;
-    const [thread, messagePage] = await Promise.all([userMessagesApi.getThread(token, id), userMessagesApi.listMessages(token, id)]);
-    setActiveThread(thread);
-    upsertThread(thread);
-    setMessages(messagePage.items);
-    await userMessagesApi.markDelivered(token, id).catch(() => undefined);
-    await userMessagesApi.markRead(token, id).catch(() => undefined);
-    setThreads((current) => current.map((item) => item.id === id ? { ...item, unread_count: 0 } : item));
+    try {
+      const [thread, messagePage] = await Promise.all([userMessagesApi.getThread(token, id), userMessagesApi.listMessages(token, id)]);
+      setActiveThread(thread);
+      upsertThread(thread);
+      setMessages(messagePage.items);
+      await userMessagesApi.markDelivered(token, id).catch(() => undefined);
+      await userMessagesApi.markRead(token, id).catch(() => undefined);
+      setThreads((current) => current.map((item) => item.id === id ? { ...item, unread_count: 0 } : item));
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Unable to open chat.");
+      setActiveThread(null);
+      setMessages([]);
+    }
   }, [token, upsertThread]);
 
   const handleRealtime = useCallback((event: ChatRealtimeEvent) => {
@@ -166,11 +173,19 @@ export function UserMessagesPage() {
 
   async function startThread(peer: ChatPublicUser) {
     if (!token) return;
-    const thread = await userMessagesApi.createThread(token, peer.id);
-    upsertThread(thread);
-    setQuery("");
-    setSearchResults([]);
-    navigate(`/messages/${thread.id}`);
+    setOpeningPeerId(peer.id);
+    setError("");
+    try {
+      const thread = await userMessagesApi.createThread(token, peer.id);
+      upsertThread(thread);
+      setQuery("");
+      setSearchResults([]);
+      navigate(`/messages/${thread.id}`);
+    } catch (openError) {
+      setError(openError instanceof Error ? openError.message : "Unable to open chat.");
+    } finally {
+      setOpeningPeerId("");
+    }
   }
 
   function sendTyping(started: boolean) {
@@ -235,8 +250,8 @@ export function UserMessagesPage() {
         {searchResults.length > 0 && (
           <div className="um-search-results">
             {searchResults.map((peer) => (
-              <button type="button" key={peer.id} onClick={() => void startThread(peer)}>
-                <Avatar user={peer} /><span><strong>{peer.display_name}</strong><small>@{peer.username}</small></span>
+              <button type="button" key={peer.id} onClick={() => void startThread(peer)} disabled={openingPeerId === peer.id}>
+                <Avatar user={peer} /><span><strong>{peer.display_name}</strong><small>{openingPeerId === peer.id ? "Opening..." : `@${peer.username}`}</small></span>
               </button>
             ))}
           </div>

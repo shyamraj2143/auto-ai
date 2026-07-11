@@ -331,6 +331,32 @@ class UserChatService:
         if receipts:
             await self._publish_receipt_update(db, thread_id, "message.delivered", user_id)
 
+    async def mark_pending_delivered_for_user(self, db: Session, user_id: str) -> int:
+        rows = list(
+            db.execute(
+                select(MessageReceipt, ChatMessage.thread_id)
+                .join(ChatMessage, ChatMessage.id == MessageReceipt.message_id)
+                .join(ChatParticipant, ChatParticipant.thread_id == ChatMessage.thread_id)
+                .where(
+                    ChatParticipant.user_id == user_id,
+                    MessageReceipt.user_id == user_id,
+                    MessageReceipt.delivered_at.is_(None),
+                    ChatMessage.sender_id != user_id,
+                    ChatMessage.deleted_at.is_(None),
+                )
+            ).all()
+        )
+        if not rows:
+            return 0
+        now = utcnow()
+        thread_ids = sorted({thread_id for _, thread_id in rows})
+        for receipt, _ in rows:
+            receipt.delivered_at = now
+        db.commit()
+        for thread_id in thread_ids:
+            await self._publish_receipt_update(db, thread_id, "message.delivered", user_id)
+        return len(rows)
+
     async def mark_read(self, db: Session, thread_id: str, user_id: str) -> None:
         participant = self.participant(db, thread_id, user_id)
         now = utcnow()

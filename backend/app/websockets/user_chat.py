@@ -92,6 +92,8 @@ async def user_chat_socket(websocket: WebSocket, token: str = "") -> None:
     await websocket.accept()
     forward_task = asyncio.create_task(forward_chat_events(websocket, user_id))
     await websocket.send_json(chat_event("chat.ready", user_id, {"connection_id": connection_id}))
+    with SessionLocal() as db:
+        await user_chat_service.mark_pending_delivered_for_user(db, user_id)
     try:
         while True:
             raw = await websocket.receive_text()

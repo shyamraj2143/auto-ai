@@ -1,7 +1,9 @@
 import { Clock3, LoaderCircle, RefreshCw, Search, Settings, ShieldAlert, Users, WifiOff } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { resolveApiAssetUrl } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
+import { userMessagesApi } from "../userMessages/userMessagesApi";
 import { CallSettings } from "./CallSettings";
 import { CallUserRow } from "./CallUserRow";
 import { useCallSession } from "./hooks/useCallSession";
@@ -19,6 +21,7 @@ function errorText(error: unknown, fallback: string) {
 
 export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps) {
   const { token, user: currentUser } = useAuth();
+  const navigate = useNavigate();
   const { config, error, clearError, refreshRealtime, signalingState, startCall } = useCallSession();
   const [query, setQuery] = useState("");
   const [discoverable, setDiscoverable] = useState<PublicCallUser[]>([]);
@@ -161,6 +164,17 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
     void startCall(user, type);
   }
 
+  async function openMessageThread(user: PublicCallUser) {
+    if (!token) return;
+    setMessage("");
+    try {
+      const thread = await userMessagesApi.createThread(token, user.id);
+      navigate(`/messages/${thread.id}`);
+    } catch (chatError) {
+      showErrorToast(errorText(chatError, "Unable to open chat."));
+    }
+  }
+
   function submitSearch(event: FormEvent) {
     event.preventDefault();
     void runSearch(query);
@@ -174,6 +188,7 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
       key={item.id}
       user={item}
       onCall={placeCall}
+      onMessage={(selected) => void openMessageThread(selected)}
       onBlock={(selected) => void blockUser(selected)}
       onReport={(selected) => void reportUser(selected)}
       callingAvailable={callingAvailable}
