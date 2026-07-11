@@ -145,6 +145,10 @@ function stripTrailingSlash(value: string) {
   return value.replace(/\/+$/, "");
 }
 
+function normalizeBaseUrl(url: string) {
+  return url.replace(/\/+$/, "");
+}
+
 function normalizeApiUrl(value?: string) {
   const trimmed = value?.trim();
   if (!trimmed) return "";
@@ -155,15 +159,22 @@ function normalizeApiUrl(value?: string) {
       .replace(/\/api\/v1(?:\/api\/v1)+\/?$/i, API_V1_PREFIX)
       .replace(/\/+$/g, "")}`;
     if (!/\/api\/v1$/i.test(url.pathname)) url.pathname = `${url.pathname.replace(/\/+$/, "")}${API_V1_PREFIX}`;
-    return stripTrailingSlash(url.toString());
+    return normalizeBaseUrl(url.toString());
   } catch {
     return "";
   }
 }
 
 function normalizeApiPath(path: string) {
-  const normalized = path.startsWith("/") ? path : `/${path}`;
-  return normalized.replace(/^\/api\/v1(?=\/|$)/i, "") || "/";
+  let normalized = path.trim().replace(/^\/+/, "");
+  while (/^api\/v1(?=\/|$)/i.test(normalized)) {
+    normalized = normalized.replace(/^api\/v1(?=\/|$)\/?/i, "").replace(/^\/+/, "");
+  }
+  return normalized ? `/${normalized}` : "/";
+}
+
+function joinApiUrl(base: string, path: string) {
+  return `${normalizeBaseUrl(base)}/${normalizeApiPath(path).replace(/^\/+/, "")}`;
 }
 
 function configuredApiUrl() {
@@ -322,7 +333,7 @@ function isCertificateLikeError(error: unknown) {
 }
 
 function healthProbeUrl() {
-  return `${API_BASE_URL}/health`;
+  return joinApiUrl(API_BASE_URL, "/health");
 }
 
 async function canReachApiHostWithoutCors() {
@@ -520,7 +531,7 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
   const headers = new Headers(requestOptions.headers);
   const method = requestOptions.method ?? "GET";
   const requestPath = normalizeApiPath(path);
-  const url = `${API_BASE_URL}${requestPath}`;
+  const url = joinApiUrl(API_BASE_URL, requestPath);
 
   if (!(requestOptions.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
@@ -638,7 +649,7 @@ export const api = {
     onProgress: (progress: number) => void
   ) =>
     new Promise<DocumentItem>((resolve, reject) => {
-      const url = `${API_BASE_URL}/documents/upload`;
+      const url = joinApiUrl(API_BASE_URL, "/documents/upload");
       const meta = { path: "/documents/upload", method: "POST", operation: "documents.uploadWithProgress" };
       const request = new XMLHttpRequest();
       request.open("POST", url);
@@ -1119,7 +1130,7 @@ export async function streamChat(
   onEvent: (event: StreamEvent) => void
 ) {
   const path = "/ai/chat/stream";
-  const url = `${API_BASE_URL}${path}`;
+  const url = joinApiUrl(API_BASE_URL, path);
   const response = await fetchWithNetworkMessage(
     url,
     {
