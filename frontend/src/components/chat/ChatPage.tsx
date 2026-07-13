@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { ArrowDown, Bot, Brain, CornerDownRight, Menu, MessageSquarePlus, PhoneCall, RefreshCw, Settings, Sparkles, Square } from "lucide-react";
+import { ArrowDown, Brain, CornerDownRight, Menu, MessageSquarePlus, PhoneCall, RefreshCw, Settings, Sparkles, Square } from "lucide-react";
 import { ApiClientError, api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
@@ -17,6 +17,7 @@ import { useSettingsNavigation } from "../../hooks/useSettingsNavigation";
 import { LiveCallMode } from "../live/LiveCallMode";
 import { mediaResourceCoordinator } from "../../features/calls/services/mediaResourceCoordinator";
 import { useCallSession } from "../../features/calls/hooks/useCallSession";
+import { NeuralCore } from "../../motion/NeuralCore";
 
 const DEFAULT_OPTIONS: ComposerOptions = {
   searchMode: "auto",
@@ -285,6 +286,13 @@ export function ChatPage() {
   const visibleChatBusy = submittingGeneration || visibleGenerationRunning;
   const visibleStreamingMessageId =
     visibleGenerationRunning ? visibleGeneration?.assistant_message_id ?? streamingMessageId : streamingMessageId;
+  const neuralState = !navigator.onLine
+    ? "offline"
+    : visibleStreamingMessageId
+      ? "streaming"
+      : visibleChatBusy
+        ? "thinking"
+        : "ready";
 
   function syncActiveChatMessages(chatId: string, nextMessages: Message[]) {
     setActiveChat((current) =>
@@ -931,7 +939,10 @@ export function ChatPage() {
           >
             <Menu size={18} />
           </button>
-          <span className="truncate text-sm font-medium">{activeTitle}</span>
+          <span className="flex min-w-0 items-center gap-2">
+            <NeuralCore state={neuralState} size="sm" className="chat-status-core" />
+            <span className="truncate text-sm font-medium">{activeTitle}</span>
+          </span>
           <div className="flex items-center gap-1.5">
             {callConfig?.enabled !== false && <button
               className="icon-button-dark"
@@ -968,7 +979,7 @@ export function ChatPage() {
         <div className="chat-topbar hidden md:flex">
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-2">
-              <span className="chat-topbar-dot" aria-hidden="true" />
+              <NeuralCore state={neuralState} size="sm" className="chat-status-core" />
               <h1 className="truncate text-sm font-semibold text-white">{activeTitle}</h1>
             </div>
             <p className="mt-0.5 truncate text-xs text-slate-500">
@@ -1021,8 +1032,8 @@ export function ChatPage() {
                 className="empty-chat-hero grid min-h-full place-items-center px-4 py-12"
               >
                 <div className="empty-chat-content max-w-3xl text-center">
-                  <div className="empty-chat-orb mx-auto mb-5 grid h-14 w-14 place-items-center rounded-lg border border-cyan-200/30 bg-cyan-200/15 text-cyan-100 shadow-[0_0_38px_rgba(34,211,238,0.25)]">
-                    <Bot size={25} />
+                  <div className="empty-chat-orb mx-auto mb-5 grid h-16 w-16 place-items-center">
+                    <NeuralCore state="ready" size="md" />
                   </div>
                   <p className="empty-chat-kicker mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs uppercase text-cyan-100">
                     <Sparkles size={13} />

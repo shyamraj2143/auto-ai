@@ -2,6 +2,7 @@ package com.autoai.app;
 
 import android.content.Context;
 import android.net.Uri;
+import android.os.Build;
 import android.telecom.Connection;
 import android.telecom.DisconnectCause;
 import android.telecom.TelecomManager;
@@ -23,7 +24,7 @@ public class AutoAiCallConnection extends Connection {
         this.callId = callId == null ? "" : callId.trim();
         this.expiresAt = expiresAt;
         this.incoming = incoming;
-        setConnectionProperties(PROPERTY_SELF_MANAGED);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) setConnectionProperties(PROPERTY_SELF_MANAGED);
         setAudioModeIsVoip(true);
         setAddress(Uri.fromParts("autoai", this.callId.isEmpty() ? "call" : this.callId, null), TelecomManager.PRESENTATION_ALLOWED);
         setCallerDisplayName(displayName == null || displayName.trim().isEmpty() ? "Auto-AI call" : displayName.trim(), TelecomManager.PRESENTATION_ALLOWED);

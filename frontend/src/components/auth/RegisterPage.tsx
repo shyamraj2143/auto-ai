@@ -5,6 +5,8 @@ import { useAuth } from "../../contexts/AuthContext";
 import { authErrorMessage, registerErrorMessage } from "../../utils/apiErrors";
 import { LogoIcon } from "../brand/LogoIcon";
 import { GoogleSignInButton } from "./GoogleSignInButton";
+import { NeuralCore } from "../../motion/NeuralCore";
+import { AnimatedPage } from "../../motion/primitives";
 
 export function RegisterPage() {
   const { googleLogin, register, user } = useAuth();
@@ -52,11 +54,14 @@ export function RegisterPage() {
   if (user) return <Navigate to="/chat" replace />;
 
   return (
-    <div className="auth-page">
+    <AnimatedPage className="auth-page">
       <Link className="brand-mark absolute left-5 top-5" to="/">
         <span className="brand-icon"><LogoIcon /></span>
         Auto-AI
       </Link>
+      <div className="auth-neural-core" aria-hidden="true">
+        <NeuralCore state={loading ? "thinking" : "idle"} size="lg" />
+      </div>
       <section className="auth-visual">
         <p className="hero-kicker"><Brain size={14} /> Personal AI layer</p>
         <h1>Create your workspace.</h1>
@@ -90,6 +95,6 @@ export function RegisterPage() {
           Already registered? <Link className="font-medium text-cyan-200" to="/login">Log in</Link>
         </p>
       </form>
-    </div>
+    </AnimatedPage>
   );
 }

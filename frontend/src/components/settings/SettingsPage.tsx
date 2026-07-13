@@ -41,6 +41,8 @@ import { CallSettings } from "../../features/calls/CallSettings";
 import { ProfileAccountCard } from "./ProfileAccountCard";
 import { userMessagesApi } from "../../features/userMessages/userMessagesApi";
 import type { ChatSettings } from "../../features/userMessages/types";
+import { useMotionMode } from "../../motion/MotionProvider";
+import type { MotionPreference } from "../../motion/tokens";
 
 const APP_VERSION = "1.0.2";
 
@@ -55,6 +57,13 @@ const LANGUAGE_OPTIONS: Array<{ value: AppLanguage; label: string }> = [
   { value: "en", label: "English" },
   { value: "hi", label: "Hindi" },
   { value: "hinglish", label: "Hinglish" }
+];
+
+const MOTION_OPTIONS: Array<{ value: MotionPreference; label: string }> = [
+  { value: "system", label: "System" },
+  { value: "full", label: "Full" },
+  { value: "balanced", label: "Balanced" },
+  { value: "reduced", label: "Reduced" }
 ];
 
 const PROVIDER_LABELS: Record<AiProvider, string> = {
@@ -205,6 +214,7 @@ export function SettingsPage() {
   const { token, logout } = useAuth();
   const { chats, refreshChats, setActiveChat } = useChat();
   const { theme, setTheme } = useTheme();
+  const { preference: motionPreference, setPreference: setMotionPreference, mode: activeMotionMode, tier: performanceTier } = useMotionMode();
   const {
     settings,
     setDefaultProvider,
@@ -431,6 +441,20 @@ export function SettingsPage() {
                 </button>
               ))}
             </div>
+          </SettingsRow>
+          <SettingsRow
+            icon={Sparkles}
+            accent="violet"
+            title="Motion"
+            description={`Active: ${activeMotionMode} / ${performanceTier}`}
+          >
+            <Select value={motionPreference} onChange={(value) => setMotionPreference(value as MotionPreference)} label="Motion preference">
+              {MOTION_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
           </SettingsRow>
         </SettingsCard>
 

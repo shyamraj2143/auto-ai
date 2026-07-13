@@ -6,6 +6,7 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.app.PictureInPictureParams;
 import android.content.Context;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
@@ -17,6 +18,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.provider.Settings;
+import android.util.Rational;
 import android.webkit.CookieManager;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -58,7 +60,6 @@ public class MainActivity extends BridgeActivity {
     private static final int MAX_DOWNLOAD_ATTEMPTS = 3;
     private static final long UPDATE_CHECK_INTERVAL_MS = 5L * 60L * 1000L;
     private static final int UPDATE_NOTIFICATION_ID = 1001;
-    private static final int NOTIFICATION_PERMISSION_REQUEST_CODE = 1002;
     private static final String UPDATE_NOTIFICATION_CHANNEL_ID = "auto_ai_updates";
     private static final String LAST_NOTIFIED_UPDATE_VERSION_CODE = "last_notified_update_version_code";
     private static final String UPDATE_PREFERENCES = "auto_ai_update_preferences";
@@ -109,7 +110,6 @@ public class MainActivity extends BridgeActivity {
 
         createUpdateNotificationChannel();
         CallNotificationManager.createChannels(this);
-        requestNotificationPermissionIfNeeded();
         registerFirebaseMessagingToken();
         UpdateCheckScheduler.schedule(this);
         checkForUpdate(true);
@@ -179,6 +179,27 @@ public class MainActivity extends BridgeActivity {
         super.onDestroy();
         mainHandler.removeCallbacks(updatePollRunnable);
         updateExecutor.shutdownNow();
+    }
+
+    @Override
+    protected void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        enterPictureInPictureForActiveVideoCall();
+    }
+
+    private void enterPictureInPictureForActiveVideoCall() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || isFinishing()) return;
+        if (!AutoAiCallsPlugin.isActiveVideoCall(this)) return;
+        WebView webView = getBridge() == null ? null : getBridge().getWebView();
+        int width = webView == null ? 16 : Math.max(1, webView.getWidth());
+        int height = webView == null ? 9 : Math.max(1, webView.getHeight());
+        try {
+            enterPictureInPictureMode(new PictureInPictureParams.Builder()
+                .setAspectRatio(new Rational(width, height))
+                .build());
+        } catch (RuntimeException ignored) {
+            // PiP eligibility can change while the Activity is transitioning.
+        }
     }
 
     private void startUpdatePolling() {
@@ -417,12 +438,6 @@ public class MainActivity extends BridgeActivity {
         );
         channel.setDescription("Auto-AI APK update alerts");
         manager.createNotificationChannel(channel);
-    }
-
-    private void requestNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return;
-        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return;
-        requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, NOTIFICATION_PERMISSION_REQUEST_CODE);
     }
 
     private boolean canPostNotifications() {

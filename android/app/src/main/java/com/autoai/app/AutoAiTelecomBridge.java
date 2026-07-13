@@ -56,6 +56,7 @@ public final class AutoAiTelecomBridge {
 
     public static void reportOutgoingCall(Context context, String callId, String displayName, String callType) {
         if (!isAvailable(context) || clean(callId) == null) return;
+        if (context.checkSelfPermission(Manifest.permission.MANAGE_OWN_CALLS) != PackageManager.PERMISSION_GRANTED) return;
         AutoAiCallConnection existing = CONNECTIONS.get(callId);
         if (existing != null) {
             existing.markActiveFromApp();

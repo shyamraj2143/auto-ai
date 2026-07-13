@@ -81,3 +81,51 @@
 @keyframes callOrbit{to{transform:translate(-50%,-50%) rotate(360deg)}}@keyframes callPulse{0%{opacity:.9;transform:scale(.78)}100%{opacity:0;transform:scale(1.22)}}@keyframes acceptGlow{50%{box-shadow:0 0 0 9px rgba(34,211,238,.12),0 18px 40px rgba(0,0,0,.28)}}
 @media(max-width:380px){.incoming-call-actions{gap:8px}.incoming-call-actions button{width:68px;min-width:68px;height:68px}.outgoing-local-preview{width:78px}.outgoing-profile-card h2,.incoming-call-content h2{font-size:24px}}
 @media(prefers-reduced-motion:reduce){.call-orbit-bg::before,.call-orbit-bg::after,.incoming-pulse,.outgoing-avatar-orbit::before,.outgoing-avatar-orbit::after,.incoming-call-actions .accept{animation:none}}
+
+.advanced-motion .neural-call-screen .call-screen-avatar {
+  animation: callerHalo 2.4s ease-in-out infinite;
+}
+
+.advanced-motion .neural-call-screen .incoming-call-actions button,
+.advanced-motion .neural-call-screen .active-call-controls button,
+.advanced-motion .neural-call-screen .outgoing-cancel-call {
+  transition: transform .16s cubic-bezier(.22,1,.36,1), box-shadow .16s ease, background .16s ease;
+}
+
+.advanced-motion .neural-call-screen .incoming-call-actions button:active,
+.advanced-motion .neural-call-screen .active-call-controls button:active,
+.advanced-motion .neural-call-screen .outgoing-cancel-call:active {
+  transform: scale(.965);
+}
+
+.advanced-motion .neural-call-screen .active-call-header {
+  animation: callHeaderIn .28s ease-out both;
+}
+
+.advanced-motion .neural-call-screen .local-call-preview,
+.advanced-motion .neural-call-screen .outgoing-local-preview {
+  transition: transform .2s cubic-bezier(.22,1,.36,1), border-color .2s ease;
+}
+
+.advanced-motion .neural-call-screen .call-quality {
+  position: relative;
+  overflow: hidden;
+}
+
+.advanced-motion .neural-call-screen .call-quality::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(125,211,252,.18), transparent);
+  transform: translateX(-100%);
+  animation: callQualityScan 2.6s ease-in-out infinite;
+}
+
+@keyframes callerHalo{50%{box-shadow:0 24px 70px rgba(0,0,0,.42),0 0 0 12px rgba(103,232,249,.07),0 0 42px rgba(134,239,172,.14)}}
+@keyframes callHeaderIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes callQualityScan{55%,100%{transform:translateX(100%)}}
+
+html[data-auto-ai-motion="reduced"] .neural-call-screen *,
+html[data-auto-ai-visible="false"] .neural-call-screen * {
+  animation-play-state: paused!important;
+}

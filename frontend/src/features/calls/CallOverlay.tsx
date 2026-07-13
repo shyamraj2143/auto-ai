@@ -65,6 +65,14 @@ export function CallOverlay() {
     if (sessionState === "incoming") setIncomingActionPending(false);
   }, [call?.id, sessionState]);
 
+  useEffect(() => {
+    const active = sessionState !== "idle";
+    document.documentElement.dataset.autoAiCallActive = active ? "true" : "false";
+    return () => {
+      document.documentElement.dataset.autoAiCallActive = "false";
+    };
+  }, [sessionState]);
+
   if (sessionState === "idle" || !peer) return null;
 
   const time = `${Math.floor(seconds / 60).toString().padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
@@ -93,7 +101,7 @@ export function CallOverlay() {
 
   if (incoming) {
     return (
-      <div className="incoming-call-screen" role="dialog" aria-modal="true" aria-label={`Incoming call from ${peer.display_name}`}>
+      <div className="incoming-call-screen neural-call-screen" role="dialog" aria-modal="true" aria-label={`Incoming call from ${peer.display_name}`}>
         {avatarUrl && <div className="incoming-call-backdrop" style={{ backgroundImage: `url(${avatarUrl})` }} />}
         <div className="call-orbit-bg" aria-hidden="true" />
         <div className="incoming-call-content">
@@ -115,7 +123,7 @@ export function CallOverlay() {
 
   if (!activeLike) {
     return (
-      <div className="outgoing-call-screen" role="dialog" aria-modal="true" aria-label={`Calling ${peer.display_name}`}>
+      <div className="outgoing-call-screen neural-call-screen" role="dialog" aria-modal="true" aria-label={`Calling ${peer.display_name}`}>
         <div className="call-orbit-bg" aria-hidden="true" />
         <div className="auto-ai-watermark" aria-hidden="true">Auto-AI</div>
         <section className="outgoing-profile-card">
@@ -134,7 +142,7 @@ export function CallOverlay() {
   }
 
   return (
-    <div className="active-call-screen" role="dialog" aria-modal="true" aria-label={`Call with ${peer.display_name}`}>
+    <div className="active-call-screen neural-call-screen" role="dialog" aria-modal="true" aria-label={`Call with ${peer.display_name}`}>
       {remoteStream && remoteCameraEnabled && hasRemoteVideo ? <VideoSurface stream={remoteStream} className="remote-call-video" /> : <div className="remote-call-placeholder"><Avatar name={peer.display_name} url={peer.avatar_url} /></div>}
       <div className="call-screen-shade" />
       <header className="active-call-header">

@@ -7,6 +7,8 @@ import { authErrorMessage, loginErrorMessage } from "../../utils/apiErrors";
 import { isMobileAppRuntime } from "../../utils/runtime";
 import { LogoIcon } from "../brand/LogoIcon";
 import { GoogleSignInButton } from "./GoogleSignInButton";
+import { NeuralCore } from "../../motion/NeuralCore";
+import { AnimatedPage } from "../../motion/primitives";
 
 export function LoginPage() {
   const { googleLogin, login, user } = useAuth();
@@ -81,11 +83,14 @@ export function LoginPage() {
   if (user) return <Navigate to="/chat" replace />;
 
   return (
-    <div className="auth-page">
+    <AnimatedPage className="auth-page">
       <Link className="brand-mark absolute left-5 top-5" to={isMobileAppRuntime() ? "/login" : "/"}>
         <span className="brand-icon"><LogoIcon /></span>
         Auto-AI
       </Link>
+      <div className="auth-neural-core" aria-hidden="true">
+        <NeuralCore state={loading ? "thinking" : "idle"} size="lg" />
+      </div>
       <section className="auth-visual">
         <p className="hero-kicker"><Lock size={14} /> Secure workspace</p>
         <h1>Welcome back.</h1>
@@ -147,6 +152,6 @@ export function LoginPage() {
           New here? <Link className="font-medium text-cyan-200" to="/register">Create an account</Link>
         </p>
       </form>
-    </div>
+    </AnimatedPage>
   );
 }

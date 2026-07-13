@@ -1,0 +1,235 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - link [ref=e5] [cursor=pointer]:
+      - /url: /
+      - img "Auto-AI logo" [ref=e7]
+      - text: Auto-AI
+    - navigation [ref=e8]:
+      - link "Features" [ref=e9] [cursor=pointer]:
+        - /url: "#features"
+      - link "Android" [ref=e10] [cursor=pointer]:
+        - /url: /download
+      - link "Pricing" [ref=e11] [cursor=pointer]:
+        - /url: /pricing
+      - link "Admin" [ref=e12] [cursor=pointer]:
+        - /url: /admin/login
+      - link "FAQ" [ref=e13] [cursor=pointer]:
+        - /url: "#faq"
+    - generic [ref=e14]:
+      - button "Turn fish animation off" [pressed] [ref=e15] [cursor=pointer]
+      - link "Sign in" [ref=e22] [cursor=pointer]:
+        - /url: /login
+      - button "Switch to light mode" [ref=e25] [cursor=pointer]
+  - main [ref=e32]:
+    - generic [ref=e33]:
+      - generic [ref=e34]:
+        - paragraph [ref=e36]: Ultra Premium AI Workspace
+        - heading "Auto-AI" [level=1] [ref=e40]
+        - paragraph [ref=e42]: Auto-AI, also known as AutoAI and Auto AI, is a commercial-grade AI experience with memory, uploads, voice, streaming, and a conversation style that feels alive.
+        - generic [ref=e44]:
+          - link "Start building" [ref=e45] [cursor=pointer]:
+            - /url: /register
+          - link "View workspace" [ref=e48] [cursor=pointer]:
+            - /url: /login
+      - generic "Auto-AI product preview" [ref=e49]:
+        - generic [ref=e56]:
+          - generic:
+            - generic: Memory sync
+            - generic: Voice ready
+            - generic: Files parsed
+          - generic [ref=e58]: Audit the upload flow and make the UI feel premium.
+          - generic [ref=e59]: I found the split upload path. I'll move documents, images, voice, and send into one composer, then keep memory visible beside the thread.
+          - generic [ref=e61]: Message Auto-AI
+    - generic [ref=e76]:
+      - text: Understand
+      - generic [ref=e77]:
+        - paragraph [ref=e78]: Product System
+        - heading [level=2] [ref=e79]:
+          - generic "Every interaction has weight, motion, and memory." [ref=e80]:
+            - generic [ref=e81]: Every
+            - generic [ref=e82]: interaction
+            - generic [ref=e83]: has
+            - generic [ref=e84]: weight,
+            - generic [ref=e85]: motion,
+            - generic [ref=e86]: and
+            - generic [ref=e87]: memory.
+      - generic [ref=e88]:
+        - generic [ref=e90]:
+          - heading "Adaptive memory" [level=3] [ref=e102]
+          - paragraph [ref=e103]: Preference, project, and style signals shape future replies without making the assistant feel scripted.
+        - generic [ref=e105]:
+          - heading "Document context" [level=3] [ref=e110]
+          - paragraph [ref=e111]: PDF, DOCX, TXT, and image context flow into one composer with previews, progress, and recovery states.
+        - generic [ref=e113]:
+          - heading "Human conversation" [level=3] [ref=e117]
+          - paragraph [ref=e118]: Emotion, tone, humor, and callbacks make each reply feel more like a continuation than a reset.
+    - generic [ref=e119]:
+      - text: Think
+      - generic [ref=e120]:
+        - generic [ref=e121]:
+          - paragraph [ref=e122]: Scroll Animation
+          - heading [level=2] [ref=e123]:
+            - generic "Text flies in, panels breathe, and the page keeps moving." [ref=e124]:
+              - generic [ref=e125]: Text
+              - generic [ref=e126]: flies
+              - generic [ref=e127]: in,
+              - generic [ref=e128]: panels
+              - generic [ref=e129]: breathe,
+              - generic [ref=e130]: and
+              - generic [ref=e131]: the
+              - generic [ref=e132]: page
+              - generic [ref=e133]: keeps
+              - generic [ref=e134]: moving.
+        - generic [ref=e135]:
+          - generic [ref=e136]: Think
+          - generic [ref=e138]: Listen
+          - generic [ref=e140]: Recall
+          - generic [ref=e142]: Search
+          - generic [ref=e144]: Write
+          - generic [ref=e146]: Speak
+    - generic [ref=e148]:
+      - text: Connect
+      - generic [ref=e149]:
+        - generic [ref=e150]:
+          - paragraph [ref=e151]: Mobile Application
+          - heading "Install Auto-AI on Android" [level=2] [ref=e154]
+          - paragraph [ref=e155]: Use the same account, backend, memory, chat history, uploads, settings, and source-grounded answers from your phone.
+          - generic [ref=e156]:
+            - generic [ref=e157]: "Latest: Checking"
+            - generic [ref=e158]: "Code: 0"
+            - generic [ref=e159]: "Released: Pending release"
+            - generic [ref=e160]: "Updated: Pending release"
+            - generic [ref=e161]: "Downloads: 0"
+          - generic [ref=e162]:
+            - button "Download APK" [ref=e163] [cursor=pointer]
+            - link "App details" [ref=e167] [cursor=pointer]:
+              - /url: /download
+        - generic [ref=e168]:
+          - generic [ref=e170]:
+            - generic [ref=e171]:
+              - img "Auto-AI logo" [ref=e172]
+              - text: Auto-AI
+            - generic [ref=e173]: Find current sources.
+            - generic [ref=e174]: Searching the web...
+            - generic [ref=e175]: S1 S2 S3 | 86%
+          - generic [ref=e176]: Scan APK
+    - generic [ref=e181]:
+      - text: Interact
+      - generic [ref=e182]:
+        - generic [ref=e183]:
+          - paragraph [ref=e184]: AI Capabilities
+          - heading [level=2] [ref=e185]:
+            - generic "One surface for the whole loop." [ref=e186]:
+              - generic [ref=e187]: One
+              - generic [ref=e188]: surface
+              - generic [ref=e189]: for
+              - generic [ref=e190]: the
+              - generic [ref=e191]: whole
+              - generic [ref=e192]: loop.
+        - generic [ref=e193]:
+          - generic [ref=e194]: Streaming chat
+          - generic [ref=e197]: Voice input
+          - generic [ref=e200]: Image analysis
+          - generic [ref=e203]: Memory panel
+          - generic [ref=e206]: Search mode
+          - generic [ref=e209]: Regenerate
+          - generic [ref=e212]: Bookmarks
+          - generic [ref=e215]: Prompt editing
+    - generic [ref=e218]:
+      - text: Trust
+      - generic [ref=e219]:
+        - paragraph [ref=e220]: User Feedback
+        - heading [level=2] [ref=e221]:
+          - generic "Auto-AI feels built for real work." [ref=e222]:
+            - generic [ref=e223]: Auto-AI
+            - generic [ref=e224]: feels
+            - generic [ref=e225]: built
+            - generic [ref=e226]: for
+            - generic [ref=e227]: real
+            - generic [ref=e228]: work.
+      - generic [ref=e229]:
+        - figure "Auto-AI beta user" [ref=e231]:
+          - blockquote [ref=e232]: Feels like an AI workspace with a pulse.
+        - figure "Auto-AI beta user" [ref=e235]:
+          - blockquote [ref=e236]: The context panel makes long research threads easier to steer.
+        - figure "Auto-AI beta user" [ref=e239]:
+          - blockquote [ref=e240]: Uploads, voice, and memory finally live where the conversation happens.
+    - generic [ref=e242]:
+      - text: Act
+      - generic [ref=e243]:
+        - paragraph [ref=e244]: Plans
+        - heading [level=2] [ref=e245]:
+          - generic "Start with Auto-AI and scale when you need more." [ref=e246]:
+            - generic [ref=e247]: Start
+            - generic [ref=e248]: with
+            - generic [ref=e249]: Auto-AI
+            - generic [ref=e250]: and
+            - generic [ref=e251]: scale
+            - generic [ref=e252]: when
+            - generic [ref=e253]: you
+            - generic [ref=e254]: need
+            - generic [ref=e255]: more.
+      - generic [ref=e256]:
+        - generic [ref=e258]:
+          - heading "Free" [level=3] [ref=e259]
+          - strong [ref=e260]: Rs 0
+          - generic [ref=e261]: 10,000 tokens/month
+          - link "Choose Free" [ref=e262] [cursor=pointer]:
+            - /url: /pricing
+        - generic [ref=e264]:
+          - heading "Pro" [level=3] [ref=e265]
+          - strong [ref=e266]: Rs 20
+          - generic [ref=e267]: 100,000 tokens/month
+          - link "Choose Pro" [ref=e268] [cursor=pointer]:
+            - /url: /pricing
+        - generic [ref=e270]:
+          - heading "Premium" [level=3] [ref=e271]
+          - strong [ref=e272]: Rs 50
+          - generic [ref=e273]: 300,000 tokens/month
+          - link "Choose Premium" [ref=e274] [cursor=pointer]:
+            - /url: /pricing
+        - generic [ref=e276]:
+          - heading "Ultra" [level=3] [ref=e277]
+          - strong [ref=e278]: Rs 100
+          - generic [ref=e279]: 1,000,000 tokens/month
+          - link "Choose Ultra" [ref=e280] [cursor=pointer]:
+            - /url: /pricing
+    - generic [ref=e281]:
+      - text: Resolve
+      - generic [ref=e282]:
+        - paragraph [ref=e283]: Auto-AI
+        - heading [level=2] [ref=e284]:
+          - generic "Bring the whole workspace into one conversation." [ref=e285]:
+            - generic [ref=e286]: Bring
+            - generic [ref=e287]: the
+            - generic [ref=e288]: whole
+            - generic [ref=e289]: workspace
+            - generic [ref=e290]: into
+            - generic [ref=e291]: one
+            - generic [ref=e292]: conversation.
+        - generic [ref=e293]:
+          - link "Create account" [ref=e294] [cursor=pointer]:
+            - /url: /register
+          - link "Android APK" [ref=e297] [cursor=pointer]:
+            - /url: /download
+    - generic [ref=e301]:
+      - text: FAQ
+      - generic [ref=e302]:
+        - paragraph [ref=e303]: FAQ
+        - heading [level=2] [ref=e304]:
+          - generic "Common Auto-AI questions." [ref=e305]:
+            - generic [ref=e306]: Common
+            - generic [ref=e307]: Auto-AI
+            - generic [ref=e308]: questions.
+      - generic [ref=e309]:
+        - group [ref=e310]:
+          - generic "Does Auto-AI remember me?" [ref=e311] [cursor=pointer]
+        - group [ref=e312]:
+          - generic "Can I chat with files?" [ref=e313] [cursor=pointer]
+        - group [ref=e314]:
+          - generic "Which providers are supported?" [ref=e315] [cursor=pointer]
+  - contentinfo [ref=e316]:
+    - generic [ref=e317]:
+      - img "Auto-AI logo" [ref=e319]
+      - text: Auto-AI
+    - paragraph [ref=e320]: Premium AI workspace for contextual, human-feeling conversations.

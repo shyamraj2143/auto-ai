@@ -1,9 +1,10 @@
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState } from "react";
 import {
   AlertCircle,
   Bookmark,
   BookmarkCheck,
   Bot,
+  Check,
   Copy,
   CornerDownRight,
   Cpu,
@@ -25,6 +26,8 @@ import { coerceTextContent } from "../../utils/text";
 import { MarkdownMessage } from "./MarkdownMessage";
 import { SourceCards } from "./SourceCards";
 import { ThinkingIndicator } from "./ThinkingIndicator";
+import { useMotionMode } from "../../motion/MotionProvider";
+import { StreamingPulse } from "../../motion/primitives";
 
 export type MessageReaction = "up" | "down" | null;
 
@@ -128,6 +131,8 @@ function MessageBubbleComponent({
   onShare: (messageId: string) => void;
 }) {
   const isAssistant = message.role === "assistant";
+  const { enabled, reduceMotion } = useMotionMode();
+  const [copied, setCopied] = useState(false);
   const rawContent = coerceTextContent(message.content);
   const content = useMemo(
     () => (isAssistant ? stripThinkBlocks(rawContent) : rawContent),
@@ -150,7 +155,10 @@ function MessageBubbleComponent({
     : "";
 
   function copyMessage() {
-    navigator.clipboard.writeText(content);
+    void navigator.clipboard.writeText(content).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1300);
+    });
   }
 
   function speakMessage() {
@@ -162,9 +170,9 @@ function MessageBubbleComponent({
 
   return (
     <motion.article
-      initial={{ opacity: 0, y: 12 }}
+      initial={enabled && !reduceMotion ? { opacity: 0, y: isAssistant ? 10 : 6 } : false}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.24 }}
+      transition={{ duration: isAssistant ? 0.24 : 0.18 }}
       className={clsx("message-row group", isAssistant ? "message-row-assistant" : "message-row-user")}
     >
       <div className={clsx("message-avatar", isAssistant ? "message-avatar-ai" : "message-avatar-user")}>
@@ -194,7 +202,10 @@ function MessageBubbleComponent({
                   </div>
                 )}
                 {isAssistant && isStreaming ? (
-                  <div className="streaming-plain-text">{content}</div>
+                  <div className="streaming-plain-text">
+                    {content}
+                    <StreamingPulse active={isStreaming} />
+                  </div>
                 ) : (
                   <MarkdownMessage content={content} />
                 )}
@@ -223,7 +234,7 @@ function MessageBubbleComponent({
         {!isEmptyStreaming && !isFailedAssistant && (
           <div className="message-actions">
             <button className="message-action" onClick={copyMessage} title="Copy message">
-              <Copy size={15} />
+              {copied ? <Check size={15} /> : <Copy size={15} />}
             </button>
             <button
               className={clsx("message-action", reaction === "up" && "message-action-active")}

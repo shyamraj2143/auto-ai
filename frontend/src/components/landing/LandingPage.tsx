@@ -16,7 +16,11 @@ import { api, resolveApkDownloadUrl } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import type { ApkRelease, ApkStats } from "../../types";
 import { LogoIcon } from "../brand/LogoIcon";
+import { FishAnimationToggleButton } from "../layout/FishAnimationToggleButton";
 import { ThemeToggleButton } from "../layout/ThemeToggleButton";
+import { NeuralCore } from "../../motion/NeuralCore";
+import { AnimatedPage, FlyText, Reveal, StaggerGroup, StaggerItem, TiltCard } from "../../motion/primitives";
+import { CognitiveThread } from "../../motion/CognitiveThread";
 
 const features = [
   { icon: <Brain size={18} />, title: "Adaptive memory", body: "Preference, project, and style signals shape future replies without making the assistant feel scripted." },
@@ -25,6 +29,7 @@ const features = [
 ];
 
 const capabilities = ["Streaming chat", "Voice input", "Image analysis", "Memory panel", "Search mode", "Regenerate", "Bookmarks", "Prompt editing"];
+const motionWords = ["Think", "Listen", "Recall", "Search", "Write", "Speak"];
 
 const testimonials = [
   "Feels like an AI workspace with a pulse.",
@@ -95,7 +100,7 @@ export function LandingPage() {
   }, []);
 
   return (
-    <div className="landing-page">
+    <AnimatedPage className="landing-page">
       <header className="landing-nav">
         <Link className="brand-mark" to="/">
           <span className="brand-icon"><LogoIcon /></span>
@@ -109,6 +114,7 @@ export function LandingPage() {
           <a href="#faq">FAQ</a>
         </nav>
         <div className="nav-actions">
+          <FishAnimationToggleButton />
           <Link className="btn-primary" to={user ? "/chat" : "/login"}>
             {user ? "Open app" : "Sign in"}
             <ArrowRight size={16} />
@@ -118,23 +124,37 @@ export function LandingPage() {
       </header>
 
       <main>
-        <section className="landing-hero">
+        <CognitiveThread />
+        <section className="landing-hero" data-chapter="Awaken">
           <div className="landing-lighting" aria-hidden="true" />
+          <div className="hero-motion-grid" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </div>
           <div className="hero-copy">
-            <p className="hero-kicker"><Zap size={14} /> Ultra Premium AI Workspace</p>
-            <h1>Auto-AI</h1>
-            <p className="hero-subtitle">
-              Auto-AI, also known as AutoAI and Auto AI, is a commercial-grade AI experience with memory, uploads, voice, streaming, and a conversation style that feels alive.
-            </p>
-            <div className="mt-7 flex flex-wrap gap-3">
-              <Link className="btn-primary h-11 px-5" to={user ? "/chat" : "/register"}>
-                Start building
-                <ArrowRight size={17} />
-              </Link>
-              <Link className="btn-secondary h-11 px-5" to={user ? "/chat" : "/login"}>
-                View workspace
-              </Link>
-            </div>
+            <Reveal>
+              <p className="hero-kicker"><Zap size={14} /> Ultra Premium AI Workspace</p>
+            </Reveal>
+            <Reveal delay={0.08} x={-26} y={18} scale={0.96} blur={8}>
+              <h1 className="neural-sweep-once">Auto-AI</h1>
+            </Reveal>
+            <Reveal delay={0.16} x={-18} y={16} blur={6}>
+              <p className="hero-subtitle">
+                Auto-AI, also known as AutoAI and Auto AI, is a commercial-grade AI experience with memory, uploads, voice, streaming, and a conversation style that feels alive.
+              </p>
+            </Reveal>
+            <Reveal delay={0.22} x={-14} y={14}>
+              <div className="mt-7 flex flex-wrap gap-3">
+                <Link className="btn-primary h-11 px-5" to={user ? "/chat" : "/register"}>
+                  Start building
+                  <ArrowRight size={17} />
+                </Link>
+                <Link className="btn-secondary h-11 px-5" to={user ? "/chat" : "/login"}>
+                  View workspace
+                </Link>
+              </div>
+            </Reveal>
             <div className="mobile-feature-strip">
               <span><MessageSquare size={14} /> Streaming</span>
               <span><Mic size={14} /> Voice</span>
@@ -147,6 +167,14 @@ export function LandingPage() {
             className="product-preview"
             aria-label="Auto-AI product preview"
           >
+            <div className="preview-orbit" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
+            <div className="product-neural-core" aria-hidden="true">
+              <NeuralCore state="ready" size="lg" />
+            </div>
             <div className="preview-sidebar">
               <span />
               <span />
@@ -154,6 +182,11 @@ export function LandingPage() {
             </div>
             <div className="preview-main">
               <div className="signal-line" />
+              <div className="preview-floating-labels" aria-hidden="true">
+                <span>Memory sync</span>
+                <span>Voice ready</span>
+                <span>Files parsed</span>
+              </div>
               <div className="preview-message user">Audit the upload flow and make the UI feel premium.</div>
               <div className="preview-message ai">
                 <span className="preview-pulse" />
@@ -169,28 +202,43 @@ export function LandingPage() {
           </div>
         </section>
 
-        <section id="features" className="landing-section">
+        <section id="features" className="landing-section" data-chapter="Understand">
           <div className="section-heading">
             <p className="hero-kicker">Product System</p>
-            <h2>Every interaction has weight, motion, and memory.</h2>
+            <h2><FlyText text="Every interaction has weight, motion, and memory." /></h2>
           </div>
-          <div className="feature-grid">
+          <StaggerGroup className="feature-grid">
             {features.map((feature) => (
-              <article
-                key={feature.title}
-                className="premium-feature"
-              >
-                <span>{feature.icon}</span>
-                <h3>{feature.title}</h3>
-                <p>{feature.body}</p>
-              </article>
+              <StaggerItem key={feature.title}>
+                <TiltCard className="premium-feature" data-thread-node>
+                  <span>{feature.icon}</span>
+                  <h3>{feature.title}</h3>
+                  <p>{feature.body}</p>
+                </TiltCard>
+              </StaggerItem>
             ))}
+          </StaggerGroup>
+        </section>
+
+        <section className="landing-section motion-showcase-section" data-chapter="Think">
+          <div className="motion-showcase">
+            <Reveal x={-42} y={18} blur={10} className="motion-showcase-copy">
+              <p className="hero-kicker">Scroll Animation</p>
+              <h2><FlyText text="Text flies in, panels breathe, and the page keeps moving." /></h2>
+            </Reveal>
+            <StaggerGroup className="motion-word-grid">
+              {motionWords.map((word) => (
+                <StaggerItem key={word}>
+                  <span>{word}</span>
+                </StaggerItem>
+              ))}
+            </StaggerGroup>
           </div>
         </section>
 
-        <section className="landing-section">
+        <section className="landing-section" data-chapter="Connect">
           <div className="android-promo">
-            <div>
+            <Reveal x={-32} y={18} blur={8}>
               <p className="hero-kicker"><Smartphone size={14} /> Mobile Application</p>
               <h2>Install Auto-AI on Android</h2>
               <p>
@@ -213,8 +261,8 @@ export function LandingPage() {
                   App details
                 </Link>
               </div>
-            </div>
-            <div className="android-preview-wrap">
+            </Reveal>
+            <Reveal x={32} y={18} blur={8} className="android-preview-wrap">
               <div className="mini-phone">
                 <div className="mini-phone-screen">
                   <span className="mini-phone-top"><LogoIcon className="app-logo app-logo-inline" /> Auto-AI</span>
@@ -227,67 +275,88 @@ export function LandingPage() {
                 <QRCodeSVG value={qrUrl} size={104} bgColor="transparent" fgColor="#e0f2fe" />
                 <span>Scan APK</span>
               </div>
-            </div>
+            </Reveal>
           </div>
         </section>
 
-        <section className="landing-section">
-          <div className="capability-band">
+        <section className="landing-section" data-chapter="Interact">
+          <Reveal className="capability-band">
             <div>
               <p className="hero-kicker">AI Capabilities</p>
-              <h2>One surface for the whole loop.</h2>
+              <h2><FlyText text="One surface for the whole loop." /></h2>
             </div>
             <div className="capability-grid">
               {capabilities.map((capability) => (
                 <span key={capability}><Check size={14} /> {capability}</span>
               ))}
             </div>
-          </div>
+          </Reveal>
         </section>
 
-        <section className="landing-section">
+        <section className="landing-section" data-chapter="Trust">
           <div className="section-heading">
             <p className="hero-kicker">User Feedback</p>
-            <h2>Auto-AI feels built for real work.</h2>
+            <h2><FlyText text="Auto-AI feels built for real work." /></h2>
           </div>
-          <div className="testimonial-grid">
+          <StaggerGroup className="testimonial-grid">
             {testimonials.map((quote) => (
-              <figure key={quote}>
-                <blockquote>{quote}</blockquote>
-                <figcaption>Auto-AI beta user</figcaption>
-              </figure>
+              <StaggerItem key={quote}>
+                <figure>
+                  <blockquote>{quote}</blockquote>
+                  <figcaption>Auto-AI beta user</figcaption>
+                </figure>
+              </StaggerItem>
             ))}
-          </div>
+          </StaggerGroup>
         </section>
 
-        <section id="pricing" className="landing-section">
+        <section id="pricing" className="landing-section" data-chapter="Act">
           <div className="section-heading">
             <p className="hero-kicker">Plans</p>
-            <h2>Start with Auto-AI and scale when you need more.</h2>
+            <h2><FlyText text="Start with Auto-AI and scale when you need more." /></h2>
           </div>
-          <div className="pricing-grid pricing-grid-four">
+          <StaggerGroup className="pricing-grid pricing-grid-four">
             {[
-              ["Free", "₹0", "10,000 tokens/month"],
-              ["Pro", "₹20", "100,000 tokens/month"],
-              ["Premium", "₹50", "300,000 tokens/month"],
-              ["Ultra", "₹100", "1,000,000 tokens/month"]
+              ["Free", "Rs 0", "10,000 tokens/month"],
+              ["Pro", "Rs 20", "100,000 tokens/month"],
+              ["Premium", "Rs 50", "300,000 tokens/month"],
+              ["Ultra", "Rs 100", "1,000,000 tokens/month"]
             ].map(([plan, price, tokens]) => (
-              <article key={plan} className="pricing-card">
-                <h3>{plan}</h3>
-                <strong className="pricing-price">{price}</strong>
-                <span>{tokens}</span>
-                <Link className={plan === "Premium" ? "btn-primary" : "btn-secondary"} to="/pricing">
-                  Choose {plan}
-                </Link>
-              </article>
+              <StaggerItem key={plan}>
+                <TiltCard className="pricing-card">
+                  <h3>{plan}</h3>
+                  <strong className="pricing-price">{price}</strong>
+                  <span>{tokens}</span>
+                  <Link className={plan === "Premium" ? "btn-primary" : "btn-secondary"} to="/pricing">
+                    Choose {plan}
+                  </Link>
+                </TiltCard>
+              </StaggerItem>
             ))}
-          </div>
+          </StaggerGroup>
         </section>
 
-        <section id="faq" className="landing-section">
+        <section className="landing-section final-cta-section" data-chapter="Resolve">
+          <Reveal className="final-cta">
+            <p className="hero-kicker">Auto-AI</p>
+            <h2><FlyText text="Bring the whole workspace into one conversation." /></h2>
+            <div className="final-cta-actions">
+              <Link className="btn-primary h-11 px-5" to={user ? "/chat" : "/register"}>
+                {user ? "Open app" : "Create account"}
+                <ArrowRight size={17} />
+              </Link>
+              <Link className="btn-secondary h-11 px-5" to="/download">
+                <Download size={17} />
+                Android APK
+              </Link>
+            </div>
+          </Reveal>
+        </section>
+
+        <section id="faq" className="landing-section" data-chapter="FAQ">
           <div className="section-heading">
             <p className="hero-kicker">FAQ</p>
-            <h2>Common Auto-AI questions.</h2>
+            <h2><FlyText text="Common Auto-AI questions." /></h2>
           </div>
           <div className="faq-list">
             {faqs.map(([question, answer]) => (
@@ -304,6 +373,6 @@ export function LandingPage() {
         <span className="brand-mark"><span className="brand-icon"><LogoIcon /></span> Auto-AI</span>
         <p>Premium AI workspace for contextual, human-feeling conversations.</p>
       </footer>
-    </div>
+    </AnimatedPage>
   );
 }

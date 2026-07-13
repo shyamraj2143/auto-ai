@@ -85,6 +85,7 @@ public class CallForegroundService extends Service {
         if (activeCallId != null) {
             Log.i(TAG, "Foreground call service destroyed callId=" + activeCallId);
             AutoAiTelecomBridge.disconnectLocal(this, activeCallId);
+            AutoAiCallsPlugin.clearActiveCall(this, activeCallId);
             NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (manager != null) manager.cancel(CallNotificationManager.notificationId(activeCallId) + 100000);
         }

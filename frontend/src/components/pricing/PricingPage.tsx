@@ -8,6 +8,7 @@ import { createRazorpayCheckoutOptions, loadRazorpayCheckout } from "../../utils
 import { isMobileAppRuntime } from "../../utils/runtime";
 import { normalizeUpiId } from "../../utils/upi";
 import { LogoIcon } from "../brand/LogoIcon";
+import { FishAnimationToggleButton } from "../layout/FishAnimationToggleButton";
 import { ThemeToggleButton } from "../layout/ThemeToggleButton";
 import { UpiPaymentBox } from "../payments/UpiPaymentBox";
 
@@ -143,6 +144,7 @@ export function PricingPage() {
           <Link to="/admin/login">Admin</Link>
         </nav>
         <div className="nav-actions">
+          <FishAnimationToggleButton />
           <Link className="btn-primary" to={user ? "/chat" : "/login"}>
             {user ? "Open app" : "Sign in"}
             <ArrowRight size={16} />

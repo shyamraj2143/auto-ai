@@ -1,27 +1,11 @@
 import { AnimatePresence, motion } from "framer-motion";
 import type { CSSProperties } from "react";
-import { useEffect, useMemo, useState } from "react";
-
-const THINKING_STATES = [
-  "Analyzing the thread",
-  "Connecting useful memories",
-  "Understanding the context",
-  "Checking uploaded knowledge",
-  "Thinking through the answer",
-  "Choosing the cleanest next step"
-];
+import { useMemo } from "react";
+import { NeuralCore } from "../../motion/NeuralCore";
 
 export function ThinkingIndicator({ label, subtitle }: { label?: string; subtitle?: string } = {}) {
-  const [index, setIndex] = useState(() => Math.floor(Math.random() * THINKING_STATES.length));
   const particles = useMemo(() => Array.from({ length: 14 }, (_, particleIndex) => particleIndex), []);
-  const displayLabel = label || THINKING_STATES[index];
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setIndex((current) => (current + 1 + Math.floor(Math.random() * 2)) % THINKING_STATES.length);
-    }, 1500);
-    return () => window.clearInterval(timer);
-  }, []);
+  const displayLabel = label || "Thinking";
 
   return (
     <div className="thinking-panel">
@@ -38,18 +22,14 @@ export function ThinkingIndicator({ label, subtitle }: { label?: string; subtitl
         <span />
       </div>
       <div className="relative z-10 flex min-w-0 items-center gap-3">
-        <div className="thinking-core" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-        </div>
+        <NeuralCore className="thinking-core neural-core-chat" state="thinking" size="sm" />
         <div className="min-w-0">
           <AnimatePresence mode="wait">
             <motion.p
               key={displayLabel}
-              initial={{ opacity: 0, y: 6, filter: "blur(4px)" }}
-              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-              exit={{ opacity: 0, y: -6, filter: "blur(4px)" }}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.28 }}
               className="truncate text-sm font-medium text-slate-100"
             >

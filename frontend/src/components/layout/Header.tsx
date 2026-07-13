@@ -5,6 +5,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useSettingsNavigation } from "../../hooks/useSettingsNavigation";
 import { useCallSession } from "../../features/calls/hooks/useCallSession";
+import { FishAnimationToggleButton } from "./FishAnimationToggleButton";
 
 export function Header() {
   const { logout, user } = useAuth();
@@ -56,6 +57,7 @@ export function Header() {
         <p className="truncate text-xs text-slate-400">{user?.email}</p>
       </div>
       <div className="flex items-center gap-2">
+        <FishAnimationToggleButton />
         <button
           className="icon-button-dark"
           onClick={() => openContextPanel("documents")}

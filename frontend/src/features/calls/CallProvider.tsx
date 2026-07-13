@@ -198,10 +198,27 @@ export function CallProvider({ children }: { children: ReactNode }) {
   }, [stopRingtone]);
 
   const requestLocalMedia = useCallback(async (callType: CallType, audioOnly = false) => {
+    let nativeAudioOnly = audioOnly;
+    if (callNative.isAndroid()) {
+      const permissions = callType === "video" && !audioOnly
+        ? await callNative.requestVideoCallPermissions()
+        : await callNative.requestAudioCallPermissions();
+      if (!permissions.microphone.granted) {
+        throw new Error(permissions.microphone.permanentlyDenied
+          ? "Microphone permission is permanently denied. Open Android Settings to allow microphone access."
+          : "Microphone permission was denied.");
+      }
+      if (callType === "video" && !audioOnly && !permissions.camera.granted) {
+        nativeAudioOnly = true;
+        setError(permissions.camera.permanentlyDenied
+          ? "Camera permission is permanently denied. Continuing with audio only."
+          : "Camera permission was not granted. Continuing with audio only.");
+      }
+    }
     await mediaResourceCoordinator.acquire("person-call");
     const audio: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
     const dataSaving = Boolean(callSettingsRef.current?.data_saving_mode);
-    const video: MediaTrackConstraints | false = callType === "video" && !audioOnly
+    const video: MediaTrackConstraints | false = callType === "video" && !nativeAudioOnly
       ? { width: { ideal: dataSaving ? 640 : 1280, max: dataSaving ? 640 : 1280 }, height: { ideal: dataSaving ? 360 : 720, max: dataSaving ? 360 : 720 }, frameRate: { ideal: dataSaving ? 18 : 24, max: dataSaving ? 20 : 30 }, facingMode: "user" }
       : false;
     try {
@@ -653,6 +670,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       }
       deviceIdRef.current = registration.device_id;
       await callApi.registerDevice(token, registration).catch(() => undefined);
+      await callNative.requestNotificationPermission().catch(() => undefined);
       await signaling.connect(token);
       const nativeCall: { callId?: string | null; action?: NativeIncomingAction | null } = await callNative.consumeIncomingCall().catch(() => ({}));
       if (nativeCall.callId) await processNativeCallAction(nativeCall.callId, nativeCall.action);
@@ -879,7 +897,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   const toggleSpeaker = useCallback(async () => {
     const next = !speakerEnabled;
-    await callNative.setSpeaker(next).catch(() => undefined);
+    await callNative.setAudioRoute(next ? "speaker" : "earpiece").catch(() => callNative.setSpeaker(next).catch(() => undefined));
     setSpeakerEnabled(next);
   }, [speakerEnabled]);
 
