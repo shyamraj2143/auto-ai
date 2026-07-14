@@ -516,10 +516,20 @@ def payment_history_item(payment: PaymentRecord) -> PaymentHistoryRead:
 def current_plan_read(db: Session, user: User) -> BillingCurrentPlanRead:
     subscription = ensure_user_subscription(db, user)
     refresh_quota_periods(subscription)
-    recalculate_token_balance(subscription)
     subscription_active = active_subscription(subscription)
     effective_plan = subscription.plan if subscription_active else "free"
     catalog = billing_plan(effective_plan)
+    token_limit_monthly = plan_monthly_token_limit(db, effective_plan)
+    daily_message_limit = plan_daily_message_limit(db, effective_plan)
+    if subscription.token_limit_monthly != token_limit_monthly:
+        subscription.token_limit_monthly = token_limit_monthly
+        subscription.tokens_added = token_limit_monthly
+    if subscription.daily_message_limit != daily_message_limit:
+        subscription.daily_message_limit = daily_message_limit
+    recalculate_token_balance(subscription)
+    token_balance = subscription.token_balance
+    if token_limit_monthly > 0:
+        token_balance = max(0, token_limit_monthly + subscription.bonus_tokens - subscription.tokens_used_monthly)
     renewal_at = subscription.expires_at if subscription.auto_renewal and subscription_active and not subscription.is_lifetime else None
     return BillingCurrentPlanRead(
         plan=effective_plan,
@@ -527,10 +537,10 @@ def current_plan_read(db: Session, user: User) -> BillingCurrentPlanRead:
         status="lifetime" if subscription.is_lifetime else "active" if subscription_active else "suspended" if subscription.suspended_at else "inactive",
         expires_at=None if subscription.is_lifetime else subscription.expires_at,
         renewal_at=renewal_at,
-        token_limit_monthly=subscription.token_limit_monthly,
+        token_limit_monthly=token_limit_monthly,
         tokens_used_monthly=subscription.tokens_used_monthly,
-        token_balance=subscription.token_balance,
-        daily_message_limit=subscription.daily_message_limit,
+        token_balance=token_balance,
+        daily_message_limit=daily_message_limit,
         messages_used_today=subscription.messages_used_today,
         upload_limit_mb=plan_upload_limit_mb(effective_plan),
         enabled_ai_models=list(catalog["model_access"]),

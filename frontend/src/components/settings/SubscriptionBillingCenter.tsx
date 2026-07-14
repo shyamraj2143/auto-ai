@@ -54,6 +54,12 @@ export function SubscriptionBillingCenter() {
   const upiPayeeName = paymentConfig?.upi_payee_name || import.meta.env.VITE_UPI_PAYEE_NAME || "Auto-AI";
 
   const current = billing?.current_plan;
+  const currentCatalogPlan = current && billing?.plans.find((plan) => plan.id === current.plan);
+  const currentMonthlyLimit = currentCatalogPlan?.token_quota ?? current?.token_limit_monthly ?? 0;
+  const currentDailyLimit = currentCatalogPlan?.daily_message_limit ?? current?.daily_message_limit ?? 0;
+  const currentTokenBalance = currentMonthlyLimit > 0 && current
+    ? Math.max(0, currentMonthlyLimit - current.tokens_used_monthly)
+    : current?.token_balance ?? 0;
   const paidPlanOptions = useMemo(
     () => (billing?.plans.filter((plan) => paidPlans.has(plan.id)) ?? []) as Array<BillingPlan & { id: PaidPricingPlanName }>,
     [billing]
@@ -250,8 +256,8 @@ export function SubscriptionBillingCenter() {
     );
   }
 
-  const progress = current.token_limit_monthly > 0
-    ? Math.min(100, Math.round((current.tokens_used_monthly / current.token_limit_monthly) * 100))
+  const progress = currentMonthlyLimit > 0
+    ? Math.min(100, Math.round((current.tokens_used_monthly / currentMonthlyLimit) * 100))
     : 0;
   const supportHref = `mailto:${billing.support_email || "support@autoai.site.je"}?subject=Auto-AI%20Subscription%20Support`;
 
@@ -284,10 +290,10 @@ export function SubscriptionBillingCenter() {
             <div style={{ width: `${progress}%` }} />
           </div>
           <div className="billing-metrics">
-            <span>Monthly Token Limit<strong>{numberText(current.token_limit_monthly)}</strong></span>
+            <span>Monthly Token Limit<strong>{numberText(currentMonthlyLimit)}</strong></span>
             <span>Used Tokens<strong>{current.tokens_used_monthly.toLocaleString()}</strong></span>
-            <span>Remaining Tokens<strong>{numberText(current.token_balance)}</strong></span>
-            <span>Daily Message Limit<strong>{numberText(current.daily_message_limit)}</strong></span>
+            <span>Remaining Tokens<strong>{numberText(currentTokenBalance)}</strong></span>
+            <span>Daily Message Limit<strong>{numberText(currentDailyLimit)}</strong></span>
             <span>Upload Limit<strong>{current.upload_limit_mb} MB</strong></span>
             <span>Expiry Date<strong>{current.is_lifetime ? "Lifetime" : formatDate(current.expires_at)}</strong></span>
             <span>Renewal Date<strong>{formatDate(current.renewal_at)}</strong></span>
