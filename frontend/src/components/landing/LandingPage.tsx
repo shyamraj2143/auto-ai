@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { api, resolveApkDownloadUrl } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
-import type { ApkRelease, ApkStats } from "../../types";
+import type { ApkRelease, ApkStats, BillingPlan } from "../../types";
 import { LogoIcon } from "../brand/LogoIcon";
 import { ThemeToggleButton } from "../layout/ThemeToggleButton";
 import { NeuralCore } from "../../motion/NeuralCore";
@@ -42,6 +42,10 @@ const faqs = [
   ["Which providers are supported?", "The backend supports OpenAI, Groq, and Bedrock-compatible chat flows."]
 ];
 
+function money(amountPaise: number, currency = "INR") {
+  return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amountPaise / 100);
+}
+
 function formatDate(value?: string | null) {
   if (!value) return "Pending release";
   return new Intl.DateTimeFormat(undefined, {
@@ -57,6 +61,7 @@ export function LandingPage() {
   const { user } = useAuth();
   const [latestApk, setLatestApk] = useState<ApkRelease | null>(null);
   const [apkStats, setApkStats] = useState<ApkStats | null>(null);
+  const [plans, setPlans] = useState<BillingPlan[]>([]);
   const qrUrl = resolveApkDownloadUrl();
 
   async function downloadLatestApk() {
@@ -92,6 +97,21 @@ export function LandingPage() {
       })
       .catch(() => {
         if (active) setLatestApk(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    api.paymentPlans()
+      .then((nextPlans) => {
+        if (!active) return;
+        setPlans(nextPlans.filter((plan) => ["free", "pro", "premium", "ultra"].includes(plan.id)));
+      })
+      .catch(() => {
+        if (active) setPlans([]);
       });
     return () => {
       active = false;
@@ -315,19 +335,14 @@ export function LandingPage() {
             <h2><FlyText text="Start with Auto-AI and scale when you need more." /></h2>
           </div>
           <StaggerGroup className="pricing-grid pricing-grid-four">
-            {[
-              ["Free", "Rs 0", "10,000 tokens/month"],
-              ["Pro", "Rs 20", "100,000 tokens/month"],
-              ["Premium", "Rs 50", "300,000 tokens/month"],
-              ["Ultra", "Rs 100", "1,000,000 tokens/month"]
-            ].map(([plan, price, tokens]) => (
-              <StaggerItem key={plan}>
+            {plans.map((plan) => (
+              <StaggerItem key={plan.id}>
                 <TiltCard className="pricing-card">
-                  <h3>{plan}</h3>
-                  <strong className="pricing-price">{price}</strong>
-                  <span>{tokens}</span>
-                  <Link className={plan === "Premium" ? "btn-primary" : "btn-secondary"} to="/pricing">
-                    Choose {plan}
+                  <h3>{plan.label}</h3>
+                  <strong className="pricing-price">{money(plan.price_paise, plan.currency)}</strong>
+                  <span>{plan.token_quota.toLocaleString()} tokens/month</span>
+                  <Link className={plan.id === "premium" ? "btn-primary" : "btn-secondary"} to="/pricing">
+                    Choose {plan.label}
                   </Link>
                 </TiltCard>
               </StaggerItem>
