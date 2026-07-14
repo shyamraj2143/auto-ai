@@ -60,6 +60,34 @@ body {
   overflow-x: hidden;
 }
 
+.app-error-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+  color: white;
+}
+
+.app-error-card {
+  width: min(100%, 440px);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.82);
+  padding: 24px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3);
+}
+
+.app-error-card h1 {
+  margin: 8px 0;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.app-error-card p {
+  margin: 0 0 18px;
+  color: #cbd5e1;
+}
+
 button,
 input,
 textarea,
