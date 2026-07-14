@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { useMotionMode } from "./MotionProvider";
 import { fishAnimationChangeEvent, readFishAnimationEnabled } from "./fishSettings";
 
+const compactFishCount = 3;
+const fullFishCount = 6;
+const compactFrameInterval = 1000 / 30;
+
 const globalFish = [
   "coral",
   "reef",
@@ -51,8 +55,19 @@ const baseFishWidth = 88;
 const baseFishHeight = 42;
 const collisionFlashMs = 260;
 
-function createFishState(width: number, height: number): FishState[] {
-  return fishMotion.map((fish) => {
+function isCompactFishMode() {
+  if (typeof window === "undefined" || typeof navigator === "undefined") return false;
+  const smallViewport = window.matchMedia("(max-width: 900px)").matches;
+  const coarsePointer = window.matchMedia("(pointer: coarse)").matches;
+  const saveData = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true;
+  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 4;
+  const cores = navigator.hardwareConcurrency ?? 4;
+  return smallViewport || coarsePointer || saveData || memory <= 3 || cores <= 3;
+}
+
+function createFishState(width: number, height: number, compact: boolean): FishState[] {
+  const fishList = fishMotion.slice(0, compact ? compactFishCount : fullFishCount);
+  return fishList.map((fish) => {
     const fishWidth = baseFishWidth * fish.size;
     const fishHeight = baseFishHeight * fish.size;
     return {
@@ -86,10 +101,12 @@ export function OceanFishField() {
 
     let frame = 0;
     let last = performance.now();
-    let fish = createFishState(window.innerWidth, window.innerHeight);
+    let compact = isCompactFishMode();
+    let fish = createFishState(window.innerWidth, window.innerHeight, compact);
 
     const resize = () => {
-      fish = createFishState(window.innerWidth, window.innerHeight);
+      compact = isCompactFishMode();
+      fish = createFishState(window.innerWidth, window.innerHeight, compact);
     };
 
     const markCollision = (first: FishState, second?: FishState) => {
@@ -99,6 +116,10 @@ export function OceanFishField() {
     };
 
     const tick = (now: number) => {
+      if (compact && now - last < compactFrameInterval) {
+        frame = window.requestAnimationFrame(tick);
+        return;
+      }
       const width = window.innerWidth;
       const height = window.innerHeight;
       const delta = Math.min(0.032, (now - last) / 1000);
@@ -133,42 +154,44 @@ export function OceanFishField() {
         }
       }
 
-      for (let index = 0; index < fish.length; index += 1) {
-        for (let nextIndex = index + 1; nextIndex < fish.length; nextIndex += 1) {
-          const first = fish[index];
-          const second = fish[nextIndex];
-          const firstRadius = Math.max(first.width, first.height) * 0.44;
-          const secondRadius = Math.max(second.width, second.height) * 0.44;
-          const firstCenterX = first.x + first.width / 2;
-          const firstCenterY = first.y + first.height / 2;
-          const secondCenterX = second.x + second.width / 2;
-          const secondCenterY = second.y + second.height / 2;
-          const dx = secondCenterX - firstCenterX;
-          const dy = secondCenterY - firstCenterY;
-          const distance = Math.hypot(dx, dy) || 1;
-          const overlap = firstRadius + secondRadius - distance;
+      if (!compact) {
+        for (let index = 0; index < fish.length; index += 1) {
+          for (let nextIndex = index + 1; nextIndex < fish.length; nextIndex += 1) {
+            const first = fish[index];
+            const second = fish[nextIndex];
+            const firstRadius = Math.max(first.width, first.height) * 0.44;
+            const secondRadius = Math.max(second.width, second.height) * 0.44;
+            const firstCenterX = first.x + first.width / 2;
+            const firstCenterY = first.y + first.height / 2;
+            const secondCenterX = second.x + second.width / 2;
+            const secondCenterY = second.y + second.height / 2;
+            const dx = secondCenterX - firstCenterX;
+            const dy = secondCenterY - firstCenterY;
+            const distance = Math.hypot(dx, dy) || 1;
+            const overlap = firstRadius + secondRadius - distance;
 
-          if (overlap <= 0) continue;
+            if (overlap <= 0) continue;
 
-          const nx = dx / distance;
-          const ny = dy / distance;
-          const relativeVelocity = (first.vx - second.vx) * nx + (first.vy - second.vy) * ny;
-          first.x -= nx * overlap * 0.5;
-          first.y -= ny * overlap * 0.5;
-          second.x += nx * overlap * 0.5;
-          second.y += ny * overlap * 0.5;
+            const nx = dx / distance;
+            const ny = dy / distance;
+            const relativeVelocity = (first.vx - second.vx) * nx + (first.vy - second.vy) * ny;
+            first.x -= nx * overlap * 0.5;
+            first.y -= ny * overlap * 0.5;
+            second.x += nx * overlap * 0.5;
+            second.y += ny * overlap * 0.5;
 
-          if (relativeVelocity > 0) {
-            first.vx -= relativeVelocity * nx;
-            first.vy -= relativeVelocity * ny;
-            second.vx += relativeVelocity * nx;
-            second.vy += relativeVelocity * ny;
-          } else {
-            [first.vx, second.vx] = [second.vx, first.vx];
-            [first.vy, second.vy] = [second.vy, first.vy];
+            if (relativeVelocity > 0) {
+              first.vx -= relativeVelocity * nx;
+              first.vy -= relativeVelocity * ny;
+              second.vx += relativeVelocity * nx;
+              second.vy += relativeVelocity * ny;
+            } else {
+              [first.vx, second.vx] = [second.vx, first.vx];
+              [first.vy, second.vy] = [second.vy, first.vy];
+            }
+
+            markCollision(first, second);
           }
-
-          markCollision(first, second);
         }
       }
 
@@ -196,9 +219,11 @@ export function OceanFishField() {
 
   if (!enabled) return null;
 
+  const renderedFish = isCompactFishMode() ? globalFish.slice(0, compactFishCount) : globalFish.slice(0, fullFishCount);
+
   return (
     <div className="ocean-fish-field global-ocean-fish-field" aria-hidden="true">
-      {globalFish.map((fish, index) => (
+      {renderedFish.map((fish, index) => (
         <div
           className={`ocean-fish global-ocean-fish global-ocean-fish-${fish}`}
           key={fish}
