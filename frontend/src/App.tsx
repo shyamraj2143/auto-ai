@@ -28,6 +28,7 @@ const ResetPasswordPage = lazy(() => import("./components/auth/ResetPasswordPage
 const SettingsPage = lazy(() => import("./components/settings/SettingsPage").then((module) => ({ default: module.SettingsPage })));
 const CallsPage = lazy(() => import("./features/calls/CallsPage").then((module) => ({ default: module.CallsPage })));
 const UserMessagesPage = lazy(() => import("./features/userMessages/UserMessagesPage").then((module) => ({ default: module.UserMessagesPage })));
+const ScreenShareJoinPage = lazy(() => import("./features/screenShare/ScreenShareJoinPage").then((module) => ({ default: module.ScreenShareJoinPage })));
 
 /** Shows LandingPage for guests, redirects logged-in users to /chat */
 function RootRedirect() {
@@ -83,6 +84,7 @@ function AppRoutes() {
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/messages" element={<UserMessagesPage />} />
               <Route path="/messages/:threadId" element={<UserMessagesPage />} />
+              <Route path="/screen-share/:sessionId" element={<ScreenShareJoinPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/calls" element={<CallsPage />} />
             </Route>

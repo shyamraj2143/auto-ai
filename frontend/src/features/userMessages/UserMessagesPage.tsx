@@ -1,9 +1,10 @@
-import { Archive, ArrowLeft, Check, CheckCheck, FileText, Image, MessageCircle, Mic, MoreVertical, Paperclip, Phone, Pin, Search, Send, Settings, Video, VolumeX, X } from "lucide-react";
+import { Archive, ArrowLeft, Check, CheckCheck, FileText, Image, MessageCircle, Mic, MoreVertical, Paperclip, Phone, Pin, ScreenShare, Search, Send, Settings, Video, VolumeX, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { resolveApiAssetUrl } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { useCallSession } from "../calls/hooks/useCallSession";
+import { useScreenShare } from "../screenShare/useScreenShare";
 import type { ChatPublicUser, ChatRealtimeEvent, UserMessage, UserThread } from "./types";
 import { UserMessageSocket, userMessagesApi } from "./userMessagesApi";
 import "./userMessages.css";
@@ -47,6 +48,7 @@ export function UserMessagesPage() {
   const { threadId } = useParams();
   const navigate = useNavigate();
   const callSession = useCallSession();
+  const screenShare = useScreenShare();
   const [threads, setThreads] = useState<UserThread[]>([]);
   const [activeThread, setActiveThread] = useState<UserThread | null>(null);
   const [messages, setMessages] = useState<UserMessage[]>([]);
@@ -604,6 +606,7 @@ export function UserMessagesPage() {
               <span><strong>{displayedThread.peer.display_name}</strong><small>{typing ? "typing..." : `@${displayedThread.peer.username} · ${displayedThread.peer.availability}`}</small></span>
               <button type="button" onClick={() => void startCall("audio")} disabled={!displayedThread.peer.can_audio_call} aria-label="Audio call"><Phone size={18} /></button>
               <button type="button" onClick={() => void startCall("video")} disabled={!displayedThread.peer.can_video_call} aria-label="Video call"><Video size={19} /></button>
+              <button type="button" onClick={() => screenShare.requestShare(displayedThread.peer)} aria-label="Share screen"><ScreenShare size={18} /></button>
               <button type="button" onClick={() => void togglePin()} disabled={pinning} aria-label="Pin"><MoreVertical size={18} /></button>
             </header>
             <div className="um-messages">

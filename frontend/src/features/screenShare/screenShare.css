@@ -1,0 +1,339 @@
+.ss-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(14px);
+}
+
+.ss-modal {
+  width: min(440px, 100%);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(15, 23, 42, 0.98);
+  color: #f8fafc;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
+}
+
+.ss-modal header,
+.ss-modal header span,
+.ss-invite,
+.ss-control-bar,
+.ss-control-bar span,
+.ss-viewer-head,
+.ss-viewer-close,
+.ss-join-page button,
+.ss-toast {
+  display: flex;
+  align-items: center;
+}
+
+.ss-modal header {
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ss-modal header span {
+  gap: 8px;
+}
+
+.ss-modal button,
+.ss-invite button,
+.ss-control-bar button,
+.ss-viewer-close,
+.ss-join-page button,
+.ss-toast button {
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+}
+
+.ss-modal header button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ss-share-options {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.ss-share-options button {
+  min-height: 64px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: left;
+  font-weight: 700;
+}
+
+.ss-error,
+.ss-floating-error {
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.36);
+  border: 1px solid rgba(248, 113, 113, 0.28);
+}
+
+.ss-error {
+  margin: 0 14px 14px;
+  border-radius: 10px;
+  padding: 9px 10px;
+}
+
+.ss-invite {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  top: max(74px, env(safe-area-inset-top));
+  z-index: 82;
+  width: min(430px, calc(100vw - 24px));
+  gap: 10px;
+  padding: 11px;
+  border-radius: 14px;
+  color: #f8fafc;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(103, 232, 249, 0.28);
+  box-shadow: 0 20px 64px rgba(0, 0, 0, 0.4);
+}
+
+.ss-avatar {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  overflow: hidden;
+  background: rgba(34, 211, 238, 0.2);
+  font-weight: 800;
+}
+
+.ss-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ss-invite div {
+  min-width: 0;
+  flex: 1;
+}
+
+.ss-invite strong,
+.ss-invite small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ss-invite small {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.ss-invite button {
+  height: 34px;
+  border-radius: 10px;
+  padding: 0 12px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ss-invite .join {
+  background: #22d3ee;
+  color: #02121a;
+  font-weight: 800;
+}
+
+.ss-control-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  z-index: 83;
+  max-width: calc(100vw - 24px);
+  transform: translateX(-50%);
+  gap: 8px;
+  padding: 9px;
+  border-radius: 14px;
+  color: #f8fafc;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1px solid rgba(103, 232, 249, 0.28);
+  box-shadow: 0 22px 72px rgba(0, 0, 0, 0.45);
+}
+
+.ss-control-bar span {
+  min-width: 0;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.ss-control-bar time,
+.ss-control-bar small {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.ss-control-bar button {
+  height: 36px;
+  min-width: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 10px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ss-control-bar .stop {
+  background: #ef4444;
+  color: #fff;
+  font-weight: 800;
+}
+
+.ss-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 81;
+  display: grid;
+  place-items: center;
+  background: #020617;
+  color: #f8fafc;
+}
+
+.ss-viewer-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #020617;
+}
+
+.ss-viewer-empty,
+.ss-join-page {
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  text-align: center;
+  color: #cbd5e1;
+}
+
+.ss-viewer-head {
+  position: absolute;
+  top: max(14px, env(safe-area-inset-top));
+  left: max(14px, env(safe-area-inset-left));
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.88);
+}
+
+.ss-viewer-head span {
+  color: #67e8f9;
+  font-size: 12px;
+}
+
+.ss-viewer-close {
+  position: absolute;
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(14px, env(safe-area-inset-bottom));
+  gap: 8px;
+  height: 40px;
+  border-radius: 12px;
+  padding: 0 14px;
+  background: rgba(239, 68, 68, 0.92);
+  font-weight: 800;
+}
+
+.ss-paused,
+.ss-floating-error {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.ss-floating-error {
+  top: auto;
+  bottom: 72px;
+  transform: translateX(-50%);
+}
+
+.ss-join-page {
+  min-height: 100%;
+  padding: 24px;
+  background: #060914;
+  color: #f8fafc;
+}
+
+.ss-join-page span {
+  color: #94a3b8;
+}
+
+.ss-join-page button,
+.ss-toast {
+  gap: 8px;
+  border-radius: 12px;
+  padding: 9px 12px;
+  background: rgba(34, 211, 238, 0.16);
+  color: #cffafe;
+}
+
+.ss-toast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 84;
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.92);
+  border: 1px solid rgba(248, 113, 113, 0.28);
+}
+
+.ss-toast button {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+@media (max-width: 760px) {
+  .ss-control-bar {
+    left: 12px;
+    right: 12px;
+    bottom: calc(10px + env(safe-area-inset-bottom));
+    flex-wrap: wrap;
+    transform: none;
+  }
+
+  .ss-control-bar span {
+    flex: 1 1 100%;
+  }
+
+  .ss-invite {
+    left: 12px;
+    right: 12px;
+    top: max(64px, env(safe-area-inset-top));
+    width: auto;
+    flex-wrap: wrap;
+  }
+}

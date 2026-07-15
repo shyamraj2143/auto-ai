@@ -7,9 +7,12 @@ import { Header } from "./Header";
 import { Sidebar } from "./Sidebar";
 import { CallProvider } from "../../features/calls/CallProvider";
 import { CallOverlay } from "../../features/calls/CallOverlay";
+import { ScreenShareProvider } from "../../features/screenShare/ScreenShareProvider";
+import { ScreenShareOverlay } from "../../features/screenShare/ScreenShareOverlay";
 import { AndroidBackHandler } from "./AndroidBackHandler";
 import { useMotionMode } from "../../motion/MotionProvider";
 import "../../features/calls/calls.css";
+import "../../features/screenShare/screenShare.css";
 
 export function AppShell() {
   const location = useLocation();
@@ -47,7 +50,8 @@ export function AppShell() {
 
   return (
       <CallProvider>
-        <ChatProvider>
+        <ScreenShareProvider>
+          <ChatProvider>
           <AndroidBackHandler />
           <div className="app-shell">
             <Sidebar />
@@ -74,8 +78,10 @@ export function AppShell() {
               </div>
             </main>
             <CallOverlay />
+            <ScreenShareOverlay />
           </div>
-        </ChatProvider>
+          </ChatProvider>
+        </ScreenShareProvider>
       </CallProvider>
   );
 }

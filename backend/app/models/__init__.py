@@ -15,6 +15,7 @@ from app.models.live import FaceMemory, LiveMessage, LiveSession, VisionFrame
 from app.models.message import Message
 from app.models.push import PushDeviceToken
 from app.models.search import SearchCache, SearchRun
+from app.models.screen_share import ScreenShareSession
 from app.models.social import SocialFollow, SocialNotification
 from app.models.user import User
 from app.models.user_chat import ChatMessage as UserChatMessage, ChatParticipant, ChatThread, MessageReceipt, UserChatSettings
@@ -56,6 +57,7 @@ __all__ = [
     "RefreshToken",
     "SearchCache",
     "SearchRun",
+    "ScreenShareSession",
     "SocialFollow",
     "SocialNotification",
     "UsageLog",
