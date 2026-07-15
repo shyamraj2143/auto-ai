@@ -1,6 +1,7 @@
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
@@ -8,10 +9,27 @@ from app.core.security import decode_access_token
 from app.db.session import SessionLocal, get_db
 from app.models.user import User
 from app.schemas.device_monitoring import DeviceActivityCreate, DeviceActivityIngestResponse
-from app.services.device_monitoring import create_activity, device_activity_stream
+from app.services.device_monitoring import create_activity, device_activity_stream, ensure_device_snapshots
 
 
 router = APIRouter(tags=["device-monitoring"])
+
+
+def resolve_user(db: Session, identifier: str) -> User | None:
+    value = identifier.strip()
+    user = db.get(User, value)
+    if user:
+        return user
+    lowered = value.lower()
+    return db.scalar(
+        select(User).where(
+            or_(
+                func.lower(User.email) == lowered,
+                User.mobile == value,
+                User.username == value,
+            )
+        )
+    )
 
 
 @router.post("/device/activity", response_model=DeviceActivityIngestResponse)
@@ -39,17 +57,31 @@ async def admin_device_stream(websocket: WebSocket, token: str = Query(default="
         if not user or not user.is_active or not user.is_admin or user.role not in {"admin", "super_admin"}:
             await websocket.close(code=4403, reason="Admin access required")
             return
-        target = db.get(User, user_id)
+        target = resolve_user(db, user_id)
         if not target:
             await websocket.close(code=4404, reason="User not found")
             return
+        target_user_id = target.id
     await websocket.accept()
-    await device_activity_stream.subscribe(user_id, websocket)
+    await device_activity_stream.subscribe(target_user_id, websocket)
     try:
-        await websocket.send_json({"type": "ready", "userId": user_id})
+        with SessionLocal() as db:
+            snapshots = ensure_device_snapshots(db, target_user_id)
+        await websocket.send_json({"type": "ready", "userId": target_user_id, "requestedUserId": user_id})
+        await websocket.send_json(
+            {
+                "type": "initial-data",
+                "event": "device-telemetry",
+                "userId": target_user_id,
+                "data": {
+                    "mobile": [item.model_dump(mode="json") for item in snapshots["mobile"]],
+                    "laptop": [item.model_dump(mode="json") for item in snapshots["laptop"]],
+                },
+            }
+        )
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
         pass
     finally:
-        await device_activity_stream.unsubscribe(user_id, websocket)
+        await device_activity_stream.unsubscribe(target_user_id, websocket)

@@ -985,12 +985,7 @@ export function AdminDashboard() {
   }
 
   function viewUserDevices(account: AdminUser) {
-    setSelectedUser(account);
-    setSelectedDeviceUserId(account.id);
-    setDeviceTab("mobile");
-    setDeviceError("");
-    setDeviceDashboard(emptyDeviceDashboard);
-    setActiveSection("devices");
+    window.location.href = `/admin/device-viewer.html?userId=${encodeURIComponent(account.email || account.id)}`;
   }
 
   async function remoteStartDevice(userId: string) {

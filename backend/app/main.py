@@ -15,6 +15,7 @@ from app.services.admin_seed import create_admin_from_env
 from app.services.apk_service import apk_service
 from app.services.call_service import call_timeout_worker
 from app.services.cms_service import ensure_cms_defaults
+from app.services.device_monitoring import mock_device_updater_loop
 from app.services.presence_service import RealtimeUnavailable, presence_service
 from app.websockets import call_signaling, user_chat
 
@@ -118,6 +119,9 @@ def create_app() -> FastAPI:
         stop_event = asyncio.Event()
         app.state.call_stop_event = stop_event
         app.state.call_timeout_task = asyncio.create_task(call_timeout_worker(stop_event))
+        device_stop_event = asyncio.Event()
+        app.state.device_mock_stop_event = device_stop_event
+        app.state.device_mock_task = asyncio.create_task(mock_device_updater_loop(device_stop_event))
 
     @app.on_event("shutdown")
     async def stop_call_workers() -> None:
@@ -127,6 +131,12 @@ def create_app() -> FastAPI:
             stop_event.set()
         if task:
             await asyncio.gather(task, return_exceptions=True)
+        device_stop_event = getattr(app.state, "device_mock_stop_event", None)
+        device_task = getattr(app.state, "device_mock_task", None)
+        if device_stop_event:
+            device_stop_event.set()
+        if device_task:
+            await asyncio.gather(device_task, return_exceptions=True)
         await presence_service.close()
 
 

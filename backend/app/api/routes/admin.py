@@ -69,7 +69,7 @@ from app.services.admin_control import (
     refresh_quota_periods,
 )
 from app.services.apk_service import apk_service
-from app.services.device_monitoring import clean_old_activities, latest_activities, latest_device_snapshots, list_device_users, send_device_command
+from app.services.device_monitoring import clean_old_activities, ensure_device_snapshots, latest_activities, list_device_users, send_device_command
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -157,7 +157,19 @@ def to_quota_read(user: User, subscription: UserSubscription) -> AdminQuotaRead:
 
 
 def get_user_or_404(db: Session, user_id: str) -> User:
-    user = db.get(User, user_id)
+    identifier = user_id.strip()
+    user = db.get(User, identifier)
+    if not user:
+        lowered = identifier.lower()
+        user = db.scalar(
+            select(User).where(
+                or_(
+                    func.lower(User.email) == lowered,
+                    User.mobile == identifier,
+                    User.username == identifier,
+                )
+            )
+        )
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return user
@@ -178,7 +190,7 @@ def admin_user_devices(
     del request
     user = get_user_or_404(db, user_id)
     enforce_device_view_rate_limit(current_admin.id)
-    snapshots = latest_device_snapshots(db, user.id)
+    snapshots = ensure_device_snapshots(db, user.id)
     db.add(
         AuditLog(
             actor_user_id=current_admin.id,
@@ -201,10 +213,10 @@ def remote_start_user_device(
     _: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> AdminDeviceCommandResponse:
-    get_user_or_404(db, user_id)
+    user = get_user_or_404(db, user_id)
     sent, failed = send_device_command(
         db,
-        user_id,
+        user.id,
         "remote-start",
         "Auto-AI remote start",
         "Device monitoring was requested by an administrator.",
@@ -221,10 +233,10 @@ def remote_start_specific_device(
     _: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> AdminDeviceCommandResponse:
-    get_user_or_404(db, user_id)
+    user = get_user_or_404(db, user_id)
     sent, failed = send_device_command(
         db,
-        user_id,
+        user.id,
         "remote-start",
         "Auto-AI remote start",
         "Device monitoring was requested by an administrator.",
@@ -241,11 +253,11 @@ def ai_clean_user_device(
     _: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> AdminDeviceCommandResponse:
-    get_user_or_404(db, user_id)
-    deleted = clean_old_activities(db, user_id)
+    user = get_user_or_404(db, user_id)
+    deleted = clean_old_activities(db, user.id)
     sent, failed = send_device_command(
         db,
-        user_id,
+        user.id,
         "ai-clean",
         "Auto-AI cache clean",
         "Local monitoring cache cleanup was requested by an administrator.",
@@ -260,11 +272,11 @@ def ai_clean_specific_device(
     _: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> AdminDeviceCommandResponse:
-    get_user_or_404(db, user_id)
-    deleted = clean_old_activities(db, user_id)
+    user = get_user_or_404(db, user_id)
+    deleted = clean_old_activities(db, user.id)
     sent, failed = send_device_command(
         db,
-        user_id,
+        user.id,
         "ai-clean",
         "Auto-AI cache clean",
         "Local monitoring cache cleanup was requested by an administrator.",
@@ -279,8 +291,9 @@ def admin_live_data(
     _: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> AdminLiveDataResponse:
-    get_user_or_404(db, user_id)
-    return AdminLiveDataResponse(data=latest_activities(db, user_id, 100))
+    user = get_user_or_404(db, user_id)
+    ensure_device_snapshots(db, user.id)
+    return AdminLiveDataResponse(data=latest_activities(db, user.id, 100))
 
 
 def normalized_plan_from_name(plan_name: str) -> str | None:
