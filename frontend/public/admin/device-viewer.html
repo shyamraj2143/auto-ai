@@ -239,7 +239,6 @@
     const API_BASE = (() => {
       const runtime = window.__AUTO_AI_API_URL__;
       if (runtime) return runtime.replace(/\/+$/, "");
-      if (location.hostname === "localhost" || location.hostname === "127.0.0.1") return "http://localhost:8000/api/v1";
       return "https://auto-ai-production-c510.up.railway.app/api/v1";
     })();
     const WS_BASE = API_BASE.replace(/^http/i, "ws").replace(/\/api\/v1\/?$/, "");
@@ -311,7 +310,7 @@
     }
     function handleHttpError(response) {
       if (response.status === 401) {
-        location.href = "/admin/login";
+        location.href = "/#/admin/login";
         throw new Error("Unauthorized");
       }
       if (response.status === 404) throw new Error("User not found");
@@ -353,7 +352,7 @@
     }
     function setDevices(data) {
       state.devices.mobile = (data.mobile || []).map(normalizeDevice);
-      state.devices.laptop = (data.laptop || []).map(normalizeDevice);
+      state.devices.laptop = (data.laptop || data.desktop || []).map(normalizeDevice);
       console.log(`✅ Devices loaded: ${state.devices.mobile.length} mobile, ${state.devices.laptop.length} laptop`);
       setLastUpdated();
       render();
@@ -365,7 +364,7 @@
         return;
       }
       if (!token) {
-        location.href = "/admin/login";
+        location.href = "/#/admin/login";
         return;
       }
       if (showLoading) {
@@ -593,7 +592,7 @@
     els.mobileTab.addEventListener("click", () => { state.tab = "mobile"; render(); });
     els.laptopTab.addEventListener("click", () => { state.tab = "laptop"; render(); });
     els.refreshBtn.addEventListener("click", () => loadDevices(true));
-    els.backBtn.addEventListener("click", () => { location.href = "/admin?section=users"; });
+    els.backBtn.addEventListener("click", () => { location.href = "/#/admin?section=users"; });
     els.cancelModal.addEventListener("click", () => els.modal.classList.remove("open"));
     els.confirmModalBtn.addEventListener("click", runPendingAction);
     els.userLabel.textContent = userLabel ? `User: ${userLabel}` : "User not found";

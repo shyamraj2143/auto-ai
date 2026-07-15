@@ -558,9 +558,10 @@ export function AdminDashboard() {
       api.adminUserDevices(token, selectedDeviceUserId)
         .then((response) => {
           if (closed) return;
-          setDeviceDashboard(response.data);
+          const dashboard = { mobile: response.data.mobile, laptop: response.data.laptop ?? response.data.desktop ?? [] };
+          setDeviceDashboard(dashboard);
           setLastLiveUpdateAt(Date.now());
-          void loadDeviceActivity(response.data);
+          void loadDeviceActivity(dashboard);
         })
         .catch((err) => {
           if (!closed) setDeviceError(err instanceof Error ? err.message : "Network error, retrying in 3s...");
@@ -1047,9 +1048,10 @@ export function AdminDashboard() {
     setDeviceError("");
     try {
       const response = await api.adminUserDevices(token, selectedDeviceUserId);
-      setDeviceDashboard(response.data);
+      const dashboard = { mobile: response.data.mobile, laptop: response.data.laptop ?? response.data.desktop ?? [] };
+      setDeviceDashboard(dashboard);
       setLastLiveUpdateAt(Date.now());
-      await loadDeviceActivity(response.data);
+      await loadDeviceActivity(dashboard);
     } catch (err) {
       setDeviceError(err instanceof Error ? err.message : "Network error, retrying in 3s...");
     } finally {

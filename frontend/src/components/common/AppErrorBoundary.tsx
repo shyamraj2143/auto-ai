@@ -1,6 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { enableSafeMode } from "../../reliability/safeMode";
-import { isMobileAppRuntime } from "../../utils/runtime";
 
 type AppErrorBoundaryProps = {
   children: ReactNode;
@@ -58,21 +57,13 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
   }
 
   returnToChat = () => {
-    if (isMobileAppRuntime()) {
-      window.location.hash = "#/chat";
-      return;
-    }
-    window.location.assign("/chat");
+    window.location.hash = "#/chat";
   };
 
   restartInSafeMode = () => {
     enableSafeMode("render-error");
-    if (isMobileAppRuntime()) {
-      window.location.hash = "#/chat";
-      window.location.reload();
-      return;
-    }
-    window.location.href = "/chat";
+    window.location.hash = "#/chat";
+    window.location.reload();
   };
 
   render() {

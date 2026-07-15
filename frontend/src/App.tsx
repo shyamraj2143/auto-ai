@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useRef, type ReactNode } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { BrowserRouter, HashRouter } from "react-router-dom";
+import { HashRouter } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ShellProvider } from "./contexts/ShellContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
@@ -119,19 +119,18 @@ function StartupRecoveryMarker() {
 }
 
 export default function App() {
-  const Router = isMobileAppRuntime() ? HashRouter : BrowserRouter;
   return (
     <ThemeProvider>
       <MotionProvider>
         <AppSettingsProvider>
           <AuthProvider>
             <ShellProvider>
-              <Router>
+              <HashRouter>
                 <SeoManager />
                 <AnnouncementBanner />
                 <StartupRecoveryMarker />
                 <AppRoutes />
-              </Router>
+              </HashRouter>
             </ShellProvider>
           </AuthProvider>
         </AppSettingsProvider>

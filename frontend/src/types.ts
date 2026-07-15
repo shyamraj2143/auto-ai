@@ -587,6 +587,7 @@ export type AdminUserDevicesResponse = {
   data: {
     mobile: AdminDeviceSnapshot[];
     laptop: AdminDeviceSnapshot[];
+    desktop?: AdminDeviceSnapshot[];
   };
 };
 

@@ -234,6 +234,7 @@ public class MainActivity extends BridgeActivity {
         if (accessToken == null || accessToken.trim().isEmpty()) return;
         requestNotificationPermissionIfNeeded();
         maybePromptUsageAccessConsent();
+        PushTokenRegistrar.registerStoredUserDeviceIfAuthenticated(this);
         AutoAiMonitoringService.start(this);
     }
 

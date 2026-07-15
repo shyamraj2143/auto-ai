@@ -22,6 +22,8 @@ public final class PushTokenRegistrar {
     private static final String TAG = "AutoAiPushToken";
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int READ_TIMEOUT_MS = 30000;
+    private static final String TOKEN_PREFERENCES = "auto_ai_push_token";
+    private static final String LAST_FCM_TOKEN = "last_fcm_token";
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
 
     private PushTokenRegistrar() {
@@ -33,8 +35,21 @@ public final class PushTokenRegistrar {
         Log.i(TAG, "Scheduling push token registration.");
         EXECUTOR.execute(() -> {
             String cleanToken = token.trim();
+            appContext.getSharedPreferences(TOKEN_PREFERENCES, Context.MODE_PRIVATE).edit().putString(LAST_FCM_TOKEN, cleanToken).apply();
             registerUpdateToken(appContext, cleanToken);
             registerUserDevice(appContext, cleanToken);
+        });
+    }
+
+    public static void registerStoredUserDeviceIfAuthenticated(Context context) {
+        Context appContext = context.getApplicationContext();
+        EXECUTOR.execute(() -> {
+            String token = appContext.getSharedPreferences(TOKEN_PREFERENCES, Context.MODE_PRIVATE).getString(LAST_FCM_TOKEN, null);
+            if (token == null || token.trim().isEmpty()) {
+                Log.i(TAG, "User device registration retry skipped; no stored FCM token.");
+                return;
+            }
+            registerUserDevice(appContext, token.trim());
         });
     }
 

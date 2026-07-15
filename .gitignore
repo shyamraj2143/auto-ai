@@ -12,6 +12,8 @@ venv/
 node_modules/
 dist/
 build/
+deploy_htdocs/
+deploy_htdocs_clean/
 .tsbuild/
 *.tsbuildinfo
 *.log

@@ -205,7 +205,7 @@ def admin_user_devices(
         )
     )
     db.commit()
-    return AdminUserDevicesResponse(data=AdminUserDevicesData(mobile=snapshots["mobile"], laptop=snapshots["laptop"]))
+    return AdminUserDevicesResponse(data=AdminUserDevicesData(mobile=snapshots["mobile"], laptop=snapshots["laptop"], desktop=snapshots["laptop"]))
 
 
 @router.get("/users/{user_id}/devices/{device_id}/activity", response_model=AdminDeviceActivityResponse)

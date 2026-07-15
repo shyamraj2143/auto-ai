@@ -214,7 +214,7 @@ function resolveApiBaseUrl() {
   const mobileApp = capacitorPlatform === "android" || capacitorPlatform === "ios" || (pageUrl.protocol === "https:" && pageUrl.hostname === "localhost");
   if (mobileApp && (!configured || !/^https:\/\//i.test(rawConfigured))) return PUBLIC_API_BASE_URL;
   if (!configured && import.meta.env.PROD) return PUBLIC_API_BASE_URL;
-  if (!configured && localPage && pageUrl.protocol === "http:") {
+  if (!configured && import.meta.env.DEV && localPage && pageUrl.protocol === "http:") {
     return "http://localhost:8000/api/v1";
   }
   if (!configured) return PUBLIC_API_BASE_URL;

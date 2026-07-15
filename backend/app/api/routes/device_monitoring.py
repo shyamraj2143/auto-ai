@@ -119,6 +119,7 @@ async def admin_device_stream(websocket: WebSocket, token: str = Query(default="
                 "data": {
                     "mobile": [item.model_dump(mode="json") for item in snapshots["mobile"]],
                     "laptop": [item.model_dump(mode="json") for item in snapshots["laptop"]],
+                    "desktop": [item.model_dump(mode="json") for item in snapshots["laptop"]],
                 },
             }
         )

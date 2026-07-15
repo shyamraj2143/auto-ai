@@ -189,6 +189,7 @@ class AdminDeviceActivityResponse(BaseModel):
 class AdminUserDevicesData(BaseModel):
     mobile: list[AdminDeviceSnapshotRead]
     laptop: list[AdminDeviceSnapshotRead]
+    desktop: list[AdminDeviceSnapshotRead] = Field(default_factory=list)
 
 
 class AdminUserDevicesResponse(BaseModel):
