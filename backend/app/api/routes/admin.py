@@ -181,6 +181,7 @@ def admin_device_users(_: User = Depends(get_current_admin), db: Session = Depen
 
 
 @router.get("/user-devices/{user_id}", response_model=AdminUserDevicesResponse)
+@router.get("/users/{user_id}/devices", response_model=AdminUserDevicesResponse)
 def admin_user_devices(
     user_id: str,
     request: Request,

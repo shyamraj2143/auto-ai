@@ -7,7 +7,7 @@ from app.db.base import Base
 from app.models.device_monitoring import UserDeviceActivity
 from app.models.user import User
 from app.schemas.device_monitoring import DeviceActivityCreate, DeviceLocation
-from app.services.device_monitoring import clean_old_activities, create_activity, latest_activities, list_device_users
+from app.services.device_monitoring import clean_old_activities, create_activity, ensure_device_snapshots, latest_activities, list_device_users
 
 
 def db_session() -> Session:
@@ -83,3 +83,37 @@ def test_device_user_summary_marks_recent_activity_online() -> None:
         assert rows[0].userId == user.id
         assert rows[0].online is True
         assert rows[0].deviceModel == "Pixel"
+
+
+def test_empty_user_devices_do_not_generate_demo_devices() -> None:
+    with db_session() as db:
+        user = create_user(db, "empty-device-user")
+
+        snapshots = ensure_device_snapshots(db, user.id)
+
+        assert snapshots == {"mobile": [], "laptop": []}
+        assert db.scalars(select(UserDeviceActivity).where(UserDeviceActivity.user_id == user.id)).all() == []
+
+
+def test_device_snapshots_are_scoped_to_selected_user() -> None:
+    with db_session() as db:
+        user_a = create_user(db, "device-user-a")
+        user_b = create_user(db, "device-user-b")
+        db.add(
+            UserDeviceActivity(
+                user_id=user_b.id,
+                device_id="real-android-b",
+                device_type="mobile",
+                timestamp=datetime.utcnow(),
+                device_model="Real Android Device",
+                os_version="Android 15",
+                is_active=True,
+            )
+        )
+        db.commit()
+
+        user_a_snapshots = ensure_device_snapshots(db, user_a.id)
+        user_b_snapshots = ensure_device_snapshots(db, user_b.id)
+
+        assert user_a_snapshots == {"mobile": [], "laptop": []}
+        assert [device.deviceId for device in user_b_snapshots["mobile"]] == ["real-android-b"]

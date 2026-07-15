@@ -84,7 +84,6 @@ class Settings(BaseSettings):
     CALL_ICE_MAX_PER_CALL: int = 256
     CALL_WS_TICKET_TTL_SECONDS: int = 60
     CALL_PRESENCE_TTL_SECONDS: int = 55
-
     BACKEND_CORS_ORIGINS: list[AnyHttpUrl | str] = [
         "https://autoai.site.je",
         "https://www.autoai.site.je",

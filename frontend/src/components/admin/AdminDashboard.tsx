@@ -502,19 +502,12 @@ export function AdminDashboard() {
   useEffect(() => {
     if (!token || activeSection !== "devices" || !selectedDeviceUserId) {
       setDeviceConnected(false);
+      setDeviceDashboard(emptyDeviceDashboard);
       return;
     }
     let closed = false;
     setDeviceConnected(false);
-    const cacheKey = `admin-user-devices-${selectedDeviceUserId}`;
-    const cached = window.localStorage.getItem(cacheKey);
-    if (cached) {
-      try {
-        setDeviceDashboard(JSON.parse(cached) as DeviceDashboardState);
-      } catch {
-        window.localStorage.removeItem(cacheKey);
-      }
-    }
+    setDeviceDashboard(emptyDeviceDashboard);
     const loadTimer = window.setTimeout(() => {
       setDeviceLoading(true);
       setDeviceError("");
@@ -522,7 +515,6 @@ export function AdminDashboard() {
         .then((response) => {
           if (closed) return;
           setDeviceDashboard(response.data);
-          window.localStorage.setItem(cacheKey, JSON.stringify(response.data));
           setLastLiveUpdateAt(Date.now());
         })
         .catch((err) => {
@@ -538,7 +530,9 @@ export function AdminDashboard() {
     };
     socket.onmessage = (event) => {
       try {
-        const payload = JSON.parse(event.data) as { type?: string; data?: DeviceActivity };
+        const payload = JSON.parse(event.data) as { type?: string; userId?: string; data?: DeviceActivity };
+        const eventUserId = payload.userId || payload.data?.userId;
+        if (eventUserId && eventUserId !== selectedDeviceUserId) return;
         if (!payload.data || (payload.type !== "device-update" && payload.type !== "live-update")) return;
         const snapshot = activityToDeviceSnapshot(payload.data);
         window.requestAnimationFrame(() => {
@@ -548,7 +542,6 @@ export function AdminDashboard() {
               ...current,
               [snapshot.type]: [snapshot, ...current[snapshot.type].filter((item) => item.deviceId !== snapshot.deviceId)]
             };
-            window.localStorage.setItem(cacheKey, JSON.stringify(next));
             return next;
           });
           setLiveData((current) => [payload.data as DeviceActivity, ...current.filter((item) => item.id !== payload.data?.id)].slice(0, 100));
@@ -975,7 +968,6 @@ export function AdminDashboard() {
     try {
       const response = await api.adminUserDevices(token, selectedDeviceUserId);
       setDeviceDashboard(response.data);
-      window.localStorage.setItem(`admin-user-devices-${selectedDeviceUserId}`, JSON.stringify(response.data));
       setLastLiveUpdateAt(Date.now());
     } catch (err) {
       setDeviceError(err instanceof Error ? err.message : "Network error, retrying in 3s...");
@@ -985,7 +977,8 @@ export function AdminDashboard() {
   }
 
   function viewUserDevices(account: AdminUser) {
-    window.location.href = `/admin/device-viewer.html?userId=${encodeURIComponent(account.email || account.id)}`;
+    const label = account.email || account.mobile || account.name || account.id;
+    window.location.href = `/admin/device-viewer.html?userId=${encodeURIComponent(account.id)}&label=${encodeURIComponent(label)}`;
   }
 
   async function remoteStartDevice(userId: string) {
@@ -1844,7 +1837,7 @@ export function AdminDashboard() {
                   </button>
                   <SectionTitle title={selectedDeviceUser?.name ? `${selectedDeviceUser.name} Devices` : "User Device Dashboard"} subtitle="Real-time mobile and laptop telemetry with per-device controls" />
                   <p className="text-sm text-slate-400">
-                    <span className={deviceConnected ? "text-emerald-300" : "text-red-300"}>{deviceConnected ? "Live stream connected" : "Live stream offline"}</span>
+                    <span className={deviceConnected ? "text-emerald-300" : "text-red-300"}>{deviceConnected ? "Device stream connected" : "Device stream offline"}</span>
                     <span> - Last updated {secondsAgo(lastLiveUpdateAt ?? liveData[0]?.timestamp)}</span>
                   </p>
                 </div>
@@ -1887,8 +1880,8 @@ export function AdminDashboard() {
                   <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-lg bg-slate-900 text-cyan-200">
                     {deviceTab === "mobile" ? <Smartphone size={28} /> : <Laptop size={28} />}
                   </div>
-                  <h3 className="text-lg font-semibold text-white">No devices found for this user</h3>
-                  <p className="mt-2 text-sm text-slate-400">Telemetry will appear here after a device sends its first update.</p>
+                  <h3 className="text-lg font-semibold text-white">No registered devices found for this user.</h3>
+                  <p className="mt-2 text-sm text-slate-400">Only devices registered from real app sessions will appear here.</p>
                 </div>
               )}
 
