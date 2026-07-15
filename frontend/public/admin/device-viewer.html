@@ -310,7 +310,7 @@
     }
     function handleHttpError(response) {
       if (response.status === 401) {
-        location.href = "/#/admin/login";
+        location.replace("/#/admin/login");
         throw new Error("Unauthorized");
       }
       if (response.status === 404) throw new Error("User not found");
@@ -364,7 +364,7 @@
         return;
       }
       if (!token) {
-        location.href = "/#/admin/login";
+        location.replace("/#/admin/login");
         return;
       }
       if (showLoading) {
@@ -592,7 +592,7 @@
     els.mobileTab.addEventListener("click", () => { state.tab = "mobile"; render(); });
     els.laptopTab.addEventListener("click", () => { state.tab = "laptop"; render(); });
     els.refreshBtn.addEventListener("click", () => loadDevices(true));
-    els.backBtn.addEventListener("click", () => { location.href = "/#/admin?section=users"; });
+    els.backBtn.addEventListener("click", () => { location.assign("/#/admin/users"); });
     els.cancelModal.addEventListener("click", () => els.modal.classList.remove("open"));
     els.confirmModalBtn.addEventListener("click", runPendingAction);
     els.userLabel.textContent = userLabel ? `User: ${userLabel}` : "User not found";

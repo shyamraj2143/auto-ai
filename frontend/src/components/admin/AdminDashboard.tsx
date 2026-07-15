@@ -284,6 +284,13 @@ function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) 
   );
 }
 
+function adminSectionPath(section: AdminSection, selectedDeviceUserId = "") {
+  if (section === "dashboard") return "/admin";
+  if (section === "users") return "/admin/users";
+  if (section === "devices" && selectedDeviceUserId) return `/admin/user-devices/${encodeURIComponent(selectedDeviceUserId)}`;
+  return `/admin/${section}`;
+}
+
 function DeviceCard({
   device,
   activity,
@@ -521,11 +528,24 @@ export function AdminDashboard() {
     const params = new URLSearchParams(location.search);
     const section = params.get("section");
     const userId = params.get("userId");
-    if (section === "devices") {
-      setActiveSection("devices");
-      if (userId) setSelectedDeviceUserId(userId);
+    const pathParts = location.pathname.split("/").filter(Boolean);
+    const adminSubPath = pathParts[0] === "admin" ? pathParts[1] : "";
+    const routeUserId = pathParts[0] === "admin" && pathParts[1] === "user-devices" ? pathParts[2] : "";
+    const validSection = sections.some((item) => item.id === adminSubPath);
+    if (adminSubPath === "users") {
+      setActiveSection("users");
+      return;
     }
-  }, [location.search]);
+    if (adminSubPath === "user-devices" || section === "devices") {
+      setActiveSection("devices");
+      if (routeUserId) setSelectedDeviceUserId(decodeURIComponent(routeUserId));
+      else if (userId) setSelectedDeviceUserId(userId);
+      return;
+    }
+    if (validSection) {
+      setActiveSection(adminSubPath as AdminSection);
+    }
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     setPlanLimitDrafts(mapPlanLimitsByPlan(features?.plan_limits ?? []));
@@ -1060,8 +1080,11 @@ export function AdminDashboard() {
   }
 
   function viewUserDevices(account: AdminUser) {
-    const label = account.email || account.mobile || account.name || account.id;
-    window.location.href = `/admin/device-viewer.html?userId=${encodeURIComponent(account.id)}&label=${encodeURIComponent(label)}`;
+    setSelectedDeviceUserId(account.id);
+    setDeviceDashboard(emptyDeviceDashboard);
+    setDeviceActivityById({});
+    setDeviceCommandStatus({});
+    navigate(`/admin/user-devices/${encodeURIComponent(account.id)}`);
   }
 
   function backToUsers() {
@@ -1071,7 +1094,7 @@ export function AdminDashboard() {
     setDeviceActivityById({});
     setDeviceCommandStatus({});
     setLiveDeviceStreamConnected(false);
-    navigate("/admin?section=users", { replace: false });
+    navigate("/admin/users", { replace: false });
   }
 
   async function remoteStartDevice(userId: string) {
@@ -1358,7 +1381,10 @@ export function AdminDashboard() {
           <button
             key={section.id}
             className={activeSection === section.id ? "chip-dark chip-dark-active" : "chip-dark"}
-            onClick={() => setActiveSection(section.id)}
+            onClick={() => {
+              setActiveSection(section.id);
+              navigate(adminSectionPath(section.id, selectedDeviceUserId));
+            }}
             type="button"
           >
             {section.icon}
@@ -1949,7 +1975,7 @@ export function AdminDashboard() {
                       setDeviceDashboard(emptyDeviceDashboard);
                       setDeviceActivityById({});
                       setDeviceCommandStatus({});
-                      if (nextUserId) navigate(`/admin?section=devices&userId=${encodeURIComponent(nextUserId)}`, { replace: false });
+                      if (nextUserId) navigate(`/admin/user-devices/${encodeURIComponent(nextUserId)}`, { replace: false });
                     }}
                   >
                     <option value="">Select user</option>

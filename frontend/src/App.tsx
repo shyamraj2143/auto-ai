@@ -90,6 +90,7 @@ function AppRoutes() {
           <Route element={<AdminRoute />}>
             <Route element={<AppShell />}>
               <Route path="/admin" element={<AdminDashboard />} />
+              <Route path="/admin/*" element={<AdminDashboard />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
