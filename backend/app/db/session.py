@@ -170,6 +170,20 @@ def ensure_runtime_schema() -> None:
         if "device_name" not in device_columns:
             add_column("user_devices", "device_name", "VARCHAR(120)")
 
+    if "user_device_activities" in table_names:
+        activity_columns = {column["name"] for column in inspector.get_columns("user_device_activities")}
+        activity_device_columns = {
+            "device_id": "VARCHAR(128)",
+            "device_type": "VARCHAR(16) NOT NULL DEFAULT 'mobile'",
+            "storage_total": "VARCHAR(80)",
+            "storage_used": "VARCHAR(80)",
+            "ram_total": "VARCHAR(80)",
+            "ram_used": "VARCHAR(80)",
+        }
+        for column_name, definition in activity_device_columns.items():
+            if column_name not in activity_columns:
+                add_column("user_device_activities", column_name, definition)
+
     if "payment_records" in table_names:
         payment_columns = {column["name"] for column in inspector.get_columns("payment_records")}
         payment_record_columns = {
@@ -289,6 +303,22 @@ def ensure_runtime_schema() -> None:
                 text(
                     f"CREATE INDEX IF NOT EXISTS ix_user_devices_fcm_token_hash ON {quote('user_devices')} "
                     f"({quote('fcm_token_hash')}) WHERE {quote('fcm_token_hash')} IS NOT NULL"
+                )
+            )
+        if "user_device_activities" in table_names and dialect in {"sqlite", "postgresql"}:
+            activities = quote("user_device_activities")
+            connection.execute(text(f"CREATE INDEX IF NOT EXISTS ix_user_device_activities_device_id ON {activities} ({quote('device_id')})"))
+            connection.execute(text(f"CREATE INDEX IF NOT EXISTS ix_user_device_activities_device_type ON {activities} ({quote('device_type')})"))
+            connection.execute(
+                text(
+                    f"UPDATE {activities} SET {quote('device_id')} = 'mobile-' || {quote('user_id')} "
+                    f"WHERE {quote('device_id')} IS NULL OR TRIM({quote('device_id')}) = ''"
+                )
+            )
+            connection.execute(
+                text(
+                    f"UPDATE {activities} SET {quote('device_type')} = 'mobile' "
+                    f"WHERE {quote('device_type')} IS NULL OR TRIM({quote('device_type')}) = ''"
                 )
             )
         if ensure_mobile_index and dialect == "mysql":

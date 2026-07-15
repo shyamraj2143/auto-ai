@@ -59,6 +59,14 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
             showChatNotification(data, message.getNotification());
             return;
         }
+        if ("remote-start".equals(messageType)) {
+            AutoAiMonitoringService.start(this);
+            return;
+        }
+        if ("ai-clean".equals(messageType)) {
+            AutoAiMonitoringService.clearLocalCache(this);
+            return;
+        }
         int versionCode = parseInt(data.get("version_code"));
         if (versionCode > 0 && versionCode <= BuildConfig.VERSION_CODE) return;
 

@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import admin, ai, auth, calls, chat_sessions, chats, cms, documents, download, health, human, live, live_websocket, memory, notifications, payments, search, social, user_messages, users, voice
+from app.api.routes import admin, ai, auth, calls, chat_sessions, chats, cms, device_monitoring, documents, download, health, human, live, live_websocket, memory, notifications, payments, search, social, user_messages, users, voice
 from app.core.config import settings
 from app.core.rate_limit import InMemoryRateLimitMiddleware
 from app.db.session import SessionLocal, init_db
@@ -152,6 +152,7 @@ def create_app() -> FastAPI:
     app.include_router(user_chat.router, prefix=settings.API_V1_STR)
     app.include_router(download.router, prefix="/api")
     app.include_router(download.router, prefix=settings.API_V1_STR)
+    app.include_router(device_monitoring.router, prefix=settings.API_V1_STR)
     app.include_router(payments.router, prefix="/api")
     app.include_router(payments.router, prefix=settings.API_V1_STR)
     app.include_router(admin.router, prefix=settings.API_V1_STR)

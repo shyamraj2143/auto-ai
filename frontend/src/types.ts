@@ -525,6 +525,76 @@ export type AdminPaymentRecord = {
   updated_at?: string | null;
 };
 
+export type DeviceActivity = {
+  id: string;
+  userId: string;
+  deviceId: string;
+  type: "mobile" | "laptop";
+  timestamp: string;
+  battery?: number | null;
+  screenOn?: boolean | null;
+  currentApp?: string | null;
+  location?: { lat?: number | null; lng?: number | null } | null;
+  network?: string | null;
+  storageTotal?: string | null;
+  storageUsed?: string | null;
+  storageFree?: string | null;
+  ramTotal?: string | null;
+  ramUsed?: string | null;
+  ramUsage?: string | null;
+  deviceModel?: string | null;
+  osVersion?: string | null;
+  isActive: boolean;
+};
+
+export type AdminDeviceSnapshot = {
+  deviceId: string;
+  deviceName: string;
+  type: "mobile" | "laptop";
+  osVersion?: string | null;
+  battery?: number | null;
+  storageTotal?: string | null;
+  storageUsed?: string | null;
+  ramTotal?: string | null;
+  ramUsed?: string | null;
+  network?: string | null;
+  currentApp?: string | null;
+  screenOn?: boolean | null;
+  lastActive: string;
+  location?: { lat?: number | null; lng?: number | null } | null;
+  status: "online" | "offline";
+};
+
+export type AdminUserDevicesResponse = {
+  success: boolean;
+  data: {
+    mobile: AdminDeviceSnapshot[];
+    laptop: AdminDeviceSnapshot[];
+  };
+};
+
+export type AdminDeviceUser = {
+  userId: string;
+  name: string;
+  email: string;
+  deviceModel?: string | null;
+  osVersion?: string | null;
+  lastActive?: string | null;
+  online: boolean;
+};
+
+export type AdminDeviceCommandResponse = {
+  success: boolean;
+  message: string;
+  sent: number;
+  failed: number;
+};
+
+export type AdminLiveDataResponse = {
+  success: boolean;
+  data: DeviceActivity[];
+};
+
 export type AdminAnalytics = {
   stats: AdminStats;
   subscriptions_by_plan: Record<string, number>;

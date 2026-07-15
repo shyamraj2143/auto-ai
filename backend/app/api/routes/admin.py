@@ -1,9 +1,11 @@
+from collections import defaultdict, deque
 from datetime import datetime
+from time import monotonic
 import platform
 import shutil
 
 import razorpay
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from razorpay.errors import BadRequestError, GatewayError, ServerError
 from sqlalchemy import func, or_, select
@@ -14,7 +16,7 @@ from app.api.deps import get_current_admin
 from app.core.config import settings
 from app.core.security import get_password_hash
 from app.db.session import get_db
-from app.models.admin_control import FeatureFlag, PaymentRecord, PlanLimit, UserSubscription
+from app.models.admin_control import AuditLog, FeatureFlag, PaymentRecord, PlanLimit, UserSubscription
 from app.models.api_usage import APIUsage
 from app.models.chat import Chat
 from app.models.document import Document
@@ -48,6 +50,7 @@ from app.schemas.admin import (
     SystemStatus,
     TokenUsageSummary,
 )
+from app.schemas.device_monitoring import AdminDeviceCommandResponse, AdminDeviceUserRead, AdminLiveDataResponse, AdminUserDevicesData, AdminUserDevicesResponse
 from app.schemas.download import ApkReleaseRead, ApkVersionUpsert
 from app.utils.pdf import build_text_pdf
 from app.services.admin_control import (
@@ -66,9 +69,21 @@ from app.services.admin_control import (
     refresh_quota_periods,
 )
 from app.services.apk_service import apk_service
+from app.services.device_monitoring import clean_old_activities, latest_activities, latest_device_snapshots, list_device_users, send_device_command
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+device_view_buckets: dict[str, deque[float]] = defaultdict(deque)
+
+
+def enforce_device_view_rate_limit(admin_id: str) -> None:
+    now = monotonic()
+    bucket = device_view_buckets[admin_id]
+    while bucket and now - bucket[0] > 60:
+        bucket.popleft()
+    if len(bucket) >= 30:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Device view rate limit exceeded")
+    bucket.append(now)
 
 
 def usage_for_user(db: Session, user_id: str) -> AdminUserUsageSummary:
@@ -146,6 +161,126 @@ def get_user_or_404(db: Session, user_id: str) -> User:
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return user
+
+
+@router.get("/device-users", response_model=list[AdminDeviceUserRead])
+def admin_device_users(_: User = Depends(get_current_admin), db: Session = Depends(get_db)) -> list[AdminDeviceUserRead]:
+    return list_device_users(db)
+
+
+@router.get("/user-devices/{user_id}", response_model=AdminUserDevicesResponse)
+def admin_user_devices(
+    user_id: str,
+    request: Request,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AdminUserDevicesResponse:
+    del request
+    user = get_user_or_404(db, user_id)
+    enforce_device_view_rate_limit(current_admin.id)
+    snapshots = latest_device_snapshots(db, user.id)
+    db.add(
+        AuditLog(
+            actor_user_id=current_admin.id,
+            target_user_id=user.id,
+            action="admin.devices.view",
+            reason="Admin viewed user devices",
+            audit_metadata={
+                "mobile_count": len(snapshots["mobile"]),
+                "laptop_count": len(snapshots["laptop"]),
+            },
+        )
+    )
+    db.commit()
+    return AdminUserDevicesResponse(data=AdminUserDevicesData(mobile=snapshots["mobile"], laptop=snapshots["laptop"]))
+
+
+@router.post("/remote-start/{user_id}", response_model=AdminDeviceCommandResponse)
+def remote_start_user_device(
+    user_id: str,
+    _: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AdminDeviceCommandResponse:
+    get_user_or_404(db, user_id)
+    sent, failed = send_device_command(
+        db,
+        user_id,
+        "remote-start",
+        "Auto-AI remote start",
+        "Device monitoring was requested by an administrator.",
+    )
+    if sent == 0 and failed == 0:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active Android device token found for this user.")
+    return AdminDeviceCommandResponse(message="Remote start command sent", sent=sent, failed=failed)
+
+
+@router.post("/remote-start/{user_id}/{device_id}", response_model=AdminDeviceCommandResponse)
+def remote_start_specific_device(
+    user_id: str,
+    device_id: str,
+    _: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AdminDeviceCommandResponse:
+    get_user_or_404(db, user_id)
+    sent, failed = send_device_command(
+        db,
+        user_id,
+        "remote-start",
+        "Auto-AI remote start",
+        "Device monitoring was requested by an administrator.",
+        device_id=device_id,
+    )
+    if sent == 0 and failed == 0:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active Android device token found for this device.")
+    return AdminDeviceCommandResponse(message="Remote start command sent to device", sent=sent, failed=failed)
+
+
+@router.post("/ai-clean/{user_id}", response_model=AdminDeviceCommandResponse)
+def ai_clean_user_device(
+    user_id: str,
+    _: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AdminDeviceCommandResponse:
+    get_user_or_404(db, user_id)
+    deleted = clean_old_activities(db, user_id)
+    sent, failed = send_device_command(
+        db,
+        user_id,
+        "ai-clean",
+        "Auto-AI cache clean",
+        "Local monitoring cache cleanup was requested by an administrator.",
+    )
+    return AdminDeviceCommandResponse(message="AI data cleaned successfully", sent=sent, failed=failed, success=deleted >= 0)
+
+
+@router.post("/ai-clean/{user_id}/{device_id}", response_model=AdminDeviceCommandResponse)
+def ai_clean_specific_device(
+    user_id: str,
+    device_id: str,
+    _: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AdminDeviceCommandResponse:
+    get_user_or_404(db, user_id)
+    deleted = clean_old_activities(db, user_id)
+    sent, failed = send_device_command(
+        db,
+        user_id,
+        "ai-clean",
+        "Auto-AI cache clean",
+        "Local monitoring cache cleanup was requested by an administrator.",
+        device_id=device_id,
+    )
+    return AdminDeviceCommandResponse(message="AI data cleaned for device", sent=sent, failed=failed, success=deleted >= 0)
+
+
+@router.get("/live-data/{user_id}", response_model=AdminLiveDataResponse)
+def admin_live_data(
+    user_id: str,
+    _: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AdminLiveDataResponse:
+    get_user_or_404(db, user_id)
+    return AdminLiveDataResponse(data=latest_activities(db, user_id, 100))
 
 
 def normalized_plan_from_name(plan_name: str) -> str | None:

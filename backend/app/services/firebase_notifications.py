@@ -113,6 +113,30 @@ class FirebaseNotificationService:
         }
         return self._send(message)
 
+    def send_device_command(self, token: str, *, command_type: str, user_id: str, title: str, body: str) -> FcmSendResult:
+        message = {
+            "message": {
+                "token": token,
+                "notification": {"title": title[:120], "body": body[:180]},
+                "data": {
+                    "type": command_type,
+                    "userId": user_id,
+                    "user_id": user_id,
+                    "title": title,
+                    "body": body,
+                },
+                "android": {
+                    "priority": "HIGH",
+                    "notification": {
+                        "channel_id": "auto_ai_device_control",
+                        "default_sound": False,
+                        "notification_priority": "PRIORITY_HIGH",
+                    },
+                },
+            }
+        }
+        return self._send(message)
+
     def _send(self, message: dict[str, Any]) -> FcmSendResult:
         try:
             service_account = self._service_account()

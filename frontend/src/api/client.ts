@@ -1,6 +1,10 @@
 import type {
   AdminAnalytics,
+  AdminDeviceCommandResponse,
+  AdminDeviceUser,
   AdminFeaturesResponse,
+  AdminLiveDataResponse,
+  AdminUserDevicesResponse,
   AdminFeatureFlag,
   AdminPaymentRecord,
   AdminPlanLimit,
@@ -1135,7 +1139,43 @@ export const api = {
     }),
   adminAnalytics: (token: string) => apiFetch<AdminAnalytics>("/admin/analytics", { token, operation: "admin.analytics" }),
   adminPayments: (token: string) =>
-    apiFetch<AdminPaymentRecord[]>("/admin/subscriptions/payments", { token, operation: "admin.payments" })
+    apiFetch<AdminPaymentRecord[]>("/admin/subscriptions/payments", { token, operation: "admin.payments" }),
+  adminDeviceUsers: (token: string) =>
+    apiFetch<AdminDeviceUser[]>("/admin/device-users", { token, operation: "admin.deviceUsers" }),
+  adminLiveData: (token: string, userId: string) =>
+    apiFetch<AdminLiveDataResponse>(`/admin/live-data/${encodeURIComponent(userId)}`, {
+      token,
+      operation: "admin.liveData"
+    }),
+  adminUserDevices: (token: string, userId: string) =>
+    apiFetch<AdminUserDevicesResponse>(`/admin/user-devices/${encodeURIComponent(userId)}`, {
+      token,
+      operation: "admin.userDevices"
+    }),
+  adminRemoteStart: (token: string, userId: string) =>
+    apiFetch<AdminDeviceCommandResponse>(`/admin/remote-start/${encodeURIComponent(userId)}`, {
+      method: "POST",
+      token,
+      operation: "admin.remoteStart"
+    }),
+  adminRemoteStartDevice: (token: string, userId: string, deviceId: string) =>
+    apiFetch<AdminDeviceCommandResponse>(`/admin/remote-start/${encodeURIComponent(userId)}/${encodeURIComponent(deviceId)}`, {
+      method: "POST",
+      token,
+      operation: "admin.remoteStartDevice"
+    }),
+  adminAiClean: (token: string, userId: string) =>
+    apiFetch<AdminDeviceCommandResponse>(`/admin/ai-clean/${encodeURIComponent(userId)}`, {
+      method: "POST",
+      token,
+      operation: "admin.aiClean"
+    }),
+  adminAiCleanDevice: (token: string, userId: string, deviceId: string) =>
+    apiFetch<AdminDeviceCommandResponse>(`/admin/ai-clean/${encodeURIComponent(userId)}/${encodeURIComponent(deviceId)}`, {
+      method: "POST",
+      token,
+      operation: "admin.aiCleanDevice"
+    })
 };
 
 export async function streamChat(

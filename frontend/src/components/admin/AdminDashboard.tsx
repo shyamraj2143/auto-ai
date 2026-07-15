@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import {
   Activity,
+  ArrowLeft,
   Ban,
   BarChart3,
   BookOpen,
@@ -8,8 +9,12 @@ import {
   CreditCard,
   Database,
   Download,
+  Eye,
   KeyRound,
+  Laptop,
+  MapPin,
   MessageSquare,
+  Play,
   RefreshCw,
   Save,
   Search,
@@ -22,11 +27,13 @@ import {
   Users,
   Wallet
 } from "lucide-react";
-import { API_BASE_URL, api, resolveApkDownloadUrl } from "../../api/client";
+import { API_BASE_URL, api, createWebSocketUrl, resolveApkDownloadUrl } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { ContentManager } from "./cms/ContentManager";
 import type {
   AdminAnalytics,
+  AdminDeviceSnapshot,
+  AdminDeviceUser,
   AdminFeaturesResponse,
   AdminPaymentRecord,
   AdminPlanLimit,
@@ -38,10 +45,11 @@ import type {
   AdminUser,
   ApkRelease,
   ApkStats,
+  DeviceActivity,
   UserRole
 } from "../../types";
 
-type AdminSection = "dashboard" | "users" | "tokens" | "subscriptions" | "usage" | "features" | "mobile" | "payments" | "content" | "settings";
+type AdminSection = "dashboard" | "users" | "tokens" | "subscriptions" | "usage" | "features" | "devices" | "mobile" | "payments" | "content" | "settings";
 
 const sections: Array<{ id: AdminSection; label: string; icon: ReactNode }> = [
   { id: "dashboard", label: "Dashboard", icon: <BarChart3 size={15} /> },
@@ -50,6 +58,7 @@ const sections: Array<{ id: AdminSection; label: string; icon: ReactNode }> = [
   { id: "subscriptions", label: "Subscriptions", icon: <CreditCard size={15} /> },
   { id: "usage", label: "Usage Analytics", icon: <Activity size={15} /> },
   { id: "features", label: "Feature Controls", icon: <SlidersHorizontal size={15} /> },
+  { id: "devices", label: "Device Monitor", icon: <Smartphone size={15} /> },
   { id: "mobile", label: "Mobile App", icon: <Smartphone size={15} /> },
   { id: "payments", label: "Payments", icon: <Wallet size={15} /> },
   { id: "content", label: "Content Manager", icon: <BookOpen size={15} /> },
@@ -133,6 +142,17 @@ function formatDateTime(value?: string | null) {
   }).format(new Date(value));
 }
 
+function secondsAgo(value?: string | number | Date | null) {
+  if (!value) return "Never";
+  const delta = Math.max(0, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
+  if (delta < 5) return "Just now";
+  if (delta < 60) return `${delta}s ago`;
+  const minutes = Math.floor(delta / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ago`;
+}
+
 function dateInputValue(value?: string | null) {
   return value ? new Date(value).toISOString().slice(0, 10) : "";
 }
@@ -197,12 +217,169 @@ function StatusPill({ active, label }: { active: boolean; label: string }) {
   );
 }
 
+type DeviceTab = "mobile" | "laptop";
+type DeviceDashboardState = Record<DeviceTab, AdminDeviceSnapshot[]>;
+
+const emptyDeviceDashboard: DeviceDashboardState = { mobile: [], laptop: [] };
+
+function parseCapacity(value?: string | null) {
+  if (!value) return 0;
+  const match = value.trim().match(/^([\d.]+)\s*(B|KB|MB|GB|TB)?$/i);
+  if (!match) return 0;
+  const amount = Number(match[1]);
+  const unit = (match[2] ?? "B").toUpperCase();
+  const scale: Record<string, number> = { B: 1, KB: 1024, MB: 1024 ** 2, GB: 1024 ** 3, TB: 1024 ** 4 };
+  return Number.isFinite(amount) ? amount * (scale[unit] ?? 1) : 0;
+}
+
+function usagePercent(used?: string | null, total?: string | null) {
+  const usedBytes = parseCapacity(used);
+  const totalBytes = parseCapacity(total);
+  return totalBytes > 0 ? Math.max(0, Math.min(100, Math.round((usedBytes / totalBytes) * 100))) : 0;
+}
+
+function batteryColor(value?: number | null) {
+  if (value == null) return "bg-slate-500";
+  if (value > 50) return "bg-emerald-400";
+  if (value >= 20) return "bg-yellow-400";
+  return "bg-red-400";
+}
+
+function activityToDeviceSnapshot(activity: DeviceActivity): AdminDeviceSnapshot {
+  return {
+    deviceId: activity.deviceId,
+    deviceName: activity.deviceModel || (activity.type === "laptop" ? "Laptop/Desktop" : "Mobile device"),
+    type: activity.type,
+    osVersion: activity.osVersion,
+    battery: activity.battery,
+    storageTotal: activity.storageTotal,
+    storageUsed: activity.storageUsed,
+    ramTotal: activity.ramTotal,
+    ramUsed: activity.ramUsed,
+    network: activity.network,
+    currentApp: activity.currentApp,
+    screenOn: activity.screenOn,
+    lastActive: activity.timestamp,
+    location: activity.location,
+    status: Date.now() - new Date(activity.timestamp).getTime() <= 10000 && activity.isActive ? "online" : "offline"
+  };
+}
+
+function ProgressBar({ value, color = "bg-cyan-300" }: { value: number; color?: string }) {
+  return (
+    <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-800">
+      <div className={`h-full rounded-full ${color} transition-[width] duration-500 ease-out`} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
+    </div>
+  );
+}
+
 function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div className="mb-4">
       <h2 className="text-lg font-semibold text-white">{title}</h2>
       <p className="text-sm text-slate-400">{subtitle}</p>
     </div>
+  );
+}
+
+function DeviceCard({
+  device,
+  changed,
+  cooldownUntil,
+  busyId,
+  onRemoteStart,
+  onClean
+}: {
+  device: AdminDeviceSnapshot;
+  changed: boolean;
+  cooldownUntil: number;
+  busyId: string | null;
+  onRemoteStart: (device: AdminDeviceSnapshot) => void;
+  onClean: (device: AdminDeviceSnapshot) => void;
+}) {
+  const lastActiveMs = new Date(device.lastActive).getTime();
+  const activeNow = Date.now() - lastActiveMs <= 5000;
+  const offline = Date.now() - lastActiveMs > 10000 || device.status === "offline";
+  const battery = device.battery ?? 0;
+  const storage = usagePercent(device.storageUsed, device.storageTotal);
+  const ram = usagePercent(device.ramUsed, device.ramTotal);
+  const cooldownSeconds = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
+  return (
+    <article
+      className={`rounded-lg border border-white/10 bg-white/[0.07] p-4 shadow-[0_18px_55px_rgba(0,0,0,0.28)] backdrop-blur transition duration-300 ease-out ${
+        changed ? "ring-2 ring-emerald-300/60" : ""
+      }`}
+    >
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            {device.type === "mobile" ? <Smartphone size={18} className="text-cyan-200" /> : <Laptop size={18} className="text-cyan-200" />}
+            <h3 className="truncate text-base font-semibold text-white">{device.deviceName}</h3>
+          </div>
+          <p className="mt-1 text-xs text-slate-400">{device.osVersion || "Unknown OS"}</p>
+        </div>
+        <span className={`mt-1 h-3 w-3 rounded-full ${offline ? "bg-red-400" : "animate-pulse bg-emerald-400"}`} title={offline ? "Offline" : "Online"} />
+      </div>
+
+      <div className="grid gap-3 text-sm text-slate-300">
+        <div>
+          <div className="flex justify-between gap-2"><span>Battery</span><span>{device.battery != null ? `${device.battery}%` : "Unknown"}</span></div>
+          <ProgressBar value={battery} color={batteryColor(device.battery)} />
+        </div>
+        <div>
+          <div className="flex justify-between gap-2"><span>Storage</span><span>{device.storageUsed || "Unknown"} / {device.storageTotal || "Unknown"}</span></div>
+          <ProgressBar value={storage} color="bg-sky-400" />
+        </div>
+        <div>
+          <div className="flex justify-between gap-2"><span>RAM</span><span>{device.ramUsed || "Unknown"} / {device.ramTotal || "Unknown"}</span></div>
+          <ProgressBar value={ram} color="bg-violet-300" />
+        </div>
+      </div>
+
+      <dl className="mt-4 grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
+        <div><dt>Network</dt><dd className="text-slate-100">{device.network || "Unknown"}</dd></div>
+        <div><dt>Current app</dt><dd className="text-slate-100">{device.currentApp || "Unknown"}</dd></div>
+        <div><dt>Screen</dt><dd className="text-slate-100">{device.screenOn ? "ON" : "OFF"}</dd></div>
+        <div><dt>Status</dt><dd className={offline ? "text-red-300" : "text-emerald-300"}>{offline ? "Offline" : "Online"}</dd></div>
+        <div><dt>Last active</dt><dd className="text-slate-100">{activeNow ? "Active Now" : formatDateTime(device.lastActive)}</dd></div>
+        <div>
+          <dt>Location</dt>
+          <dd>
+            {device.location?.lat != null && device.location?.lng != null ? (
+              <a className="inline-flex items-center gap-1 text-cyan-200 hover:text-cyan-100" href={`https://maps.google.com/?q=${device.location.lat},${device.location.lng}`} rel="noreferrer" target="_blank">
+                <MapPin size={12} />
+                {device.location.lat.toFixed(4)}, {device.location.lng.toFixed(4)}
+              </a>
+            ) : (
+              <span className="text-slate-100">Unavailable</span>
+            )}
+          </dd>
+        </div>
+      </dl>
+
+      {offline && <div className="mt-4 rounded-md border border-red-400/25 bg-red-500/10 px-3 py-2 text-sm text-red-200">Offline</div>}
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          className="btn-primary h-10 bg-emerald-400 text-slate-950 hover:bg-emerald-300"
+          disabled={busyId === `remote-start-${device.deviceId}` || cooldownSeconds > 0}
+          onClick={() => onRemoteStart(device)}
+          type="button"
+        >
+          <Play size={15} />
+          {cooldownSeconds > 0 ? `Start (${cooldownSeconds})` : "Remote Start"}
+        </button>
+        <button
+          className="btn-secondary h-10 border-orange-300/40 bg-orange-500/15 text-orange-100 hover:bg-orange-500/25"
+          disabled={busyId === `ai-clean-${device.deviceId}`}
+          onClick={() => onClean(device)}
+          type="button"
+        >
+          <Trash2 size={15} />
+          AI Data Clean
+        </button>
+      </div>
+    </article>
   );
 }
 
@@ -219,6 +396,19 @@ export function AdminDashboard() {
   const [payments, setPayments] = useState<AdminPaymentRecord[]>([]);
   const [apkVersions, setApkVersions] = useState<ApkRelease[]>([]);
   const [apkStats, setApkStats] = useState<ApkStats | null>(null);
+  const [deviceUsers, setDeviceUsers] = useState<AdminDeviceUser[]>([]);
+  const [selectedDeviceUserId, setSelectedDeviceUserId] = useState("");
+  const [deviceDashboard, setDeviceDashboard] = useState<DeviceDashboardState>(emptyDeviceDashboard);
+  const [deviceTab, setDeviceTab] = useState<DeviceTab>("mobile");
+  const [deviceLoading, setDeviceLoading] = useState(false);
+  const [deviceError, setDeviceError] = useState("");
+  const [changedDeviceIds, setChangedDeviceIds] = useState<Set<string>>(new Set());
+  const [deviceCooldowns, setDeviceCooldowns] = useState<Record<string, number>>({});
+  const [liveData, setLiveData] = useState<DeviceActivity[]>([]);
+  const [deviceConnected, setDeviceConnected] = useState(false);
+  const [lastLiveUpdateAt, setLastLiveUpdateAt] = useState<number | null>(null);
+  const [remoteStartCooldownUntil, setRemoteStartCooldownUntil] = useState(0);
+  const [, setDeviceClockTick] = useState(0);
   const [apkFile, setApkFile] = useState<File | null>(null);
   const [apkUploadForm, setApkUploadForm] = useState<ApkUploadForm>({
     version_name: "",
@@ -259,7 +449,7 @@ export function AdminDashboard() {
     setSuccess("");
     setLoading(true);
     try {
-      const [nextStats, nextUsers, nextSubscriptions, nextUsage, nextFeatures, nextAnalytics, nextPayments, nextApkVersions, nextApkStats] =
+      const [nextStats, nextUsers, nextSubscriptions, nextUsage, nextFeatures, nextAnalytics, nextPayments, nextApkVersions, nextApkStats, nextDeviceUsers] =
         await Promise.all([
           api.adminStats(token),
           api.adminUsers(token),
@@ -269,7 +459,8 @@ export function AdminDashboard() {
           api.adminAnalytics(token),
           api.adminPayments(token),
           api.apkVersions(),
-          api.apkStats()
+          api.apkStats(),
+          api.adminDeviceUsers(token)
         ]);
       setStats(nextStats);
       setUsers(nextUsers);
@@ -280,6 +471,8 @@ export function AdminDashboard() {
       setPayments(nextPayments);
       setApkVersions(nextApkVersions);
       setApkStats(nextApkStats);
+      setDeviceUsers(nextDeviceUsers);
+      setSelectedDeviceUserId((current) => current || nextDeviceUsers.find((item) => item.lastActive)?.userId || nextUsers[0]?.id || "");
       setSelectedUser((current) => nextUsers.find((item) => item.id === current?.id) ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load admin panel");
@@ -299,6 +492,104 @@ export function AdminDashboard() {
   useEffect(() => {
     setPlanLimitDrafts(mapPlanLimitsByPlan(features?.plan_limits ?? []));
   }, [features?.plan_limits]);
+
+  useEffect(() => {
+    if (activeSection !== "devices") return;
+    const timer = window.setInterval(() => setDeviceClockTick((value) => value + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [activeSection]);
+
+  useEffect(() => {
+    if (!token || activeSection !== "devices" || !selectedDeviceUserId) {
+      setDeviceConnected(false);
+      return;
+    }
+    let closed = false;
+    setDeviceConnected(false);
+    const cacheKey = `admin-user-devices-${selectedDeviceUserId}`;
+    const cached = window.localStorage.getItem(cacheKey);
+    if (cached) {
+      try {
+        setDeviceDashboard(JSON.parse(cached) as DeviceDashboardState);
+      } catch {
+        window.localStorage.removeItem(cacheKey);
+      }
+    }
+    const loadTimer = window.setTimeout(() => {
+      setDeviceLoading(true);
+      setDeviceError("");
+      api.adminUserDevices(token, selectedDeviceUserId)
+        .then((response) => {
+          if (closed) return;
+          setDeviceDashboard(response.data);
+          window.localStorage.setItem(cacheKey, JSON.stringify(response.data));
+          setLastLiveUpdateAt(Date.now());
+        })
+        .catch((err) => {
+          if (!closed) setDeviceError(err instanceof Error ? err.message : "Network error, retrying in 3s...");
+        })
+        .finally(() => {
+          if (!closed) setDeviceLoading(false);
+        });
+    }, 300);
+    const socket = new WebSocket(createWebSocketUrl("/api/v1/admin/device-stream", { token, user_id: selectedDeviceUserId }));
+    socket.onopen = () => {
+      if (!closed) setDeviceConnected(true);
+    };
+    socket.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data) as { type?: string; data?: DeviceActivity };
+        if (!payload.data || (payload.type !== "device-update" && payload.type !== "live-update")) return;
+        const snapshot = activityToDeviceSnapshot(payload.data);
+        window.requestAnimationFrame(() => {
+          if (closed) return;
+          setDeviceDashboard((current) => {
+            const next = {
+              ...current,
+              [snapshot.type]: [snapshot, ...current[snapshot.type].filter((item) => item.deviceId !== snapshot.deviceId)]
+            };
+            window.localStorage.setItem(cacheKey, JSON.stringify(next));
+            return next;
+          });
+          setLiveData((current) => [payload.data as DeviceActivity, ...current.filter((item) => item.id !== payload.data?.id)].slice(0, 100));
+          setChangedDeviceIds((current) => new Set(current).add(snapshot.deviceId));
+          window.setTimeout(() => setChangedDeviceIds((current) => {
+            const next = new Set(current);
+            next.delete(snapshot.deviceId);
+            return next;
+          }), 1000);
+          setDeviceUsers((current) =>
+            current.map((item) =>
+              item.userId === payload.data?.userId
+                ? {
+                    ...item,
+                    deviceModel: payload.data.deviceModel ?? item.deviceModel,
+                    osVersion: payload.data.osVersion ?? item.osVersion,
+                    lastActive: payload.data.timestamp,
+                    online: payload.data.isActive
+                  }
+                : item
+            )
+          );
+          setLastLiveUpdateAt(Date.now());
+        });
+      } catch {
+        // Ignore malformed non-JSON websocket frames.
+      }
+    };
+    socket.onclose = () => {
+      if (!closed) setDeviceConnected(false);
+    };
+    socket.onerror = () => {
+      if (!closed) setDeviceConnected(false);
+    };
+    return () => {
+      closed = true;
+      window.clearTimeout(loadTimer);
+      socket.close();
+      setDeviceConnected(false);
+    };
+  }, [activeSection, selectedDeviceUserId, token]);
 
   const planLimitRows = useMemo(
     () => (features?.plan_limits ?? []).map((plan) => planLimitDrafts[plan.plan] ?? plan),
@@ -334,6 +625,11 @@ export function AdminDashboard() {
       return account.name.toLowerCase().includes(term) || account.email.toLowerCase().includes(term);
     });
   }, [quotaQuery, users]);
+
+  const selectedDeviceUser = useMemo(
+    () => deviceUsers.find((item) => item.userId === selectedDeviceUserId) ?? null,
+    [deviceUsers, selectedDeviceUserId]
+  );
 
   function upsertUser(account: AdminUser) {
     setUsers((current) => current.map((item) => (item.id === account.id ? account : item)));
@@ -661,6 +957,136 @@ export function AdminDashboard() {
     } finally {
       setBusyId(null);
     }
+  }
+
+  async function refreshDeviceUsers() {
+    if (!token) return;
+    try {
+      setDeviceUsers(await api.adminDeviceUsers(token));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to refresh devices");
+    }
+  }
+
+  async function reloadSelectedUserDevices() {
+    if (!token || !selectedDeviceUserId) return;
+    setDeviceLoading(true);
+    setDeviceError("");
+    try {
+      const response = await api.adminUserDevices(token, selectedDeviceUserId);
+      setDeviceDashboard(response.data);
+      window.localStorage.setItem(`admin-user-devices-${selectedDeviceUserId}`, JSON.stringify(response.data));
+      setLastLiveUpdateAt(Date.now());
+    } catch (err) {
+      setDeviceError(err instanceof Error ? err.message : "Network error, retrying in 3s...");
+    } finally {
+      setDeviceLoading(false);
+    }
+  }
+
+  function viewUserDevices(account: AdminUser) {
+    setSelectedUser(account);
+    setSelectedDeviceUserId(account.id);
+    setDeviceTab("mobile");
+    setDeviceError("");
+    setDeviceDashboard(emptyDeviceDashboard);
+    setActiveSection("devices");
+  }
+
+  async function remoteStartDevice(userId: string) {
+    if (!token || Date.now() < remoteStartCooldownUntil) return;
+    setConfirmAction({
+      title: "Remote start device monitoring",
+      message: "Send a visible foreground-service start command to this user's Android device?",
+      confirmLabel: "Start",
+      onConfirm: async () => {
+        setBusyId(`remote-start-${userId}`);
+        setError("");
+        setSuccess("");
+        try {
+          const response = await api.adminRemoteStart(token, userId);
+          setRemoteStartCooldownUntil(Date.now() + 5000);
+          window.setTimeout(() => setRemoteStartCooldownUntil(0), 5000);
+          setSuccess(`${response.message}. Sent ${response.sent}, failed ${response.failed}.`);
+          await refreshDeviceUsers();
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Unable to send remote start");
+        } finally {
+          setBusyId(null);
+        }
+      }
+    });
+  }
+
+  async function cleanDeviceData(userId: string) {
+    if (!token) return;
+    setConfirmAction({
+      title: "Clean AI data",
+      message: "Keep the latest 24 hours of server data and request local cache cleanup on the Android device?",
+      confirmLabel: "Clean",
+      onConfirm: async () => {
+        setBusyId(`ai-clean-${userId}`);
+        setError("");
+        setSuccess("");
+        try {
+          const response = await api.adminAiClean(token, userId);
+          const next = await api.adminLiveData(token, userId);
+          setLiveData(next.data);
+          setSuccess(`${response.message}. Sent ${response.sent}, failed ${response.failed}.`);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Unable to clean device data");
+        } finally {
+          setBusyId(null);
+        }
+      }
+    });
+  }
+
+  function remoteStartSpecificDevice(device: AdminDeviceSnapshot) {
+    if (!token || !selectedDeviceUserId) return;
+    setConfirmAction({
+      title: "Remote start device",
+      message: `Are you sure you want to remotely start device: ${device.deviceName}?`,
+      confirmLabel: "Start",
+      onConfirm: async () => {
+        setBusyId(`remote-start-${device.deviceId}`);
+        setError("");
+        setSuccess("");
+        try {
+          const response = await api.adminRemoteStartDevice(token, selectedDeviceUserId, device.deviceId);
+          setDeviceCooldowns((current) => ({ ...current, [device.deviceId]: Date.now() + 10000 }));
+          window.setTimeout(() => setDeviceCooldowns((current) => ({ ...current, [device.deviceId]: 0 })), 10000);
+          setSuccess(`${response.message}. Sent ${response.sent}, failed ${response.failed}.`);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Failed to send command");
+        } finally {
+          setBusyId(null);
+        }
+      }
+    });
+  }
+
+  function cleanSpecificDevice(device: AdminDeviceSnapshot) {
+    if (!token || !selectedDeviceUserId) return;
+    setConfirmAction({
+      title: "AI data clean",
+      message: `This will clear all cached data from ${device.deviceName}. Continue?`,
+      confirmLabel: "Clean",
+      onConfirm: async () => {
+        setBusyId(`ai-clean-${device.deviceId}`);
+        setError("");
+        setSuccess("");
+        try {
+          const response = await api.adminAiCleanDevice(token, selectedDeviceUserId, device.deviceId);
+          setSuccess(`${response.message}. Sent ${response.sent}, failed ${response.failed}.`);
+          window.setTimeout(() => void reloadSelectedUserDevices(), 2000);
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Cleanup failed");
+        } finally {
+          setBusyId(null);
+        }
+      }
+    });
   }
 
   async function reloadFeaturesForUser(userId: string) {
@@ -1003,11 +1429,12 @@ export function AdminDashboard() {
               )}
 
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1080px] border-collapse text-left text-sm">
+                <table className="w-full min-w-[1160px] border-collapse text-left text-sm">
                   <thead className="bg-white/[0.035] text-xs uppercase text-slate-400">
                     <tr>
                       <th className="px-4 py-3">Name</th>
                       <th className="px-4 py-3">Email / Mobile</th>
+                      <th className="px-4 py-3">View</th>
                       <th className="px-4 py-3">Role</th>
                       <th className="px-4 py-3">Status</th>
                       <th className="px-4 py-3">Plan</th>
@@ -1031,6 +1458,17 @@ export function AdminDashboard() {
                           <td className="px-4 py-3">
                             <div>{account.email}</div>
                             <div className="text-xs text-slate-400">{account.mobile || "No mobile"}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              className="btn-view-devices inline-flex h-9 items-center gap-2 rounded-md bg-[#3B82F6] px-3 text-sm font-semibold text-white transition hover:bg-[#2563EB]"
+                              data-user-id={account.id}
+                              onClick={() => viewUserDevices(account)}
+                              type="button"
+                            >
+                              <Eye size={15} />
+                              View
+                            </button>
                           </td>
                           <td className="px-4 py-3">
                             <select
@@ -1398,6 +1836,87 @@ export function AdminDashboard() {
                   </div>
                 )}
               </div>
+            </section>
+          )}
+
+          {activeSection === "devices" && (
+            <section className="min-h-[70vh] rounded-lg border border-white/10 bg-slate-950/80 p-4">
+              <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <button className="chip-dark mb-3" onClick={() => setActiveSection("users")} type="button">
+                    <ArrowLeft size={14} />
+                    Back to Users
+                  </button>
+                  <SectionTitle title={selectedDeviceUser?.name ? `${selectedDeviceUser.name} Devices` : "User Device Dashboard"} subtitle="Real-time mobile and laptop telemetry with per-device controls" />
+                  <p className="text-sm text-slate-400">
+                    <span className={deviceConnected ? "text-emerald-300" : "text-red-300"}>{deviceConnected ? "Live stream connected" : "Live stream offline"}</span>
+                    <span> - Last updated {secondsAgo(lastLiveUpdateAt ?? liveData[0]?.timestamp)}</span>
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <select className="model-select-dark h-10" value={selectedDeviceUserId} onChange={(event) => setSelectedDeviceUserId(event.target.value)}>
+                    <option value="">Select user</option>
+                    {deviceUsers.map((item) => <option key={item.userId} value={item.userId}>{item.email}</option>)}
+                  </select>
+                  <button className="chip-dark" onClick={() => void refreshDeviceUsers()} type="button"><RefreshCw size={14} />Users</button>
+                  <button className="chip-dark" onClick={() => void reloadSelectedUserDevices()} type="button"><RefreshCw size={14} />Devices</button>
+                </div>
+              </div>
+
+              <div className="mb-5 flex flex-wrap gap-2 border-b border-white/10 pb-3">
+                <button className={deviceTab === "mobile" ? "chip-dark chip-dark-active" : "chip-dark"} onClick={() => setDeviceTab("mobile")} type="button">
+                  <Smartphone size={15} />
+                  Mobile Devices ({deviceDashboard.mobile.length})
+                </button>
+                <button className={deviceTab === "laptop" ? "chip-dark chip-dark-active" : "chip-dark"} onClick={() => setDeviceTab("laptop")} type="button">
+                  <Laptop size={15} />
+                  Laptop/Desktop Devices ({deviceDashboard.laptop.length})
+                </button>
+              </div>
+
+              {deviceError && (
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-100">
+                  <span>{deviceError}</span>
+                  <button className="chip-dark" onClick={() => void reloadSelectedUserDevices()} type="button">Retry</button>
+                </div>
+              )}
+
+              {deviceLoading && (
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                  {[0, 1, 2].map((item) => <div key={item} className="h-80 animate-pulse rounded-lg border border-white/10 bg-white/[0.06]" />)}
+                </div>
+              )}
+
+              {!deviceLoading && deviceDashboard[deviceTab].length === 0 && (
+                <div className="rounded-lg border border-dashed border-white/15 bg-white/[0.035] p-10 text-center">
+                  <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-lg bg-slate-900 text-cyan-200">
+                    {deviceTab === "mobile" ? <Smartphone size={28} /> : <Laptop size={28} />}
+                  </div>
+                  <h3 className="text-lg font-semibold text-white">No devices found for this user</h3>
+                  <p className="mt-2 text-sm text-slate-400">Telemetry will appear here after a device sends its first update.</p>
+                </div>
+              )}
+
+              {!deviceLoading && deviceDashboard[deviceTab].length > 50 && (
+                <p className="mb-3 text-xs text-slate-400">Showing the first 50 live device cards in the current virtual window.</p>
+              )}
+
+              {!deviceLoading && deviceDashboard[deviceTab].length > 0 && (
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                  {deviceDashboard[deviceTab].slice(0, 50).map((device, index) => (
+                    <div key={device.deviceId} style={{ animation: `pageFadeIn .25s ease-out ${index * 50}ms both` }}>
+                      <DeviceCard
+                        device={device}
+                        changed={changedDeviceIds.has(device.deviceId)}
+                        cooldownUntil={deviceCooldowns[device.deviceId] ?? 0}
+                        busyId={busyId}
+                        onRemoteStart={remoteStartSpecificDevice}
+                        onClean={cleanSpecificDevice}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
             </section>
           )}
 
