@@ -14,6 +14,19 @@ function VideoSurface({ stream, muted, className }: { stream: MediaStream | null
   return <video ref={ref} className={className} autoPlay playsInline muted={muted} onLoadedMetadata={(event) => void event.currentTarget.play().catch(() => undefined)} />;
 }
 
+function AudioSurface({ stream }: { stream: MediaStream | null }) {
+  const ref = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => {
+    const audio = ref.current;
+    if (!audio) return;
+    const audioTracks = stream?.getAudioTracks() ?? [];
+    const audioStream = audioTracks.length ? new MediaStream(audioTracks) : null;
+    if (audio.srcObject !== audioStream) audio.srcObject = audioStream;
+    if (audioStream) void audio.play().catch(() => undefined);
+  }, [stream]);
+  return <audio ref={ref} autoPlay playsInline />;
+}
+
 function formatDuration(startedAt: number | null) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -62,10 +75,10 @@ export function ScreenShareOverlay() {
               <button type="button" onClick={share.cancelRequest} aria-label="Close"><X size={18} /></button>
             </header>
             <div className="ss-code-panel">
-              <button type="button" className="ss-code-action" disabled={busy} onClick={() => void generateCode()}>
+              <button type="button" className="ss-code-action" disabled={busy || !share.canShareScreen} onClick={() => void generateCode()}>
                 <Monitor size={22} />
                 <span>Generate Code</span>
-                <small>Share your screen</small>
+                <small>{share.canShareScreen ? "Share your screen" : "Use Chrome desktop to share"}</small>
               </button>
               <form className="ss-code-entry" onSubmit={(event) => { event.preventDefault(); void joinCode(); }}>
                 <label htmlFor="screen-share-code">Enter Code</label>
@@ -84,6 +97,7 @@ export function ScreenShareOverlay() {
                 <button type="submit" disabled={busy || code.length !== 8}><LogIn size={17} /> Join</button>
               </form>
             </div>
+            {!share.canShareScreen && <p className="ss-support-note">This browser can join a share, but cannot start screen sharing.</p>}
             {share.error && <p className="ss-error">{share.error}</p>}
           </section>
         </div>
@@ -110,17 +124,21 @@ export function ScreenShareOverlay() {
           </header>
           {share.paused && <div className="ss-paused"><MonitorPause size={18} /> Sharing paused</div>}
           {share.error && <div className="ss-floating-error">{share.error}</div>}
-          <button type="button" className="ss-viewer-close" onClick={() => void share.stopShare()}><X size={18} /> Close</button>
+          <div className="ss-viewer-controls">
+            <button type="button" onClick={() => void share.toggleMute()} aria-label={share.muted ? "Turn on mic" : "Mute mic"}>{share.muted ? <MicOff size={17} /> : <Mic size={17} />}</button>
+            <button type="button" className="ss-viewer-close" onClick={() => void share.stopShare()}><X size={18} /> Close</button>
+          </div>
         </div>
       )}
 
       {active && share.role === "sharer" && (
         <div className="ss-control-bar" role="status">
+          <AudioSurface stream={share.remoteStream} />
           <span><ScreenShare size={17} /><strong>You are sharing your screen</strong><time>{duration}</time></span>
           {share.uiState === "reconnecting" && <small>Reconnecting...</small>}
           {share.uiState === "waiting" && <small>Waiting for viewer</small>}
           {share.shareCode && <button type="button" className="ss-code-pill" onClick={() => void share.copyShareCode()} aria-label="Copy screen share code"><Hash size={15} /> {share.shareCode}</button>}
-          <button type="button" onClick={share.toggleMute} aria-label={share.muted ? "Unmute mic" : "Mute mic"}>{share.muted ? <MicOff size={17} /> : <Mic size={17} />}</button>
+          <button type="button" onClick={() => void share.toggleMute()} aria-label={share.muted ? "Turn on mic" : "Mute mic"}>{share.muted ? <MicOff size={17} /> : <Mic size={17} />}</button>
           <button type="button" onClick={share.togglePause} aria-label={share.paused ? "Resume share" : "Pause share"}>{share.paused ? <Play size={17} /> : <Pause size={17} />}</button>
           <button type="button" onClick={() => void (share.shareCode ? share.copyShareCode() : share.copyInviteLink())} aria-label={share.shareCode ? "Copy code" : "Copy invite link"}><Clipboard size={17} /></button>
           <button type="button" className="stop" onClick={() => void share.stopShare()}><Square size={16} /> Stop Sharing</button>

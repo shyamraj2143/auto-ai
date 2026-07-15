@@ -141,7 +141,8 @@
 }
 
 .ss-error,
-.ss-floating-error {
+.ss-floating-error,
+.ss-support-note {
   color: #fecaca;
   background: rgba(127, 29, 29, 0.36);
   border: 1px solid rgba(248, 113, 113, 0.28);
@@ -151,6 +152,15 @@
   margin: 0 14px 14px;
   border-radius: 10px;
   padding: 9px 10px;
+}
+
+.ss-support-note {
+  margin: 0 14px 10px;
+  border-radius: 10px;
+  padding: 9px 10px;
+  color: #fde68a;
+  background: rgba(113, 63, 18, 0.35);
+  border-color: rgba(251, 191, 36, 0.28);
 }
 
 .ss-invite {
@@ -311,15 +321,36 @@
 }
 
 .ss-viewer-close {
-  position: absolute;
-  right: max(14px, env(safe-area-inset-right));
-  bottom: max(14px, env(safe-area-inset-bottom));
   gap: 8px;
   height: 40px;
   border-radius: 12px;
   padding: 0 14px;
   background: rgba(239, 68, 68, 0.92);
   font-weight: 800;
+}
+
+.ss-viewer-controls {
+  position: absolute;
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(14px, env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ss-viewer-controls button {
+  height: 40px;
+  min-width: 40px;
+  border: 0;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 12px;
+  color: #f8fafc;
+  background: rgba(15, 23, 42, 0.88);
+  cursor: pointer;
 }
 
 .ss-paused,

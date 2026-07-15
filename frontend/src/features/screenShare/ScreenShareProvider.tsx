@@ -6,6 +6,8 @@ import { ScreenShareContext, type ScreenShareContextValue } from "./ScreenShareC
 import type { ScreenShareInvite, ScreenShareRole, ScreenShareSession, ScreenShareSignal, ScreenShareSource, ScreenShareUiState } from "./types";
 
 const RECONNECT_LIMIT = 3;
+const SCREEN_UNSUPPORTED_MESSAGE = "Screen sharing is not supported in this browser. Open AutoAI in Chrome desktop to generate a code. You can still join with a code from this device.";
+const MIC_UNSUPPORTED_MESSAGE = "Microphone is not available in this browser.";
 
 function sessionIdOf(session: ScreenShareSession | null) {
   return session?.sessionId ?? session?.session_id ?? "";
@@ -38,6 +40,35 @@ function sourceConstraint(source: ScreenShareSource): DisplayMediaStreamOptions 
   };
 }
 
+function microphoneConstraint(): MediaStreamConstraints {
+  return {
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    } as MediaTrackConstraints,
+    video: false,
+  };
+}
+
+function isScreenShareSupported() {
+  return typeof navigator !== "undefined" && !!navigator.mediaDevices?.getDisplayMedia;
+}
+
+function screenCaptureErrorMessage(error: unknown) {
+  if (!isScreenShareSupported()) return SCREEN_UNSUPPORTED_MESSAGE;
+  if (error instanceof DOMException && error.name === "NotAllowedError") return "Screen sharing permission was denied.";
+  if (error instanceof DOMException && error.name === "NotFoundError") return "No screen, window, or tab was available to share.";
+  return error instanceof Error ? error.message : "Screen sharing could not start.";
+}
+
+function microphoneErrorMessage(error: unknown) {
+  if (!navigator.mediaDevices?.getUserMedia) return MIC_UNSUPPORTED_MESSAGE;
+  if (error instanceof DOMException && error.name === "NotAllowedError") return "Microphone permission was denied.";
+  if (error instanceof DOMException && error.name === "NotFoundError") return "No microphone was found.";
+  return error instanceof Error ? error.message : "Microphone could not start.";
+}
+
 export function ScreenShareProvider({ children }: { children: ReactNode }) {
   const { token, user } = useAuth();
   const [uiState, setUiState] = useState<ScreenShareUiState>("idle");
@@ -53,6 +84,7 @@ export function ScreenShareProvider({ children }: { children: ReactNode }) {
   const [paused, setPaused] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [shareCode, setShareCode] = useState<string | null>(null);
+  const [canShareScreen] = useState(isScreenShareSupported);
   const tokenRef = useRef(token);
   const roleRef = useRef<ScreenShareRole | null>(null);
   const sessionRef = useRef<ScreenShareSession | null>(null);
@@ -256,6 +288,38 @@ export function ScreenShareProvider({ children }: { children: ReactNode }) {
     setRequestPeer(peer);
   }, []);
 
+  const enableMicrophone = useCallback(async () => {
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error(MIC_UNSUPPORTED_MESSAGE);
+    const audioStream = await navigator.mediaDevices.getUserMedia(microphoneConstraint());
+    const audioTrack = audioStream.getAudioTracks()[0];
+    if (!audioTrack) throw new Error("No microphone audio track was created.");
+    audioTrack.enabled = true;
+    const nextStream = localStreamRef.current ?? new MediaStream();
+    nextStream.getAudioTracks().forEach((track) => {
+      track.stop();
+      nextStream.removeTrack(track);
+    });
+    nextStream.addTrack(audioTrack);
+    audioTrack.addEventListener("ended", () => {
+      nextStream.removeTrack(audioTrack);
+      localStreamRef.current = nextStream;
+      setLocalStream(new MediaStream(nextStream.getTracks()));
+      setMuted(true);
+    });
+    localStreamRef.current = nextStream;
+    setLocalStream(nextStream);
+    setMuted(false);
+    const peer = peerRef.current;
+    if (peer) {
+      const audioSender = peer.getSenders().find((sender) => sender.track?.kind === "audio");
+      if (audioSender) await audioSender.replaceTrack(audioTrack);
+      else peer.addTrack(audioTrack, nextStream);
+    }
+    if (peer?.remoteDescription && peer.signalingState === "stable") {
+      await createOfferRef.current(false);
+    }
+  }, []);
+
   const requestInviteShare = useCallback(() => {
     setError("");
     setRequestPeer(null);
@@ -271,6 +335,10 @@ export function ScreenShareProvider({ children }: { children: ReactNode }) {
     const currentToken = tokenRef.current;
     const peer = requestPeer;
     if (!currentToken || (!peer && !inviteOnlyRequest)) return;
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      setError(SCREEN_UNSUPPORTED_MESSAGE);
+      return;
+    }
     setUiState("preparing");
     setError("");
     try {
@@ -297,14 +365,18 @@ export function ScreenShareProvider({ children }: { children: ReactNode }) {
       signaling.send("screen-share-started", id);
     } catch (shareError) {
       stopLocalTracks();
-      setUiState("failed");
-      setError(shareError instanceof Error ? shareError.message : "Screen capture permission was denied.");
+      setUiState("idle");
+      setError(screenCaptureErrorMessage(shareError));
     }
   }, [ensureSignaling, inviteOnlyRequest, requestPeer, signaling, stopLocalTracks, stopShare]);
 
   const generateShareCode = useCallback(async () => {
     const currentToken = tokenRef.current;
     if (!currentToken || (!inviteOnlyRequest && !requestPeer)) return;
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      setError(SCREEN_UNSUPPORTED_MESSAGE);
+      return;
+    }
     setUiState("preparing");
     setError("");
     try {
@@ -332,8 +404,8 @@ export function ScreenShareProvider({ children }: { children: ReactNode }) {
       signaling.send("screen-share-started", id);
     } catch (shareError) {
       stopLocalTracks();
-      setUiState("failed");
-      setError(shareError instanceof Error ? shareError.message : "Screen capture permission was denied.");
+      setUiState("idle");
+      setError(screenCaptureErrorMessage(shareError));
     }
   }, [ensureSignaling, inviteOnlyRequest, requestPeer, signaling, stopLocalTracks, stopShare]);
 
@@ -403,15 +475,26 @@ export function ScreenShareProvider({ children }: { children: ReactNode }) {
     setPendingInvite(null);
   }, [pendingInvite, signaling]);
 
-  const toggleMute = useCallback(() => {
+  const toggleMute = useCallback(async () => {
     const track = localStreamRef.current?.getAudioTracks()[0];
+    if (track?.readyState === "ended") {
+      localStreamRef.current?.removeTrack(track);
+      await enableMicrophone();
+      return;
+    }
     if (!track) {
-      setMuted(true);
+      setError("");
+      try {
+        await enableMicrophone();
+      } catch (micError) {
+        setMuted(true);
+        setError(microphoneErrorMessage(micError));
+      }
       return;
     }
     track.enabled = !track.enabled;
     setMuted(!track.enabled);
-  }, []);
+  }, [enableMicrophone]);
 
   const togglePause = useCallback(() => {
     const track = localStreamRef.current?.getVideoTracks()[0];
@@ -447,6 +530,7 @@ export function ScreenShareProvider({ children }: { children: ReactNode }) {
     paused,
     startedAt,
     shareCode,
+    canShareScreen,
     requestShare,
     cancelRequest,
     startShare,
@@ -461,7 +545,7 @@ export function ScreenShareProvider({ children }: { children: ReactNode }) {
     copyInviteLink,
     copyShareCode,
     clearError: () => setError(""),
-  }), [cancelRequest, copyInviteLink, copyShareCode, declineInvite, error, generateShareCode, inviteOnlyRequest, joinInvite, joinInviteLink, joinWithCode, localStream, muted, paused, pendingInvite, remoteStream, requestInviteShare, requestPeer, requestShare, role, session, shareCode, startShare, startedAt, stopShare, toggleMute, togglePause, uiState]);
+  }), [canShareScreen, cancelRequest, copyInviteLink, copyShareCode, declineInvite, error, generateShareCode, inviteOnlyRequest, joinInvite, joinInviteLink, joinWithCode, localStream, muted, paused, pendingInvite, remoteStream, requestInviteShare, requestPeer, requestShare, role, session, shareCode, startShare, startedAt, stopShare, toggleMute, togglePause, uiState]);
 
   return <ScreenShareContext.Provider value={value}>{children}</ScreenShareContext.Provider>;
 }
