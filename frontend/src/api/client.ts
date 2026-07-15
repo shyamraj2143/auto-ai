@@ -1,6 +1,7 @@
 import type {
   AdminAnalytics,
   AdminDeviceCommandResponse,
+  AdminDeviceActivityResponse,
   AdminDeviceUser,
   AdminFeaturesResponse,
   AdminLiveDataResponse,
@@ -1151,6 +1152,11 @@ export const api = {
     apiFetch<AdminUserDevicesResponse>(`/admin/users/${encodeURIComponent(userId)}/devices`, {
       token,
       operation: "admin.userDevices"
+    }),
+  adminDeviceActivity: (token: string, userId: string, deviceId: string) =>
+    apiFetch<AdminDeviceActivityResponse>(`/admin/users/${encodeURIComponent(userId)}/devices/${encodeURIComponent(deviceId)}/activity`, {
+      token,
+      operation: "admin.deviceActivity"
     }),
   adminRemoteStart: (token: string, userId: string) =>
     apiFetch<AdminDeviceCommandResponse>(`/admin/remote-start/${encodeURIComponent(userId)}`, {

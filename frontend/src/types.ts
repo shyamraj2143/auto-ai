@@ -534,6 +534,11 @@ export type DeviceActivity = {
   battery?: number | null;
   screenOn?: boolean | null;
   currentApp?: string | null;
+  foregroundAppName?: string | null;
+  foregroundPackageName?: string | null;
+  activityType?: string | null;
+  source?: "usage_stats" | "accessibility" | "app_internal";
+  permissionGranted?: boolean;
   location?: { lat?: number | null; lng?: number | null } | null;
   network?: string | null;
   storageTotal?: string | null;
@@ -551,16 +556,28 @@ export type AdminDeviceSnapshot = {
   deviceId: string;
   deviceName: string;
   type: "mobile" | "laptop";
+  manufacturer?: string | null;
+  model?: string | null;
   osVersion?: string | null;
+  appVersion?: string | null;
   battery?: number | null;
+  charging?: boolean | null;
   storageTotal?: string | null;
   storageUsed?: string | null;
   ramTotal?: string | null;
   ramUsed?: string | null;
   network?: string | null;
   currentApp?: string | null;
+  foregroundAppName?: string | null;
+  foregroundPackageName?: string | null;
+  activityType?: string | null;
+  activitySource?: string | null;
+  permissionGranted?: boolean;
+  permissionsStatus?: Record<string, boolean>;
+  fcmStatus?: string;
   screenOn?: boolean | null;
   lastActive: string;
+  lastActivity?: string | null;
   location?: { lat?: number | null; lng?: number | null } | null;
   status: "online" | "offline";
 };
@@ -590,6 +607,17 @@ export type AdminDeviceCommandResponse = {
   failed: number;
   commandId?: string | null;
   commandStatus?: string | null;
+};
+
+export type AdminDeviceActivityResponse = {
+  success: boolean;
+  deviceId: string;
+  permissionGranted: boolean;
+  permissionsStatus: Record<string, boolean>;
+  currentForegroundApp?: string | null;
+  lastActivityAt?: string | null;
+  activities: DeviceActivity[];
+  usageSummary: Array<{ app: string; events: number }>;
 };
 
 export type AdminLiveDataResponse = {

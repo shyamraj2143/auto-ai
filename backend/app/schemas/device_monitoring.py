@@ -15,6 +15,11 @@ class DeviceActivityCreate(BaseModel):
     battery: int | None = Field(default=None, ge=0, le=100)
     screenOn: bool | None = None
     currentApp: str | None = Field(default=None, max_length=255)
+    foregroundAppName: str | None = Field(default=None, max_length=255)
+    foregroundPackageName: str | None = Field(default=None, max_length=255)
+    activityType: str | None = Field(default=None, max_length=64)
+    source: str = Field(default="app_internal", pattern="^(usage_stats|accessibility|app_internal)$")
+    permissionGranted: bool = False
     location: DeviceLocation | None = None
     network: str | None = Field(default=None, max_length=80)
     storageTotal: str | None = Field(default=None, max_length=80)
@@ -27,7 +32,7 @@ class DeviceActivityCreate(BaseModel):
     osVersion: str | None = Field(default=None, max_length=80)
     isActive: bool = True
 
-    @field_validator("deviceId", "currentApp", "network", "storageTotal", "storageUsed", "storageFree", "ramTotal", "ramUsed", "ramUsage", "deviceModel", "osVersion")
+    @field_validator("deviceId", "currentApp", "foregroundAppName", "foregroundPackageName", "activityType", "network", "storageTotal", "storageUsed", "storageFree", "ramTotal", "ramUsed", "ramUsage", "deviceModel", "osVersion")
     @classmethod
     def clean_text(cls, value: str | None) -> str | None:
         if not isinstance(value, str):
@@ -45,6 +50,11 @@ class DeviceActivityRead(BaseModel):
     battery: int | None = None
     screenOn: bool | None = None
     currentApp: str | None = None
+    foregroundAppName: str | None = None
+    foregroundPackageName: str | None = None
+    activityType: str | None = None
+    source: str = "app_internal"
+    permissionGranted: bool = False
     location: DeviceLocation | None = None
     network: str | None = None
     storageTotal: str | None = None
@@ -73,6 +83,7 @@ class DeviceRegisterRequest(BaseModel):
     osVersion: str | None = Field(default=None, max_length=80)
     appVersion: str | None = Field(default=None, max_length=64)
     fcmToken: str | None = Field(default=None, max_length=512)
+    permissionsStatus: dict[str, bool] | None = None
     lastSeenAt: datetime | None = None
 
     @field_validator("deviceId", "userId", "platform", "deviceName", "manufacturer", "model", "osVersion", "appVersion", "fcmToken")
@@ -99,9 +110,14 @@ class DeviceHeartbeatRequest(BaseModel):
     network: str | None = Field(default=None, max_length=80)
     networkType: str | None = Field(default=None, max_length=80)
     screenStatus: str | bool | None = None
+    storageTotal: str | None = Field(default=None, max_length=80)
+    storageUsed: str | None = Field(default=None, max_length=80)
+    ramTotal: str | None = Field(default=None, max_length=80)
+    ramUsed: str | None = Field(default=None, max_length=80)
+    permissionsStatus: dict[str, bool] | None = None
     lastSeenAt: datetime | None = None
 
-    @field_validator("deviceId", "userId", "network", "networkType")
+    @field_validator("deviceId", "userId", "network", "networkType", "storageTotal", "storageUsed", "ramTotal", "ramUsed")
     @classmethod
     def normalize_heartbeat_text(cls, value: str | None) -> str | None:
         if not isinstance(value, str):
@@ -133,18 +149,41 @@ class AdminDeviceSnapshotRead(BaseModel):
     deviceId: str
     deviceName: str
     type: str
+    manufacturer: str | None = None
+    model: str | None = None
     osVersion: str | None = None
+    appVersion: str | None = None
     battery: int | None = None
+    charging: bool | None = None
     storageTotal: str | None = None
     storageUsed: str | None = None
     ramTotal: str | None = None
     ramUsed: str | None = None
     network: str | None = None
     currentApp: str | None = None
+    foregroundAppName: str | None = None
+    foregroundPackageName: str | None = None
+    activityType: str | None = None
+    activitySource: str | None = None
+    permissionGranted: bool = False
+    permissionsStatus: dict[str, bool] = Field(default_factory=dict)
+    fcmStatus: str = "missing"
     screenOn: bool | None = None
     lastActive: datetime
+    lastActivity: datetime | None = None
     location: DeviceLocation | None = None
     status: str
+
+
+class AdminDeviceActivityResponse(BaseModel):
+    success: bool = True
+    deviceId: str
+    permissionGranted: bool = False
+    permissionsStatus: dict[str, bool] = Field(default_factory=dict)
+    currentForegroundApp: str | None = None
+    lastActivityAt: datetime | None = None
+    activities: list[DeviceActivityRead]
+    usageSummary: list[dict[str, str | int]]
 
 
 class AdminUserDevicesData(BaseModel):

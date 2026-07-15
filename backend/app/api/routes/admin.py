@@ -50,7 +50,7 @@ from app.schemas.admin import (
     SystemStatus,
     TokenUsageSummary,
 )
-from app.schemas.device_monitoring import AdminDeviceCommandResponse, AdminDeviceUserRead, AdminLiveDataResponse, AdminUserDevicesData, AdminUserDevicesResponse
+from app.schemas.device_monitoring import AdminDeviceActivityResponse, AdminDeviceCommandResponse, AdminDeviceUserRead, AdminLiveDataResponse, AdminUserDevicesData, AdminUserDevicesResponse
 from app.schemas.download import ApkReleaseRead, ApkVersionUpsert
 from app.utils.pdf import build_text_pdf
 from app.services.admin_control import (
@@ -69,7 +69,7 @@ from app.services.admin_control import (
     refresh_quota_periods,
 )
 from app.services.apk_service import apk_service
-from app.services.device_monitoring import clean_old_activities, ensure_device_snapshots, latest_activities, list_device_users, send_device_command
+from app.services.device_monitoring import clean_old_activities, ensure_device_snapshots, latest_activities, latest_device_activities, list_device_users, send_device_command
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -206,6 +206,17 @@ def admin_user_devices(
     )
     db.commit()
     return AdminUserDevicesResponse(data=AdminUserDevicesData(mobile=snapshots["mobile"], laptop=snapshots["laptop"]))
+
+
+@router.get("/users/{user_id}/devices/{device_id}/activity", response_model=AdminDeviceActivityResponse)
+def admin_user_device_activity(
+    user_id: str,
+    device_id: str,
+    _: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AdminDeviceActivityResponse:
+    user = get_user_or_404(db, user_id)
+    return latest_device_activities(db, user.id, device_id, 100)
 
 
 @router.post("/remote-start/{user_id}", response_model=AdminDeviceCommandResponse)

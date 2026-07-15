@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timedelta
 
@@ -11,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.models.call import DeviceCommand, UserDevice
 from app.models.device_monitoring import UserDeviceActivity
 from app.models.user import User
-from app.schemas.device_monitoring import AdminDeviceSnapshotRead, AdminDeviceUserRead, DeviceActivityCreate, DeviceActivityRead, DeviceHeartbeatRequest, DeviceLocation, DeviceRegisterRequest
+from app.schemas.device_monitoring import AdminDeviceActivityResponse, AdminDeviceSnapshotRead, AdminDeviceUserRead, DeviceActivityCreate, DeviceActivityRead, DeviceHeartbeatRequest, DeviceLocation, DeviceRegisterRequest
 from app.services.device_token_security import decrypt_token, encrypt_token, token_hash
 from app.services.firebase_notifications import firebase_notification_service
 
@@ -60,6 +61,30 @@ class DeviceActivityStream:
                     for websocket in stale:
                         current.discard(websocket)
 
+    async def publish_command(self, user_id: str, device_id: str, command_id: str, status: str) -> None:
+        payload = {
+            "type": "command-update",
+            "event": "command-update",
+            "userId": user_id,
+            "deviceId": device_id,
+            "commandId": command_id,
+            "commandStatus": status,
+        }
+        async with self._lock:
+            subscribers = list(self._subscribers.get(user_id, set()))
+        stale: list[WebSocket] = []
+        for websocket in subscribers:
+            try:
+                await websocket.send_json(payload)
+            except Exception:
+                stale.append(websocket)
+        if stale:
+            async with self._lock:
+                current = self._subscribers.get(user_id)
+                if current:
+                    for websocket in stale:
+                        current.discard(websocket)
+
 
 device_activity_stream = DeviceActivityStream()
 
@@ -90,6 +115,11 @@ def activity_to_read(activity: UserDeviceActivity) -> DeviceActivityRead:
         battery=activity.battery,
         screenOn=activity.screen_on,
         currentApp=activity.current_app,
+        foregroundAppName=activity.foreground_app_name,
+        foregroundPackageName=activity.foreground_package_name,
+        activityType=activity.activity_type,
+        source=activity.source,
+        permissionGranted=activity.permission_granted,
         location=location,
         network=activity.network,
         storageTotal=activity.storage_total,
@@ -120,6 +150,8 @@ def upsert_registered_device(db: Session, user: User, payload: DeviceRegisterReq
     record.fcm_token = None
     record.fcm_token_ciphertext = encrypt_token(payload.fcmToken)
     record.fcm_token_hash = token_hash(payload.fcmToken)
+    if payload.permissionsStatus is not None:
+        record.permissions_status = json.dumps(payload.permissionsStatus, separators=(",", ":"))
     record.is_active = True
     record.status = "online"
     record.last_registered_at = now
@@ -141,6 +173,24 @@ def screen_status_to_bool(value: str | bool | None) -> bool | None:
     return None
 
 
+def decode_permissions(value: str | None) -> dict[str, bool]:
+    if not value:
+        return {}
+    try:
+        decoded = json.loads(value)
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(decoded, dict):
+        return {}
+    return {str(key): bool(flag) for key, flag in decoded.items()}
+
+
+def encode_permissions(value: dict[str, bool] | None) -> str | None:
+    if value is None:
+        return None
+    return json.dumps({str(key): bool(flag) for key, flag in value.items()}, separators=(",", ":"))
+
+
 def heartbeat_device_activity(db: Session, user: User, payload: DeviceHeartbeatRequest) -> DeviceActivityRead:
     now = payload.lastSeenAt or datetime.utcnow()
     device_id = payload.deviceId[:128]
@@ -153,6 +203,12 @@ def heartbeat_device_activity(db: Session, user: User, payload: DeviceHeartbeatR
     record.battery_level = payload.batteryLevel if payload.batteryLevel is not None else payload.battery
     record.charging = payload.charging
     record.network_type = payload.networkType or payload.network
+    record.storage_total = payload.storageTotal
+    record.storage_used = payload.storageUsed
+    record.ram_total = payload.ramTotal
+    record.ram_used = payload.ramUsed
+    if payload.permissionsStatus is not None:
+        record.permissions_status = encode_permissions(payload.permissionsStatus)
     screen_on = screen_status_to_bool(payload.screenStatus)
     record.screen_status = "ON" if screen_on is True else ("OFF" if screen_on is False else None)
     record.last_seen_at = now
@@ -165,8 +221,14 @@ def heartbeat_device_activity(db: Session, user: User, payload: DeviceHeartbeatR
         battery=record.battery_level,
         screen_on=screen_on,
         network=record.network_type,
+        storage_total=record.storage_total,
+        storage_used=record.storage_used,
+        ram_total=record.ram_total,
+        ram_used=record.ram_used,
         device_model=record.device_name,
         os_version=record.os_version,
+        source="app_internal",
+        permission_granted=False,
         is_active=True,
     )
     db.add(activity)
@@ -179,6 +241,28 @@ def heartbeat_device_activity(db: Session, user: User, payload: DeviceHeartbeatR
 def create_activity(db: Session, user: User, payload: DeviceActivityCreate) -> DeviceActivityRead:
     location = payload.location or DeviceLocation()
     device_id = payload.deviceId or f"mobile-{user.id}"
+    permitted_current_app = payload.currentApp if payload.permissionGranted else None
+    permitted_foreground_name = payload.foregroundAppName if payload.permissionGranted else None
+    permitted_foreground_package = payload.foregroundPackageName if payload.permissionGranted else None
+    record = db.scalar(select(UserDevice).where(UserDevice.user_id == user.id, UserDevice.device_id == device_id[:128]))
+    if record:
+        record.battery_level = payload.battery
+        record.network_type = payload.network
+        record.storage_total = payload.storageTotal
+        record.storage_used = payload.storageUsed
+        record.ram_total = payload.ramTotal
+        record.ram_used = payload.ramUsed
+        record.screen_status = "ON" if payload.screenOn is True else ("OFF" if payload.screenOn is False else None)
+        permissions = decode_permissions(record.permissions_status)
+        permissions[payload.source] = payload.permissionGranted
+        if payload.source == "usage_stats":
+            permissions["usageAccess"] = payload.permissionGranted
+        if payload.source == "accessibility":
+            permissions["accessibility"] = payload.permissionGranted
+        record.permissions_status = encode_permissions(permissions)
+        record.last_seen_at = payload.timestamp or datetime.utcnow()
+        record.status = "online"
+        record.updated_at = datetime.utcnow()
     activity = UserDeviceActivity(
         user_id=user.id,
         device_id=device_id,
@@ -186,7 +270,10 @@ def create_activity(db: Session, user: User, payload: DeviceActivityCreate) -> D
         timestamp=payload.timestamp or datetime.utcnow(),
         battery=payload.battery,
         screen_on=payload.screenOn,
-        current_app=payload.currentApp,
+        current_app=permitted_current_app,
+        foreground_app_name=permitted_foreground_name,
+        foreground_package_name=permitted_foreground_package,
+        activity_type=payload.activityType,
         latitude=location.lat,
         longitude=location.lng,
         network=payload.network,
@@ -198,6 +285,8 @@ def create_activity(db: Session, user: User, payload: DeviceActivityCreate) -> D
         ram_usage=payload.ramUsage,
         device_model=payload.deviceModel,
         os_version=payload.osVersion,
+        source=payload.source,
+        permission_granted=payload.permissionGranted,
         is_active=payload.isActive,
     )
     user.updated_at = datetime.utcnow()
@@ -224,8 +313,14 @@ def device_snapshot(activity: UserDeviceActivity, online_cutoff: datetime) -> Ad
         ramUsed=activity.ram_used,
         network=activity.network,
         currentApp=activity.current_app,
+        foregroundAppName=activity.foreground_app_name,
+        foregroundPackageName=activity.foreground_package_name,
+        activityType=activity.activity_type,
+        activitySource=activity.source,
+        permissionGranted=activity.permission_granted,
         screenOn=activity.screen_on,
         lastActive=activity.timestamp,
+        lastActivity=activity.timestamp if activity.permission_granted else None,
         location=location,
         status="online" if activity.timestamp >= online_cutoff and activity.is_active else "offline",
     )
@@ -253,14 +348,20 @@ def registered_device_snapshot(device: UserDevice, online_cutoff: datetime) -> A
         deviceId=device.device_id,
         deviceName=registered_device_name(device),
         type=device_type,
+        manufacturer=device.manufacturer,
+        model=device.model,
         osVersion=device.os_version,
+        appVersion=device.app_version,
         battery=device.battery_level,
-        storageTotal=None,
-        storageUsed=None,
-        ramTotal=None,
-        ramUsed=None,
+        charging=device.charging,
+        storageTotal=device.storage_total,
+        storageUsed=device.storage_used,
+        ramTotal=device.ram_total,
+        ramUsed=device.ram_used,
         network=device.network_type,
         currentApp=None,
+        permissionsStatus=decode_permissions(device.permissions_status),
+        fcmStatus="registered" if decrypt_token(device.fcm_token_ciphertext, device.fcm_token) else "missing",
         screenOn=screen_status_to_bool(device.screen_status),
         lastActive=device.last_seen_at,
         location=None,
@@ -269,6 +370,13 @@ def registered_device_snapshot(device: UserDevice, online_cutoff: datetime) -> A
 
 
 def latest_device_snapshots(db: Session, user_id: str, limit: int = 500) -> dict[str, list[AdminDeviceSnapshotRead]]:
+    registered_devices = db.scalars(
+        select(UserDevice)
+        .where(UserDevice.user_id == user_id, UserDevice.is_active == True)  # noqa: E712
+        .order_by(desc(UserDevice.last_seen_at))
+        .limit(max(1, min(limit, 1000)))
+    ).all()
+    registered_by_id = {device.device_id: device for device in registered_devices}
     rows = db.scalars(
         select(UserDeviceActivity)
         .where(UserDeviceActivity.user_id == user_id)
@@ -284,13 +392,16 @@ def latest_device_snapshots(db: Session, user_id: str, limit: int = 500) -> dict
             continue
         seen.add(device_id)
         snapshot = device_snapshot(row, online_cutoff)
+        device = registered_by_id.get(device_id)
+        if device:
+            snapshot.deviceName = registered_device_name(device)
+            snapshot.manufacturer = device.manufacturer
+            snapshot.model = device.model
+            snapshot.appVersion = device.app_version
+            snapshot.charging = device.charging
+            snapshot.permissionsStatus = decode_permissions(device.permissions_status)
+            snapshot.fcmStatus = "registered" if decrypt_token(device.fcm_token_ciphertext, device.fcm_token) else "missing"
         result[snapshot.type].append(snapshot)
-    registered_devices = db.scalars(
-        select(UserDevice)
-        .where(UserDevice.user_id == user_id, UserDevice.is_active == True)  # noqa: E712
-        .order_by(desc(UserDevice.last_seen_at))
-        .limit(max(1, min(limit, 1000)))
-    ).all()
     for device in registered_devices:
         if device.device_id in seen:
             continue
@@ -308,6 +419,32 @@ def latest_activities(db: Session, user_id: str, limit: int = 100) -> list[Devic
         .limit(max(1, min(limit, 500)))
     ).all()
     return [activity_to_read(row) for row in rows]
+
+
+def latest_device_activities(db: Session, user_id: str, device_id: str, limit: int = 100) -> AdminDeviceActivityResponse:
+    device = db.scalar(select(UserDevice).where(UserDevice.user_id == user_id, UserDevice.device_id == device_id[:128]))
+    rows = db.scalars(
+        select(UserDeviceActivity)
+        .where(UserDeviceActivity.user_id == user_id, UserDeviceActivity.device_id == device_id[:128])
+        .order_by(desc(UserDeviceActivity.timestamp))
+        .limit(max(1, min(limit, 500)))
+    ).all()
+    activities = [activity_to_read(row) for row in rows]
+    permitted = [item for item in activities if item.permissionGranted]
+    counts: dict[str, int] = {}
+    for item in permitted:
+        key = item.foregroundAppName or item.currentApp or item.foregroundPackageName
+        if key:
+            counts[key] = counts.get(key, 0) + 1
+    return AdminDeviceActivityResponse(
+        deviceId=device_id,
+        permissionGranted=bool(permitted) or bool(decode_permissions(device.permissions_status if device else None).get("usageAccess")),
+        permissionsStatus=decode_permissions(device.permissions_status if device else None),
+        currentForegroundApp=(permitted[0].foregroundAppName or permitted[0].currentApp if permitted else None),
+        lastActivityAt=permitted[0].timestamp if permitted else None,
+        activities=activities,
+        usageSummary=[{"app": app, "events": count} for app, count in sorted(counts.items(), key=lambda item: item[1], reverse=True)[:10]],
+    )
 
 
 def clean_old_activities(db: Session, user_id: str) -> int:

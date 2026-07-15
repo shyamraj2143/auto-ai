@@ -1,6 +1,7 @@
 package com.autoai.app;
 
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.provider.Settings;
@@ -119,6 +120,11 @@ public final class PushTokenRegistrar {
             body.put("manufacturer", Build.MANUFACTURER == null ? "" : Build.MANUFACTURER);
             body.put("model", Build.MODEL == null ? "" : Build.MODEL);
             body.put("osVersion", Build.VERSION.RELEASE == null ? "Android" : "Android " + Build.VERSION.RELEASE);
+            JSONObject permissions = new JSONObject();
+            permissions.put("notification", Build.VERSION.SDK_INT < 33 || context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED);
+            permissions.put("usageAccess", false);
+            permissions.put("accessibility", false);
+            body.put("permissionsStatus", permissions);
             try (OutputStream output = connection.getOutputStream()) {
                 output.write(body.toString().getBytes(StandardCharsets.UTF_8));
             }

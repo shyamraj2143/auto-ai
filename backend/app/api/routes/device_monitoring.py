@@ -70,10 +70,12 @@ def acknowledge_command(
     command = acknowledge_device_command(db, current_user, command_id, payload.deviceId, payload.status)
     if not command:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device command not found.")
+    asyncio.create_task(device_activity_stream.publish_command(current_user.id, command.device_id, command.id, command.status))
     return {"success": True, "commandId": command.id, "status": command.status}
 
 
 @router.post("/device/activity", response_model=DeviceActivityIngestResponse)
+@router.post("/devices/activity", response_model=DeviceActivityIngestResponse)
 async def ingest_device_activity(
     payload: DeviceActivityCreate,
     current_user: User = Depends(get_current_user),

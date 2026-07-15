@@ -116,6 +116,11 @@
     .detail label { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
     .detail span, .detail a { color: var(--text); font-size: 13px; word-break: break-word; }
     .detail a { color: #bfdbfe; text-decoration: none; }
+    .warning { margin-top: 14px; border: 1px solid rgba(251,191,36,0.28); border-radius: 8px; background: rgba(251,191,36,0.1); color: #fde68a; padding: 10px; font-size: 13px; }
+    .activity-box { margin-top: 14px; border: 1px solid var(--border); border-radius: 8px; background: rgba(15,15,26,0.35); padding: 10px; }
+    .activity-box label { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+    .activity-box div { display: flex; justify-content: space-between; gap: 10px; color: var(--text); font-size: 12px; }
+    .activity-box span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .card-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
     .panel {
       border: 1px dashed var(--border);
@@ -240,7 +245,7 @@
     const WS_BASE = API_BASE.replace(/^http/i, "ws").replace(/\/api\/v1\/?$/, "");
     const token = localStorage.getItem("auto-ai-access-token") || localStorage.getItem("auto-ai-token") || "";
     const userLabel = params.get("label") || requestedUserId;
-    const state = { devices: { mobile: [], laptop: [] }, tab: "mobile", socket: null, socketConnected: false, liveDeviceStreamConnected: false, lastUpdatedAt: null, loadingToast: null, pendingAction: null, refreshTimer: null, canonicalUserId: requestedUserId };
+    const state = { devices: { mobile: [], laptop: [] }, activity: {}, commandStatus: {}, tab: "mobile", socket: null, socketConnected: false, liveDeviceStreamConnected: false, lastUpdatedAt: null, loadingToast: null, pendingAction: null, refreshTimer: null, canonicalUserId: requestedUserId };
     const els = {
       userLabel: document.getElementById("userLabel"),
       socketDot: document.getElementById("socketDot"),
@@ -318,16 +323,28 @@
         deviceId: raw.deviceId,
         deviceName: raw.deviceName || raw.deviceModel || "Unknown device",
         type: raw.type || "mobile",
+        manufacturer: raw.manufacturer || null,
+        model: raw.model || null,
         osVersion: raw.osVersion || "Unknown OS",
+        appVersion: raw.appVersion || null,
         battery: raw.battery,
+        charging: raw.charging,
         storageTotal: raw.storageTotal,
         storageUsed: raw.storageUsed,
         ramTotal: raw.ramTotal,
         ramUsed: raw.ramUsed,
         network: raw.network,
         currentApp: raw.currentApp,
+        foregroundAppName: raw.foregroundAppName,
+        foregroundPackageName: raw.foregroundPackageName,
+        activityType: raw.activityType,
+        activitySource: raw.activitySource,
+        permissionGranted: Boolean(raw.permissionGranted),
+        permissionsStatus: raw.permissionsStatus || {},
+        fcmStatus: raw.fcmStatus || "missing",
         screenOn: raw.screenOn,
         lastActive: raw.lastActive || raw.timestamp || new Date().toISOString(),
+        lastActivity: raw.lastActivity || null,
         location: raw.location,
         status: raw.status || (raw.isActive ? "online" : "offline"),
         cacheCleared: Boolean(raw.cacheCleared),
@@ -340,6 +357,7 @@
       console.log(`✅ Devices loaded: ${state.devices.mobile.length} mobile, ${state.devices.laptop.length} laptop`);
       setLastUpdated();
       render();
+      loadActivityForDevices();
     }
     async function loadDevices(showLoading = true) {
       if (!requestedUserId) {
@@ -353,6 +371,8 @@
       if (showLoading) {
         state.loadingToast = toast("🔄 Loading devices...", "blue", 0);
         state.devices = { mobile: [], laptop: [] };
+        state.activity = {};
+        state.commandStatus = {};
         render();
         els.content.innerHTML = '<div class="panel"><div><div class="spinner"></div><div>Loading devices...</div></div></div>';
       }
@@ -419,11 +439,15 @@
       const online = isOnline(device);
       const lat = device.location?.lat;
       const lng = device.location?.lng;
+      const activity = state.activity[device.deviceId] || {};
+      const permissions = activity.permissionsStatus || device.permissionsStatus || {};
+      const activityAllowed = Boolean(activity.permissionGranted || device.permissionGranted || permissions.usageAccess || permissions.usage_stats || permissions.accessibility);
+      const currentApp = activity.currentForegroundApp || device.foregroundAppName || device.currentApp;
       return `
         <article class="card" id="device-${escapeHtml(device.deviceId)}">
           <div class="card-head">
             <div class="icon">${device.type === "mobile" ? "📱" : "💻"}</div>
-            <div class="device-title"><strong>${escapeHtml(device.deviceName)}</strong><span>${escapeHtml(device.osVersion)}</span></div>
+            <div class="device-title"><strong>${escapeHtml(device.deviceName)}</strong><span>${escapeHtml([device.manufacturer, device.model].filter(Boolean).join(" ") || device.osVersion)}${device.appVersion ? " · App " + escapeHtml(device.appVersion) : ""}</span></div>
             <span class="dot ${online ? "online" : ""}" title="${online ? "Online" : "Offline"}"></span>
           </div>
           ${metric("Battery", battery == null ? "Unknown" : `${battery}%`, battery == null ? 0 : battery, batteryColor(battery))}
@@ -431,14 +455,19 @@
           ${metric("RAM", `${escapeHtml(device.ramUsed || "Unknown")} / ${escapeHtml(device.ramTotal || "Unknown")}`, ram, "#a78bfa")}
           <div class="details">
             ${detail("Network", device.network)}
-            ${detail("Current app", device.currentApp)}
+            ${detail("Charging", device.charging == null ? "Unknown" : device.charging ? "Yes" : "No")}
+            ${detail("Current app", activityAllowed ? currentApp || "No recent activity" : "Permission not granted")}
             ${detail("Screen", device.screenOn == null ? "Unknown" : device.screenOn ? "ON" : "OFF")}
             ${detail("Status", online ? "Online" : "Offline")}
+            ${detail("FCM", device.fcmStatus)}
+            ${detail("Command", state.commandStatus[device.deviceId] || "None")}
             ${detail("Last active", Date.now() - new Date(device.lastActive).getTime() <= 5000 ? "Active Now" : new Date(device.lastActive).toLocaleString())}
+            ${detail("Last activity", activity.lastActivityAt ? new Date(activity.lastActivityAt).toLocaleString() : "Unavailable")}
             <div class="detail"><label>Location</label>${lat != null && lng != null ? `<a href="https://maps.google.com/?q=${lat},${lng}" target="_blank" rel="noreferrer">${Number(lat).toFixed(4)}, ${Number(lng).toFixed(4)}</a>` : "<span>Unavailable</span>"}</div>
             ${detail("Cache cleared", device.cacheCleared ? "Yes" : "No")}
             ${detail("Last cleanup", device.lastCleanup ? new Date(device.lastCleanup).toLocaleString() : "Never")}
           </div>
+          ${activityAllowed ? activitySummary(activity) : '<div class="warning">Activity permission not granted on this device.</div>'}
           <div class="card-actions">
             <button class="btn green" data-action="remote-start" data-device-id="${escapeHtml(device.deviceId)}" type="button">Remote Start</button>
             <button class="btn orange" data-action="ai-clean" data-device-id="${escapeHtml(device.deviceId)}" type="button">AI Data Clean</button>
@@ -451,8 +480,24 @@
     function detail(label, value) {
       return `<div class="detail"><label>${label}</label><span>${escapeHtml(value || "Unknown")}</span></div>`;
     }
+    function activitySummary(activity) {
+      const rows = (activity.usageSummary || []).slice(0, 3).map((item) => `<div><span>${escapeHtml(item.app)}</span><b>${Number(item.events || 0)}</b></div>`).join("");
+      return rows ? `<div class="activity-box"><label>Recent activity</label>${rows}</div>` : "";
+    }
     function allDevices() {
       return [...state.devices.mobile, ...state.devices.laptop];
+    }
+    async function loadActivityForDevices() {
+      const devices = allDevices().slice(0, 50);
+      const entries = await Promise.allSettled(devices.map(async (device) => {
+        const response = await fetch(`${API_BASE}/admin/users/${encodeURIComponent(requestedUserId)}/devices/${encodeURIComponent(device.deviceId)}/activity`, { headers: headers() });
+        if (!response.ok) return null;
+        return response.json();
+      }));
+      entries.forEach((entry) => {
+        if (entry.status === "fulfilled" && entry.value?.deviceId) state.activity[entry.value.deviceId] = entry.value;
+      });
+      render();
     }
     function openConfirm(action, deviceId) {
       const device = allDevices().find((item) => item.deviceId === deviceId);
@@ -514,6 +559,11 @@
         }
         const eventUserId = payload.userId || payload.data?.userId;
         if (eventUserId && eventUserId !== state.canonicalUserId && eventUserId !== requestedUserId) return;
+        if (payload.type === "command-update" && payload.deviceId && payload.commandStatus) {
+          state.commandStatus[payload.deviceId] = payload.commandStatus;
+          render();
+          return;
+        }
         if (payload.type === "initial-data" && payload.data) {
           setDevices(payload.data);
           return;
@@ -526,6 +576,10 @@
         console.log(`📡 Real-time update received for ${device.deviceId}`);
         const bucket = device.type === "laptop" ? "laptop" : "mobile";
         state.devices[bucket] = [device, ...state.devices[bucket].filter((item) => item.deviceId !== device.deviceId)];
+        fetch(`${API_BASE}/admin/users/${encodeURIComponent(requestedUserId)}/devices/${encodeURIComponent(device.deviceId)}/activity`, { headers: headers() })
+          .then((response) => response.ok ? response.json() : null)
+          .then((activity) => { if (activity?.deviceId) state.activity[activity.deviceId] = activity; render(); })
+          .catch(() => {});
         setLastUpdated();
         render();
         requestAnimationFrame(() => {
@@ -539,7 +593,7 @@
     els.mobileTab.addEventListener("click", () => { state.tab = "mobile"; render(); });
     els.laptopTab.addEventListener("click", () => { state.tab = "laptop"; render(); });
     els.refreshBtn.addEventListener("click", () => loadDevices(true));
-    els.backBtn.addEventListener("click", () => { location.href = "/admin"; });
+    els.backBtn.addEventListener("click", () => { location.href = "/admin?section=users"; });
     els.cancelModal.addEventListener("click", () => els.modal.classList.remove("open"));
     els.confirmModalBtn.addEventListener("click", runPendingAction);
     els.userLabel.textContent = userLabel ? `User: ${userLabel}` : "User not found";

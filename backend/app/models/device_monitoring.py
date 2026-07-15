@@ -18,6 +18,9 @@ class UserDeviceActivity(Base):
     battery: Mapped[int] = mapped_column(Integer, nullable=True)
     screen_on: Mapped[bool] = mapped_column(Boolean, nullable=True)
     current_app: Mapped[str] = mapped_column(String(255), nullable=True)
+    foreground_app_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    foreground_package_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    activity_type: Mapped[str] = mapped_column(String(64), nullable=True)
     latitude: Mapped[float] = mapped_column(Float, nullable=True)
     longitude: Mapped[float] = mapped_column(Float, nullable=True)
     network: Mapped[str] = mapped_column(String(80), nullable=True)
@@ -29,6 +32,8 @@ class UserDeviceActivity(Base):
     ram_usage: Mapped[str] = mapped_column(String(80), nullable=True)
     device_model: Mapped[str] = mapped_column(String(120), nullable=True)
     os_version: Mapped[str] = mapped_column(String(80), nullable=True)
+    source: Mapped[str] = mapped_column(String(32), default="app_internal", nullable=False)
+    permission_granted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 

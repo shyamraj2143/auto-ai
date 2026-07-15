@@ -29,9 +29,11 @@ import {
 } from "lucide-react";
 import { API_BASE_URL, api, createWebSocketUrl, resolveApkDownloadUrl } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
+import { useLocation, useNavigate } from "react-router-dom";
 import { ContentManager } from "./cms/ContentManager";
 import type {
   AdminAnalytics,
+  AdminDeviceActivityResponse,
   AdminDeviceSnapshot,
   AdminDeviceUser,
   AdminFeaturesResponse,
@@ -284,6 +286,8 @@ function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) 
 
 function DeviceCard({
   device,
+  activity,
+  commandStatus,
   changed,
   cooldownUntil,
   busyId,
@@ -291,6 +295,8 @@ function DeviceCard({
   onClean
 }: {
   device: AdminDeviceSnapshot;
+  activity?: AdminDeviceActivityResponse;
+  commandStatus?: string;
   changed: boolean;
   cooldownUntil: number;
   busyId: string | null;
@@ -304,6 +310,9 @@ function DeviceCard({
   const storage = usagePercent(device.storageUsed, device.storageTotal);
   const ram = usagePercent(device.ramUsed, device.ramTotal);
   const cooldownSeconds = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
+  const permissions = activity?.permissionsStatus ?? device.permissionsStatus ?? {};
+  const activityAllowed = Boolean(activity?.permissionGranted ?? device.permissionGranted ?? permissions.usageAccess ?? permissions.usage_stats ?? permissions.accessibility);
+  const currentApp = activity?.currentForegroundApp || device.foregroundAppName || device.currentApp;
   return (
     <article
       className={`rounded-lg border border-white/10 bg-white/[0.07] p-4 shadow-[0_18px_55px_rgba(0,0,0,0.28)] backdrop-blur transition duration-300 ease-out ${
@@ -314,9 +323,10 @@ function DeviceCard({
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             {device.type === "mobile" ? <Smartphone size={18} className="text-cyan-200" /> : <Laptop size={18} className="text-cyan-200" />}
-            <h3 className="truncate text-base font-semibold text-white">{device.deviceName}</h3>
+          <h3 className="truncate text-base font-semibold text-white">{device.deviceName}</h3>
           </div>
-          <p className="mt-1 text-xs text-slate-400">{device.osVersion || "Unknown OS"}</p>
+          <p className="mt-1 text-xs text-slate-400">{[device.manufacturer, device.model].filter(Boolean).join(" ") || device.osVersion || "Unknown device"}</p>
+          <p className="mt-1 text-xs text-slate-500">{device.osVersion || "Unknown OS"}{device.appVersion ? ` · App ${device.appVersion}` : ""}</p>
         </div>
         <span className={`mt-1 h-3 w-3 rounded-full ${offline ? "bg-red-400" : "animate-pulse bg-emerald-400"}`} title={offline ? "Offline" : "Online"} />
       </div>
@@ -338,10 +348,14 @@ function DeviceCard({
 
       <dl className="mt-4 grid gap-2 text-xs text-slate-400 sm:grid-cols-2">
         <div><dt>Network</dt><dd className="text-slate-100">{device.network || "Unknown"}</dd></div>
-        <div><dt>Current app</dt><dd className="text-slate-100">{device.currentApp || "Unknown"}</dd></div>
+        <div><dt>Charging</dt><dd className="text-slate-100">{device.charging == null ? "Unknown" : device.charging ? "Yes" : "No"}</dd></div>
+        <div><dt>Current app</dt><dd className="text-slate-100">{activityAllowed ? currentApp || "No recent activity" : "Permission not granted"}</dd></div>
         <div><dt>Screen</dt><dd className="text-slate-100">{device.screenOn == null ? "Unknown" : device.screenOn ? "ON" : "OFF"}</dd></div>
         <div><dt>Status</dt><dd className={offline ? "text-red-300" : "text-emerald-300"}>{offline ? "Offline" : "Online"}</dd></div>
+        <div><dt>FCM</dt><dd className={device.fcmStatus === "registered" ? "text-emerald-300" : "text-yellow-200"}>{device.fcmStatus || "missing"}</dd></div>
+        <div><dt>Command</dt><dd className="text-slate-100">{commandStatus || "None"}</dd></div>
         <div><dt>Last active</dt><dd className="text-slate-100">{activeNow ? "Active Now" : formatDateTime(device.lastActive)}</dd></div>
+        <div><dt>Last activity</dt><dd className="text-slate-100">{activity?.lastActivityAt ? formatDateTime(activity.lastActivityAt) : "Unavailable"}</dd></div>
         <div>
           <dt>Location</dt>
           <dd>
@@ -358,6 +372,15 @@ function DeviceCard({
       </dl>
 
       {offline && <div className="mt-4 rounded-md border border-red-400/25 bg-red-500/10 px-3 py-2 text-sm text-red-200">Offline</div>}
+      {!activityAllowed && <div className="mt-4 rounded-md border border-yellow-300/25 bg-yellow-400/10 px-3 py-2 text-sm text-yellow-100">Activity permission not granted on this device.</div>}
+      {activityAllowed && activity?.usageSummary?.length ? (
+        <div className="mt-4 rounded-md border border-white/10 bg-slate-950/35 p-3">
+          <p className="text-xs font-semibold uppercase text-slate-400">Recent activity</p>
+          <div className="mt-2 space-y-1 text-xs text-slate-300">
+            {activity.usageSummary.slice(0, 3).map((item) => <div className="flex justify-between gap-2" key={item.app}><span className="truncate">{item.app}</span><span>{item.events}</span></div>)}
+          </div>
+        </div>
+      ) : null}
 
       <div className="mt-4 flex flex-wrap gap-2">
         <button
@@ -385,6 +408,8 @@ function DeviceCard({
 
 export function AdminDashboard() {
   const { token, user } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState<AdminSection>("dashboard");
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [analytics, setAnalytics] = useState<AdminAnalytics | null>(null);
@@ -399,6 +424,8 @@ export function AdminDashboard() {
   const [deviceUsers, setDeviceUsers] = useState<AdminDeviceUser[]>([]);
   const [selectedDeviceUserId, setSelectedDeviceUserId] = useState("");
   const [deviceDashboard, setDeviceDashboard] = useState<DeviceDashboardState>(emptyDeviceDashboard);
+  const [deviceActivityById, setDeviceActivityById] = useState<Record<string, AdminDeviceActivityResponse>>({});
+  const [deviceCommandStatus, setDeviceCommandStatus] = useState<Record<string, string>>({});
   const [deviceTab, setDeviceTab] = useState<DeviceTab>("mobile");
   const [deviceLoading, setDeviceLoading] = useState(false);
   const [deviceError, setDeviceError] = useState("");
@@ -491,6 +518,16 @@ export function AdminDashboard() {
   }, [isAdmin, isFullAdmin]);
 
   useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const section = params.get("section");
+    const userId = params.get("userId");
+    if (section === "devices") {
+      setActiveSection("devices");
+      if (userId) setSelectedDeviceUserId(userId);
+    }
+  }, [location.search]);
+
+  useEffect(() => {
     setPlanLimitDrafts(mapPlanLimitsByPlan(features?.plan_limits ?? []));
   }, [features?.plan_limits]);
 
@@ -505,12 +542,16 @@ export function AdminDashboard() {
       setDeviceSocketConnected(false);
       setLiveDeviceStreamConnected(false);
       setDeviceDashboard(emptyDeviceDashboard);
+      setDeviceActivityById({});
+      setDeviceCommandStatus({});
       return;
     }
     let closed = false;
     setDeviceSocketConnected(false);
     setLiveDeviceStreamConnected(false);
     setDeviceDashboard(emptyDeviceDashboard);
+    setDeviceActivityById({});
+    setDeviceCommandStatus({});
     const loadTimer = window.setTimeout(() => {
       setDeviceLoading(true);
       setDeviceError("");
@@ -519,6 +560,7 @@ export function AdminDashboard() {
           if (closed) return;
           setDeviceDashboard(response.data);
           setLastLiveUpdateAt(Date.now());
+          void loadDeviceActivity(response.data);
         })
         .catch((err) => {
           if (!closed) setDeviceError(err instanceof Error ? err.message : "Network error, retrying in 3s...");
@@ -533,9 +575,13 @@ export function AdminDashboard() {
     };
     socket.onmessage = (event) => {
       try {
-        const payload = JSON.parse(event.data) as { type?: string; userId?: string; data?: DeviceActivity };
+        const payload = JSON.parse(event.data) as { type?: string; userId?: string; deviceId?: string; commandStatus?: string; data?: DeviceActivity };
         const eventUserId = payload.userId || payload.data?.userId;
         if (eventUserId && eventUserId !== selectedDeviceUserId) return;
+        if (payload.type === "command-update" && payload.deviceId && payload.commandStatus) {
+          setDeviceCommandStatus((current) => ({ ...current, [payload.deviceId as string]: payload.commandStatus as string }));
+          return;
+        }
         if (!payload.data || (payload.type !== "device-update" && payload.type !== "live-update")) return;
         if (!payload.data.deviceId) return;
         const snapshot = activityToDeviceSnapshot(payload.data);
@@ -550,6 +596,7 @@ export function AdminDashboard() {
             return next;
           });
           setLiveData((current) => [payload.data as DeviceActivity, ...current.filter((item) => item.id !== payload.data?.id)].slice(0, 100));
+          void loadSingleDeviceActivity(snapshot.deviceId);
           setChangedDeviceIds((current) => new Set(current).add(snapshot.deviceId));
           window.setTimeout(() => setChangedDeviceIds((current) => {
             const next = new Set(current);
@@ -973,6 +1020,27 @@ export function AdminDashboard() {
     }
   }
 
+  async function loadSingleDeviceActivity(deviceId: string) {
+    if (!token || !selectedDeviceUserId) return;
+    try {
+      const response = await api.adminDeviceActivity(token, selectedDeviceUserId, deviceId);
+      setDeviceActivityById((current) => ({ ...current, [deviceId]: response }));
+    } catch {
+      setDeviceActivityById((current) => current);
+    }
+  }
+
+  async function loadDeviceActivity(dashboard: DeviceDashboardState) {
+    if (!token || !selectedDeviceUserId) return;
+    const devices = [...dashboard.mobile, ...dashboard.laptop].slice(0, 50);
+    const responses = await Promise.allSettled(devices.map((device) => api.adminDeviceActivity(token, selectedDeviceUserId, device.deviceId)));
+    const next: Record<string, AdminDeviceActivityResponse> = {};
+    responses.forEach((result) => {
+      if (result.status === "fulfilled") next[result.value.deviceId] = result.value;
+    });
+    setDeviceActivityById(next);
+  }
+
   async function reloadSelectedUserDevices() {
     if (!token || !selectedDeviceUserId) return;
     setDeviceLoading(true);
@@ -981,6 +1049,7 @@ export function AdminDashboard() {
       const response = await api.adminUserDevices(token, selectedDeviceUserId);
       setDeviceDashboard(response.data);
       setLastLiveUpdateAt(Date.now());
+      await loadDeviceActivity(response.data);
     } catch (err) {
       setDeviceError(err instanceof Error ? err.message : "Network error, retrying in 3s...");
     } finally {
@@ -991,6 +1060,16 @@ export function AdminDashboard() {
   function viewUserDevices(account: AdminUser) {
     const label = account.email || account.mobile || account.name || account.id;
     window.location.href = `/admin/device-viewer.html?userId=${encodeURIComponent(account.id)}&label=${encodeURIComponent(label)}`;
+  }
+
+  function backToUsers() {
+    setActiveSection("users");
+    setSelectedDeviceUserId("");
+    setDeviceDashboard(emptyDeviceDashboard);
+    setDeviceActivityById({});
+    setDeviceCommandStatus({});
+    setLiveDeviceStreamConnected(false);
+    navigate("/admin?section=users", { replace: false });
   }
 
   async function remoteStartDevice(userId: string) {
@@ -1844,7 +1923,7 @@ export function AdminDashboard() {
             <section className="min-h-[70vh] rounded-lg border border-white/10 bg-slate-950/80 p-4">
               <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <button className="chip-dark mb-3" onClick={() => setActiveSection("users")} type="button">
+                  <button className="chip-dark mb-3" onClick={backToUsers} type="button">
                     <ArrowLeft size={14} />
                     Back to Users
                   </button>
@@ -1859,7 +1938,18 @@ export function AdminDashboard() {
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <select className="model-select-dark h-10" value={selectedDeviceUserId} onChange={(event) => setSelectedDeviceUserId(event.target.value)}>
+                  <select
+                    className="model-select-dark h-10"
+                    value={selectedDeviceUserId}
+                    onChange={(event) => {
+                      const nextUserId = event.target.value;
+                      setSelectedDeviceUserId(nextUserId);
+                      setDeviceDashboard(emptyDeviceDashboard);
+                      setDeviceActivityById({});
+                      setDeviceCommandStatus({});
+                      if (nextUserId) navigate(`/admin?section=devices&userId=${encodeURIComponent(nextUserId)}`, { replace: false });
+                    }}
+                  >
                     <option value="">Select user</option>
                     {deviceUsers.map((item) => <option key={item.userId} value={item.userId}>{item.email}</option>)}
                   </select>
@@ -1912,6 +2002,8 @@ export function AdminDashboard() {
                     <div key={device.deviceId} style={{ animation: `pageFadeIn .25s ease-out ${index * 50}ms both` }}>
                       <DeviceCard
                         device={device}
+                        activity={deviceActivityById[device.deviceId]}
+                        commandStatus={deviceCommandStatus[device.deviceId]}
                         changed={changedDeviceIds.has(device.deviceId)}
                         cooldownUntil={deviceCooldowns[device.deviceId] ?? 0}
                         busyId={busyId}

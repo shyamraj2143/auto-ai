@@ -52,6 +52,7 @@ public class AutoAiMonitoringService extends Service {
     private static final int CONNECT_TIMEOUT_MS = 10000;
     private static final int READ_TIMEOUT_MS = 20000;
     private static final int MAX_QUEUE_ROWS = 1000;
+    private static final int TELEMETRY_INTERVAL_SECONDS = 30;
 
     private ScheduledExecutorService executor;
     private PendingDataStore pendingDataStore;
@@ -87,7 +88,7 @@ public class AutoAiMonitoringService extends Service {
             executor = Executors.newSingleThreadScheduledExecutor();
         }
         if (!scheduled) {
-            executor.scheduleAtFixedRate(this::collectAndSend, 0, 1, TimeUnit.SECONDS);
+            executor.scheduleAtFixedRate(this::collectAndSend, 0, TELEMETRY_INTERVAL_SECONDS, TimeUnit.SECONDS);
             scheduled = true;
         }
         return START_STICKY;
@@ -175,7 +176,21 @@ public class AutoAiMonitoringService extends Service {
         payload.put("type", "mobile");
         payload.put("battery", batteryLevel());
         payload.put("screenOn", screenOn());
-        payload.put("currentApp", currentForegroundApp());
+        boolean usagePermissionGranted = hasUsageStatsPermission();
+        String foregroundPackage = usagePermissionGranted ? currentForegroundApp() : null;
+        payload.put("permissionGranted", usagePermissionGranted);
+        payload.put("source", "usage_stats");
+        JSONObject permissions = new JSONObject();
+        permissions.put("usageAccess", usagePermissionGranted);
+        permissions.put("accessibility", false);
+        permissions.put("notification", Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED);
+        payload.put("permissionsStatus", permissions);
+        if (foregroundPackage != null && !foregroundPackage.trim().isEmpty() && !"unknown".equals(foregroundPackage)) {
+            payload.put("currentApp", foregroundPackage);
+            payload.put("foregroundPackageName", foregroundPackage);
+            payload.put("foregroundAppName", foregroundPackage);
+            payload.put("activityType", "foreground_app");
+        }
         payload.put("network", networkType());
         payload.put("storageTotal", formatBytes(storageTotal));
         payload.put("storageUsed", formatBytes(storageUsed));
@@ -286,7 +301,7 @@ public class AutoAiMonitoringService extends Service {
     private boolean sendPayload(String accessToken, JSONObject payload) {
         HttpURLConnection connection = null;
         try {
-            URL url = new URL(trimTrailingSlash(BuildConfig.AUTO_AI_API_BASE_URL) + "/device/activity");
+            URL url = new URL(trimTrailingSlash(BuildConfig.AUTO_AI_API_BASE_URL) + "/devices/activity");
             connection = (HttpURLConnection) url.openConnection();
             connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
             connection.setReadTimeout(READ_TIMEOUT_MS);
@@ -325,6 +340,11 @@ public class AutoAiMonitoringService extends Service {
             payload.put("batteryLevel", telemetry.optInt("battery"));
             payload.put("networkType", telemetry.optString("network"));
             payload.put("screenStatus", telemetry.optBoolean("screenOn") ? "ON" : "OFF");
+            payload.put("storageTotal", telemetry.optString("storageTotal"));
+            payload.put("storageUsed", telemetry.optString("storageUsed"));
+            payload.put("ramTotal", telemetry.optString("ramTotal"));
+            payload.put("ramUsed", telemetry.optString("ramUsed"));
+            payload.put("permissionsStatus", telemetry.optJSONObject("permissionsStatus"));
             payload.put("lastSeenAt", telemetry.optString("timestamp"));
             try (OutputStream output = connection.getOutputStream()) {
                 output.write(payload.toString().getBytes(StandardCharsets.UTF_8));

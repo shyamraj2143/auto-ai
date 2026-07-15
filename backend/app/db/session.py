@@ -178,6 +178,11 @@ def ensure_runtime_schema() -> None:
             "charging": "BOOLEAN",
             "network_type": "VARCHAR(80)",
             "screen_status": "VARCHAR(16)",
+            "storage_used": "VARCHAR(80)",
+            "storage_total": "VARCHAR(80)",
+            "ram_used": "VARCHAR(80)",
+            "ram_total": "VARCHAR(80)",
+            "permissions_status": "TEXT",
             "status": "VARCHAR(16) NOT NULL DEFAULT 'offline'",
         }
         for column_name, definition in extra_device_columns.items():
@@ -193,6 +198,11 @@ def ensure_runtime_schema() -> None:
             "storage_used": "VARCHAR(80)",
             "ram_total": "VARCHAR(80)",
             "ram_used": "VARCHAR(80)",
+            "foreground_app_name": "VARCHAR(255)",
+            "foreground_package_name": "VARCHAR(255)",
+            "activity_type": "VARCHAR(64)",
+            "source": "VARCHAR(32) NOT NULL DEFAULT 'app_internal'",
+            "permission_granted": "BOOLEAN NOT NULL DEFAULT FALSE",
         }
         for column_name, definition in activity_device_columns.items():
             if column_name not in activity_columns:

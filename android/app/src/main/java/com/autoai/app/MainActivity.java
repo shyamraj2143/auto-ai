@@ -7,9 +7,12 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.PictureInPictureParams;
+import android.app.usage.UsageStats;
+import android.app.usage.UsageStatsManager;
 import android.content.Context;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
@@ -51,6 +54,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Locale;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -64,6 +68,8 @@ public class MainActivity extends BridgeActivity {
     private static final String UPDATE_NOTIFICATION_CHANNEL_ID = "auto_ai_updates";
     private static final String LAST_NOTIFIED_UPDATE_VERSION_CODE = "last_notified_update_version_code";
     private static final String UPDATE_PREFERENCES = "auto_ai_update_preferences";
+    private static final String DEVICE_MONITOR_PREFERENCES = "auto_ai_device_monitor_preferences";
+    private static final String USAGE_ACCESS_PROMPTED = "usage_access_prompted";
 
     private final ExecutorService updateExecutor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -226,7 +232,43 @@ public class MainActivity extends BridgeActivity {
     private void startMonitoringIfAuthenticated() {
         String accessToken = AutoAiSecureStoragePlugin.readStoredValue(this, "auto-ai-access-token");
         if (accessToken == null || accessToken.trim().isEmpty()) return;
+        requestNotificationPermissionIfNeeded();
+        maybePromptUsageAccessConsent();
         AutoAiMonitoringService.start(this);
+    }
+
+    private void requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < 33) return;
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return;
+        requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 4512);
+    }
+
+    private void maybePromptUsageAccessConsent() {
+        if (hasUsageStatsPermission()) return;
+        SharedPreferences preferences = getSharedPreferences(DEVICE_MONITOR_PREFERENCES, Context.MODE_PRIVATE);
+        if (preferences.getBoolean(USAGE_ACCESS_PROMPTED, false)) return;
+        preferences.edit().putBoolean(USAGE_ACCESS_PROMPTED, true).apply();
+        if (isFinishing()) return;
+        new AlertDialog.Builder(this)
+            .setTitle("Share app activity with admin?")
+            .setMessage("Auto-AI can show your current foreground app in the admin device monitor only if you grant Android Usage Access. If you skip, device heartbeat still works with limited details.")
+            .setPositiveButton("Open Settings", (dialog, which) -> {
+                try {
+                    startActivity(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS));
+                } catch (Exception ignored) {
+                    Toast.makeText(this, "Usage Access settings unavailable.", Toast.LENGTH_SHORT).show();
+                }
+            })
+            .setNegativeButton("Not now", null)
+            .show();
+    }
+
+    private boolean hasUsageStatsPermission() {
+        UsageStatsManager manager = (UsageStatsManager) getSystemService(USAGE_STATS_SERVICE);
+        if (manager == null) return false;
+        long now = System.currentTimeMillis();
+        List<UsageStats> stats = manager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, now - 60000L, now);
+        return stats != null && !stats.isEmpty();
     }
 
     private void registerFirebaseMessagingToken() {

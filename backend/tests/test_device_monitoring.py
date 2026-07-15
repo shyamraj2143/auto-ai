@@ -8,7 +8,7 @@ from app.models.call import DeviceCommand, UserDevice
 from app.models.device_monitoring import UserDeviceActivity
 from app.models.user import User
 from app.schemas.device_monitoring import DeviceActivityCreate, DeviceHeartbeatRequest, DeviceLocation, DeviceRegisterRequest
-from app.services.device_monitoring import acknowledge_device_command, clean_old_activities, create_activity, ensure_device_snapshots, heartbeat_device_activity, latest_activities, list_device_users, send_device_command, upsert_registered_device
+from app.services.device_monitoring import acknowledge_device_command, clean_old_activities, create_activity, ensure_device_snapshots, heartbeat_device_activity, latest_activities, latest_device_activities, list_device_users, send_device_command, upsert_registered_device
 from app.services.firebase_notifications import FcmSendResult
 
 
@@ -191,6 +191,55 @@ def test_device_heartbeat_updates_card_telemetry() -> None:
         assert snapshots["mobile"][0].battery == 74
         assert snapshots["mobile"][0].network == "5G"
         assert snapshots["mobile"][0].screenOn is True
+
+
+def test_activity_without_permission_does_not_store_foreground_app() -> None:
+    with db_session() as db:
+        user = create_user(db, "activity-consent-denied")
+
+        activity = create_activity(
+            db,
+            user,
+            DeviceActivityCreate(
+                deviceId="android-consent-1",
+                currentApp="com.example.hidden",
+                foregroundAppName="Hidden App",
+                foregroundPackageName="com.example.hidden",
+                source="usage_stats",
+                permissionGranted=False,
+            ),
+        )
+        details = latest_device_activities(db, user.id, "android-consent-1")
+
+        assert activity.permissionGranted is False
+        assert activity.currentApp is None
+        assert details.permissionGranted is False
+        assert details.currentForegroundApp is None
+
+
+def test_activity_with_permission_exposes_real_foreground_app() -> None:
+    with db_session() as db:
+        user = create_user(db, "activity-consent-granted")
+
+        activity = create_activity(
+            db,
+            user,
+            DeviceActivityCreate(
+                deviceId="android-consent-2",
+                currentApp="com.whatsapp",
+                foregroundAppName="WhatsApp",
+                foregroundPackageName="com.whatsapp",
+                source="usage_stats",
+                permissionGranted=True,
+            ),
+        )
+        details = latest_device_activities(db, user.id, "android-consent-2")
+
+        assert activity.permissionGranted is True
+        assert activity.currentApp == "com.whatsapp"
+        assert details.permissionGranted is True
+        assert details.currentForegroundApp == "WhatsApp"
+        assert details.usageSummary[0]["app"] == "WhatsApp"
 
 
 def test_remote_start_command_is_sent_and_acknowledged(monkeypatch) -> None:
