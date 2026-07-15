@@ -14,6 +14,8 @@ export const userMessagesApi = {
     apiFetch<MessagePage>(`/messages/threads/${encodeURIComponent(threadId)}/messages${before ? `?before=${encodeURIComponent(before)}` : ""}`, { token, signal, operation: "messages.list" }),
   sendMessage: (token: string, threadId: string, payload: { text_content: string; client_message_id: string }) =>
     apiFetch<UserMessage>(`/messages/threads/${threadId}/messages`, { method: "POST", token, operation: "messages.send", body: JSON.stringify(payload) }),
+  deleteMessage: (token: string, threadId: string, messageId: string) =>
+    apiFetch<void>(`/messages/threads/${encodeURIComponent(threadId)}/messages/${encodeURIComponent(messageId)}`, { method: "DELETE", token, operation: "messages.delete" }),
   sendAttachment: (token: string, threadId: string, file: File, textContent: string, clientMessageId: string) => {
     const formData = new FormData();
     formData.append("file", file);

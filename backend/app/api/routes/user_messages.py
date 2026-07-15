@@ -110,6 +110,17 @@ async def send_attachment(
     return user_chat_service.serialize_message(db, message, current_user.id)
 
 
+@router.delete("/threads/{thread_id}/messages/{message_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_message(
+    thread_id: str,
+    message_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await user_chat_service.delete_message(db, thread_id, message_id, current_user.id)
+    return None
+
+
 @router.post("/threads/{thread_id}/read", status_code=status.HTTP_204_NO_CONTENT)
 async def mark_read(thread_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     await user_chat_service.mark_read(db, thread_id, current_user.id)

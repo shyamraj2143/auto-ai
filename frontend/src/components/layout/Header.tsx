@@ -16,7 +16,7 @@ export function Header() {
   const { config: callConfig } = useCallSession();
 
   const normalizedPath = location.pathname.replace(/\/+$/, "") || "/";
-  const isChatWorkspace = normalizedPath === "/chat" || normalizedPath === "/";
+  const isChatWorkspace = normalizedPath === "/chat" || normalizedPath.startsWith("/chat/") || normalizedPath === "/";
   const isSettingsWorkspace = normalizedPath === "/settings";
   const isCallsWorkspace = normalizedPath === "/calls";
 

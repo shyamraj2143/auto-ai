@@ -100,6 +100,31 @@ async def test_pending_messages_are_delivered_when_recipient_reconnects(db: Sess
     assert publish.await_count >= 2
 
 
+@pytest.mark.asyncio
+async def test_sender_can_delete_own_message_and_thread_preview_updates(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    sender = create_user(db, "sender-user", "Sender")
+    recipient = create_user(db, "recipient-user", "Recipient")
+    monkeypatch.setattr(global_presence_service, "publish", AsyncMock(return_value=1))
+    monkeypatch.setattr(service_module, "send_chat_message_notifications", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(global_presence_service, "presence_for_user", AsyncMock(return_value={"state": "online", "last_seen_at": None, "reachable": True}))
+
+    thread = user_chat_service.create_or_get_thread(db, sender, recipient.id)
+    first = await user_chat_service.send_message(db, thread.id, sender, {"text_content": "first", "client_message_id": "client-first"})
+    second = await user_chat_service.send_message(db, thread.id, sender, {"text_content": "second", "client_message_id": "client-second"})
+
+    await user_chat_service.delete_message(db, thread.id, second.id, sender.id)
+
+    messages, _ = user_chat_service.list_messages(db, thread.id, sender.id, None, 10)
+    recipient_threads, _ = await user_chat_service.list_threads(db, recipient.id, 1, 10)
+
+    assert [message.id for message in messages] == [first.id]
+    assert db.get(ChatMessage, second.id).deleted_at is not None
+    assert recipient_threads[0].last_message.id == first.id
+
+    with pytest.raises(Exception):
+        await user_chat_service.delete_message(db, thread.id, first.id, recipient.id)
+
+
 def test_blocked_user_cannot_start_thread(db: Session) -> None:
     sender = create_user(db, "sender-user", "Sender")
     recipient = create_user(db, "recipient-user", "Recipient")

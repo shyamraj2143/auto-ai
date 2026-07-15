@@ -1,7 +1,9 @@
 .um-page {
   display: grid;
   grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
-  min-height: calc(100vh - 56px);
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
   background: radial-gradient(circle at top left, rgba(45, 212, 191, 0.11), transparent 26rem), #060914;
   color: #f8fafc;
   overflow: hidden;
@@ -9,6 +11,7 @@
 
 .um-list {
   min-width: 0;
+  min-height: 0;
   border-right: 1px solid rgba(255, 255, 255, 0.09);
   background: rgba(2, 6, 23, 0.72);
   display: flex;
@@ -17,6 +20,7 @@
 
 .um-list-head,
 .um-chat-head {
+  flex-shrink: 0;
   min-height: 62px;
   display: flex;
   align-items: center;
@@ -83,6 +87,7 @@
 }
 
 .um-search {
+  flex-shrink: 0;
   margin: 12px 14px 8px;
   height: 42px;
   display: flex;
@@ -106,6 +111,7 @@
 }
 
 .um-filters {
+  flex-shrink: 0;
   display: flex;
   gap: 8px;
   overflow-x: auto;
@@ -132,7 +138,28 @@
   min-height: 0;
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
   padding: 4px 10px 18px;
+  scrollbar-color: rgba(103, 232, 249, 0.45) rgba(255, 255, 255, 0.04);
+}
+
+.um-thread-list::-webkit-scrollbar,
+.um-messages::-webkit-scrollbar,
+.um-search-results::-webkit-scrollbar {
+  width: 8px;
+}
+
+.um-thread-list::-webkit-scrollbar-track,
+.um-messages::-webkit-scrollbar-track,
+.um-search-results::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.um-thread-list::-webkit-scrollbar-thumb,
+.um-messages::-webkit-scrollbar-thumb,
+.um-search-results::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.55), rgba(124, 58, 237, 0.58));
 }
 
 .um-thread,
@@ -184,6 +211,12 @@
   min-width: 0;
   gap: 7px;
   font-size: 13px;
+}
+
+.um-thread-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .um-thread-copy strong small {
@@ -239,6 +272,9 @@
 }
 
 .um-search-results {
+  flex-shrink: 0;
+  max-height: min(320px, 36vh);
+  overflow-y: auto;
   margin: 0 10px 10px;
   border-radius: 16px;
   background: rgba(15, 23, 42, 0.96);
@@ -253,7 +289,9 @@
 }
 
 .um-chat {
+  position: relative;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: linear-gradient(180deg, rgba(15, 23, 42, 0.62), rgba(2, 6, 23, 0.9));
@@ -267,19 +305,24 @@
   min-height: 0;
   flex: 1;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 18px min(5vw, 42px);
   display: flex;
   flex-direction: column;
   gap: 8px;
+  scrollbar-color: rgba(103, 232, 249, 0.45) rgba(255, 255, 255, 0.04);
 }
 
 .um-bubble {
   max-width: min(72%, 620px);
+  min-width: 0;
   border-radius: 17px;
   padding: 9px 11px 7px;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.07);
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .um-bubble.own {
@@ -301,6 +344,7 @@
 
 .um-bubble img {
   max-width: 100%;
+  height: auto;
   max-height: 310px;
   display: block;
   border-radius: 12px;
@@ -309,20 +353,39 @@
 
 .um-bubble a {
   display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
   align-items: center;
   gap: 7px;
   color: #fff;
   text-decoration: none;
   font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .um-bubble small {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 4px;
   margin-top: 4px;
   color: rgba(255, 255, 255, 0.68);
   font-size: 10px;
+}
+
+.um-delete-message {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.um-delete-message:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.18);
+  color: #fecaca;
 }
 
 .um-bubble .read {
@@ -330,6 +393,7 @@
 }
 
 .um-composer {
+  flex-shrink: 0;
   display: flex;
   align-items: flex-end;
   gap: 8px;
@@ -346,6 +410,23 @@
   padding: 10px 12px;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.09);
+  overflow-y: auto;
+}
+
+.um-scroll-bottom {
+  position: absolute;
+  right: max(18px, env(safe-area-inset-right));
+  bottom: calc(86px + env(safe-area-inset-bottom));
+  z-index: 4;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.94);
+  border: 1px solid rgba(103, 232, 249, 0.36) !important;
+  color: #cffafe;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.36);
 }
 
 .um-attach input {
@@ -479,7 +560,8 @@
 @media (max-width: 760px) {
   .um-page {
     grid-template-columns: 1fr;
-    min-height: calc(100vh - 56px);
+    height: 100%;
+    min-height: 0;
   }
 
   .um-list.has-active {
@@ -492,7 +574,8 @@
 
   .um-chat.open {
     display: flex;
-    min-height: calc(100vh - 56px);
+    height: 100%;
+    min-height: 0;
   }
 
   .um-chat-head .back {
@@ -501,5 +584,15 @@
 
   .um-bubble {
     max-width: 86%;
+  }
+
+  .um-composer {
+    gap: 6px;
+    padding-inline: 8px;
+  }
+
+  .um-list-head,
+  .um-chat-head {
+    padding-inline: 10px;
   }
 }

@@ -305,7 +305,8 @@ export function Composer({
   onUploadDocuments,
   onSend,
   onStop,
-  onOpenLiveMode
+  onOpenLiveMode,
+  focusKey
 }: {
   disabled?: boolean;
   selectedDocuments: DocumentItem[];
@@ -316,6 +317,7 @@ export function Composer({
   onSend: (text: string, options: ComposerOptions, imageFiles: File[]) => Promise<void>;
   onStop?: () => Promise<void> | void;
   onOpenLiveMode: () => void;
+  focusKey?: string;
 }) {
   const uiText = usePublishedUiText();
   const { token } = useAuth();
@@ -325,6 +327,7 @@ export function Composer({
   const documentInputRef = useRef<HTMLInputElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const imageAttachmentsRef = useRef<ImageAttachment[]>([]);
   const attachmentMenuOpenRef = useRef(false);
   const [draft, setDraft] = useState("");
@@ -370,6 +373,10 @@ export function Composer({
   useEffect(() => {
     attachmentMenuOpenRef.current = attachmentMenuOpen;
   }, [attachmentMenuOpen]);
+
+  useEffect(() => {
+    textareaRef.current?.focus({ preventScroll: true });
+  }, [focusKey]);
 
   useEffect(() => {
     const handleAndroidBack = (event: Event) => {
@@ -817,6 +824,7 @@ export function Composer({
 
         <div className="composer-input-row">
           <textarea
+            ref={textareaRef}
             className="composer-textarea"
             placeholder={
               selectedDocuments.length

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { ArrowDown, Brain, CornerDownRight, Menu, MessageSquarePlus, PhoneCall, RefreshCw, ScreenShare, Settings, Sparkles, Square } from "lucide-react";
 import { ApiClientError, api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
@@ -151,12 +151,13 @@ function thinkingPhase(options: ComposerOptions, attachments: ChatAttachment[], 
 export function ChatPage() {
   const uiText = usePublishedUiText();
   const navigate = useNavigate();
+  const { chatId } = useParams();
   const { config: callConfig } = useCallSession();
   const screenShare = useScreenShare();
   const { token } = useAuth();
   const { settings } = useAppSettings();
   const { activeChat, createChat, openChat, refreshChats, setActiveChat } = useChat();
-  const { openSidebar } = useShell();
+  const { openSidebar, setActiveAiConversation } = useShell();
   const openSettings = useSettingsNavigation();
   const [messages, setMessages] = useState<Message[]>([]);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
@@ -186,6 +187,7 @@ export function ChatPage() {
   const generationPollTimerRef = useRef<number | null>(null);
   const lastOptionsRef = useRef<ComposerOptions>(DEFAULT_OPTIONS);
   const localRetryRef = useRef<Record<string, LocalRetryRequest>>({});
+  const composerFocusKey = activeChat?.id ?? chatId ?? "new";
 
   const openLiveMode = useCallback(async () => {
     try {
@@ -199,6 +201,10 @@ export function ChatPage() {
   useEffect(() => {
     setMessages(activeChat?.messages ?? []);
   }, [activeChat]);
+
+  useEffect(() => {
+    setActiveAiConversation(chatId ?? activeChat?.id ?? null);
+  }, [activeChat?.id, chatId, setActiveAiConversation]);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -271,6 +277,16 @@ export function ChatPage() {
   }, [token]);
 
   const { isPinnedToBottom, scrollToBottom } = useAutoScroll(scrollRef, [messages, streamingMessageId]);
+
+  useEffect(() => {
+    if (!chatId || activeChat?.id === chatId) return;
+    void openChat(chatId);
+  }, [activeChat?.id, chatId, openChat]);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(scrollToBottom);
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeChat?.id, scrollToBottom]);
 
   const hasMessages = messages.length > 0;
   const activeTitle = useMemo(() => activeChat?.title ?? "New chat", [activeChat]);
@@ -718,6 +734,7 @@ export function ChatPage() {
         const chat = await createChat(request.text.slice(0, 60) || request.attachments[0]?.filename || "New chat");
         chatId = chat.id;
         request.chatId = chat.id;
+        navigate(`/chat/${encodeURIComponent(chat.id)}`, { replace: true });
         const pendingMessages = optimisticMessages(request, assistantId);
         setMessages((current) =>
           current.some((message) => message.id === assistantId) ? current : [...current, ...pendingMessages]
@@ -775,6 +792,7 @@ export function ChatPage() {
     } else {
       setMessages((current) => [...current, ...pendingMessages]);
     }
+    window.requestAnimationFrame(scrollToBottom);
     await startGenerationForLocalAssistant(request, assistantId);
   }
 
@@ -910,7 +928,8 @@ export function ChatPage() {
   }
 
   async function handleNewChat() {
-    await createChat();
+    const chat = await createChat();
+    navigate(`/chat/${encodeURIComponent(chat.id)}`);
   }
 
   const generationStatusLabel =
@@ -934,7 +953,7 @@ export function ChatPage() {
 
   return (
     <div className="chat-workspace">
-      <section className="flex min-w-0 flex-1 flex-col">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="flex h-12 items-center justify-between border-b border-white/10 bg-slate-950/70 px-4 text-white backdrop-blur-xl md:hidden">
           <button
             className="icon-button-dark"
@@ -1124,6 +1143,7 @@ export function ChatPage() {
         )}
 
         <Composer
+          focusKey={composerFocusKey}
           disabled={visibleChatBusy}
           selectedDocuments={selectedDocuments}
           uploadTasks={uploadTasks}

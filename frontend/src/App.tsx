@@ -82,6 +82,7 @@ function AppRoutes() {
           <Route element={<ProtectedRoute />}>
             <Route element={<AppShell />}>
               <Route path="/chat" element={<ChatPage />} />
+              <Route path="/chat/:chatId" element={<ChatPage />} />
               <Route path="/messages" element={<UserMessagesPage />} />
               <Route path="/messages/:threadId" element={<UserMessagesPage />} />
               <Route path="/screen-share/:sessionId" element={<ScreenShareJoinPage />} />

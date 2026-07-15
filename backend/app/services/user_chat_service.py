@@ -327,6 +327,43 @@ class UserChatService:
         db.commit()
         return message
 
+    async def delete_message(self, db: Session, thread_id: str, message_id: str, user_id: str) -> None:
+        self.participant(db, thread_id, user_id)
+        message = db.scalar(
+            select(ChatMessage).where(
+                ChatMessage.id == message_id,
+                ChatMessage.thread_id == thread_id,
+                ChatMessage.deleted_at.is_(None),
+            )
+        )
+        if not message:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found.")
+        if message.sender_id != user_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only delete your own messages.")
+
+        now = utcnow()
+        message.deleted_at = now
+        thread = db.get(ChatThread, thread_id)
+        if thread and thread.last_message_id == message.id:
+            latest = db.scalar(
+                select(ChatMessage)
+                .where(
+                    ChatMessage.thread_id == thread_id,
+                    ChatMessage.id != message.id,
+                    ChatMessage.deleted_at.is_(None),
+                )
+                .order_by(ChatMessage.created_at.desc())
+                .limit(1)
+            )
+            thread.last_message_id = latest.id if latest else None
+        if thread:
+            thread.updated_at = now
+
+        db.commit()
+        for item in self.thread_participants(db, thread_id):
+            await self.publish(item.user_id, chat_event("message.deleted", user_id, {"message_id": message_id, "thread_id": thread_id}, thread_id))
+            await self.publish(item.user_id, chat_event("thread.updated", user_id, {"thread_id": thread_id}, thread_id))
+
     async def mark_delivered(self, db: Session, thread_id: str, user_id: str) -> None:
         self.participant(db, thread_id, user_id)
         now = utcnow()

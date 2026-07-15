@@ -1,8 +1,13 @@
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
 
 type ShellContextValue = {
+  activeMode: "ai" | "userMessages";
+  activeConversationId: string | null;
+  activeUserChatId: string | null;
   isSidebarOpen: boolean;
   isSidebarCollapsed: boolean;
+  setActiveAiConversation: (conversationId: string | null) => void;
+  setActiveUserMessages: (chatId: string | null) => void;
   openSidebar: () => void;
   closeSidebar: () => void;
   toggleSidebar: () => void;
@@ -14,9 +19,20 @@ type ShellContextValue = {
 const ShellContext = createContext<ShellContextValue | undefined>(undefined);
 
 export function ShellProvider({ children }: { children: React.ReactNode }) {
+  const [activeMode, setActiveMode] = useState<"ai" | "userMessages">("ai");
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [activeUserChatId, setActiveUserChatId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
+  const setActiveAiConversation = useCallback((conversationId: string | null) => {
+    setActiveMode("ai");
+    setActiveConversationId(conversationId);
+  }, []);
+  const setActiveUserMessages = useCallback((chatId: string | null) => {
+    setActiveMode("userMessages");
+    setActiveUserChatId(chatId);
+  }, []);
   const openSidebar = useCallback(() => setIsSidebarOpen(true), []);
   const closeSidebar = useCallback(() => setIsSidebarOpen(false), []);
   const toggleSidebar = useCallback(() => setIsSidebarOpen((current) => !current), []);
@@ -26,8 +42,13 @@ export function ShellProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<ShellContextValue>(
     () => ({
+      activeMode,
+      activeConversationId,
+      activeUserChatId,
       isSidebarOpen,
       isSidebarCollapsed,
+      setActiveAiConversation,
+      setActiveUserMessages,
       openSidebar,
       closeSidebar,
       toggleSidebar,
@@ -39,9 +60,14 @@ export function ShellProvider({ children }: { children: React.ReactNode }) {
       collapseSidebar,
       closeSidebar,
       expandSidebar,
+      activeConversationId,
+      activeMode,
+      activeUserChatId,
       isSidebarCollapsed,
       isSidebarOpen,
       openSidebar,
+      setActiveAiConversation,
+      setActiveUserMessages,
       toggleSidebar,
       toggleSidebarCollapsed
     ]

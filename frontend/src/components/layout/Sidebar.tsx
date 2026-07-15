@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Bot, CreditCard, Eraser, LogOut, MessageCircle, MessageSquarePlus, PanelLeftClose, Pencil, Search, Settings, Shield, Trash2, UserCircle2, X } from "lucide-react";
 import clsx from "clsx";
 import { resolveApiAssetUrl } from "../../api/client";
@@ -26,9 +26,10 @@ function formatSubscriptionStatus(value?: string | null) {
 export function Sidebar() {
   const { user, logout } = useAuth();
   const { chats, activeChat, createChat, deleteChat, loadingChats, openChat, updateChat } = useChat();
-  const { isSidebarOpen, isSidebarCollapsed, closeSidebar, collapseSidebar } = useShell();
+  const { activeConversationId, activeMode, isSidebarOpen, isSidebarCollapsed, closeSidebar, collapseSidebar, setActiveAiConversation, setActiveUserMessages } = useShell();
   const openSettings = useSettingsNavigation();
   const location = useLocation();
+  const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
@@ -103,12 +104,16 @@ export function Sidebar() {
   }
 
   async function openExistingChat(id: string) {
+    setActiveAiConversation(id);
+    navigate(`/chat/${encodeURIComponent(id)}`);
     await openChat(id);
     closeSidebar();
   }
 
   async function createNewChat() {
-    await createChat();
+    const chat = await createChat();
+    setActiveAiConversation(chat.id);
+    navigate(`/chat/${encodeURIComponent(chat.id)}`);
     closeSidebar();
   }
 
@@ -165,7 +170,10 @@ export function Sidebar() {
           </button>
           <Link
             className="compact-button flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.055] px-3 text-sm font-semibold text-cyan-50 transition hover:border-cyan-200/30 hover:bg-cyan-200/10"
-            onClick={closeSidebar}
+            onClick={() => {
+              setActiveUserMessages(null);
+              closeSidebar();
+            }}
             to="/messages"
           >
             <MessageCircle size={16} />
@@ -195,7 +203,7 @@ export function Sidebar() {
               key={chat.id}
               className={clsx(
                 "compact-sidebar-item group flex items-center rounded-lg border border-transparent transition",
-                activeChat?.id === chat.id && location.pathname === "/chat"
+                activeMode === "ai" && (activeConversationId === chat.id || activeChat?.id === chat.id) && location.pathname.startsWith("/chat")
                   ? "glow-active border-cyan-200/20 bg-cyan-200/12"
                   : "hover:bg-white/10"
               )}

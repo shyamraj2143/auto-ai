@@ -1,8 +1,9 @@
-import { Archive, ArrowLeft, Check, CheckCheck, FileText, Image, MessageCircle, Mic, MoreVertical, Paperclip, Phone, Pin, ScreenShare, Search, Send, Settings, Video, VolumeX, X } from "lucide-react";
+import { Archive, ArrowDown, ArrowLeft, Check, CheckCheck, FileText, Image, MessageCircle, Mic, MoreVertical, Paperclip, Phone, Pin, ScreenShare, Search, Send, Settings, Trash2, Video, VolumeX, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { resolveApiAssetUrl } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
+import { useShell } from "../../contexts/ShellContext";
 import { useCallSession } from "../calls/hooks/useCallSession";
 import { useScreenShare } from "../screenShare/useScreenShare";
 import type { ChatPublicUser, ChatRealtimeEvent, UserMessage, UserThread } from "./types";
@@ -45,6 +46,7 @@ function MessageStatus({ message }: { message: UserMessage }) {
 
 export function UserMessagesPage() {
   const { token, user } = useAuth();
+  const { setActiveUserMessages } = useShell();
   const { threadId } = useParams();
   const navigate = useNavigate();
   const callSession = useCallSession();
@@ -66,10 +68,14 @@ export function UserMessagesPage() {
   const [showRetry, setShowRetry] = useState(false);
   const [sending, setSending] = useState(false);
   const [pinning, setPinning] = useState(false);
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const [deletingMessageIds, setDeletingMessageIds] = useState<Set<string>>(() => new Set());
   const socketRef = useRef<UserMessageSocket | null>(null);
   const retryingMessagesRef = useRef<Set<string>>(new Set());
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const messagesScrollRef = useRef<HTMLDivElement | null>(null);
+  const pinnedToBottomRef = useRef(true);
   const savedListScrollRef = useRef(0);
   const loadAbortRef = useRef<AbortController | null>(null);
   const activeThreadIdRef = useRef<string | null>(null);
@@ -227,6 +233,12 @@ export function UserMessagesPage() {
     } else if (event.type === "thread.updated") {
       void loadThreads();
       if (event.thread_id && event.thread_id === (routeThreadIdRef.current || activeThreadIdRef.current)) void refreshActiveThread(event.thread_id);
+    } else if (event.type === "message.deleted") {
+      const messageId = typeof event.payload.message_id === "string" ? event.payload.message_id : "";
+      if (!messageId) return;
+      setMessages((current) => current.filter((message) => message.id !== messageId));
+      void loadThreads();
+      if (event.thread_id && event.thread_id === (routeThreadIdRef.current || activeThreadIdRef.current)) void refreshActiveThread(event.thread_id);
     } else if (event.type === "message.read" || event.type === "message.delivered") {
       if (event.thread_id) updateReceiptStatus(event.thread_id, event.type === "message.read" ? "read" : "delivered");
     } else if (event.type === "typing.start" && event.thread_id) {
@@ -269,6 +281,10 @@ export function UserMessagesPage() {
   }, [openThreadData, threadId]);
 
   useEffect(() => {
+    setActiveUserMessages(threadId ?? null);
+  }, [setActiveUserMessages, threadId]);
+
+  useEffect(() => {
     activeThreadIdRef.current = threadId ?? activeThread?.id ?? null;
   }, [activeThread?.id, threadId]);
 
@@ -296,9 +312,37 @@ export function UserMessagesPage() {
     attachmentRef.current = attachment;
   }, [attachment]);
 
+  const scrollMessagesToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    const element = messagesScrollRef.current;
+    if (!element) return;
+    element.scrollTo({ top: element.scrollHeight, behavior });
+    pinnedToBottomRef.current = true;
+    setShowScrollBottom(false);
+  }, []);
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages.length, threadId]);
+    const element = messagesScrollRef.current;
+    if (!element) return;
+    const handleScroll = () => {
+      const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+      const pinned = distanceFromBottom < 120;
+      pinnedToBottomRef.current = pinned;
+      if (pinned) setShowScrollBottom(false);
+    };
+    element.addEventListener("scroll", handleScroll, { passive: true });
+    handleScroll();
+    return () => element.removeEventListener("scroll", handleScroll);
+  }, [threadId]);
+
+  useEffect(() => {
+    const lastMessage = messages[messages.length - 1];
+    const ownMessage = lastMessage?.sender_id === user?.id;
+    if (pinnedToBottomRef.current || ownMessage || !messages.length) {
+      window.requestAnimationFrame(() => scrollMessagesToBottom(threadId ? "smooth" : "auto"));
+      return;
+    }
+    setShowScrollBottom(true);
+  }, [messages, scrollMessagesToBottom, threadId, user?.id]);
 
   useEffect(() => {
     if (!token) return;
@@ -507,6 +551,37 @@ export function UserMessagesPage() {
     }
   }
 
+  async function deleteMessage(message: UserMessage) {
+    if (!token || !displayedThread || message.sender_id !== user?.id || deletingMessageIds.has(message.id)) return;
+    if (!window.confirm("Delete this message?")) return;
+    setDeletingMessageIds((current) => new Set(current).add(message.id));
+    setError("");
+    setShowRetry(false);
+    if (message.id.startsWith("local-")) {
+      setMessages((current) => current.filter((item) => item.id !== message.id));
+      setDeletingMessageIds((current) => {
+        const next = new Set(current);
+        next.delete(message.id);
+        return next;
+      });
+      return;
+    }
+    try {
+      await userMessagesApi.deleteMessage(token, displayedThread.id, message.id);
+      setMessages((current) => current.filter((item) => item.id !== message.id));
+      void loadThreads();
+      void refreshActiveThread(displayedThread.id);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Message could not be deleted.");
+    } finally {
+      setDeletingMessageIds((current) => {
+        const next = new Set(current);
+        next.delete(message.id);
+        return next;
+      });
+    }
+  }
+
   function pickAttachment(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null;
     setError("");
@@ -609,7 +684,7 @@ export function UserMessagesPage() {
               <button type="button" onClick={() => screenShare.requestShare(displayedThread.peer)} aria-label="Share screen"><ScreenShare size={18} /></button>
               <button type="button" onClick={() => void togglePin()} disabled={pinning} aria-label="Pin"><MoreVertical size={18} /></button>
             </header>
-            <div className="um-messages">
+            <div className="um-messages" ref={messagesScrollRef}>
               {messages.map((message) => {
                 const own = message.sender_id === user?.id;
                 return (
@@ -617,12 +692,37 @@ export function UserMessagesPage() {
                     {message.attachment_url && message.message_type === "image" && <img src={resolveApiAssetUrl(message.attachment_url)} alt={message.attachment_name || ""} />}
                     {message.attachment_url && message.message_type !== "image" && <a href={resolveApiAssetUrl(message.attachment_url)} target="_blank" rel="noreferrer"><FileText size={16} />{message.attachment_name || "File"}</a>}
                     {message.text_content && <p>{message.text_content}</p>}
-                    <small>{timeLabel(message.created_at)} {own && <MessageStatus message={message} />}</small>
+                    <small>
+                      {timeLabel(message.created_at)} {own && <MessageStatus message={message} />}
+                      {own && (
+                        <button
+                          type="button"
+                          className="um-delete-message"
+                          onClick={() => void deleteMessage(message)}
+                          disabled={deletingMessageIds.has(message.id)}
+                          aria-label="Delete message"
+                          title="Delete message"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
+                    </small>
                   </article>
                 );
               })}
               <div ref={bottomRef} />
             </div>
+            {showScrollBottom && (
+              <button
+                type="button"
+                className="um-scroll-bottom"
+                onClick={() => scrollMessagesToBottom()}
+                aria-label="Scroll to latest message"
+                title="Scroll to latest message"
+              >
+                <ArrowDown size={16} />
+              </button>
+            )}
             {error && <div className="um-error"><span>{error}</span>{showRetry && <button type="button" className="um-retry" onClick={() => void retryPendingTextMessages()}>Retry</button>}<button type="button" onClick={() => { setError(""); setShowRetry(false); }}><X size={14} /></button></div>}
             {attachment && <div className="um-attachment-preview">{attachment.type.startsWith("image/") ? <Image size={16} /> : <FileText size={16} />}<span>{attachment.name}</span><button type="button" onClick={() => setAttachment(null)}><X size={14} /></button></div>}
             <form className="um-composer" onSubmit={sendMessage}>

@@ -6819,6 +6819,143 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
   display: none !important;
 }
 
+/* Chat workspace scroll containment */
+#root {
+  height: 100%;
+}
+
+.app-shell > main,
+.route-transition-stage,
+.chat-workspace,
+.chat-workspace > section {
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.chat-workspace > section {
+  flex: 1 1 auto;
+}
+
+.workspace-header,
+.chat-topbar,
+.composer-shell,
+.generation-status-bar {
+  flex-shrink: 0;
+}
+
+.chat-scroll {
+  min-height: 0 !important;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto !important;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-color: rgba(103, 232, 249, 0.48) rgba(255, 255, 255, 0.04);
+}
+
+.chat-scroll::-webkit-scrollbar,
+.workspace-sidebar nav::-webkit-scrollbar,
+.workspace-sidebar > div:last-child > div::-webkit-scrollbar {
+  width: 8px;
+}
+
+.chat-scroll::-webkit-scrollbar-track,
+.workspace-sidebar nav::-webkit-scrollbar-track,
+.workspace-sidebar > div:last-child > div::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.chat-scroll::-webkit-scrollbar-thumb,
+.workspace-sidebar nav::-webkit-scrollbar-thumb,
+.workspace-sidebar > div:last-child > div::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(34, 211, 238, 0.58), rgba(124, 58, 237, 0.62));
+}
+
+.workspace-sidebar {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workspace-sidebar > div:first-child,
+.workspace-sidebar > .space-y-3,
+.workspace-sidebar > div:last-child {
+  flex-shrink: 0;
+}
+
+.workspace-sidebar nav {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto !important;
+  overscroll-behavior-y: contain;
+  scrollbar-color: rgba(103, 232, 249, 0.48) rgba(255, 255, 255, 0.04);
+}
+
+.workspace-sidebar nav .compact-sidebar-item {
+  min-width: 0;
+}
+
+.workspace-sidebar nav .compact-sidebar-item > button:first-child {
+  min-width: 0;
+}
+
+.workspace-sidebar nav span {
+  max-width: 100%;
+}
+
+.message-row,
+.message-card,
+.message-card-user,
+.message-card-ai,
+.message-card .prose,
+.streaming-plain-text,
+.message-attachment {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.message-card img,
+.message-card video,
+.message-card canvas,
+.message-card iframe {
+  max-width: 100%;
+  height: auto;
+}
+
+.message-card pre,
+.message-card code {
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.message-attachment-name,
+.message-attachment-detail {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .app-shell > main,
+  .route-transition-stage,
+  .chat-workspace {
+    width: 100%;
+  }
+
+  .chat-scroll {
+    padding-inline: 0;
+  }
+
+  .composer-shell {
+    padding-inline: 8px !important;
+  }
+}
+
 /* Content Manager */
 .cms-nav-item,
 .cms-page-row {
