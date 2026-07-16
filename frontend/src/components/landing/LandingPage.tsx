@@ -7,8 +7,10 @@ import {
   Check,
   Download,
   FileText,
+  Menu,
   MessageSquare,
   Mic,
+  X,
   Smartphone,
   Zap
 } from "lucide-react";
@@ -66,12 +68,20 @@ export function LandingPage() {
   const [latestApk, setLatestApk] = useState<ApkRelease | null>(null);
   const [apkStats, setApkStats] = useState<ApkStats | null>(null);
   const [plans, setPlans] = useState<BillingPlan[]>([]);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const qrUrl = resolveApkDownloadUrl();
   const cmsBlocks = cmsPage?.blocks ?? [];
   const featureHeading = String(cmsBlocks.find((block) => block.block_type === "heading")?.content.text ?? "Every interaction has weight, motion, and memory.");
   const finalCta = cmsBlocks.find((block) => block.block_type === "call_to_action");
   const extraBlocks = cmsBlocks.filter((block) => !["heading", "feature_grid", "call_to_action"].includes(block.block_type));
   const visibleFaqs = publishedFaqs?.length ? publishedFaqs.map((item) => [item.question, item.answer]) : faqs;
+  const navLinks = [
+    { label: globalContent?.["header.features"] || "Features", href: "#features" },
+    { label: globalContent?.["header.android"] || "Android", to: "/download" },
+    { label: globalContent?.["header.pricing"] || "Pricing", to: "/pricing" },
+    { label: globalContent?.["header.admin"] || "Admin", to: "/admin/login" },
+    { label: globalContent?.["header.faq"] || "FAQ", href: "#faq" }
+  ];
 
   async function downloadLatestApk() {
     let release = latestApk;
@@ -135,11 +145,13 @@ export function LandingPage() {
           {globalContent?.["site.name"] || "Auto-AI"}
         </Link>
         <nav className="hidden items-center gap-6 text-sm text-slate-300 md:flex">
-          <a href="#features">{globalContent?.["header.features"] || "Features"}</a>
-          <Link to="/download">{globalContent?.["header.android"] || "Android"}</Link>
-          <Link to="/pricing">{globalContent?.["header.pricing"] || "Pricing"}</Link>
-          <Link to="/admin/login">{globalContent?.["header.admin"] || "Admin"}</Link>
-          <a href="#faq">{globalContent?.["header.faq"] || "FAQ"}</a>
+          {navLinks.map((item) =>
+            item.to ? (
+              <Link key={item.label} to={item.to}>{item.label}</Link>
+            ) : (
+              <a key={item.label} href={item.href}>{item.label}</a>
+            )
+          )}
         </nav>
         <div className="nav-actions">
           <Link className="btn-primary" to={user ? "/chat" : "/login"}>
@@ -147,7 +159,27 @@ export function LandingPage() {
             <ArrowRight size={16} />
           </Link>
           <ThemeToggleButton />
+          <button
+            className="landing-mobile-menu-button"
+            type="button"
+            aria-label={mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+            aria-expanded={mobileMenuOpen}
+            onClick={() => setMobileMenuOpen((current) => !current)}
+          >
+            {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
+          </button>
         </div>
+        {mobileMenuOpen && (
+          <nav className="landing-mobile-menu" aria-label="Mobile navigation">
+            {navLinks.map((item) =>
+              item.to ? (
+                <Link key={item.label} to={item.to} onClick={() => setMobileMenuOpen(false)}>{item.label}</Link>
+              ) : (
+                <a key={item.label} href={item.href} onClick={() => setMobileMenuOpen(false)}>{item.label}</a>
+              )
+            )}
+          </nav>
+        )}
       </header>
 
       <AnimatedPage className="landing-page">
