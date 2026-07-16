@@ -881,18 +881,18 @@ def create_chat_generation(
             None,
         )
         if existing_user_message:
-            running_generation = db.scalar(
+            existing_generation = db.scalar(
                 select(ChatGeneration)
                 .where(
                     ChatGeneration.chat_id == chat_row.id,
                     ChatGeneration.user_id == current_user.id,
                     ChatGeneration.user_message_id == existing_user_message.id,
-                    ChatGeneration.status.in_(RUNNING_GENERATION_STATUSES),
+                    ChatGeneration.status.in_(RUNNING_GENERATION_STATUSES | {"completed"}),
                 )
                 .order_by(ChatGeneration.updated_at.desc())
             )
-            if running_generation:
-                return generation_payload(db, running_generation)
+            if existing_generation:
+                return generation_payload(db, existing_generation)
 
     user_message = existing_user_message or Message(
         chat_id=chat_row.id,

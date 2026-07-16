@@ -64,6 +64,7 @@ const API_DIAGNOSTIC_TIMEOUT_MS = 2500;
 export const API_ENVIRONMENT = import.meta.env.MODE || "production";
 
 export type ApiErrorKind =
+  | "aborted"
   | "network_unavailable"
   | "cors_blocked"
   | "server_unreachable"
@@ -354,6 +355,10 @@ function healthProbeUrl() {
   return joinApiUrl(API_BASE_URL, "/health");
 }
 
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
 async function canReachApiHostWithoutCors() {
   if (!isBrowser()) return false;
   const controller = new AbortController();
@@ -473,6 +478,17 @@ function createTimeoutError(input: string, timeoutMs: number, meta: RequestMeta 
   return error;
 }
 
+function createAbortError(input: string, originalError: unknown, meta: RequestMeta = {}) {
+  const context = getApiContext(input);
+  const error = new ApiClientError("Request cancelled.", {
+    kind: "aborted",
+    url: context.apiUrl,
+    originalError
+  });
+  logApiIssue(error, context, meta);
+  return error;
+}
+
 function createHttpError(
   status: number,
   statusText: string,
@@ -533,6 +549,9 @@ async function fetchWithNetworkMessage(input: string, init: RequestInit = {}, me
   } catch (error) {
     if (timedOut) {
       throw createTimeoutError(input, timeoutMs, { ...meta, method });
+    }
+    if (isAbortError(error) || originalSignal?.aborted) {
+      throw createAbortError(input, error, { ...meta, method });
     }
     if (error instanceof TypeError) {
       throw await createConnectionError(input, error, { ...meta, method });
@@ -961,12 +980,13 @@ export const api = {
     }),
 
   researchModels: (token: string) => apiFetch<ResearchModelOptions>("/ai/research-models", { token, operation: "ai.researchModels" }),
-  startChatGeneration: (token: string, payload: ChatRequest) =>
+  startChatGeneration: (token: string, payload: ChatRequest, signal?: AbortSignal) =>
     apiFetch<ChatGeneration>(payload.chat_id ? `/chat/sessions/${payload.chat_id}/messages` : "/ai/chat/generations", {
       method: "POST",
       token,
       operation: payload.chat_id ? "chat.sessions.messages.create" : "ai.chat.generations.start",
       body: JSON.stringify(payload),
+      signal,
       timeoutMs: 120000
     }),
   regenerateChatSession: (token: string, sessionId: string, payload: Omit<Partial<ChatRequest>, "message" | "chat_id"> & { message_id?: string }) =>

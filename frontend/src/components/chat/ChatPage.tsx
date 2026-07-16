@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowDown, Brain, CornerDownRight, Menu, MessageSquarePlus, PhoneCall, RefreshCw, ScreenShare, Settings, Sparkles, Square } from "lucide-react";
+import { ArrowDown, Brain, Menu, MessageSquarePlus, PhoneCall, ScreenShare, Settings, Sparkles, Square } from "lucide-react";
 import { ApiClientError, api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
@@ -21,6 +21,16 @@ import { useScreenShare } from "../../features/screenShare/useScreenShare";
 import { CrystalAiOrb, CrystalErrorBoundary } from "../crystal/Crystal";
 import type { CrystalOrbState } from "../../crystal/tokens";
 import { usePublishedUiText } from "../../hooks/useCmsContent";
+import {
+  appendOptimisticMessages,
+  clientMessageIdOf,
+  type ActiveChatRequest,
+  type ChatRequestState,
+  isGenerationForActiveRequest,
+  isRequestBusy,
+  mergeChatMessages,
+  upsertChatMessage
+} from "./chatState";
 
 const DEFAULT_OPTIONS: ComposerOptions = {
   searchMode: "auto",
@@ -49,6 +59,7 @@ type LocalRetryRequest = {
   clientMessageId: string;
   userMessageId: string;
   documentIds: string[];
+  requestId: string;
 };
 
 function modelSelectionPayload(options: ComposerOptions) {
@@ -81,27 +92,6 @@ function responseModelFallback(model?: string | null): ResponseModelInfo | null 
 
 function nowIso() {
   return new Date().toISOString();
-}
-
-function clientMessageIdOf(message?: Message | null) {
-  return typeof message?.message_metadata?.client_message_id === "string"
-    ? message.message_metadata.client_message_id
-    : "";
-}
-
-function attachmentsOf(message?: Message | null): ChatAttachment[] {
-  return Array.isArray(message?.message_metadata?.attachments)
-    ? message.message_metadata.attachments
-    : [];
-}
-
-function mergeAttachmentPreviews(incoming: ChatAttachment[], existing: ChatAttachment[]) {
-  return incoming.map((attachment) => {
-    const previous = existing.find((item) => item.id === attachment.id || item.filename === attachment.filename);
-    return previous?.preview_url && !attachment.preview_url
-      ? { ...attachment, preview_url: previous.preview_url }
-      : attachment;
-  });
 }
 
 function createImageAttachment(file: File): ChatAttachment {
@@ -169,6 +159,7 @@ export function ChatPage() {
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
   const [searchingMessageId, setSearchingMessageId] = useState<string | null>(null);
   const [activeGeneration, setActiveGeneration] = useState<ChatGeneration | null>(null);
+  const [requestState, setRequestState] = useState<ChatRequestState>("idle");
   const [reactions, setReactions] = useState<Record<string, MessageReaction>>({});
   const [bookmarks, setBookmarks] = useState<Record<string, boolean>>({});
   const [isContextOpen, setIsContextOpen] = useState(false);
@@ -187,6 +178,9 @@ export function ChatPage() {
   const generationPollTimerRef = useRef<number | null>(null);
   const lastOptionsRef = useRef<ComposerOptions>(DEFAULT_OPTIONS);
   const localRetryRef = useRef<Record<string, LocalRetryRequest>>({});
+  const activeRequestRef = useRef<ActiveChatRequest | null>(null);
+  const activeStartControllerRef = useRef<AbortController | null>(null);
+  const displayedChatIdRef = useRef<string | null>(null);
   const composerFocusKey = activeChat?.id ?? chatId ?? "new";
 
   const openLiveMode = useCallback(async () => {
@@ -199,7 +193,20 @@ export function ChatPage() {
   }, []);
 
   useEffect(() => {
-    setMessages(activeChat?.messages ?? []);
+    const nextChatId = activeChat?.id ?? null;
+    const request = activeRequestRef.current;
+    setMessages((current) => {
+      if (!activeChat) return request && !request.chatId ? current : [];
+      const localRequestForChat =
+        request &&
+        (!request.chatId || request.chatId === activeChat.id) &&
+        current.some((message) => message.id === request.assistantId || clientMessageIdOf(message) === request.clientMessageId);
+      const sameDisplayedChat = displayedChatIdRef.current === activeChat.id;
+      return sameDisplayedChat || localRequestForChat
+        ? mergeChatMessages(activeChat.messages ?? [], current)
+        : activeChat.messages ?? [];
+    });
+    displayedChatIdRef.current = nextChatId;
   }, [activeChat]);
 
   useEffect(() => {
@@ -304,7 +311,7 @@ export function ChatPage() {
   );
   const visibleGeneration = activeGeneration?.chat_id === activeChat?.id ? activeGeneration : null;
   const visibleGenerationRunning = Boolean(visibleGeneration && isRunningGenerationStatus(visibleGeneration.status));
-  const visibleChatBusy = submittingGeneration || visibleGenerationRunning;
+  const visibleChatBusy = isRequestBusy(requestState) || submittingGeneration || visibleGenerationRunning;
   const visibleStreamingMessageId =
     visibleGenerationRunning ? visibleGeneration?.assistant_message_id ?? streamingMessageId : streamingMessageId;
   const neuralState: CrystalOrbState = !navigator.onLine
@@ -397,40 +404,30 @@ export function ChatPage() {
     return status === "pending" || status === "running" || status === "cancel_requested";
   }
 
-  function upsertMessage(current: Message[], incoming: Message) {
-    const incomingClientId = clientMessageIdOf(incoming);
-    const index = current.findIndex((message) =>
-      message.id === incoming.id ||
-      (incomingClientId && message.role === incoming.role && clientMessageIdOf(message) === incomingClientId)
-    );
-    if (index < 0) return [...current, incoming];
-    if (current[index] === incoming) return current;
-    const next = current.slice();
-    const existing = current[index];
-    const existingAttachments = attachmentsOf(existing);
-    const incomingAttachments = attachmentsOf(incoming);
-    next[index] = incomingAttachments.length
-      ? {
-          ...incoming,
-          message_metadata: {
-            ...(incoming.message_metadata || {}),
-            attachments: mergeAttachmentPreviews(incomingAttachments, existingAttachments)
-          }
-        }
-      : incoming;
-    return next;
-  }
-
   function applyGenerationSnapshot(generation: ChatGeneration) {
+    if (!isGenerationForActiveRequest(generation, activeRequestRef.current)) return;
     const running = isRunningGenerationStatus(generation.status);
-    const visible = activeChatRef.current?.id === generation.chat_id;
+    const visible =
+      activeChatRef.current?.id === generation.chat_id ||
+      activeRequestRef.current?.chatId === generation.chat_id;
     const assistant = generation.assistant_message ?? null;
     const user = generation.user_message ?? null;
 
     if (generation.status === "completed") {
       setActiveGeneration(null);
+      setRequestState("completed");
+      if (activeRequestRef.current?.chatId === generation.chat_id) activeRequestRef.current = null;
     } else {
       setActiveGeneration(generation);
+      setRequestState(
+        running
+          ? "streaming"
+          : generation.status === "cancelled"
+            ? "cancelled"
+            : generation.status === "failed"
+              ? "failed"
+              : "idle"
+      );
     }
     setSubmittingGeneration(false);
     setStreaming(running && visible);
@@ -440,7 +437,7 @@ export function ChatPage() {
     const phase = streamMetadata?.phase;
     setSearchingMessageId(running && visible && phase === "searching" ? assistant?.id ?? null : null);
 
-    if (activeChatRef.current?.id !== generation.chat_id) return;
+    if (!visible) return;
 
     let queuedDelta = "";
     if (assistant) {
@@ -459,11 +456,11 @@ export function ChatPage() {
 
     updateMessagesForChat(generation.chat_id, (current) => {
       let next = current;
-      if (user) next = upsertMessage(next, user);
+      if (user) next = upsertChatMessage(next, user);
       if (assistant) {
         const existing = next.find((message) => message.id === assistant.id);
         const content = running && existing ? coerceTextContent(existing.content) : coerceTextContent(assistant.content);
-        next = upsertMessage(next, { ...assistant, content });
+        next = upsertChatMessage(next, { ...assistant, content });
       }
       return next;
     });
@@ -484,6 +481,7 @@ export function ChatPage() {
         setStreaming(false);
         setStreamingMessageId(null);
         setSearchingMessageId(null);
+        setRequestState(generation.status === "failed" ? "failed" : generation.status === "cancelled" ? "cancelled" : "idle");
         if (activeChatRef.current?.id === generation.chat_id) {
           await openChat(generation.chat_id);
         }
@@ -532,6 +530,7 @@ export function ChatPage() {
           setStreamingMessageId(null);
           setSearchingMessageId(null);
           setActiveGeneration(null);
+          setRequestState("idle");
         }
         if (activeChatRef.current?.id) {
           await openChat(activeChatRef.current.id);
@@ -706,7 +705,16 @@ export function ChatPage() {
   }
 
   function markLocalGenerationFailed(chatId: string | undefined, assistantId: string, error: unknown) {
-    const detail = error instanceof Error ? error.message : "Unable to stream response";
+    const aborted = error instanceof DOMException && error.name === "AbortError";
+    const detail = aborted
+      ? "Response stopped."
+      : error instanceof ApiClientError && error.kind === "network_unavailable"
+        ? "You are offline. Retry when the connection is back."
+        : error instanceof ApiClientError && error.kind === "authentication_failed"
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : "Unable to generate response.";
     markLocalAssistant(chatId, assistantId, (message) => ({
       ...message,
       message_metadata: {
@@ -719,14 +727,22 @@ export function ChatPage() {
         }
       }
     }));
-    showChatNotice("Response interrupted. Your message was saved. Tap Retry.");
   }
 
   async function startGenerationForLocalAssistant(request: LocalRetryRequest, assistantId: string) {
     if (!token) return;
     let chatId = request.chatId || activeChatRef.current?.id;
+    const controller = new AbortController();
+    activeStartControllerRef.current = controller;
+    activeRequestRef.current = {
+      requestId: request.requestId,
+      assistantId,
+      chatId,
+      clientMessageId: request.clientMessageId
+    };
     setStreaming(true);
     setSubmittingGeneration(true);
+    setRequestState(chatId ? "connecting" : "saving_user_message");
     setStreamingMessageId(assistantId);
     setSearchingMessageId(null);
     try {
@@ -734,36 +750,65 @@ export function ChatPage() {
         const chat = await createChat(request.text.slice(0, 60) || request.attachments[0]?.filename || "New chat");
         chatId = chat.id;
         request.chatId = chat.id;
+        activeRequestRef.current = {
+          requestId: request.requestId,
+          assistantId,
+          chatId,
+          clientMessageId: request.clientMessageId
+        };
         navigate(`/chat/${encodeURIComponent(chat.id)}`, { replace: true });
         const pendingMessages = optimisticMessages(request, assistantId);
-        setMessages((current) =>
-          current.some((message) => message.id === assistantId) ? current : [...current, ...pendingMessages]
-        );
-        setActiveChat({
+        setMessages((current) => appendOptimisticMessages(current, pendingMessages));
+        const chatWithLocalMessages = {
           ...chat,
-          messages: messagesRef.current.some((message) => message.id === assistantId)
-            ? messagesRef.current
-            : pendingMessages
-        });
+          messages: mergeChatMessages(chat.messages ?? [], messagesRef.current.some((message) => message.id === assistantId) ? messagesRef.current : pendingMessages)
+        };
+        activeChatRef.current = chatWithLocalMessages;
+        setActiveChat(chatWithLocalMessages);
       }
+      setRequestState("connecting");
       const internalContext = request.internalContext ?? await analyzeImages(request.text, request.imageFiles);
       request.internalContext = internalContext;
-      const generation = await api.startChatGeneration(token, buildGenerationPayload(request, chatId, internalContext));
+      const generation = await api.startChatGeneration(
+        token,
+        buildGenerationPayload(request, chatId, internalContext),
+        controller.signal
+      );
       delete localRetryRef.current[assistantId];
       applyGenerationSnapshot(generation);
       startGenerationPolling(generation.id);
       void refreshChats().catch(() => undefined);
     } catch (error) {
-      markLocalGenerationFailed(chatId, assistantId, error);
+      if (controller.signal.aborted) {
+        markLocalAssistant(chatId, assistantId, (message) => ({
+          ...message,
+          message_metadata: {
+            ...(message.message_metadata || {}),
+            streaming: {
+              ...((message.message_metadata?.streaming as object | undefined) || {}),
+              status: "cancelled",
+              partial: false
+            }
+          }
+        }));
+      } else if (activeRequestRef.current?.requestId === request.requestId) {
+        markLocalGenerationFailed(chatId, assistantId, error);
+      }
       setStreaming(false);
       setSubmittingGeneration(false);
       setStreamingMessageId(null);
       setSearchingMessageId(null);
+      setRequestState(controller.signal.aborted ? "cancelled" : "failed");
+    } finally {
+      if (activeStartControllerRef.current === controller) {
+        activeStartControllerRef.current = null;
+      }
     }
   }
 
   async function handleSend(text: string, options: ComposerOptions, imageFiles: File[] = []) {
-    if (!token || visibleChatBusy) return;
+    const trimmedText = text.trim();
+    if (!token || visibleChatBusy || (!trimmedText && !imageFiles.length)) return false;
     const documentIds = settings.memoryEnabled ? [...selectedDocumentIds] : [];
     const attachments = [
       ...imageFiles.map(createImageAttachment),
@@ -771,14 +816,15 @@ export function ChatPage() {
     ];
     const request: LocalRetryRequest = {
       chatId: activeChat?.id,
-      text,
+      text: trimmedText,
       options,
       imageFiles,
       attachments,
       internalContext: null,
       clientMessageId: crypto.randomUUID(),
       userMessageId: "",
-      documentIds
+      documentIds,
+      requestId: crypto.randomUUID()
     };
     const assistantId = `local-assistant-${request.clientMessageId}`;
     const userId = `local-user-${request.clientMessageId}`;
@@ -787,13 +833,21 @@ export function ChatPage() {
     lastOptionsRef.current = options;
     setChatNotice("");
     localRetryRef.current[assistantId] = request;
+    activeRequestRef.current = {
+      requestId: request.requestId,
+      assistantId,
+      chatId: request.chatId,
+      clientMessageId: request.clientMessageId
+    };
     if (activeChat?.id) {
-      updateMessagesForChat(activeChat.id, (current) => [...current, ...pendingMessages], true);
+      updateMessagesForChat(activeChat.id, (current) => appendOptimisticMessages(current, pendingMessages), true);
     } else {
-      setMessages((current) => [...current, ...pendingMessages]);
+      setMessages((current) => appendOptimisticMessages(current, pendingMessages));
     }
+    setRequestState("saving_user_message");
     window.requestAnimationFrame(scrollToBottom);
     await startGenerationForLocalAssistant(request, assistantId);
+    return true;
   }
 
   function handleReact(messageId: string, reaction: MessageReaction) {
@@ -823,6 +877,7 @@ export function ChatPage() {
     const localRetry = localRetryRef.current[messageId];
     if (localRetry) {
       if (visibleChatBusy) return;
+      localRetry.requestId = crypto.randomUUID();
       markLocalAssistant(localRetry.chatId, messageId, (message) => ({
         ...message,
         content: "",
@@ -844,6 +899,7 @@ export function ChatPage() {
     if (!previousUser) return;
     setStreaming(true);
     setSubmittingGeneration(true);
+    setRequestState("connecting");
     try {
       const generation = await api.regenerateChatSession(token, activeChat.id, {
         message_id: messageId,
@@ -860,6 +916,7 @@ export function ChatPage() {
       showChatNotice(detail);
       setStreaming(false);
       setSubmittingGeneration(false);
+      setRequestState("failed");
     }
   }
 
@@ -895,7 +952,15 @@ export function ChatPage() {
   }
 
   async function handleStopGeneration() {
-    if (!token || !activeGeneration || !isRunningGenerationStatus(activeGeneration.status)) return;
+    activeStartControllerRef.current?.abort("user_cancelled");
+    if (!token || !activeGeneration || !isRunningGenerationStatus(activeGeneration.status)) {
+      setStreaming(false);
+      setSubmittingGeneration(false);
+      setStreamingMessageId(null);
+      setSearchingMessageId(null);
+      setRequestState("cancelled");
+      return;
+    }
     try {
       const generation = activeGeneration.chat_id
         ? await api.stopChatSession(token, activeGeneration.chat_id)
@@ -913,6 +978,7 @@ export function ChatPage() {
         setStreamingMessageId(null);
         setSearchingMessageId(null);
         setActiveGeneration(null);
+        setRequestState("idle");
         await recoverActiveGeneration();
         return;
       }
@@ -947,10 +1013,6 @@ export function ChatPage() {
   const generationStatusText = generationErrorDetail
     ? `${generationStatusLabel}: ${generationErrorDetail}`
     : generationStatusLabel;
-  const canContinueVisibleGeneration =
-    visibleGeneration?.status !== "failed" ||
-    Boolean(coerceTextContent(visibleGeneration?.assistant_message?.content).trim());
-
   return (
     <div className="chat-workspace">
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -1116,29 +1178,14 @@ export function ChatPage() {
           </button>
         )}
 
-        {visibleGeneration && (
+        {visibleGeneration && visibleGenerationRunning && (
           <div className="generation-status-bar">
             <span className="generation-dot" aria-hidden="true" />
             <span className="min-w-0 flex-1 truncate" title={generationStatusText}>{generationStatusText}</span>
-            {visibleGenerationRunning ? (
-              <button className="generation-action" onClick={handleStopGeneration} type="button">
-                <Square size={14} />
-                Stop
-              </button>
-            ) : (
-              <>
-                <button className="generation-action" onClick={handleRetryGeneration} type="button">
-                  <RefreshCw size={14} />
-                  Retry
-                </button>
-                {canContinueVisibleGeneration && (
-                  <button className="generation-action" onClick={handleContinue} type="button">
-                    <CornerDownRight size={14} />
-                    Continue
-                  </button>
-                )}
-              </>
-            )}
+            <button className="generation-action" onClick={handleStopGeneration} type="button">
+              <Square size={14} />
+              Stop
+            </button>
           </div>
         )}
 

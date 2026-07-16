@@ -314,7 +314,7 @@ export function Composer({
   onRemoveDocument: (id: string) => void;
   onDeleteDocument: (id: string) => Promise<void>;
   onUploadDocuments: (files: File[], provider: Provider) => Promise<void>;
-  onSend: (text: string, options: ComposerOptions, imageFiles: File[]) => Promise<void>;
+  onSend: (text: string, options: ComposerOptions, imageFiles: File[]) => Promise<void | boolean>;
   onStop?: () => Promise<void> | void;
   onOpenLiveMode: () => void;
   focusKey?: string;
@@ -496,13 +496,14 @@ export function Composer({
     event?.preventDefault();
     if (!canSend) return;
     const text = draft.trim();
-    const files = imageAttachments.map((attachment) => attachment.file);
+    const submittedAttachments = imageAttachments;
+    const files = submittedAttachments.map((attachment) => attachment.file);
     setDraft("");
-    imageAttachments.forEach((attachment) => URL.revokeObjectURL(attachment.previewUrl));
     setImageAttachments([]);
     setSending(true);
+    let accepted = false;
     try {
-      await onSend(
+      const result = await onSend(
         text,
         {
           searchMode,
@@ -522,6 +523,17 @@ export function Composer({
         },
         files
       );
+      accepted = result !== false;
+      if (accepted) {
+        submittedAttachments.forEach((attachment) => URL.revokeObjectURL(attachment.previewUrl));
+      } else {
+        setDraft(text);
+        setImageAttachments(submittedAttachments);
+      }
+    } catch (sendError) {
+      setDraft(text);
+      setImageAttachments(submittedAttachments);
+      setError(sendError instanceof Error ? sendError.message : "Message was not sent.");
     } finally {
       setSending(false);
     }

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "seo:generate": "node scripts/generate-seo-assets.mjs",
+    "test": "vitest run",
     "build": "npm run seo:generate && node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc --noEmit && vite build && node scripts/compress-dist-assets.mjs",
     "preview": "vite preview --host 0.0.0.0"
   },
@@ -30,6 +31,7 @@
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
-    "vite": "^6.0.7"
+    "vite": "^6.0.7",
+    "vitest": "^4.1.10"
   }
 }
