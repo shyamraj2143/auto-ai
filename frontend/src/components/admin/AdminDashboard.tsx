@@ -63,7 +63,7 @@ const sections: Array<{ id: AdminSection; label: string; icon: ReactNode }> = [
   { id: "devices", label: "Device Monitor", icon: <Smartphone size={15} /> },
   { id: "mobile", label: "Mobile App", icon: <Smartphone size={15} /> },
   { id: "payments", label: "Payments", icon: <Wallet size={15} /> },
-  { id: "content", label: "Content Manager", icon: <BookOpen size={15} /> },
+  { id: "content", label: "Website Builder", icon: <BookOpen size={15} /> },
   { id: "settings", label: "Settings", icon: <Settings size={15} /> }
 ];
 

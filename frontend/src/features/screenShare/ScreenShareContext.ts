@@ -1,6 +1,6 @@
 import { createContext } from "react";
 import type { PublicCallUser } from "../calls/types";
-import type { ScreenShareInvite, ScreenShareRole, ScreenShareSession, ScreenShareSource, ScreenShareUiState } from "./types";
+import type { ScreenShareInvite, ScreenShareQualityMode, ScreenShareRole, ScreenShareSession, ScreenShareSource, ScreenShareUiState } from "./types";
 
 export type ScreenShareContextValue = {
   uiState: ScreenShareUiState;
@@ -17,6 +17,10 @@ export type ScreenShareContextValue = {
   startedAt: number | null;
   shareCode: string | null;
   canShareScreen: boolean;
+  qualityMode: ScreenShareQualityMode;
+  networkQuality: "good" | "poor" | "reconnecting" | "unknown";
+  sentResolution: string;
+  setQualityMode: (mode: ScreenShareQualityMode) => void;
   requestShare: (peer: PublicCallUser) => void;
   cancelRequest: () => void;
   startShare: (source: ScreenShareSource) => Promise<void>;

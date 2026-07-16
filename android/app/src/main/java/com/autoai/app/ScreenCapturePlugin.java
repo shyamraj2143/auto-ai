@@ -1,8 +1,11 @@
 package com.autoai.app;
 
 import android.app.Activity;
+import android.content.ComponentCallbacks;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.Configuration;
+import android.graphics.Rect;
 import android.graphics.Bitmap;
 import android.graphics.PixelFormat;
 import android.hardware.display.DisplayManager;
@@ -13,8 +16,11 @@ import android.media.projection.MediaProjection;
 import android.media.projection.MediaProjectionManager;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.Build;
 import android.util.Base64;
 import android.util.DisplayMetrics;
+import android.view.WindowManager;
+import android.view.WindowMetrics;
 
 import androidx.activity.result.ActivityResult;
 
@@ -44,6 +50,7 @@ public class ScreenCapturePlugin extends Plugin {
     private int jpegQuality = 62;
     private long frameIntervalMs = 150;
     private long lastFrameAtMs;
+    private ComponentCallbacks configurationCallbacks;
 
     @PluginMethod
     public void isAvailable(PluginCall call) {
@@ -58,7 +65,7 @@ public class ScreenCapturePlugin extends Plugin {
             call.resolve();
             return;
         }
-        maxLongEdge = Math.max(320, Math.min(call.getInt("maxLongEdge", 960), 1440));
+        maxLongEdge = Math.max(720, Math.min(call.getInt("maxLongEdge", 1920), 2400));
         jpegQuality = Math.max(40, Math.min(call.getInt("jpegQuality", 62), 82));
         int frameRate = Math.max(5, Math.min(call.getInt("frameRate", 8), 15));
         frameIntervalMs = Math.max(66, 1000L / frameRate);
@@ -96,9 +103,18 @@ public class ScreenCapturePlugin extends Plugin {
                 public void onStop() {
                     stopInternal(true);
                 }
+
+                @Override
+                public void onCapturedContentResize(int nextWidth, int nextHeight) {
+                    if (nextWidth > 0 && nextHeight > 0) {
+                        resizeCapture(nextWidth, nextHeight);
+                    }
+                }
             }, new Handler(getContext().getMainLooper()));
             startReader();
+            registerConfigurationFallback();
             capturing.set(true);
+            notifyCaptureState("captureStarted");
             call.resolve();
         } catch (RuntimeException error) {
             stopInternal(false);
@@ -123,13 +139,17 @@ public class ScreenCapturePlugin extends Plugin {
     }
 
     private void startReader() {
-        DisplayMetrics metrics = getContext().getResources().getDisplayMetrics();
-        width = Math.max(1, metrics.widthPixels);
-        height = Math.max(1, metrics.heightPixels);
-        density = metrics.densityDpi;
+        DisplayBounds bounds = currentDisplayBounds();
+        width = bounds.width;
+        height = bounds.height;
+        density = bounds.density;
         captureThread = new HandlerThread("auto-ai-screen-capture");
         captureThread.start();
         captureHandler = new Handler(captureThread.getLooper());
+        createProjectionSurface();
+    }
+
+    private synchronized void createProjectionSurface() {
         imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
         imageReader.setOnImageAvailableListener(this::handleImageAvailable, captureHandler);
         virtualDisplay = mediaProjection.createVirtualDisplay(
@@ -142,6 +162,83 @@ public class ScreenCapturePlugin extends Plugin {
             null,
             captureHandler
         );
+    }
+
+    private synchronized void resizeCapture(int nextWidth, int nextHeight) {
+        if (nextWidth <= 0 || nextHeight <= 0 || mediaProjection == null || captureHandler == null) return;
+        if (nextWidth == width && nextHeight == height) return;
+        width = nextWidth;
+        height = nextHeight;
+        if (virtualDisplay != null) {
+            virtualDisplay.release();
+            virtualDisplay = null;
+        }
+        if (imageReader != null) {
+            imageReader.close();
+            imageReader = null;
+        }
+        createProjectionSurface();
+        JSObject payload = new JSObject();
+        payload.put("width", width);
+        payload.put("height", height);
+        payload.put("density", density);
+        notifyListeners("captureResize", payload);
+    }
+
+    private void notifyCaptureState(String eventName) {
+        JSObject payload = new JSObject();
+        payload.put("virtualDisplayWidth", width);
+        payload.put("virtualDisplayHeight", height);
+        payload.put("density", density);
+        payload.put("maxLongEdge", maxLongEdge);
+        payload.put("jpegQuality", jpegQuality);
+        payload.put("orientation", getContext().getResources().getConfiguration().orientation);
+        DisplayBounds bounds = currentDisplayBounds();
+        payload.put("displayWidth", bounds.width);
+        payload.put("displayHeight", bounds.height);
+        payload.put("displayDensity", bounds.density);
+        notifyListeners(eventName, payload);
+    }
+
+    private DisplayBounds currentDisplayBounds() {
+        int nextWidth;
+        int nextHeight;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            WindowManager windowManager = (WindowManager) getContext().getSystemService(Context.WINDOW_SERVICE);
+            WindowMetrics metrics = windowManager.getMaximumWindowMetrics();
+            Rect bounds = metrics.getBounds();
+            nextWidth = bounds.width();
+            nextHeight = bounds.height();
+        } else {
+            DisplayMetrics metrics = getContext().getResources().getDisplayMetrics();
+            nextWidth = metrics.widthPixels;
+            nextHeight = metrics.heightPixels;
+        }
+        DisplayMetrics displayMetrics = getContext().getResources().getDisplayMetrics();
+        return new DisplayBounds(Math.max(1, nextWidth), Math.max(1, nextHeight), displayMetrics.densityDpi);
+    }
+
+    private void registerConfigurationFallback() {
+        if (configurationCallbacks != null) return;
+        configurationCallbacks = new ComponentCallbacks() {
+            @Override
+            public void onConfigurationChanged(Configuration newConfig) {
+                DisplayBounds bounds = currentDisplayBounds();
+                resizeCapture(bounds.width, bounds.height);
+            }
+
+            @Override
+            public void onLowMemory() {
+                // No-op.
+            }
+        };
+        getContext().registerComponentCallbacks(configurationCallbacks);
+    }
+
+    private void unregisterConfigurationFallback() {
+        if (configurationCallbacks == null) return;
+        getContext().unregisterComponentCallbacks(configurationCallbacks);
+        configurationCallbacks = null;
     }
 
     private void handleImageAvailable(ImageReader reader) {
@@ -210,7 +307,20 @@ public class ScreenCapturePlugin extends Plugin {
             captureThread = null;
             captureHandler = null;
         }
+        unregisterConfigurationFallback();
         ScreenCaptureForegroundService.stop(getContext());
         notifyListeners("captureEnded", new JSObject());
+    }
+
+    private static class DisplayBounds {
+        final int width;
+        final int height;
+        final int density;
+
+        DisplayBounds(int width, int height, int density) {
+            this.width = width;
+            this.height = height;
+            this.density = density;
+        }
     }
 }

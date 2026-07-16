@@ -1,25 +1,38 @@
 import { apiFetch } from "../../../api/client";
 import type { CmsAnnouncement, CmsAudit, CmsBlockType, CmsFaq, CmsMedia, CmsPage, CmsPageResult, CmsRevision, CmsTextEntry } from "./types";
+import { defaultBlockContent } from "./cmsBlockLibrary";
 
 const root = "/admin/cms";
 
-function blockContent(blockType: CmsBlockType): Record<string, unknown> {
-  if (blockType === "image") return { image_url: "", alt: "", caption: "" };
-  if (blockType === "video_link") return { title: "Video", video_url: "" };
-  if (blockType === "button" || blockType === "download_button") return { label: "Button", url: "/" };
-  if (blockType === "feature_card") return { title: "Feature", body: "Feature description" };
-  if (blockType === "feature_grid") return { title: "Features", text: "Feature list" };
-  if (blockType === "faq") return { question: "Question?", answer: "Answer" };
-  if (blockType === "testimonial") return { quote: "Testimonial", author: "Customer" };
-  if (blockType === "call_to_action") return { heading: "Call to action", description: "", button_text: "Continue", url: "/" };
-  if (blockType === "announcement_banner") return { title: "Announcement", message: "", target_url: "/" };
-  if (blockType === "divider" || blockType === "spacer") return {};
-  return { text: "New content" };
+function pageKeyFromSlug(slug: string) {
+  const key = slug.replace(/[^a-z0-9_-]/gi, "-").replace(/^-+|-+$/g, "").toLowerCase();
+  return /^[a-z]/.test(key) ? key : `page-${key || "new"}`;
 }
 
 export const cmsApi = {
   summary: (token: string) => apiFetch<Record<string, number>>(`${root}/summary`, { token, operation: "cms.summary" }),
   pages: (token: string, search = "", status = "") => apiFetch<CmsPageResult<CmsPage>>(`${root}/pages?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}`, { token, operation: "cms.pages" }),
+  createPage: (token: string, title: string, slug: string) => apiFetch<CmsPage>(`${root}/pages`, {
+    method: "POST", token, operation: "cms.page.create",
+    body: JSON.stringify({
+      page_key: pageKeyFromSlug(slug),
+      title,
+      slug,
+      hero_heading: title,
+      hero_description: "Add page description.",
+      buttons: [],
+      seo: {
+        title,
+        description: "",
+        canonical_url: "",
+        og_title: title,
+        og_description: "",
+        og_image: "/icons/icon-512.png",
+        robots_index: true,
+        sitemap: true
+      }
+    })
+  }),
   page: (token: string, id: string) => apiFetch<CmsPage>(`${root}/pages/${id}`, { token, operation: "cms.page" }),
   updatePage: (token: string, page: CmsPage) => apiFetch<CmsPage>(`${root}/pages/${page.id}`, {
     method: "PATCH", token, operation: "cms.page.update",
@@ -30,7 +43,7 @@ export const cmsApi = {
     })
   }),
   addBlock: (token: string, page: CmsPage, blockType: CmsBlockType) => apiFetch<CmsPage>(`${root}/pages/${page.id}/blocks?expected_version=${page.version}`, {
-    method: "POST", token, operation: "cms.block.create", body: JSON.stringify({ block_type: blockType, content: blockContent(blockType), is_visible: true })
+    method: "POST", token, operation: "cms.block.create", body: JSON.stringify({ block_type: blockType, content: defaultBlockContent(blockType), is_visible: true })
   }),
   updateBlock: (token: string, page: CmsPage, blockId: string, payload: Record<string, unknown>) => apiFetch<CmsPage>(`${root}/pages/${page.id}/blocks/${blockId}`, {
     method: "PATCH", token, operation: "cms.block.update", body: JSON.stringify({ ...payload, expected_page_version: page.version })

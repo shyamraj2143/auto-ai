@@ -93,6 +93,120 @@ PAGE_DEFAULTS = [
         },
         "blocks": [{"block_type": "download_button", "content": {"label": "Download Auto-AI APK", "url": "/api/download/apk"}}],
     },
+    {
+        "page_key": "about",
+        "title": "About",
+        "slug": "about",
+        "hero_heading": "About Auto-AI",
+        "hero_description": "Auto-AI brings chat, memory, voice, file context and mobile access into one workspace.",
+        "buttons": [{"label": "Start now", "url": "/register", "style": "primary"}],
+        "seo": {
+            "title": "About Auto-AI",
+            "description": "Learn about Auto-AI, the AI workspace for chat, voice, files and Android.",
+            "canonical_url": "https://autoai.site.je/about",
+            "og_title": "About Auto-AI",
+            "og_description": "AI workspace for web and Android.",
+            "og_image": "/icons/icon-512.png",
+            "robots_index": True,
+            "sitemap": True,
+        },
+        "blocks": [{"block_type": "paragraph", "content": {"text": "Auto-AI is designed for fast, contextual work across devices."}}],
+    },
+    {
+        "page_key": "features",
+        "title": "Features",
+        "slug": "features",
+        "hero_heading": "Auto-AI Features",
+        "hero_description": "Everything you need for useful AI conversations, research, uploads and mobile continuity.",
+        "buttons": [{"label": "Open workspace", "url": "/login", "style": "primary"}],
+        "seo": {
+            "title": "Auto-AI Features",
+            "description": "Explore Auto-AI features including chat, memory, uploads, voice, research and Android support.",
+            "canonical_url": "https://autoai.site.je/features",
+            "og_title": "Auto-AI Features",
+            "og_description": "Chat, memory, uploads and voice in one AI workspace.",
+            "og_image": "/icons/icon-512.png",
+            "robots_index": True,
+            "sitemap": True,
+        },
+        "blocks": [{"block_type": "feature_grid", "content": {"title": "Core features", "items": ["Streaming chat", "File uploads", "Voice input", "Android access"]}}],
+    },
+    {
+        "page_key": "contact",
+        "title": "Contact",
+        "slug": "contact",
+        "hero_heading": "Contact Auto-AI",
+        "hero_description": "Reach the Auto-AI team for support, billing and product questions.",
+        "buttons": [{"label": "Email support", "url": "mailto:support@autoai.site.je", "style": "primary"}],
+        "seo": {
+            "title": "Contact Auto-AI",
+            "description": "Contact Auto-AI support for product and billing help.",
+            "canonical_url": "https://autoai.site.je/contact",
+            "og_title": "Contact Auto-AI",
+            "og_description": "Get Auto-AI support.",
+            "og_image": "/icons/icon-512.png",
+            "robots_index": True,
+            "sitemap": True,
+        },
+        "blocks": [{"block_type": "contact_section", "content": {"heading": "Support", "email": "support@autoai.site.je"}}],
+    },
+    {
+        "page_key": "help",
+        "title": "Help",
+        "slug": "help",
+        "hero_heading": "Auto-AI Help",
+        "hero_description": "Find answers about accounts, chat, billing, Android and content features.",
+        "buttons": [],
+        "seo": {
+            "title": "Auto-AI Help",
+            "description": "Help and FAQ for Auto-AI users.",
+            "canonical_url": "https://autoai.site.je/help",
+            "og_title": "Auto-AI Help",
+            "og_description": "Answers for Auto-AI users.",
+            "og_image": "/icons/icon-512.png",
+            "robots_index": True,
+            "sitemap": True,
+        },
+        "blocks": [{"block_type": "faq", "content": {"question": "Where do I start?", "answer": "Create an account, sign in, and begin a new chat."}}],
+    },
+    {
+        "page_key": "privacy",
+        "title": "Privacy Policy",
+        "slug": "privacy-policy",
+        "hero_heading": "Privacy Policy",
+        "hero_description": "How Auto-AI handles account, content and usage information.",
+        "buttons": [],
+        "seo": {
+            "title": "Auto-AI Privacy Policy",
+            "description": "Auto-AI privacy policy.",
+            "canonical_url": "https://autoai.site.je/privacy-policy",
+            "og_title": "Privacy Policy",
+            "og_description": "Auto-AI privacy information.",
+            "og_image": "/icons/icon-512.png",
+            "robots_index": True,
+            "sitemap": True,
+        },
+        "blocks": [{"block_type": "paragraph", "content": {"text": "This page can be updated by an authorized content administrator."}}],
+    },
+    {
+        "page_key": "terms",
+        "title": "Terms and Conditions",
+        "slug": "terms-and-conditions",
+        "hero_heading": "Terms and Conditions",
+        "hero_description": "Terms governing use of Auto-AI services.",
+        "buttons": [],
+        "seo": {
+            "title": "Auto-AI Terms and Conditions",
+            "description": "Auto-AI terms and conditions.",
+            "canonical_url": "https://autoai.site.je/terms-and-conditions",
+            "og_title": "Terms and Conditions",
+            "og_description": "Auto-AI service terms.",
+            "og_image": "/icons/icon-512.png",
+            "robots_index": True,
+            "sitemap": True,
+        },
+        "blocks": [{"block_type": "paragraph", "content": {"text": "This page can be updated by an authorized content administrator."}}],
+    },
 ]
 
 GLOBAL_DEFAULTS = {
@@ -160,14 +274,17 @@ published_cache = PublishedContentCache()
 
 
 def ensure_cms_defaults(db: Session) -> None:
-    if not db.scalar(select(ContentPage.id).limit(1)):
-        for page_data in PAGE_DEFAULTS:
-            blocks = page_data["blocks"]
-            page = ContentPage(**{key: value for key, value in page_data.items() if key != "blocks"})
-            db.add(page)
-            db.flush()
-            for position, block in enumerate(blocks):
-                db.add(ContentBlock(page_id=page.id, position=position, **block))
+    for page_data in PAGE_DEFAULTS:
+        existing = db.scalar(select(ContentPage.id).where(ContentPage.page_key == page_data["page_key"]))
+        slug_owner = db.scalar(select(ContentPage.id).where(ContentPage.slug == page_data["slug"]))
+        if existing or slug_owner:
+            continue
+        blocks = page_data["blocks"]
+        page = ContentPage(**{key: value for key, value in page_data.items() if key != "blocks"})
+        db.add(page)
+        db.flush()
+        for position, block in enumerate(blocks):
+            db.add(ContentBlock(page_id=page.id, position=position, **block))
     for key, (group, value) in GLOBAL_DEFAULTS.items():
         if not db.scalar(select(GlobalContent.id).where(GlobalContent.key == key, GlobalContent.locale == "en")):
             db.add(GlobalContent(key=key, group=group, default_value=value, draft_value=value))

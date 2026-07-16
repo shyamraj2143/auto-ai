@@ -3,12 +3,31 @@ import { useAuth } from "../../contexts/AuthContext";
 import type { PublicCallUser } from "../calls/types";
 import { screenShareApi, ScreenShareSignaling } from "./screenShareApi";
 import { ScreenShareContext, type ScreenShareContextValue } from "./ScreenShareContext";
+import { screenShareDebug } from "./screenShareDiagnostics";
 import { isNativeScreenCapturePlatform, startNativeScreenCaptureStream } from "./nativeScreenCapture";
-import type { ScreenShareInvite, ScreenShareRole, ScreenShareSession, ScreenShareSignal, ScreenShareSource, ScreenShareUiState } from "./types";
+import type { ScreenShareInvite, ScreenShareQualityMode, ScreenShareRole, ScreenShareSession, ScreenShareSignal, ScreenShareSource, ScreenShareUiState } from "./types";
 
 const RECONNECT_LIMIT = 3;
 const SCREEN_UNSUPPORTED_MESSAGE = "Screen sharing is not supported in this browser. Use Chrome desktop or the AutoAI Android app to generate a code. You can still join with a code from this device.";
 const MIC_UNSUPPORTED_MESSAGE = "Microphone is not available in this browser.";
+type NetworkQuality = "good" | "poor" | "reconnecting" | "unknown";
+
+type QualityProfile = {
+  contentHint: "text" | "detail" | "motion";
+  maxBitrate: number;
+  maxFramerate: number;
+  scaleResolutionDownBy: number;
+  nativeLongEdge: number;
+  nativeJpegQuality: number;
+};
+
+const QUALITY_PROFILES: Record<ScreenShareQualityMode, QualityProfile> = {
+  auto: { contentHint: "detail", maxBitrate: 2_400_000, maxFramerate: 18, scaleResolutionDownBy: 1, nativeLongEdge: 1920, nativeJpegQuality: 78 },
+  "data-saver": { contentHint: "text", maxBitrate: 900_000, maxFramerate: 10, scaleResolutionDownBy: 1.75, nativeLongEdge: 1080, nativeJpegQuality: 64 },
+  "sharp-text": { contentHint: "detail", maxBitrate: 3_200_000, maxFramerate: 18, scaleResolutionDownBy: 1, nativeLongEdge: 2160, nativeJpegQuality: 82 },
+  "smooth-motion": { contentHint: "motion", maxBitrate: 2_500_000, maxFramerate: 30, scaleResolutionDownBy: 1.35, nativeLongEdge: 1440, nativeJpegQuality: 72 },
+  hd: { contentHint: "detail", maxBitrate: 4_200_000, maxFramerate: 24, scaleResolutionDownBy: 1, nativeLongEdge: 2400, nativeJpegQuality: 84 },
+};
 
 function sessionIdOf(session: ScreenShareSession | null) {
   return session?.sessionId ?? session?.session_id ?? "";
@@ -36,8 +55,17 @@ function eventSessionId(event: ScreenShareSignal) {
 function sourceConstraint(source: ScreenShareSource): DisplayMediaStreamOptions {
   const displaySurface = source === "window" ? "window" : source === "browser" ? "browser" : "monitor";
   return {
-    video: { displaySurface, frameRate: { ideal: 24, max: 30 } } as MediaTrackConstraints,
+    video: { displaySurface, frameRate: { ideal: 24, max: 30 }, width: { ideal: 1920 }, height: { ideal: 1080 } } as MediaTrackConstraints,
     audio: false,
+  };
+}
+
+function nativeOptionsFor(mode: ScreenShareQualityMode) {
+  const profile = QUALITY_PROFILES[mode];
+  return {
+    frameRate: profile.maxFramerate,
+    maxLongEdge: profile.nativeLongEdge,
+    jpegQuality: profile.nativeJpegQuality,
   };
 }
 
@@ -86,6 +114,9 @@ export function ScreenShareProvider({ children }: { children: ReactNode }) {
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [shareCode, setShareCode] = useState<string | null>(null);
   const [canShareScreen] = useState(isScreenShareSupported);
+  const [qualityMode, setQualityModeState] = useState<ScreenShareQualityMode>("auto");
+  const [networkQuality, setNetworkQuality] = useState<NetworkQuality>("unknown");
+  const [sentResolution, setSentResolution] = useState("");
   const tokenRef = useRef(token);
   const roleRef = useRef<ScreenShareRole | null>(null);
   const sessionRef = useRef<ScreenShareSession | null>(null);
@@ -96,6 +127,9 @@ export function ScreenShareProvider({ children }: { children: ReactNode }) {
   const reconnectAttemptsRef = useRef(0);
   const eventHandlerRef = useRef<(event: ScreenShareSignal) => void>(() => undefined);
   const createOfferRef = useRef<(iceRestart?: boolean) => Promise<void>>(async () => undefined);
+  const qualityModeRef = useRef<ScreenShareQualityMode>("auto");
+  const applyQualityRef = useRef<(peer?: RTCPeerConnection | null, mode?: ScreenShareQualityMode) => Promise<void>>(async () => undefined);
+  const statsRef = useRef<{ timestamp: number; bytes: number; packetsLost: number; packetsReceived: number } | null>(null);
   const pendingIceRef = useRef<RTCIceCandidateInit[]>([]);
 
   tokenRef.current = token;
@@ -103,6 +137,7 @@ export function ScreenShareProvider({ children }: { children: ReactNode }) {
   sessionRef.current = session;
   localStreamRef.current = localStream;
   remoteStreamRef.current = remoteStream;
+  qualityModeRef.current = qualityMode;
 
   const signaling = useMemo(
     () => new ScreenShareSignaling((event) => eventHandlerRef.current(event), (state) => {
@@ -130,7 +165,7 @@ export function ScreenShareProvider({ children }: { children: ReactNode }) {
     if (navigator.mediaDevices?.getDisplayMedia) {
       return navigator.mediaDevices.getDisplayMedia(sourceConstraint(source));
     }
-    const nativeCapture = await startNativeScreenCaptureStream();
+    const nativeCapture = await startNativeScreenCaptureStream(nativeOptionsFor(qualityModeRef.current));
     nativeScreenStopRef.current = nativeCapture.stop;
     return nativeCapture.stream;
   }, []);
@@ -169,6 +204,7 @@ export function ScreenShareProvider({ children }: { children: ReactNode }) {
     const peer = new RTCPeerConnection({ iceServers, bundlePolicy: "max-bundle" });
     peerRef.current = peer;
     localStreamRef.current?.getTracks().forEach((track) => peer.addTrack(track, localStreamRef.current!));
+    void applyQualityRef.current(peer);
     peer.onicecandidate = (event) => {
       const id = sessionIdOf(sessionRef.current);
       if (event.candidate && id) signaling.send("ice-candidate", id, { ...event.candidate.toJSON() });
@@ -185,8 +221,10 @@ export function ScreenShareProvider({ children }: { children: ReactNode }) {
     peer.onconnectionstatechange = () => {
       if (peer.connectionState === "connected") {
         reconnectAttemptsRef.current = 0;
+        setNetworkQuality("good");
         setUiState("active");
       } else if (["disconnected", "failed"].includes(peer.connectionState)) {
+        setNetworkQuality("reconnecting");
         setUiState("reconnecting");
         const id = sessionIdOf(sessionRef.current);
         if (roleRef.current === "sharer" && id && reconnectAttemptsRef.current < RECONNECT_LIMIT) {
@@ -194,6 +232,7 @@ export function ScreenShareProvider({ children }: { children: ReactNode }) {
           window.setTimeout(() => void createOfferRef.current(true), 1000 * reconnectAttemptsRef.current);
         } else if (reconnectAttemptsRef.current >= RECONNECT_LIMIT) {
           setUiState("failed");
+          setNetworkQuality("poor");
           setError("Screen share connection failed. Please start a new share.");
         }
       } else if (peer.connectionState === "closed") {
@@ -212,6 +251,55 @@ export function ScreenShareProvider({ children }: { children: ReactNode }) {
     signaling.send("offer", id, { type: offer.type, sdp: offer.sdp || "" });
   }, [ensurePeer, signaling]);
   createOfferRef.current = createOffer;
+
+  const applyQuality = useCallback(async (peer: RTCPeerConnection | null = peerRef.current, mode: ScreenShareQualityMode = qualityModeRef.current) => {
+    const profile = QUALITY_PROFILES[mode];
+    const videoTrack = localStreamRef.current?.getVideoTracks()[0];
+    if (!videoTrack) return;
+    try {
+      videoTrack.contentHint = profile.contentHint;
+    } catch {
+      // Some WebViews ignore contentHint.
+    }
+    const settings = videoTrack.getSettings();
+    setSentResolution(settings.width && settings.height ? `${settings.width} x ${settings.height}` : "");
+    screenShareDebug("sender-track-settings", {
+      width: settings.width,
+      height: settings.height,
+      aspectRatio: settings.aspectRatio,
+      frameRate: settings.frameRate,
+      contentHint: videoTrack.contentHint,
+      qualityMode: mode,
+    });
+    const sender = peer?.getSenders().find((item) => item.track?.kind === "video");
+    if (sender) {
+      try {
+        const params = sender.getParameters();
+        params.encodings = params.encodings?.length ? params.encodings : [{}];
+        params.encodings[0] = {
+          ...params.encodings[0],
+          maxBitrate: profile.maxBitrate,
+          maxFramerate: profile.maxFramerate,
+          scaleResolutionDownBy: Math.max(1, profile.scaleResolutionDownBy),
+        };
+        await sender.setParameters(params);
+        screenShareDebug("sender-encoding-params", {
+          maxBitrate: params.encodings?.[0]?.maxBitrate,
+          maxFramerate: params.encodings?.[0]?.maxFramerate,
+          scaleResolutionDownBy: params.encodings?.[0]?.scaleResolutionDownBy,
+        });
+      } catch {
+        await videoTrack.applyConstraints({ frameRate: { ideal: profile.maxFramerate, max: profile.maxFramerate } }).catch(() => undefined);
+      }
+    }
+  }, []);
+  applyQualityRef.current = applyQuality;
+
+  const setQualityMode = useCallback((mode: ScreenShareQualityMode) => {
+    qualityModeRef.current = mode;
+    setQualityModeState(mode);
+    void applyQuality(peerRef.current, mode);
+  }, [applyQuality]);
 
   const applyPendingIce = useCallback(async () => {
     const peer = peerRef.current;
@@ -361,6 +449,7 @@ export function ScreenShareProvider({ children }: { children: ReactNode }) {
       localStreamRef.current = stream;
       setLocalStream(stream);
       setMuted(true);
+      await applyQuality(null);
       const created = await screenShareApi.createSession(currentToken, {
         viewer_user_id: peer?.id ?? null,
         invite_link: true,
@@ -382,7 +471,7 @@ export function ScreenShareProvider({ children }: { children: ReactNode }) {
       setUiState("idle");
       setError(screenCaptureErrorMessage(shareError));
     }
-  }, [canShareScreen, ensureSignaling, inviteOnlyRequest, requestPeer, signaling, startDisplayStream, stopLocalTracks, stopShare]);
+  }, [applyQuality, canShareScreen, ensureSignaling, inviteOnlyRequest, requestPeer, signaling, startDisplayStream, stopLocalTracks, stopShare]);
 
   const generateShareCode = useCallback(async () => {
     const currentToken = tokenRef.current;
@@ -399,6 +488,7 @@ export function ScreenShareProvider({ children }: { children: ReactNode }) {
       localStreamRef.current = stream;
       setLocalStream(stream);
       setMuted(true);
+      await applyQuality(null);
       const created = await screenShareApi.createSession(currentToken, {
         viewer_user_id: null,
         invite_link: false,
@@ -421,7 +511,83 @@ export function ScreenShareProvider({ children }: { children: ReactNode }) {
       setUiState("idle");
       setError(screenCaptureErrorMessage(shareError));
     }
-  }, [canShareScreen, ensureSignaling, inviteOnlyRequest, requestPeer, signaling, startDisplayStream, stopLocalTracks, stopShare]);
+  }, [applyQuality, canShareScreen, ensureSignaling, inviteOnlyRequest, requestPeer, signaling, startDisplayStream, stopLocalTracks, stopShare]);
+
+  useEffect(() => {
+    if (!session || !peerRef.current) {
+      statsRef.current = null;
+      setNetworkQuality("unknown");
+      return;
+    }
+    const timer = window.setInterval(async () => {
+      const peer = peerRef.current;
+      if (!peer) return;
+      try {
+        const report = await peer.getStats();
+        let poor = false;
+        let nextSentResolution = sentResolution;
+        report.forEach((stat) => {
+          if (stat.type === "outbound-rtp" && stat.kind === "video") {
+            screenShareDebug("outbound-video-stats", {
+              frameWidth: stat.frameWidth,
+              frameHeight: stat.frameHeight,
+              framesPerSecond: stat.framesPerSecond,
+              framesEncoded: stat.framesEncoded,
+              bytesSent: stat.bytesSent,
+              packetsSent: stat.packetsSent,
+              qualityLimitationReason: stat.qualityLimitationReason,
+            });
+            if (typeof stat.frameWidth === "number" && typeof stat.frameHeight === "number") {
+              nextSentResolution = `${stat.frameWidth} x ${stat.frameHeight}`;
+            }
+            const previous = statsRef.current;
+            if (previous && typeof stat.bytesSent === "number") {
+              const seconds = Math.max(0.5, (stat.timestamp - previous.timestamp) / 1000);
+              const bitrate = ((stat.bytesSent - previous.bytes) * 8) / seconds;
+              poor = bitrate < 220_000;
+            }
+            statsRef.current = {
+              timestamp: stat.timestamp,
+              bytes: typeof stat.bytesSent === "number" ? stat.bytesSent : 0,
+              packetsLost: 0,
+              packetsReceived: 0,
+            };
+          }
+          if (stat.type === "candidate-pair" && stat.state === "succeeded" && typeof stat.currentRoundTripTime === "number") {
+            screenShareDebug("candidate-pair-stats", {
+              currentRoundTripTime: stat.currentRoundTripTime,
+              availableOutgoingBitrate: stat.availableOutgoingBitrate,
+            });
+            poor = poor || stat.currentRoundTripTime > 0.65;
+          }
+          if (stat.type === "inbound-rtp" && stat.kind === "video") {
+            screenShareDebug("inbound-video-stats", {
+              frameWidth: stat.frameWidth,
+              frameHeight: stat.frameHeight,
+              framesPerSecond: stat.framesPerSecond,
+              framesDecoded: stat.framesDecoded,
+              framesDropped: stat.framesDropped,
+              packetsLost: stat.packetsLost,
+              jitter: stat.jitter,
+              freezeCount: stat.freezeCount,
+              bytesReceived: stat.bytesReceived,
+            });
+            const lost = typeof stat.packetsLost === "number" ? stat.packetsLost : 0;
+            const received = typeof stat.packetsReceived === "number" ? stat.packetsReceived : 0;
+            if (received > 0 && lost / (lost + received) > 0.08) poor = true;
+          }
+        });
+        if (nextSentResolution !== sentResolution) setSentResolution(nextSentResolution);
+        setNetworkQuality(peer.connectionState === "connected" ? (poor ? "poor" : "good") : "reconnecting");
+        if (qualityModeRef.current === "auto" && poor) {
+          await applyQuality(peer, "data-saver");
+        }
+      } catch {
+        setNetworkQuality("unknown");
+      }
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [applyQuality, session, sentResolution]);
 
   const joinBySession = useCallback(async (sessionId: string, inviteToken?: string | null) => {
     const currentToken = tokenRef.current;
@@ -545,6 +711,10 @@ export function ScreenShareProvider({ children }: { children: ReactNode }) {
     startedAt,
     shareCode,
     canShareScreen,
+    qualityMode,
+    networkQuality,
+    sentResolution,
+    setQualityMode,
     requestShare,
     cancelRequest,
     startShare,
@@ -559,7 +729,7 @@ export function ScreenShareProvider({ children }: { children: ReactNode }) {
     copyInviteLink,
     copyShareCode,
     clearError: () => setError(""),
-  }), [canShareScreen, cancelRequest, copyInviteLink, copyShareCode, declineInvite, error, generateShareCode, inviteOnlyRequest, joinInvite, joinInviteLink, joinWithCode, localStream, muted, paused, pendingInvite, remoteStream, requestInviteShare, requestPeer, requestShare, role, session, shareCode, startShare, startedAt, stopShare, toggleMute, togglePause, uiState]);
+  }), [canShareScreen, cancelRequest, copyInviteLink, copyShareCode, declineInvite, error, generateShareCode, inviteOnlyRequest, joinInvite, joinInviteLink, joinWithCode, localStream, muted, networkQuality, paused, pendingInvite, qualityMode, remoteStream, requestInviteShare, requestPeer, requestShare, role, session, sentResolution, setQualityMode, shareCode, startShare, startedAt, stopShare, toggleMute, togglePause, uiState]);
 
   return <ScreenShareContext.Provider value={value}>{children}</ScreenShareContext.Provider>;
 }

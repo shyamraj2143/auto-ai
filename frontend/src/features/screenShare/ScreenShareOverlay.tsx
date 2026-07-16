@@ -1,18 +1,9 @@
-import { Clipboard, Hash, LogIn, Monitor, MonitorPause, Mic, MicOff, Pause, Play, ScreenShare, Square, X } from "lucide-react";
+import { Clipboard, Hash, LogIn, Monitor, Mic, MicOff, Pause, Play, ScreenShare, Square, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { resolveApiAssetUrl } from "../../api/client";
+import { ScreenShareViewer } from "./ScreenShareViewer";
 import { useScreenShare } from "./useScreenShare";
-
-function VideoSurface({ stream, muted, className }: { stream: MediaStream | null; muted?: boolean; className: string }) {
-  const ref = useRef<HTMLVideoElement | null>(null);
-  useEffect(() => {
-    const video = ref.current;
-    if (!video) return;
-    if (video.srcObject !== stream) video.srcObject = stream;
-    if (stream) void video.play().catch(() => undefined);
-  }, [stream]);
-  return <video ref={ref} className={className} autoPlay playsInline muted={muted} onLoadedMetadata={(event) => void event.currentTarget.play().catch(() => undefined)} />;
-}
+import type { ScreenShareQualityMode } from "./types";
 
 function AudioSurface({ stream }: { stream: MediaStream | null }) {
   const ref = useRef<HTMLAudioElement | null>(null);
@@ -116,19 +107,15 @@ export function ScreenShareOverlay() {
       )}
 
       {active && share.role === "viewer" && (
-        <div className="ss-viewer" role="dialog" aria-modal="true" aria-label="Screen share viewer">
-          {share.remoteStream ? <VideoSurface stream={share.remoteStream} className="ss-viewer-video" /> : <div className="ss-viewer-empty"><Monitor size={42} /><strong>{share.uiState === "reconnecting" ? "Reconnecting..." : "Waiting for screen..."}</strong></div>}
-          <header className="ss-viewer-head">
-            <strong>Screen Share</strong>
-            <span>{share.uiState === "reconnecting" ? "Reconnecting" : share.uiState === "failed" ? "Failed" : "Live"}</span>
-          </header>
-          {share.paused && <div className="ss-paused"><MonitorPause size={18} /> Sharing paused</div>}
-          {share.error && <div className="ss-floating-error">{share.error}</div>}
-          <div className="ss-viewer-controls">
-            <button type="button" onClick={() => void share.toggleMute()} aria-label={share.muted ? "Turn on mic" : "Mute mic"}>{share.muted ? <MicOff size={17} /> : <Mic size={17} />}</button>
-            <button type="button" className="ss-viewer-close" onClick={() => void share.stopShare()}><X size={18} /> Close</button>
-          </div>
-        </div>
+        <ScreenShareViewer
+          stream={share.remoteStream}
+          paused={share.paused}
+          status={share.uiState}
+          error={share.error}
+          onClose={() => void share.stopShare()}
+          onToggleMic={() => void share.toggleMute()}
+          micMuted={share.muted}
+        />
       )}
 
       {active && share.role === "sharer" && (
@@ -137,6 +124,15 @@ export function ScreenShareOverlay() {
           <span><ScreenShare size={17} /><strong>You are sharing your screen</strong><time>{duration}</time></span>
           {share.uiState === "reconnecting" && <small>Reconnecting...</small>}
           {share.uiState === "waiting" && <small>Waiting for viewer</small>}
+          <small className={`ss-network ss-network-${share.networkQuality}`}>{share.networkQuality === "poor" ? "Poor network" : share.networkQuality === "good" ? "Network good" : share.networkQuality}</small>
+          {share.sentResolution && <small>{share.sentResolution}</small>}
+          <select value={share.qualityMode} onChange={(event) => share.setQualityMode(event.target.value as ScreenShareQualityMode)} aria-label="Screen share quality">
+            <option value="auto">Auto</option>
+            <option value="data-saver">Data Saver</option>
+            <option value="sharp-text">Sharp Text</option>
+            <option value="smooth-motion">Smooth Motion</option>
+            <option value="hd">HD</option>
+          </select>
           {share.shareCode && <button type="button" className="ss-code-pill" onClick={() => void share.copyShareCode()} aria-label="Copy screen share code"><Hash size={15} /> {share.shareCode}</button>}
           <button type="button" onClick={() => void share.toggleMute()} aria-label={share.muted ? "Turn on mic" : "Mute mic"}>{share.muted ? <MicOff size={17} /> : <Mic size={17} />}</button>
           <button type="button" onClick={share.togglePause} aria-label={share.paused ? "Resume share" : "Pause share"}>{share.paused ? <Play size={17} /> : <Pause size={17} />}</button>

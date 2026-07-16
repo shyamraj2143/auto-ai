@@ -4,6 +4,7 @@ export type ScreenShareStatus = "waiting" | "active" | "ended" | "failed";
 export type ScreenShareRole = "sharer" | "viewer";
 export type ScreenShareUiState = "idle" | "preparing" | "waiting" | "connecting" | "active" | "reconnecting" | "ended" | "failed";
 export type ScreenShareSource = "screen" | "window" | "browser";
+export type ScreenShareQualityMode = "auto" | "data-saver" | "sharp-text" | "smooth-motion" | "hd";
 
 export type ScreenShareSession = {
   sessionId?: string;

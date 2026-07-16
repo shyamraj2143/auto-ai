@@ -279,7 +279,8 @@
   background: rgba(34, 211, 238, 0.16);
 }
 
-.ss-viewer {
+.ss-viewer,
+.ss-screen-viewer {
   position: fixed;
   inset: 0;
   z-index: 81;
@@ -289,10 +290,73 @@
   color: #f8fafc;
 }
 
+.ss-control-bar select {
+  height: 36px;
+  border: 0;
+  border-radius: 10px;
+  padding: 0 8px;
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.08);
+  outline: none;
+}
+
+.ss-control-bar option {
+  color: #0f172a;
+}
+
+.ss-network-good {
+  color: #86efac !important;
+}
+
+.ss-network-poor,
+.ss-network-reconnecting {
+  color: #fde68a !important;
+}
+
+.ss-screen-viewer {
+  width: 100dvw;
+  height: 100dvh;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+
+.ss-screen-viewer:fullscreen {
+  width: 100dvw;
+  height: 100dvh;
+  background: #020617;
+}
+
+.ss-screen-stage {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #020617;
+}
+
+.ss-screen-transform {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+.ss-screen-viewer-actual .ss-screen-transform {
+  overflow: visible;
+}
+
 .ss-viewer-video {
+  display: block;
+  max-width: none;
+  max-height: none;
   width: 100%;
   height: 100%;
   object-fit: contain;
+  object-position: center center;
   background: #020617;
 }
 
@@ -313,11 +377,18 @@
   padding: 9px 12px;
   border-radius: 12px;
   background: rgba(15, 23, 42, 0.88);
+  pointer-events: none;
+  transition: opacity 0.18s ease;
 }
 
-.ss-viewer-head span {
+.ss-viewer-head span,
+.ss-viewer-head small {
   color: #67e8f9;
   font-size: 12px;
+}
+
+.ss-viewer-head small {
+  color: #94a3b8;
 }
 
 .ss-viewer-close {
@@ -336,6 +407,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  z-index: 3;
+  transition: opacity 0.18s ease;
 }
 
 .ss-viewer-controls button {
@@ -351,6 +424,75 @@
   color: #f8fafc;
   background: rgba(15, 23, 42, 0.88);
   cursor: pointer;
+}
+
+.ss-viewer-toolbar {
+  position: absolute;
+  left: 50%;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 2;
+  max-width: calc(100vw - 28px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px;
+  border-radius: 12px;
+  color: #f8fafc;
+  background: rgba(15, 23, 42, 0.88);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  pointer-events: auto;
+  transition: opacity 0.18s ease;
+}
+
+.ss-controls-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ss-viewer-toolbar button,
+.ss-viewer-toolbar span {
+  height: 32px;
+  min-width: 32px;
+  border: 0;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 9px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ss-viewer-toolbar button {
+  cursor: pointer;
+}
+
+.ss-viewer-toolbar .active {
+  color: #02121a;
+  background: #22d3ee;
+  font-weight: 800;
+}
+
+.ss-monitor-icon {
+  width: 42px;
+  height: 30px;
+  border: 3px solid currentColor;
+  border-radius: 4px;
+  position: relative;
+}
+
+.ss-monitor-icon::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  width: 18px;
+  height: 3px;
+  transform: translateX(-50%);
+  background: currentColor;
+  border-radius: 999px;
 }
 
 .ss-paused,
@@ -435,5 +577,25 @@
 
   .ss-code-panel {
     grid-template-columns: 1fr;
+  }
+
+  .ss-viewer-head {
+    right: 12px;
+    flex-wrap: wrap;
+  }
+
+  .ss-viewer-toolbar {
+    left: 8px;
+    right: 8px;
+    bottom: calc(62px + env(safe-area-inset-bottom));
+    transform: none;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .ss-viewer-controls {
+    left: 8px;
+    right: 8px;
+    justify-content: flex-end;
   }
 }

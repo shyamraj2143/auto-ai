@@ -1,9 +1,13 @@
 export type CmsStatus = "draft" | "published" | "scheduled" | "archived";
 export type CmsRole = "admin" | "super_admin" | "content_admin" | "content_editor" | "content_viewer";
 export type CmsBlockType =
-  | "heading" | "paragraph" | "rich_text" | "image" | "video_link" | "button"
-  | "feature_card" | "feature_grid" | "faq" | "testimonial" | "pricing_description"
-  | "call_to_action" | "divider" | "spacer" | "download_button" | "announcement_banner";
+  | "page_section" | "container" | "one_column" | "two_columns" | "three_columns" | "grid" | "stack" | "tabs" | "accordion"
+  | "heading" | "paragraph" | "rich_text" | "button" | "link" | "image" | "video_link" | "icon" | "divider" | "spacer"
+  | "list" | "quote" | "badge" | "feature_card" | "feature_grid" | "pricing_description" | "pricing_cards" | "testimonial"
+  | "testimonials" | "faq" | "statistics" | "call_to_action" | "download_button" | "app_download" | "contact_section"
+  | "team_section" | "announcement_banner" | "navigation" | "footer" | "social_links" | "form" | "text_input"
+  | "email_input" | "phone_input" | "text_area" | "radio_group" | "checkbox_group" | "dropdown" | "date_input"
+  | "submit_button" | "success_message" | "error_message" | "hero_section";
 
 export type CmsSeo = {
   title: string;
