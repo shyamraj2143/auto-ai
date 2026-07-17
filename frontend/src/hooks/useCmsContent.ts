@@ -20,7 +20,9 @@ function usePublishedResource<T>(key: string, path: string, initial: T | null = 
   const [value, setValue] = useState<T | null>(() => readCache<T>(key) ?? initial);
   useEffect(() => {
     let active = true;
-    apiFetch<T>(path, { operation: `content.public.${key}`, timeoutMs: 4000 })
+    const separator = path.includes("?") ? "&" : "?";
+    const freshPath = `${path}${separator}_=${Date.now()}`;
+    apiFetch<T>(freshPath, { operation: `content.public.${key}`, timeoutMs: 4000 })
       .then((next) => {
         if (!active) return;
         setValue(next);
@@ -34,7 +36,7 @@ function usePublishedResource<T>(key: string, path: string, initial: T | null = 
   return value;
 }
 
-export function usePublishedPage(slug: "home" | "pricing" | "download") {
+export function usePublishedPage(slug: string) {
   return usePublishedResource<CmsPage>(`page:${slug}`, `/content/public/pages/${slug}`);
 }
 

@@ -137,7 +137,7 @@ export function SeoManager() {
 
     applyStructuredData();
 
-    const cmsSlug = location.pathname === "/" ? "home" : location.pathname === "/pricing" ? "pricing" : location.pathname === "/download" ? "download" : "";
+    const cmsSlug = location.pathname === "/" ? "home" : location.pathname.replace(/^\/+|\/+$/g, "");
     if (!cmsSlug) return;
     let active = true;
     const applyCmsSeo = (page: CmsPage) => {

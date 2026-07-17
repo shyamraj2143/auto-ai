@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState, type ChangeEvent } from "react";
-import { Archive, Copy, ImagePlus, Plus, Save, Search, Send, Trash2, Upload } from "lucide-react";
+import { Archive, Copy, Eye, ImagePlus, Plus, Save, Search, Send, Trash2, Upload } from "lucide-react";
 import { resolveApiAssetUrl } from "../../../api/client";
 import { useAuth } from "../../../contexts/AuthContext";
 import { cmsApi } from "./cmsApi";
 import type { CmsAnnouncement, CmsFaq, CmsMedia, CmsTextEntry } from "./types";
-import type { CmsSection } from "./ContentManager";
+import type { CmsSection } from "./cmsRouting";
 
 function pretty(value: string) {
   return value.replace(/[._-]/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -118,10 +118,67 @@ function MediaManager({ canEdit }: { canEdit: boolean }) {
   return <section><div className="mb-4"><h2 className="text-lg font-semibold text-white">Media Library</h2><p className="text-sm text-slate-400">Validated JPG, PNG and WebP images, maximum 8 MB.</p></div><div className="mb-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(260px,auto)]"><label className="relative"><Search className="absolute left-3 top-3 text-slate-500" size={15} /><input className="text-input-dark h-10 w-full pl-9" placeholder="Search media" value={query} onChange={(event) => setQuery(event.target.value)} /></label>{canEdit && <div className="flex gap-2"><input className="text-input-dark min-w-0" accept=".jpg,.jpeg,.png,.webp" type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /><button className="btn-primary" disabled={!file || busy} onClick={() => void upload()} type="button"><Upload size={15} /> {busy ? "Uploading" : "Upload"}</button></div>}</div>{error && <p className="mb-3 text-sm text-red-200">{error}</p>}<div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{items.map((item) => <article className="cms-media-card" key={item.id}><img src={resolveApiAssetUrl(item.url)} alt={item.alt_text || "CMS media preview"} /><div className="p-3"><strong className="block truncate text-sm text-white">{item.filename}</strong><p className="text-xs text-slate-400">{formatBytes(item.file_size)} · Used {item.usage_count} times</p><label className="cms-field mt-2"><span>Alt text</span><input disabled={!canEdit} value={item.alt_text} onChange={(event) => change(item.id, { alt_text: event.target.value })} /></label><label className="cms-field mt-2"><span>Caption</span><input disabled={!canEdit} value={item.caption} onChange={(event) => change(item.id, { caption: event.target.value })} /></label><div className="mt-3 flex flex-wrap gap-1"><button className="icon-button-dark" title="Copy media URL" onClick={() => void navigator.clipboard.writeText(resolveApiAssetUrl(item.url))} type="button"><Copy size={15} /></button>{canEdit && <button className="icon-button-dark" title="Save metadata" onClick={() => void save(item)} type="button"><Save size={15} /></button>}{canEdit && <label className="icon-button-dark cursor-pointer" title="Replace image"><ImagePlus size={15} /><input className="sr-only" accept=".jpg,.jpeg,.png,.webp" type="file" onChange={(event) => void replace(item, event)} /></label>}{canEdit && <button className="icon-button-dark text-red-200" disabled={item.usage_count > 0} title={item.usage_count ? "Asset is in use" : "Delete image"} onClick={() => void remove(item)} type="button"><Trash2 size={15} /></button>}</div></div></article>)}</div></section>;
 }
 
+function FormsManager({ canEdit }: { canEdit: boolean }) {
+  const { token } = useAuth();
+  const [pages, setPages] = useState<Array<{ pageTitle: string; slug: string; forms: Array<{ id: string; title: string; status: string }> }>>([]);
+  const [error, setError] = useState("");
+  const load = useCallback(async () => {
+    if (!token) return;
+    try {
+      const result = await cmsApi.pages(token);
+      const details = await Promise.all(result.items.map((page) => cmsApi.page(token, page.id)));
+      setPages(details
+        .map((page) => ({
+          pageTitle: page.title,
+          slug: page.slug,
+          forms: page.blocks
+            .filter((block) => block.block_type === "form" || block.block_type.endsWith("_input") || block.block_type === "submit_button")
+            .map((block) => ({
+              id: block.id,
+              title: String(block.content.title ?? block.content.label ?? block.content.heading ?? block.block_type),
+              status: block.is_visible ? "visible" : "hidden"
+            }))
+        }))
+        .filter((page) => page.forms.length > 0));
+      setError("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load form blocks");
+    }
+  }, [token]);
+  useEffect(() => { void load(); }, [load]);
+  return (
+    <section>
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h2 className="text-lg font-semibold text-white">Forms</h2>
+          <p className="text-sm text-slate-400">Form blocks are stored in the shared CMS page draft and edited through the page or live editor.</p>
+        </div>
+        <button className="btn-secondary" onClick={() => void load()} type="button"><Eye size={15} /> Refresh</button>
+      </div>
+      {error && <p className="mb-3 text-sm text-red-200">{error}</p>}
+      <div className="space-y-3">
+        {pages.map((page) => (
+          <article className="cms-collection-card" key={page.slug}>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div><strong className="text-white">{page.pageTitle}</strong><p className="text-xs text-slate-400">/{page.slug === "home" ? "" : page.slug}</p></div>
+              {canEdit && <span className="cms-status">Edit on page</span>}
+            </div>
+            <div className="grid gap-2">
+              {page.forms.map((form) => <div className="cms-page-row" key={form.id}><span>{form.title}</span><span className="cms-status">{form.status}</span></div>)}
+            </div>
+          </article>
+        ))}
+        {!pages.length && <div className="cms-collection-card text-sm text-slate-300">No form blocks exist yet. Add a Form block from Website Builder or Edit Live Pages.</div>}
+      </div>
+    </section>
+  );
+}
+
 export function CmsCollectionManager({ section, canEdit, canPublish }: { section: CmsSection; canEdit: boolean; canPublish: boolean }) {
   if (section === "global") return <TextManager kind="global-content" canEdit={canEdit} canPublish={canPublish} />;
   if (section === "ui") return <TextManager kind="ui-text" canEdit={canEdit} canPublish={canPublish} />;
   if (section === "faqs") return <FaqManager canEdit={canEdit} canPublish={canPublish} />;
   if (section === "announcements") return <AnnouncementManager canEdit={canEdit} canPublish={canPublish} />;
+  if (section === "forms") return <FormsManager canEdit={canEdit} />;
   return <MediaManager canEdit={canEdit} />;
 }

@@ -1,34 +1,36 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { FileClock, FileText, Globe2, History, Image, LayoutTemplate, Megaphone, Plus, Search, Settings2 } from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../../contexts/AuthContext";
 import type { CmsRole } from "./types";
 import { CmsCollectionManager } from "./CmsCollectionManager";
-import { CmsPageManager } from "./CmsPageManager";
 import { CmsRevisionManager } from "./CmsRevisionManager";
 import { VisualWebsiteBuilder } from "./VisualWebsiteBuilder";
+import { LivePageEditor } from "./LivePageEditor";
+import { cmsSectionFromPath, type CmsSection } from "./cmsRouting";
 
-export type CmsSection = "pages" | "create" | "global" | "ui" | "announcements" | "faqs" | "media" | "forms" | "theme" | "seo" | "drafts" | "revisions";
-
-const sections: Array<{ id: CmsSection; label: string; icon: ReactNode }> = [
-  { id: "pages", label: "All Pages", icon: <LayoutTemplate size={16} /> },
-  { id: "create", label: "Create Page", icon: <Plus size={16} /> },
-  { id: "global", label: "Global Header", icon: <Globe2 size={16} /> },
-  { id: "ui", label: "Global Footer", icon: <Settings2 size={16} /> },
-  { id: "forms", label: "Forms", icon: <FileText size={16} /> },
-  { id: "media", label: "Media Library", icon: <Image size={16} /> },
-  { id: "theme", label: "Theme Settings", icon: <Settings2 size={16} /> },
-  { id: "announcements", label: "Reusable Sections", icon: <Megaphone size={16} /> },
-  { id: "faqs", label: "Reusable FAQ", icon: <FileText size={16} /> },
-  { id: "seo", label: "SEO Settings", icon: <Search size={16} /> },
-  { id: "drafts", label: "Drafts", icon: <FileClock size={16} /> },
-  { id: "revisions", label: "Revision History", icon: <History size={16} /> }
+const sections: Array<{ id: CmsSection; label: string; icon: ReactNode; path: string }> = [
+  { id: "pages", label: "All Pages", icon: <LayoutTemplate size={16} />, path: "/admin/website-builder/pages" },
+  { id: "create", label: "Create Page", icon: <Plus size={16} />, path: "/admin/website-builder/create" },
+  { id: "global", label: "Global Header", icon: <Globe2 size={16} />, path: "/admin/website-builder/header" },
+  { id: "ui", label: "Global Footer", icon: <Settings2 size={16} />, path: "/admin/website-builder/footer" },
+  { id: "forms", label: "Forms", icon: <FileText size={16} />, path: "/admin/website-builder/forms" },
+  { id: "media", label: "Media Library", icon: <Image size={16} />, path: "/admin/website-builder/media" },
+  { id: "theme", label: "Theme Settings", icon: <Settings2 size={16} />, path: "/admin/website-builder/theme" },
+  { id: "announcements", label: "Reusable Sections", icon: <Megaphone size={16} />, path: "/admin/website-builder/reusable-sections" },
+  { id: "faqs", label: "Reusable FAQ", icon: <FileText size={16} />, path: "/admin/website-builder/faq" },
+  { id: "seo", label: "SEO Settings", icon: <Search size={16} />, path: "/admin/website-builder/seo" },
+  { id: "drafts", label: "Drafts", icon: <FileClock size={16} />, path: "/admin/website-builder/drafts" },
+  { id: "revisions", label: "Revision History", icon: <History size={16} />, path: "/admin/website-builder/history" }
 ];
 
 const cmsRoles = new Set<CmsRole>(["admin", "super_admin", "content_admin", "content_editor", "content_viewer"]);
 
 export function ContentManager() {
   const { user } = useAuth();
-  const [section, setSection] = useState<CmsSection>("pages");
+  const location = useLocation();
+  const navigate = useNavigate();
+  const section = useMemo<CmsSection>(() => cmsSectionFromPath(location.pathname), [location.pathname]);
   const role = user?.role as CmsRole | undefined;
   const permissions = useMemo(() => ({
     canView: Boolean(role && cmsRoles.has(role)),
@@ -55,27 +57,36 @@ export function ContentManager() {
             <button
               key={item.id}
               className={section === item.id ? "cms-nav-item cms-nav-item-active" : "cms-nav-item"}
-              onClick={() => setSection(item.id)}
+              onClick={() => navigate(item.path)}
               type="button"
             >
               {item.icon}<span>{item.label}</span>
             </button>
           ))}
+          <button
+            className={section === "live" ? "cms-nav-item cms-nav-item-active" : "cms-nav-item"}
+            onClick={() => navigate("/admin/live-pages")}
+            type="button"
+          >
+            <LayoutTemplate size={16} /><span>Edit Live Pages</span>
+          </button>
         </nav>
       </aside>
 
       <div className="min-w-0">
-        {(section === "pages" || section === "create" || section === "seo" || section === "drafts" || section === "forms") && (
+        {(section === "pages" || section === "create" || section === "seo" || section === "drafts") && (
           <VisualWebsiteBuilder
             section={section === "create" ? "create-page" : section === "drafts" ? "drafts" : section === "seo" ? "seo" : "all-pages"}
             canEdit={permissions.canEdit}
             canPublish={permissions.canPublish}
           />
         )}
+        {section === "forms" && <CmsCollectionManager section="forms" canEdit={permissions.canEdit} canPublish={permissions.canPublish} />}
         {(section === "global" || section === "ui" || section === "announcements" || section === "faqs" || section === "media" || section === "theme") && (
           <CmsCollectionManager section={section === "theme" ? "global" : section} canEdit={permissions.canEdit} canPublish={permissions.canPublish} />
         )}
         {section === "revisions" && <CmsRevisionManager canPublish={permissions.canPublish} />}
+        {section === "live" && <LivePageEditor canEdit={permissions.canEdit} canPublish={permissions.canPublish} />}
       </div>
     </div>
   );

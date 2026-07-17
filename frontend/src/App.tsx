@@ -1,12 +1,13 @@
 import { Suspense, lazy, useEffect, useRef, type ReactNode } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
-import { HashRouter } from "react-router-dom";
+import { BrowserRouter } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ShellProvider } from "./contexts/ShellContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { SeoManager } from "./seo/SeoManager";
 import { AppErrorBoundary } from "./components/common/AppErrorBoundary";
 import { LandingPage } from "./components/landing/LandingPage";
+import { PublicCmsPage } from "./components/common/PublicCmsPage";
 import { isMobileAppRuntime } from "./utils/runtime";
 import { MotionProvider } from "./motion/MotionProvider";
 import { consumeSafeRootRedirect, markStartupStable } from "./reliability/safeMode";
@@ -83,6 +84,12 @@ function AppRoutes() {
           <Route path="/payment/success" element={<PaymentStatusPage status="success" />} />
           <Route path="/payment/failed" element={<PaymentStatusPage status="failed" />} />
           <Route path="/screen-share/:sessionId" element={<ScreenShareJoinPage />} />
+          <Route path="/about" element={<MobileBlockedRoute><PublicCmsPage /></MobileBlockedRoute>} />
+          <Route path="/features" element={<MobileBlockedRoute><PublicCmsPage /></MobileBlockedRoute>} />
+          <Route path="/contact" element={<MobileBlockedRoute><PublicCmsPage /></MobileBlockedRoute>} />
+          <Route path="/help" element={<MobileBlockedRoute><PublicCmsPage /></MobileBlockedRoute>} />
+          <Route path="/privacy-policy" element={<MobileBlockedRoute><PublicCmsPage /></MobileBlockedRoute>} />
+          <Route path="/terms-and-conditions" element={<MobileBlockedRoute><PublicCmsPage /></MobileBlockedRoute>} />
           <Route element={<ProtectedRoute />}>
             <Route element={<AppShell />}>
               <Route path="/chat" element={<ChatPage />} />
@@ -133,13 +140,13 @@ export default function App() {
           <AuthProvider>
             <ShellProvider>
               <ScreenShareProvider>
-                <HashRouter>
+                <BrowserRouter>
                   <SeoManager />
                   <AnnouncementBanner />
                   <StartupRecoveryMarker />
                   <AppRoutes />
                   <ScreenShareOverlay />
-                </HashRouter>
+                </BrowserRouter>
               </ScreenShareProvider>
             </ShellProvider>
           </AuthProvider>

@@ -1,4 +1,4 @@
-import { CmsBlockRenderer } from "../admin/cms/CmsBlockRenderer";
+import { CmsPageRenderer } from "./CmsPageRenderer";
 import type { CmsBlock } from "../admin/cms/types";
 
 export function PublishedContentBlocks({ blocks }: { blocks?: CmsBlock[] }) {
@@ -6,7 +6,7 @@ export function PublishedContentBlocks({ blocks }: { blocks?: CmsBlock[] }) {
   if (!visible.length) return null;
   return (
     <section className="landing-section cms-public-blocks" aria-label="Additional page content">
-      {visible.map((block) => <CmsBlockRenderer block={block} key={block.id} />)}
+      {visible.map((block) => <CmsPageRenderer block={block} key={block.id} />)}
     </section>
   );
 }

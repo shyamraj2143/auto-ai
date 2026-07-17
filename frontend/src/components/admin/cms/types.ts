@@ -30,6 +30,8 @@ export type CmsBlock = {
 };
 
 export type CmsPage = {
+  schemaVersion?: number;
+  pageId?: string;
   id: string;
   page_key: string;
   title: string;
@@ -40,8 +42,15 @@ export type CmsPage = {
   buttons: CmsButton[];
   seo: CmsSeo;
   blocks: CmsBlock[];
+  globalReferences?: Record<string, string>;
   deleted_blocks?: CmsBlock[];
   version: number;
+  draftVersion?: number;
+  draft_version?: number;
+  publishedVersion?: number | null;
+  published_version?: number | null;
+  validation?: { valid: boolean; errors: string[] };
+  public_url?: string;
   scheduled_at?: string | null;
   published_at?: string | null;
   created_at: string;

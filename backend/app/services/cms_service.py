@@ -27,6 +27,7 @@ from app.models.user import User
 CMS_VIEW_ROLES = {"admin", "super_admin", "content_admin", "content_editor", "content_viewer"}
 CMS_EDIT_ROLES = {"admin", "super_admin", "content_admin", "content_editor"}
 CMS_PUBLISH_ROLES = {"admin", "super_admin", "content_admin"}
+CMS_SCHEMA_VERSION = 1
 
 PAGE_DEFAULTS = [
     {
@@ -319,7 +320,9 @@ def audit(db: Session, actor: User, action: str, content_type: str, content_id: 
 def page_snapshot(page: ContentPage) -> dict[str, Any]:
     blocks = sorted((block for block in page.blocks if not block.is_deleted), key=lambda block: block.position)
     return {
+        "schemaVersion": CMS_SCHEMA_VERSION,
         "id": page.id,
+        "pageId": page.id,
         "page_key": page.page_key,
         "title": page.title,
         "slug": page.slug,
@@ -337,6 +340,7 @@ def page_snapshot(page: ContentPage) -> dict[str, Any]:
             }
             for block in blocks
         ],
+        "globalReferences": {"header": "global:header", "footer": "global:footer", "theme": "global:theme"},
     }
 
 
@@ -344,12 +348,20 @@ def serialize_page(page: ContentPage, include_draft: bool = True) -> dict[str, A
     snapshot = page_snapshot(page) if include_draft else deepcopy(page.published_snapshot or {})
     result = {
         **snapshot,
+        "schemaVersion": snapshot.get("schemaVersion", CMS_SCHEMA_VERSION),
+        "pageId": page.id,
         "id": page.id,
         "page_key": page.page_key,
         "title": page.title if include_draft else snapshot.get("title", page.title),
         "slug": page.slug if include_draft else snapshot.get("slug", page.published_slug or page.slug),
         "status": page.status if include_draft else "published",
         "version": page.version,
+        "draftVersion": page.version,
+        "draft_version": page.version,
+        "publishedVersion": page.version if page.published_snapshot else None,
+        "published_version": page.version if page.published_snapshot else None,
+        "validation": {"valid": True, "errors": []},
+        "public_url": f"/{'' if (snapshot.get('slug') or page.published_slug or page.slug) == 'home' else (snapshot.get('slug') or page.published_slug or page.slug)}",
         "scheduled_at": page.scheduled_at,
         "published_at": page.published_at,
         "created_at": page.created_at,
@@ -394,12 +406,15 @@ def publish_page(db: Session, page: ContentPage, actor: User, summary: str, sche
         action = "scheduled"
     else:
         page.status = "published"
-        page.published_snapshot = snapshot
         page.published_slug = page.slug
         page.published_at = now
         page.scheduled_at = None
         action = "published"
     page.version += 1
+    if action == "published":
+        snapshot["publishedVersion"] = page.version
+        snapshot["published_version"] = page.version
+        page.published_snapshot = snapshot
     page.updated_by = actor.id
     page.updated_at = now
     create_revision(db, actor, "page", page.id, action, page.status, page.version, snapshot, summary or action.title())
@@ -416,14 +431,17 @@ def publish_due(db: Session) -> int:
     count = 0
     for page in pages:
         page.status = "published"
-        page.published_snapshot = page_snapshot(page)
         page.published_slug = page.slug
         page.published_at = now
         page.scheduled_at = None
         page.version += 1
+        snapshot = page_snapshot(page)
+        snapshot["publishedVersion"] = page.version
+        snapshot["published_version"] = page.version
+        page.published_snapshot = snapshot
         db.add(ContentRevision(
             content_type="page", content_id=page.id, action="published", status="published",
-            version=page.version, change_summary="Scheduled publish", snapshot=page.published_snapshot,
+            version=page.version, change_summary="Scheduled publish", snapshot=snapshot,
             created_by=page.updated_by,
         ))
         db.add(ContentAuditLog(

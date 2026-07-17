@@ -4,6 +4,7 @@ import {
   PanelRight, Plus, Redo2, RotateCcw, Save, Send, Smartphone, Tablet, Trash2
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { ApiClientError } from "../../../api/client";
 import { useAuth } from "../../../contexts/AuthContext";
 import { CmsBlockRenderer } from "./CmsBlockRenderer";
@@ -34,6 +35,8 @@ function pageFromSnapshot(page: CmsPage): CmsPage {
 
 export function VisualWebsiteBuilder({ section, canEdit, canPublish }: { section: BuilderSection; canEdit: boolean; canPublish: boolean }) {
   const { token } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [pages, setPages] = useState<CmsPage[]>([]);
   const [selected, setSelected] = useState<CmsPage | null>(null);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
@@ -51,6 +54,7 @@ export function VisualWebsiteBuilder({ section, canEdit, canPublish }: { section
   const [history, setHistory] = useState<CmsPage[]>([]);
   const [future, setFuture] = useState<CmsPage[]>([]);
   const latestRef = useRef<CmsPage | null>(null);
+  const routePageId = location.pathname.match(/\/admin\/website-builder\/pages\/([^/]+)$/)?.[1] ?? "";
 
   const statusFilter = section === "drafts" ? "draft" : "";
   const selectedBlock = selected?.blocks.find((block) => block.id === selectedBlockId) ?? null;
@@ -67,8 +71,9 @@ export function VisualWebsiteBuilder({ section, canEdit, canPublish }: { section
     try {
       const result = await cmsApi.pages(token, query, statusFilter);
       setPages(result.items);
-      if (!selected && result.items[0] && section !== "create-page") {
-        const detail = await cmsApi.page(token, result.items[0].id);
+      if ((!selected || (routePageId && selected.id !== routePageId)) && result.items[0] && section !== "create-page") {
+        const target = routePageId ? result.items.find((item) => item.id === routePageId) : result.items[0];
+        const detail = await cmsApi.page(token, target?.id ?? result.items[0].id);
         setSelected(detail);
         latestRef.current = detail;
       }
@@ -78,7 +83,7 @@ export function VisualWebsiteBuilder({ section, canEdit, canPublish }: { section
     } finally {
       setLoading(false);
     }
-  }, [query, section, selected, statusFilter, token]);
+  }, [query, routePageId, section, selected, statusFilter, token]);
 
   useEffect(() => { void loadPages(); }, [loadPages]);
   useEffect(() => { latestRef.current = selected; }, [selected]);
@@ -122,6 +127,7 @@ export function VisualWebsiteBuilder({ section, canEdit, canPublish }: { section
       const recovery = localStorage.getItem(`auto-ai-cms-recovery:${detail.id}`);
       const next = recovery && window.confirm("Recovered local edits exist for this page. Restore them?") ? JSON.parse(recovery) as CmsPage : detail;
       setSelected(next);
+      navigate(`/admin/website-builder/pages/${detail.id}`);
       latestRef.current = next;
       setSelectedBlockId(next.blocks[0]?.id ?? null);
       setDirty(next !== detail);
@@ -237,6 +243,10 @@ export function VisualWebsiteBuilder({ section, canEdit, canPublish }: { section
     mutate((page) => ({ ...page, blocks: page.blocks.map((block) => block.id === blockId ? { ...block, content: { ...block.content, [key]: value } } : block) }));
   }
 
+  function updatePageTextField(key: "hero_heading" | "hero_description", value: string) {
+    mutate((page) => ({ ...page, [key]: value }));
+  }
+
   function updatePageField(key: keyof CmsPage, value: unknown) {
     mutate((page) => ({ ...page, [key]: value }));
   }
@@ -310,7 +320,7 @@ export function VisualWebsiteBuilder({ section, canEdit, canPublish }: { section
   return (
     <section className="visual-builder" aria-label="Visual website builder">
       <header className="visual-builder-toolbar">
-        <button className="chip-dark" onClick={() => setSelected(null)} type="button"><ArrowLeft size={15} /> Back to Pages</button>
+        <button className="chip-dark" onClick={() => { setSelected(null); navigate("/admin/website-builder/pages"); }} type="button"><ArrowLeft size={15} /> Back to Pages</button>
         <div className="min-w-0"><strong className="block truncate text-white">{selected?.title ?? "Website Builder"}</strong><span className={saveState === "failed" || saveState === "conflict" ? "text-red-300" : "text-slate-400"}>{saveLabel}</span></div>
         <div className="visual-builder-toolbar-actions">
           <button className="icon-button-dark" disabled={!history.length} aria-label="Undo" onClick={undo} type="button"><RotateCcw size={15} /></button>
@@ -380,6 +390,7 @@ export function VisualWebsiteBuilder({ section, canEdit, canPublish }: { section
                 device={device}
                 editMode={canEdit}
                 onInlineChange={updateBlockContent}
+                onPageFieldChange={updatePageTextField}
                 onSelect={setSelectedBlockId}
                 page={selected}
                 selectedBlockId={selectedBlockId}

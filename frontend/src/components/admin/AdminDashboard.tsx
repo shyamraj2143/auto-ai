@@ -42,7 +42,7 @@ import type {
   UserRole
 } from "../../types";
 
-type AdminSection = "dashboard" | "users" | "tokens" | "subscriptions" | "usage" | "features" | "mobile" | "payments" | "content" | "settings";
+type AdminSection = "dashboard" | "users" | "tokens" | "subscriptions" | "usage" | "features" | "mobile" | "payments" | "website-builder" | "live-pages" | "content" | "settings";
 
 const sections: Array<{ id: AdminSection; label: string; icon: ReactNode }> = [
   { id: "dashboard", label: "Dashboard", icon: <BarChart3 size={15} /> },
@@ -53,7 +53,8 @@ const sections: Array<{ id: AdminSection; label: string; icon: ReactNode }> = [
   { id: "features", label: "Feature Controls", icon: <SlidersHorizontal size={15} /> },
   { id: "mobile", label: "Mobile App", icon: <Smartphone size={15} /> },
   { id: "payments", label: "Payments", icon: <Wallet size={15} /> },
-  { id: "content", label: "Website Builder", icon: <BookOpen size={15} /> },
+  { id: "website-builder", label: "Website Builder", icon: <BookOpen size={15} /> },
+  { id: "live-pages", label: "Edit Live Pages", icon: <BookOpen size={15} /> },
   { id: "settings", label: "Settings", icon: <Settings size={15} /> }
 ];
 
@@ -210,6 +211,8 @@ function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) 
 function adminSectionPath(section: AdminSection) {
   if (section === "dashboard") return "/admin";
   if (section === "users") return "/admin/users";
+  if (section === "website-builder" || section === "content") return "/admin/website-builder/pages";
+  if (section === "live-pages") return "/admin/live-pages";
   return `/admin/${section}`;
 }
 
@@ -302,7 +305,7 @@ export function AdminDashboard() {
   }, [loadAdminData]);
 
   useEffect(() => {
-    if (isAdmin && !isFullAdmin) setActiveSection("content");
+    if (isAdmin && !isFullAdmin) setActiveSection("website-builder");
   }, [isAdmin, isFullAdmin]);
 
   useEffect(() => {
@@ -318,6 +321,19 @@ export function AdminDashboard() {
     if (adminSubPath === "user-devices" || section === "devices") {
       navigate("/admin/users", { replace: true });
       setActiveSection("users");
+      return;
+    }
+    if (adminSubPath === "content") {
+      navigate("/admin/website-builder/pages", { replace: true });
+      setActiveSection("website-builder");
+      return;
+    }
+    if (adminSubPath === "website-builder") {
+      setActiveSection("website-builder");
+      return;
+    }
+    if (adminSubPath === "live-pages") {
+      setActiveSection("live-pages");
       return;
     }
     if (validSection) {
@@ -875,7 +891,7 @@ export function AdminDashboard() {
       </div>
 
       <div className="mb-5 flex flex-wrap gap-2">
-        {sections.filter((section) => isFullAdmin || section.id === "content").map((section) => (
+        {sections.filter((section) => isFullAdmin || section.id === "website-builder" || section.id === "live-pages").map((section) => (
           <button
             key={section.id}
             className={activeSection === section.id ? "chip-dark chip-dark-active" : "chip-dark"}
@@ -1632,7 +1648,7 @@ export function AdminDashboard() {
             </section>
           )}
 
-          {activeSection === "content" && (
+          {(activeSection === "website-builder" || activeSection === "live-pages" || activeSection === "content") && (
             <section className="border-t border-white/10 pt-4">
               <ContentManager />
             </section>
