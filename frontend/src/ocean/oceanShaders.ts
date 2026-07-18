@@ -90,6 +90,23 @@ float causticCells(vec2 point, float time) {
   return sum * 0.5;
 }
 
+float liquidRibbons(vec2 point, float time) {
+  vec2 field = point;
+  float ribbons = 0.0;
+  for (int index = 0; index < 2; index++) {
+    float layer = float(index);
+    float sweep = sin(
+      field.x * (6.0 + layer * 2.2)
+      + sin(field.y * 3.4 + time * (0.26 + layer * 0.08))
+      + time * (0.42 - layer * 0.08)
+    );
+    float ridge = 1.0 - smoothstep(0.0, 0.62, abs(sweep));
+    ribbons += pow(ridge, 3.5) * (0.62 - layer * 0.14);
+    field = rotate2d(0.72 + layer * 0.3) * field * 1.55 + vec2(2.7, -1.4);
+  }
+  return ribbons * 0.55;
+}
+
 float easeInOut(float value) {
   return value < 0.5
     ? 4.0 * value * value * value
@@ -154,6 +171,11 @@ void main() {
   float flowBand = smoothstep(0.38, 0.88, broadCurrent) * outerMask;
   float caustics = causticCells(waterField * 2.8, ambientTime * (2.25 + divePulse * 1.4)) * outerMask;
   caustics *= mix(0.62, 1.08, broadCurrent);
+  float ribbonField = liquidRibbons(waterField * 1.35, ambientTime * 1.15) * outerMask;
+  float glintField = pow(
+    max(0.0, 1.0 - abs(sin((waterField.x - waterField.y) * 13.0 + ambientTime * 0.9 + broadCurrent * 3.0)) * 1.1),
+    4.0
+  ) * outerMask;
   float crystalTrace = pow(
     max(0.0, 1.0 - abs(sin((waterField.x + waterField.y) * 17.0 + broadCurrent * 2.4)) * 5.1),
     3.0
@@ -166,6 +188,11 @@ void main() {
     0.15 + verticalDepth * 0.18 + broadCurrent * 0.11 + flowBand * 0.035
   );
   color += u_cyan_color * caustics * mix(0.10, 0.17, u_quality) * (1.0 + divePulse * 0.72);
+  color += mix(u_cyan_color, u_violet_color, 0.44 + broadCurrent * 0.32)
+    * ribbonField
+    * mix(0.018, 0.052, u_quality)
+    * (1.0 + surfaceEnvelope * 0.7 + u_depth * 0.45);
+  color += u_cyan_color * glintField * mix(0.006, 0.022, u_quality) * (1.0 + divePulse * 0.9);
   color += u_violet_color * crystalTrace * 0.042;
   color += mix(u_cyan_color, u_violet_color, broadCurrent) * flowBand * 0.018;
 

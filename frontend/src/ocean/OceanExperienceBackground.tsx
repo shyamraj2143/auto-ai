@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { OCEAN_DIVE_TIMING, rangeProgress, timelineProgress } from "./oceanDiveTimeline";
+import { logOceanDebugSnapshot, updateOceanDebug } from "./oceanDebug";
 import { isOceanDivePhase, type OceanPhase, type OceanRoute } from "./oceanStateMachine";
 import { OCEAN_FRAGMENT_SHADER, OCEAN_VERTEX_SHADER } from "./oceanShaders";
 
@@ -7,8 +8,9 @@ type OceanExperienceBackgroundProps = {
   phase: OceanPhase;
   route: Exclude<OceanRoute, "none">;
   transitionStartedAt: number | null;
+  debug: boolean;
   onReady: () => void;
-  onFailure: () => void;
+  onFailure: (error?: unknown) => void;
   onInteractionChange: (active: boolean) => void;
   onQualityChange: (quality: string) => void;
 };
@@ -113,6 +115,7 @@ export function OceanExperienceBackground({
   phase,
   route,
   transitionStartedAt,
+  debug,
   onReady,
   onFailure,
   onInteractionChange,
@@ -137,12 +140,12 @@ export function OceanExperienceBackground({
     const memory = (navigator as NavigatorWithMemory).deviceMemory ?? 4;
     const cores = navigator.hardwareConcurrency || 4;
     const mobile = coarsePointer || window.innerWidth < 820;
-    const weakDevice = cores <= 4 || memory <= 4;
+    const weakDevice = !debug && (cores <= 4 || memory <= 4);
     const maximumDpr = mobile ? (weakDevice ? 1 : 1.2) : 1.5;
     const baseDpr = Math.min(window.devicePixelRatio || 1, maximumDpr);
-    let renderScale = weakDevice ? 0.7 : mobile ? 0.8 : 0.82;
-    let shaderQuality = weakDevice ? 0.62 : mobile ? 0.78 : 1;
-    let qualityName = weakDevice ? "low" : mobile ? "mobile" : "smooth";
+    let renderScale = debug ? 1 : weakDevice ? 0.7 : mobile ? 0.8 : 0.82;
+    let shaderQuality = debug ? 1 : weakDevice ? 0.62 : mobile ? 0.78 : 1;
+    let qualityName = debug ? "debug" : weakDevice ? "low" : mobile ? "mobile" : "smooth";
     let gl: WebGL2RenderingContext | null = null;
     let program: WebGLProgram | null = null;
     let buffer: WebGLBuffer | null = null;
@@ -158,6 +161,7 @@ export function OceanExperienceBackground({
     let previousFrame = performance.now();
     let sampledFrames = 0;
     let sampledDuration = 0;
+    let frameCount = 0;
     let cssWidth = 0;
     let cssHeight = 0;
     const pointer = { x: 0, y: 0, targetX: 0, targetY: 0 };
@@ -168,13 +172,25 @@ export function OceanExperienceBackground({
       violet: [0.55, 0.49, 1] as [number, number, number]
     };
 
+    const initialBounds = canvas.getBoundingClientRect();
+    updateOceanDebug({
+      canvasSize: { width: Math.round(initialBounds.width), height: Math.round(initialBounds.height) },
+      canvasBoundsValid: initialBounds.width >= window.innerWidth - 1 && initialBounds.height >= window.innerHeight - 1
+    });
+
     const reportFailure = (error?: unknown) => {
       running = false;
       window.cancelAnimationFrame(rafId);
       if (import.meta.env.DEV && error) {
         console.error("[Abyssal Prism Current] WebGL renderer failed; using the CSS fallback.", error);
       }
-      onFailure();
+      updateOceanDebug({
+        renderer: "fallback",
+        shaderStatus: "failure",
+        lastError: error instanceof Error ? error.message : String(error ?? "Renderer failed.")
+      });
+      logOceanDebugSnapshot();
+      onFailure(error);
     };
 
     const syncPalette = () => {
@@ -212,6 +228,11 @@ export function OceanExperienceBackground({
         canvas.height = targetHeight;
       }
       gl.viewport(0, 0, canvas.width, canvas.height);
+      const bounds = canvas.getBoundingClientRect();
+      updateOceanDebug({
+        canvasSize: { width: canvas.width, height: canvas.height },
+        canvasBoundsValid: bounds.width >= width - 1 && bounds.height >= height - 1
+      });
     };
 
     const scheduleResize = () => {
@@ -300,6 +321,11 @@ export function OceanExperienceBackground({
       gl.uniform3fv(uniforms.cyanColor, palette.cyan);
       gl.uniform3fv(uniforms.violetColor, palette.violet);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
+      frameCount += 1;
+      if (debug && (frameCount === 1 || frameCount % 30 === 0)) {
+        updateOceanDebug({ frameCount });
+        if (frameCount === 1) logOceanDebugSnapshot();
+      }
       rafId = window.requestAnimationFrame(renderFrame);
     };
 
@@ -360,6 +386,7 @@ export function OceanExperienceBackground({
       };
       syncPalette();
       resize(true);
+      updateOceanDebug({ shaderStatus: "success", lastError: null });
       onQualityChange(qualityName);
     };
 
@@ -409,7 +436,7 @@ export function OceanExperienceBackground({
         stencil: false,
         premultipliedAlpha: false,
         preserveDrawingBuffer: false,
-        failIfMajorPerformanceCaveat: true,
+        failIfMajorPerformanceCaveat: !debug,
         powerPreference: weakDevice ? "low-power" : "default"
       });
       if (!gl) throw new Error("WebGL2 is unavailable on this device.");
@@ -447,7 +474,7 @@ export function OceanExperienceBackground({
       destroyResources();
       gl = null;
     };
-  }, [onFailure, onInteractionChange, onQualityChange, onReady]);
+  }, [debug, onFailure, onInteractionChange, onQualityChange, onReady]);
 
   return <canvas ref={canvasRef} aria-hidden="true" className="ocean-experience-canvas" tabIndex={-1} />;
 }

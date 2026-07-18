@@ -11,6 +11,7 @@ import {
   type ReactNode
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useMotionMode } from "../motion/MotionProvider";
 import { OCEAN_DIVE_PHASE_SCHEDULE, OCEAN_DIVE_TIMING } from "./oceanDiveTimeline";
 import { decideOceanNavigation } from "./oceanNavigation";
 import {
@@ -20,6 +21,7 @@ import {
   oceanRouteFromPath,
   type OceanRoute
 } from "./oceanStateMachine";
+import { isOceanDebugEnabled, oceanDebugStateLabel, updateOceanDebug } from "./oceanDebug";
 import "./oceanExperience.css";
 
 const LazyOceanExperienceBackground = lazy(() =>
@@ -38,7 +40,7 @@ type PendingNavigation = {
 
 type OceanRendererBoundaryProps = {
   children: ReactNode;
-  onFailure: () => void;
+  onFailure: (error?: unknown) => void;
 };
 
 class OceanRendererBoundary extends Component<OceanRendererBoundaryProps, { failed: boolean }> {
@@ -52,7 +54,7 @@ class OceanRendererBoundary extends Component<OceanRendererBoundaryProps, { fail
     if (import.meta.env.DEV) {
       console.error("[Abyssal Prism Current] React renderer failed; using the CSS fallback.", error, info);
     }
-    this.props.onFailure();
+    this.props.onFailure(error);
   }
 
   render() {
@@ -60,28 +62,27 @@ class OceanRendererBoundary extends Component<OceanRendererBoundaryProps, { fail
   }
 }
 
-function readReducedMotion() {
-  return typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
 export function OceanTransitionProvider({ children }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const motion = useMotionMode();
+  const oceanDebug = isOceanDebugEnabled();
   const route = oceanRouteFromPath(location.pathname);
   const routeRef = useRef<OceanRoute>(route);
   const [state, dispatch] = useReducer(oceanReducer, route, createOceanState);
-  const [reducedMotion, setReducedMotion] = useState(readReducedMotion);
-  const [shouldLoadRenderer, setShouldLoadRenderer] = useState(false);
+  const oceanReducedMotion = !oceanDebug && (motion.preference === "reduced" || motion.safeMode);
+  const [shouldLoadRenderer, setShouldLoadRenderer] = useState(oceanDebug);
   const [rendererStatus, setRendererStatus] = useState<"pending" | "webgl" | "fallback">("pending");
   const [quality, setQuality] = useState("pending");
   const pendingNavigationRef = useRef<PendingNavigation | null>(null);
-  const previousReducedMotionRef = useRef(reducedMotion);
+  const previousReducedMotionRef = useRef(oceanReducedMotion);
   const phaseTimersRef = useRef<number[]>([]);
   const routeTimerRef = useRef(0);
   const maximumTimerRef = useRef(0);
   const cleanupTimerRef = useRef(0);
   const activeRoute = route !== "none";
   const diveActive = isOceanDivePhase(state.phase);
+  const debugState = oceanDebugStateLabel(state.phase);
 
   routeRef.current = route;
 
@@ -136,8 +137,13 @@ export function OceanTransitionProvider({ children }: { children: ReactNode }) {
     maximumTimerRef.current = window.setTimeout(finishPendingTransition, OCEAN_DIVE_TIMING.safety);
   }, [finishPendingTransition, performPendingNavigation]);
 
-  const handleRendererFailure = useCallback(() => {
+  const handleRendererFailure = useCallback((error?: unknown) => {
     setRendererStatus("fallback");
+    updateOceanDebug({
+      renderer: "fallback",
+      shaderStatus: "failure",
+      lastError: error instanceof Error ? error.message : String(error ?? "Renderer failed.")
+    });
     dispatch({ type: "FAIL" });
     if (!pendingNavigationRef.current) return;
     clearNavigationTimers();
@@ -147,6 +153,7 @@ export function OceanTransitionProvider({ children }: { children: ReactNode }) {
 
   const handleRendererReady = useCallback(() => {
     setRendererStatus("webgl");
+    updateOceanDebug({ renderer: "webgl", shaderStatus: "success", lastError: null });
     dispatch({ type: "RESTORE", route: routeRef.current });
   }, []);
 
@@ -156,12 +163,28 @@ export function OceanTransitionProvider({ children }: { children: ReactNode }) {
 
   const handleQualityChange = useCallback((nextQuality: string) => {
     setQuality((current) => current === nextQuality ? current : nextQuality);
+    updateOceanDebug({ quality: nextQuality });
   }, []);
 
   useEffect(() => {
     if (route === "home") dispatch({ type: "ROUTE_HOME" });
     if (route === "auth") dispatch({ type: "ROUTE_AUTH" });
   }, [route]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("ocean-debug", oceanDebug);
+    return () => document.documentElement.classList.remove("ocean-debug");
+  }, [oceanDebug]);
+
+  useEffect(() => {
+    updateOceanDebug({
+      mounted: activeRoute,
+      renderer: oceanReducedMotion ? "reduced" : rendererStatus,
+      state: debugState,
+      reducedMotion: oceanReducedMotion,
+      quality
+    });
+  }, [activeRoute, debugState, oceanReducedMotion, quality, rendererStatus]);
 
   useEffect(() => {
     document.body.classList.toggle("ocean-route-active", activeRoute);
@@ -173,24 +196,15 @@ export function OceanTransitionProvider({ children }: { children: ReactNode }) {
   }, [activeRoute, diveActive]);
 
   useEffect(() => {
-    if (typeof window.matchMedia !== "function") return;
-    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const update = (event: MediaQueryListEvent) => setReducedMotion(event.matches);
-    setReducedMotion(media.matches);
-    media.addEventListener?.("change", update);
-    return () => media.removeEventListener?.("change", update);
-  }, []);
-
-  useEffect(() => {
-    const becameReduced = reducedMotion && !previousReducedMotionRef.current;
-    previousReducedMotionRef.current = reducedMotion;
+    const becameReduced = oceanReducedMotion && !previousReducedMotionRef.current;
+    previousReducedMotionRef.current = oceanReducedMotion;
     if (!becameReduced || !pendingNavigationRef.current) return;
     clearNavigationTimers();
     scheduleDive(true);
-  }, [clearNavigationTimers, reducedMotion, scheduleDive]);
+  }, [clearNavigationTimers, oceanReducedMotion, scheduleDive]);
 
   useEffect(() => {
-    if (!activeRoute || reducedMotion || shouldLoadRenderer) return;
+    if (!activeRoute || oceanReducedMotion || shouldLoadRenderer) return;
     const idleWindow = window as IdleWindow;
     let cancelled = false;
     const load = () => {
@@ -203,7 +217,7 @@ export function OceanTransitionProvider({ children }: { children: ReactNode }) {
       window.clearTimeout(fallbackTimer);
       if (idleHandle !== undefined) idleWindow.cancelIdleCallback?.(idleHandle);
     };
-  }, [activeRoute, reducedMotion, shouldLoadRenderer]);
+  }, [activeRoute, oceanReducedMotion, shouldLoadRenderer]);
 
   useEffect(() => {
     const handleVisibility = () => {
@@ -237,7 +251,7 @@ export function OceanTransitionProvider({ children }: { children: ReactNode }) {
         opensNewContext: Boolean(anchor.target && anchor.target.toLowerCase() !== "_self"),
         download: anchor.hasAttribute("download"),
         defaultPrevented: event.defaultPrevented,
-        reducedMotion,
+        reducedMotion: oceanReducedMotion,
         navigationPending: pendingNavigationRef.current !== null
       });
 
@@ -247,7 +261,12 @@ export function OceanTransitionProvider({ children }: { children: ReactNode }) {
 
       clearNavigationTimers();
       pendingNavigationRef.current = {
-        destination: `${destination.pathname}${destination.search}${destination.hash}`,
+        destination: (() => {
+          if (oceanDebug && destination.origin === window.location.origin) {
+            destination.searchParams.set("oceanDebug", "1");
+          }
+          return `${destination.pathname}${destination.search}${destination.hash}`;
+        })(),
         navigated: false
       };
       dispatch({ type: "START_DIVE", now: performance.now() });
@@ -256,7 +275,7 @@ export function OceanTransitionProvider({ children }: { children: ReactNode }) {
 
     document.addEventListener("click", handleClick, true);
     return () => document.removeEventListener("click", handleClick, true);
-  }, [clearNavigationTimers, location.pathname, reducedMotion, scheduleDive]);
+  }, [clearNavigationTimers, location.pathname, oceanDebug, oceanReducedMotion, scheduleDive]);
 
   useEffect(() => () => {
     clearNavigationTimers();
@@ -273,17 +292,19 @@ export function OceanTransitionProvider({ children }: { children: ReactNode }) {
           className="ocean-experience"
           data-ocean-active={diveActive ? "true" : "false"}
           data-ocean-host="persistent"
+          data-ocean-debug={oceanDebug ? "true" : "false"}
           data-ocean-quality={quality}
-          data-ocean-reduced={reducedMotion ? "true" : "false"}
-          data-ocean-renderer={reducedMotion ? "reduced" : rendererStatus}
+          data-ocean-reduced={oceanReducedMotion ? "true" : "false"}
+          data-ocean-renderer={oceanReducedMotion ? "reduced" : rendererStatus}
           data-ocean-route={renderedRoute}
-          data-ocean-state={state.phase}
+          data-ocean-state={debugState}
         >
           <div className="ocean-experience-fallback" />
-          {shouldLoadRenderer && !reducedMotion && (
+          {shouldLoadRenderer && !oceanReducedMotion && (
             <OceanRendererBoundary onFailure={handleRendererFailure}>
               <Suspense fallback={null}>
                 <LazyOceanExperienceBackground
+                  debug={oceanDebug}
                   onFailure={handleRendererFailure}
                   onInteractionChange={handleInteractionChange}
                   onQualityChange={handleQualityChange}
