@@ -105,7 +105,7 @@ export function CmsPageManager({ mode, canEdit, canPublish }: { mode: PageMode; 
     setSaveState("saving");
     setError("");
     try {
-      const saved = await cmsApi.updatePage(token, page);
+      const saved = await cmsApi.saveDraft(token, page);
       setSelected(saved);
       latestRef.current = saved;
       updatePageList(saved);

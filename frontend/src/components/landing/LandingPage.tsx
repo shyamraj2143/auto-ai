@@ -71,7 +71,7 @@ export type LandingPageEditorSession = {
   onBlockFieldChange?: (blockId: string, key: string, value: string) => void;
 };
 
-const DEMO_CHAT_LIMIT = 20;
+const DEMO_CHAT_LIMIT = 5;
 const DEMO_SESSION_STORAGE_KEY = "auto-ai-prism-demo-session";
 
 const previewModes: ReadonlyArray<{ id: PreviewMode; label: string }> = [

@@ -16,6 +16,7 @@ import { AnnouncementBanner } from "./components/common/AnnouncementBanner";
 import { isAdminPanelRole } from "./utils/roles";
 import { ScreenShareProvider } from "./features/screenShare/ScreenShareProvider";
 import { ScreenShareOverlay } from "./features/screenShare/ScreenShareOverlay";
+import { OceanTransitionProvider } from "./ocean/OceanTransitionProvider";
 import "./features/screenShare/screenShare.css";
 
 const AppShell = lazy(() => import("./components/layout/AppShell").then((module) => ({ default: module.AppShell })));
@@ -140,13 +141,15 @@ export default function App() {
           <AuthProvider>
             <ShellProvider>
               <BrowserRouter>
-                <ScreenShareProvider>
-                  <SeoManager />
-                  <AnnouncementBanner />
-                  <StartupRecoveryMarker />
-                  <AppRoutes />
-                  <ScreenShareOverlay />
-                </ScreenShareProvider>
+                <OceanTransitionProvider>
+                  <ScreenShareProvider>
+                    <SeoManager />
+                    <AnnouncementBanner />
+                    <StartupRecoveryMarker />
+                    <AppRoutes />
+                    <ScreenShareOverlay />
+                  </ScreenShareProvider>
+                </OceanTransitionProvider>
               </BrowserRouter>
             </ShellProvider>
           </AuthProvider>

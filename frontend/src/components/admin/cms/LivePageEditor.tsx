@@ -135,6 +135,7 @@ export function LivePageEditor({ canEdit, canPublish }: { canEdit: boolean; canP
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [online, setOnline] = useState(() => navigator.onLine);
   const [error, setError] = useState("");
+  const [errorExpanded, setErrorExpanded] = useState(false);
   const [message, setMessage] = useState("");
   const [history, setHistory] = useState<CmsPage[]>([]);
   const [future, setFuture] = useState<CmsPage[]>([]);
@@ -312,27 +313,32 @@ export function LivePageEditor({ canEdit, canPublish }: { canEdit: boolean; canP
     savingRef.current = true;
     setSaveState("Saving");
     setError("");
+    setErrorExpanded(false);
     try {
-      let next = await cmsApi.updatePage(token, source);
-      const wantedServerIds = new Set(source.blocks.filter((block) => !block.id.startsWith("local-")).map((block) => block.id));
-      for (const serverBlock of [...next.blocks]) {
-        if (!wantedServerIds.has(serverBlock.id)) next = await cmsApi.deleteBlock(token, next, serverBlock.id);
+      const next = await cmsApi.saveDraft(token, source);
+      const localCreated = new Map(
+        source.blocks
+          .map((block, index) => [block.id, next.blocks[index]?.id] as const)
+          .filter(([blockId, savedId]) => blockId.startsWith("local-") && Boolean(savedId))
+      );
+      const current = latestRef.current;
+      if (current && current !== source) {
+        const rebased = {
+          ...current,
+          version: next.version,
+          draftVersion: next.draftVersion,
+          draft_version: next.draft_version,
+          status: next.status,
+          updated_at: next.updated_at,
+          updated_by: next.updated_by,
+          blocks: current.blocks.map((block) => localCreated.has(block.id) ? { ...block, id: localCreated.get(block.id)! } : block)
+        };
+        setPage(rebased);
+        latestRef.current = rebased;
+        setSaveState("Unsaved");
+        localStorage.setItem(`auto-ai-cms-recovery:${rebased.id}`, JSON.stringify(rebased));
+        return null;
       }
-      const localCreated = new Map<string, string>();
-      for (const block of source.blocks) {
-        if (block.id.startsWith("local-")) {
-          next = await cmsApi.addBlock(token, next, block.block_type);
-          const created = next.blocks[next.blocks.length - 1];
-          if (created) {
-            next = await cmsApi.updateBlock(token, next, created.id, { content: block.content, is_visible: block.is_visible });
-            localCreated.set(block.id, created.id);
-          }
-        } else {
-          next = await cmsApi.updateBlock(token, next, block.id, { content: block.content, is_visible: block.is_visible });
-        }
-      }
-      const desired = source.blocks.map((block) => block.id.startsWith("local-") ? localCreated.get(block.id) : block.id).filter(Boolean) as string[];
-      if (desired.length === next.blocks.length && desired.length > 0) next = await cmsApi.reorderBlocks(token, next, desired);
       setPage(next);
       latestRef.current = next;
       setPages((items) => items.map((item) => item.id === next.id ? next : item));
@@ -353,6 +359,7 @@ export function LivePageEditor({ canEdit, canPublish }: { canEdit: boolean; canP
       localStorage.setItem(`auto-ai-cms-recovery:${source.id}`, JSON.stringify(source));
       setSaveState(requestError instanceof ApiClientError && requestError.status === 409 ? "Conflict detected" : "Save failed");
       setError(requestError instanceof Error ? requestError.message : "Save failed");
+      setErrorExpanded(true);
       return null;
     } finally {
       savingRef.current = false;
@@ -371,6 +378,7 @@ export function LivePageEditor({ canEdit, canPublish }: { canEdit: boolean; canP
     if (!token || !canPublish || saveState === "Publishing") return;
     if (blockingIssues.length) {
       setError(`Publish blocked: ${blockingIssues[0].message}`);
+      setErrorExpanded(true);
       return;
     }
     const saved = ["Unsaved", "Save failed", "Conflict detected"].includes(saveState) ? await saveDraft() : page;
@@ -385,6 +393,7 @@ export function LivePageEditor({ canEdit, canPublish }: { canEdit: boolean; canP
     } catch (requestError) {
       setSaveState("Publish failed");
       setError(requestError instanceof Error ? requestError.message : "Publish failed");
+      setErrorExpanded(true);
     }
   }
 
@@ -696,10 +705,18 @@ export function LivePageEditor({ canEdit, canPublish }: { canEdit: boolean; canP
           {canPublish && <button className="btn-primary" disabled={saveState === "Publishing" || blockingIssues.length > 0 || !online} title={blockingIssues[0]?.message} onClick={() => void publish()} type="button"><Send size={15} /> Publish</button>}
         </>}
         <a className="chip-dark" href={`${publicPath}?cmsFresh=${Date.now()}`} target="_blank" rel="noreferrer"><FileText size={15} /> Open</a>
-        <span className={`live-save-state${!online ? " is-offline" : ""}`}>{online ? <Wifi size={13} /> : <WifiOff size={13} />}{online ? saveState : "Offline · Unsaved locally"}{lastSavedAt && saveState === "Saved" ? ` · ${lastSavedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}</span>
+        <button
+          aria-expanded={error ? errorExpanded : undefined}
+          className={`live-save-state${!online ? " is-offline" : ""}${error ? " has-error" : ""}`}
+          disabled={!error}
+          onClick={() => error && setErrorExpanded((open) => !open)}
+          type="button"
+        >
+          {online ? <Wifi size={13} /> : <WifiOff size={13} />}{online ? saveState : "Offline · Unsaved locally"}{lastSavedAt && saveState === "Saved" ? ` · ${lastSavedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
+        </button>
       </header>
 
-      {error && <div className="live-editor-alert live-editor-alert-error" role="alert">{error}<button aria-label="Dismiss error" onClick={() => setError("")} type="button"><X size={14} /></button></div>}
+      {error && errorExpanded && <div className="live-editor-alert live-editor-alert-error" role="alert"><span>{error}</span>{saveState === "Save failed" && <button className="live-editor-alert-retry" disabled={!online || savingRef.current} onClick={() => void saveDraft()} type="button"><Save size={13} /> Retry</button>}<button aria-label="Dismiss error details" onClick={() => setErrorExpanded(false)} type="button"><X size={14} /></button></div>}
       {message && <div className="live-editor-alert live-editor-alert-success" role="status">{message}<button aria-label="Dismiss message" onClick={() => setMessage("")} type="button"><X size={14} /></button></div>}
 
       <div className={`live-editor-workspace${layersOpen && mode !== "preview" ? " has-layers" : ""}${propertiesOpen && mode !== "preview" ? " has-properties" : ""}`}>

@@ -1,12 +1,31 @@
-import { apiFetch } from "../../../api/client";
+import { apiFetch, ApiClientError } from "../../../api/client";
 import type { CmsAiAction, CmsAiSuggestion, CmsAnnouncement, CmsAudit, CmsBlockType, CmsFaq, CmsMedia, CmsPage, CmsPageResult, CmsRevision, CmsTextEntry } from "./types";
 import { defaultBlockContent } from "./cmsBlockLibrary";
+import { serializeCmsDraftForApi } from "./cmsDraft";
 
 const root = "/admin/cms";
 
 function pageKeyFromSlug(slug: string) {
   const key = slug.replace(/[^a-z0-9_-]/gi, "-").replace(/^-+|-+$/g, "").toLowerCase();
   return /^[a-z]/.test(key) ? key : `page-${key || "new"}`;
+}
+
+export function shouldRetryCmsDraftSave(error: unknown) {
+  if (!(error instanceof ApiClientError)) return false;
+  if (error.status === undefined) {
+    return ["network_unavailable", "cors_blocked", "server_unreachable"].includes(error.kind);
+  }
+  return error.status === 429 || (error.status >= 500 && error.status !== 504);
+}
+
+export async function withCmsDraftRetry<T>(operation: () => Promise<T>, backoffMs = 250): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (!shouldRetryCmsDraftSave(error)) throw error;
+    if (backoffMs > 0) await new Promise((resolve) => globalThis.setTimeout(resolve, backoffMs));
+    return operation();
+  }
 }
 
 export const cmsApi = {
@@ -45,6 +64,9 @@ export const cmsApi = {
       buttons: page.buttons, element_overrides: page.element_overrides, seo: page.seo
     })
   }),
+  saveDraft: (token: string, page: CmsPage) => withCmsDraftRetry(() => apiFetch<CmsPage>(`${root}/pages/${page.id}/draft`, {
+    method: "PUT", token, operation: "cms.page.draft.save", body: JSON.stringify(serializeCmsDraftForApi(page))
+  })),
   addBlock: (token: string, page: CmsPage, blockType: CmsBlockType) => apiFetch<CmsPage>(`${root}/pages/${page.id}/blocks?expected_version=${page.version}`, {
     method: "POST", token, operation: "cms.block.create", body: JSON.stringify({ block_type: blockType, content: defaultBlockContent(blockType), is_visible: true })
   }),

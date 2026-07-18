@@ -167,39 +167,7 @@ export function VisualWebsiteBuilder({ section, canEdit, canPublish }: { section
     if (!token || !page || !canEdit) return page;
     setSaveState("saving");
     try {
-      let next = await cmsApi.updatePage(token, page);
-      const wantedServerIds = new Set(page.blocks.filter((block) => !block.id.startsWith("local-")).map((block) => block.id));
-      for (const serverBlock of [...next.blocks]) {
-        if (!wantedServerIds.has(serverBlock.id)) {
-          next = await cmsApi.deleteBlock(token, next, serverBlock.id);
-        }
-      }
-      for (const draftBlock of page.blocks.filter((block) => !block.id.startsWith("local-"))) {
-        const serverBlock = next.blocks.find((block) => block.id === draftBlock.id);
-        if (!serverBlock) continue;
-        if (JSON.stringify(serverBlock.content) !== JSON.stringify(draftBlock.content) || serverBlock.is_visible !== draftBlock.is_visible) {
-          next = await cmsApi.updateBlock(token, next, draftBlock.id, { content: draftBlock.content, is_visible: draftBlock.is_visible });
-        }
-      }
-      const localCreated = new Map<string, string>();
-      const localBlocks = page.blocks.filter((block) => block.id.startsWith("local-"));
-      for (const localBlock of localBlocks) {
-        next = await cmsApi.addBlock(token, next, localBlock.block_type);
-        const created = next.blocks[next.blocks.length - 1];
-        if (created) {
-          next = await cmsApi.updateBlock(token, next, created.id, { content: localBlock.content, is_visible: localBlock.is_visible });
-          localCreated.set(localBlock.id, created.id);
-        }
-      }
-      if (localBlocks.length) {
-        const desired = page.blocks.map((block) => block.id.startsWith("local-") ? localCreated.get(block.id) : block.id).filter(Boolean) as string[];
-        if (desired.length === next.blocks.length) next = await cmsApi.reorderBlocks(token, next, desired);
-      } else {
-        const desired = page.blocks.map((block) => block.id);
-        if (desired.length === next.blocks.length && desired.some((id, index) => next.blocks[index]?.id !== id)) {
-          next = await cmsApi.reorderBlocks(token, next, desired);
-        }
-      }
+      const next = await cmsApi.saveDraft(token, page);
       setSelected(next);
       latestRef.current = next;
       setPages((items) => items.map((item) => item.id === next.id ? next : item));

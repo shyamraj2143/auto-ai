@@ -283,16 +283,32 @@ export function resolveApkDownloadUrl(
   return url.toString();
 }
 
-function getErrorMessage(payload: unknown, fallback: string): string {
+export function getErrorMessage(payload: unknown, fallback: string): string {
+  if (payload && typeof payload === "object" && "error" in payload) {
+    const error = (payload as { error?: unknown }).error;
+    if (error && typeof error === "object" && "message" in error) {
+      const message = (error as { message?: unknown }).message;
+      if (typeof message === "string" && message.trim()) return message;
+    }
+  }
   if (payload && typeof payload === "object" && "detail" in payload) {
     const detail = (payload as { detail?: unknown }).detail;
     if (typeof detail === "string" && detail.trim()) return detail;
+    if (detail && typeof detail === "object" && "message" in detail) {
+      const field = "field" in detail ? String((detail as { field?: unknown }).field ?? "").trim() : "";
+      const message = String((detail as { message?: unknown }).message ?? "").trim();
+      if (message) return field ? `${field}: ${message}` : message;
+    }
     if (Array.isArray(detail)) {
       const messages = detail
         .map((item) => {
           if (typeof item === "string") return item;
           if (item && typeof item === "object" && "msg" in item) {
-            return String((item as { msg: unknown }).msg);
+            const location = "loc" in item && Array.isArray((item as { loc?: unknown }).loc)
+              ? (item as { loc: unknown[] }).loc.filter((part) => part !== "body").join(".")
+              : "";
+            const message = String((item as { msg: unknown }).msg);
+            return location ? `${location}: ${message}` : message;
           }
           return "";
         })
