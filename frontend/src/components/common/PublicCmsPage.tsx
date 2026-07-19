@@ -1,5 +1,8 @@
+import { useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { usePublishedPage } from "../../hooks/useCmsContent";
+import { useKineticReveal } from "../../hooks/useKineticReveal";
+import { LANDING_KINETIC_MAP } from "../../motion/kineticRevealConfig";
 import { CmsPageRenderer } from "./CmsPageRenderer";
 
 const fallbackBySlug: Record<string, { title: string; description: string }> = {
@@ -16,20 +19,24 @@ export function PublicCmsPage() {
   const slug = location.pathname.replace(/^\/+|\/+$/g, "") || "home";
   const page = usePublishedPage(slug);
   const fallback = fallbackBySlug[slug];
+  const revealRootRef = useRef<HTMLDivElement>(null);
+  useKineticReveal(revealRootRef);
 
-  if (page) return <CmsPageRenderer page={page} blocks={page.blocks?.filter((block) => block.is_visible)} />;
-
-  if (fallback) {
-    return (
-      <main className="cms-render-page">
-        <section className="cms-render-hero">
-          <h1>{fallback.title}</h1>
-          <p>{fallback.description}</p>
-          <div className="cms-render-actions"><Link className="btn-primary" to="/">Home</Link></div>
-        </section>
-      </main>
-    );
-  }
-
-  return <main className="cms-render-page"><section className="cms-render-hero"><h1>Page unavailable</h1><p>The published page could not be loaded.</p></section></main>;
+  return (
+    <div className="public-kinetic-reveal-scope" ref={revealRootRef}>
+      {page ? (
+        <CmsPageRenderer page={page} blocks={page.blocks?.filter((block) => block.is_visible)} />
+      ) : fallback ? (
+        <main className="cms-render-page">
+          <section className="cms-render-hero">
+            <h1 data-kinetic-reveal={LANDING_KINETIC_MAP.heroHeading}>{fallback.title}</h1>
+            <p data-kinetic-reveal={LANDING_KINETIC_MAP.heroParagraph}>{fallback.description}</p>
+            <div className="cms-render-actions"><Link className="btn-primary" to="/">Home</Link></div>
+          </section>
+        </main>
+      ) : (
+        <main className="cms-render-page"><section className="cms-render-hero"><h1>Page unavailable</h1><p>The published page could not be loaded.</p></section></main>
+      )}
+    </div>
+  );
 }

@@ -73,7 +73,9 @@
   overflow-x: clip;
   padding-top: 62px;
   background:
-    linear-gradient(180deg, var(--prism-ink) 0%, var(--prism-navy) 42%, var(--prism-ink) 100%);
+    radial-gradient(circle at 18% 10%, rgba(54, 228, 247, 0.1), transparent 34%),
+    radial-gradient(circle at 82% 18%, rgba(139, 124, 255, 0.1), transparent 32%),
+    linear-gradient(180deg, var(--prism-ink) 0%, var(--prism-navy) 52%, var(--prism-ink) 100%);
 }
 
 body.prism-public-page {
@@ -757,32 +759,6 @@ body.prism-public-page::-webkit-scrollbar {
   container-type: inline-size;
 }
 
-.prism-constellation {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.34;
-  background-image:
-    radial-gradient(circle, rgba(54, 228, 247, 0.7) 0 1px, transparent 1.5px),
-    radial-gradient(circle, rgba(255, 110, 180, 0.48) 0 1px, transparent 1.5px);
-  background-position: 4% 14%, 78% 30%;
-  background-size: 72px 72px, 118px 118px;
-  mask-image: linear-gradient(90deg, #000, transparent 42%, #000);
-  animation: prism-constellation-drift 10s ease-in-out infinite alternate;
-}
-
-@keyframes prism-constellation-drift {
-  from {
-    background-position: 4% 14%, 78% 30%;
-    opacity: 0.28;
-  }
-
-  to {
-    background-position: 12% 22%, 70% 22%;
-    opacity: 0.46;
-  }
-}
-
 .prism-hero::after {
   position: absolute;
   right: 6%;
@@ -1263,16 +1239,7 @@ body.prism-public-page::-webkit-scrollbar {
 
 .prism-cms-section .cms-public-blocks { max-width: 1120px; margin: 0 auto; }
 
-html[data-auto-ai-crystal="full"] .prism-reveal:not(.is-revealed) {
-  opacity: 0;
-  transform: translateY(14px);
-}
-
-.prism-reveal {
-  opacity: 1;
-  transform: translateY(0);
-  transition: opacity 320ms var(--prism-ease), transform 320ms var(--prism-ease);
-}
+.prism-reveal { opacity: 1; }
 
 html[data-auto-ai-crystal="full"][data-auto-ai-visible="true"] .prism-crystal-object {
   animation: prism-crystal-breathe 5.2s ease-in-out infinite;
@@ -1288,12 +1255,6 @@ html[data-auto-ai-crystal="full"][data-auto-ai-visible="true"] .prism-demo-think
 html[data-auto-ai-crystal="reduced"] :is(.prism-surface, .prism-card, .prism-android-layout) {
   background: var(--prism-surface);
   box-shadow: var(--prism-shadow-sm);
-}
-
-html[data-auto-ai-crystal="reduced"] .prism-reveal,
-html[data-auto-ai-crystal="off"] .prism-reveal {
-  opacity: 1 !important;
-  transform: none !important;
 }
 
 @keyframes prism-dialog-in {
@@ -1442,12 +1403,11 @@ html[data-auto-ai-crystal="off"] .prism-reveal {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .prism-landing *,
-  .prism-dialog-layer * {
+  html:not([data-auto-ai-force-motion="true"]) .prism-landing *,
+  html:not([data-auto-ai-force-motion="true"]) .prism-dialog-layer * {
     scroll-behavior: auto !important;
     animation: none !important;
     transition: none !important;
   }
 
-  .prism-reveal { opacity: 1 !important; transform: none !important; }
 }

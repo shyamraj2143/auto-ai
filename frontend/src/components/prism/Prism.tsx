@@ -2,8 +2,6 @@ import clsx from "clsx";
 import {
   useEffect,
   useId,
-  useRef,
-  useState,
   type ButtonHTMLAttributes,
   type HTMLAttributes,
   type InputHTMLAttributes,
@@ -163,27 +161,6 @@ export function PrismEmptyState({ icon, title, description }: { icon: ReactNode;
   );
 }
 
-export function PrismReveal({ className, children }: { className?: string; children: ReactNode }) {
-  const rootRef = useRef<HTMLDivElement>(null);
-  const [revealed, setRevealed] = useState(() => typeof document === "undefined" || document.documentElement.dataset.autoAiCrystal !== "full");
-
-  useEffect(() => {
-    const element = rootRef.current;
-    const fullEffects = document.documentElement.dataset.autoAiCrystal === "full";
-    if (!element || !fullEffects || !("IntersectionObserver" in window)) {
-      setRevealed(true);
-      return;
-    }
-
-    setRevealed(false);
-    const observer = new IntersectionObserver(([entry]) => {
-      if (!entry?.isIntersecting) return;
-      setRevealed(true);
-      observer.disconnect();
-    }, { rootMargin: "0px 0px -8%", threshold: 0.08 });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-
-  return <div ref={rootRef} className={clsx("prism-reveal", revealed && "is-revealed", className)}>{children}</div>;
+export function PrismReveal({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <div className={clsx("prism-reveal", className)} {...props} />;
 }

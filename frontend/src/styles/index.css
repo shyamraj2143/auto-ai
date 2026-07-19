@@ -1854,9 +1854,9 @@ button:disabled {
   min-height: 100vh;
   color: white;
   background:
-    linear-gradient(120deg, rgba(20, 184, 166, 0.18), transparent 32%),
-    linear-gradient(245deg, rgba(225, 29, 72, 0.13), transparent 34%),
-    linear-gradient(180deg, #05070d, #111827 52%, #030712);
+    radial-gradient(circle at 18% 12%, rgba(34, 211, 238, 0.1), transparent 34%),
+    radial-gradient(circle at 82% 20%, rgba(139, 92, 246, 0.1), transparent 32%),
+    linear-gradient(180deg, #050816, #0a1025 52%, #050816);
 }
 
 .landing-nav {

@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { resolveApiAssetUrl } from "../../api/client";
 import { labelCms, lines, namedLines, textValue, type CmsDevice } from "../admin/cms/cmsBlockLibrary";
 import type { CmsBlock, CmsPage } from "../admin/cms/types";
+import { cmsKineticRevealVariant, isCmsKineticRevealEnabled, LANDING_KINETIC_MAP } from "../../motion/kineticRevealConfig";
 
 type RendererProps = {
   page?: CmsPage;
@@ -59,6 +60,8 @@ function Shell({ block, props, children }: { block: CmsBlock; props: RendererPro
     "data-cms-label": labelCms(block.block_type),
     draggable: !locked && !protectedBlock
   } : {};
+  const kineticRevealVariant = isCmsKineticRevealEnabled(props.editMode, props.previewMode) ? cmsKineticRevealVariant(block.block_type) : undefined;
+  const kineticGroup = ["page_section", "container", "feature_card", "feature_grid", "testimonials", "statistics", "team_section"].includes(block.block_type);
   return (
     <div
       className={[
@@ -70,6 +73,8 @@ function Shell({ block, props, children }: { block: CmsBlock; props: RendererPro
         !block.is_visible || !breakpointVisible ? "cms-render-hidden" : ""
       ].filter(Boolean).join(" ")}
       style={style}
+      data-kinetic-reveal={kineticRevealVariant}
+      data-kinetic-group={kineticGroup || undefined}
       {...editorMetadata}
     >
       {children}
@@ -92,8 +97,8 @@ export function CmsPageRenderer(props: RendererProps) {
     return (
       <article className={`cms-render-page cms-render-${props.device ?? "desktop"}`}>
         <section className="cms-render-hero">
-          <h1 {...editableProps(props, { id: "hero_heading", block_type: "heading", content: {}, position: -2, is_visible: true }, "hero_heading")}>{props.page.hero_heading}</h1>
-          <p {...editableProps(props, { id: "hero_description", block_type: "paragraph", content: {}, position: -1, is_visible: true }, "hero_description")}>{props.page.hero_description}</p>
+          <h1 data-kinetic-reveal={isCmsKineticRevealEnabled(props.editMode, props.previewMode) ? LANDING_KINETIC_MAP.heroHeading : undefined} {...editableProps(props, { id: "hero_heading", block_type: "heading", content: {}, position: -2, is_visible: true }, "hero_heading")}>{props.page.hero_heading}</h1>
+          <p data-kinetic-reveal={isCmsKineticRevealEnabled(props.editMode, props.previewMode) ? LANDING_KINETIC_MAP.heroParagraph : undefined} {...editableProps(props, { id: "hero_description", block_type: "paragraph", content: {}, position: -1, is_visible: true }, "hero_description")}>{props.page.hero_description}</p>
           <div className="cms-render-actions">
             {props.page.buttons.map((button, index) => (
               props.editMode && !props.previewMode ? (
@@ -117,15 +122,16 @@ export function CmsPageRenderer(props: RendererProps) {
   const body = textValue(block, "text", "description", "body", "answer", "quote", "message");
   const items = lines(block.content.items ?? block.content.columns ?? block.content.options);
   const namedItems = namedLines(block.content.items ?? block.content.columns ?? block.content.options);
+  const textRevealEnabled = isCmsKineticRevealEnabled(props.editMode, props.previewMode);
 
   let content: ReactNode;
   switch (block.block_type) {
     case "hero_section":
-      content = <section className="cms-render-section cms-render-hero-block"><h2 {...editableProps(props, block, "heading")}>{textValue(block, "heading")}</h2><p {...editableProps(props, block, "description")}>{textValue(block, "description")}</p><SafeLink block={block} className="btn-primary w-fit" props={props} textField="button_text">{textValue(block, "button_text", "label") || "Open"}</SafeLink></section>;
+      content = <section className="cms-render-section cms-render-hero-block"><h2 data-kinetic-reveal={textRevealEnabled ? LANDING_KINETIC_MAP.sectionOneHeading : undefined} {...editableProps(props, block, "heading")}>{textValue(block, "heading")}</h2><p data-kinetic-reveal={textRevealEnabled ? LANDING_KINETIC_MAP.supportingText : undefined} {...editableProps(props, block, "description")}>{textValue(block, "description")}</p><SafeLink block={block} className="btn-primary w-fit" props={props} textField="button_text">{textValue(block, "button_text", "label") || "Open"}</SafeLink></section>;
       break;
     case "page_section":
     case "container":
-      content = <section className={`cms-render-section cms-section-${block.content.background ?? "default"}`}><h2 {...editableProps(props, block, "name")}>{title || labelCms(block.block_type)}</h2>{body && <p {...editableProps(props, block, "text")}>{body}</p>}</section>;
+      content = <section className={`cms-render-section cms-section-${block.content.background ?? "default"}`}><h2 data-kinetic-inner="heading" {...editableProps(props, block, "name")}>{title || labelCms(block.block_type)}</h2>{body && <p data-kinetic-inner="body" {...editableProps(props, block, "text")}>{body}</p>}</section>;
       break;
     case "heading":
       content = String(block.content.level) === "h1" ? <h1 className={`text-${block.content.align ?? "left"}`} {...editableProps(props, block, "text")}>{title}</h1> : String(block.content.level) === "h3" ? <h3 className={`text-${block.content.align ?? "left"}`} {...editableProps(props, block, "text")}>{title}</h3> : <h2 className={`text-${block.content.align ?? "left"}`} {...editableProps(props, block, "text")}>{title}</h2>;
@@ -165,14 +171,14 @@ export function CmsPageRenderer(props: RendererProps) {
       content = <span className="cms-render-badge" {...editableProps(props, block, "text")}>{title || textValue(block, "name")}</span>;
       break;
     case "feature_card":
-      content = <article className="cms-render-card"><h3 {...editableProps(props, block, "title")}>{title}</h3><p {...editableProps(props, block, "body")}>{body}</p></article>;
+      content = <article className="cms-render-card"><h3 data-kinetic-inner="heading" {...editableProps(props, block, "title")}>{title}</h3><p data-kinetic-inner="body" {...editableProps(props, block, "body")}>{body}</p></article>;
       break;
     case "feature_grid":
     case "pricing_cards":
     case "testimonials":
     case "statistics":
     case "team_section":
-      content = <section><h2 {...editableProps(props, block, "title")}>{title || labelCms(block.block_type)}</h2><div className="cms-render-grid">{namedItems.map((item, index) => <article className="cms-render-card" key={`${item.title}-${index}`}><h3>{item.title}</h3>{item.body && <p>{item.body}</p>}</article>)}</div></section>;
+      content = <section><h2 data-kinetic-inner="heading" {...editableProps(props, block, "title")}>{title || labelCms(block.block_type)}</h2><div className="cms-render-grid" data-kinetic-inner="body">{namedItems.map((item, index) => <article className="cms-render-card" key={`${item.title}-${index}`}><h3>{item.title}</h3>{item.body && <p>{item.body}</p>}</article>)}</div></section>;
       break;
     case "faq":
     case "accordion":
@@ -182,7 +188,7 @@ export function CmsPageRenderer(props: RendererProps) {
     case "app_download":
     case "contact_section":
     case "announcement_banner":
-      content = <section className="cms-render-section cms-render-cta"><h2 {...editableProps(props, block, "heading")}>{title}</h2><p {...editableProps(props, block, "description")}>{body || textValue(block, "email")}</p><SafeLink block={block} className="btn-primary w-fit" props={props} textField="button_text">{textValue(block, "button_text", "action_text") || "Open"}</SafeLink></section>;
+      content = <section className="cms-render-section cms-render-cta"><h2 data-kinetic-reveal={textRevealEnabled ? LANDING_KINETIC_MAP.importantCta : undefined} {...editableProps(props, block, "heading")}>{title}</h2><p data-kinetic-reveal={textRevealEnabled ? LANDING_KINETIC_MAP.supportingText : undefined} {...editableProps(props, block, "description")}>{body || textValue(block, "email")}</p><SafeLink block={block} className="btn-primary w-fit" props={props} textField="button_text">{textValue(block, "button_text", "action_text") || "Open"}</SafeLink></section>;
       break;
     case "two_columns":
       content = <div className="cms-render-columns cms-render-columns-2"><p {...editableProps(props, block, "left")}>{textValue(block, "left")}</p><p {...editableProps(props, block, "right")}>{textValue(block, "right")}</p></div>;
