@@ -1,0 +1,26 @@
+- generic [ref=f5e3]:
+  - link [ref=f5e4] [cursor=pointer]:
+    - /url: /
+    - img "Auto-AI logo" [ref=f5e6]
+    - text: Auto-AI
+  - generic [ref=f5e7]:
+    - paragraph [ref=f5e8]: Secure workspace
+    - heading "Welcome back." [level=1] [ref=f5e12]
+    - paragraph [ref=f5e13]: Pick up the thread with your chats, documents, memory, and model settings intact.
+  - generic [ref=f5e14]:
+    - generic [ref=f5e15]:
+      - paragraph [ref=f5e16]: Login
+      - heading "Enter Auto-AI" [level=2] [ref=f5e17]
+    - generic [ref=f5e18]: or use email
+    - generic [ref=f5e20]:
+      - generic [ref=f5e21]: Email
+      - textbox "Email" [ref=f5e22]
+    - generic [ref=f5e23]:
+      - generic [ref=f5e24]: Password
+      - textbox "Password" [ref=f5e25]
+    - button "Forgot password?" [ref=f5e27] [cursor=pointer]
+    - button "Login" [ref=f5e31] [cursor=pointer]
+    - paragraph [ref=f5e34]:
+      - text: New here?
+      - link "Create an account" [ref=f5e35] [cursor=pointer]:
+        - /url: /register

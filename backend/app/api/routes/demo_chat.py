@@ -1,8 +1,12 @@
 import hashlib
 import logging
+import re
+import time
+import uuid
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -32,6 +36,40 @@ def client_fingerprint(request: Request) -> str:
     client_ip = forwarded or (request.client.host if request.client else "unknown")
     user_agent = request.headers.get("user-agent", "unknown")[:200]
     return hashlib.sha256(f"{client_ip}|{user_agent}".encode("utf-8")).hexdigest()
+
+
+def demo_request_id(request: Request) -> str:
+    candidate = (
+        request.headers.get("x-request-id")
+        or request.headers.get("x-railway-request-id")
+        or ""
+    ).strip()[:80]
+    if candidate and re.fullmatch(r"[A-Za-z0-9._:-]+", candidate):
+        return candidate
+    return str(uuid.uuid4())
+
+
+def demo_error_response(status_code: int, code: str, message: str, request_id: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={"error": {"code": code, "message": message, "request_id": request_id}},
+        headers={"x-request-id": request_id},
+    )
+
+
+def classify_provider_error(exc: Exception) -> tuple[int, str, str, bool]:
+    provider_status = exc.status_code if isinstance(exc, HTTPException) else 503
+    if provider_status in {400, 422}:
+        return 400, "INVALID_REQUEST", "The demo request was not accepted by the AI service.", False
+    if provider_status in {401, 403, 404}:
+        return 503, "PROVIDER_CONFIGURATION_ERROR", "AI service configuration is temporarily unavailable.", False
+    if provider_status == 429:
+        return 429, "PROVIDER_RATE_LIMITED", "AI service is busy. Please retry shortly.", True
+    if provider_status in {408, 504}:
+        return 504, "PROVIDER_TIMEOUT", "AI service timed out. Please retry.", False
+    if provider_status in {502}:
+        return 503, "PROVIDER_INVALID_RESPONSE", "AI service returned an invalid response. Please retry.", False
+    return 503, "PROVIDER_UNAVAILABLE", "AI service is temporarily unavailable.", True
 
 
 def reserve_demo_message(db: Session, session_id: str, fingerprint: str) -> tuple[DemoChatSession, int]:
@@ -99,12 +137,18 @@ def demo_chat_config() -> DemoChatConfig:
 
 
 @router.post("/chat", response_model=DemoChatResponse)
-def demo_chat(payload: DemoChatRequest, request: Request, db: Session = Depends(get_db)) -> DemoChatResponse:
+def demo_chat(payload: DemoChatRequest, request: Request, db: Session = Depends(get_db)) -> DemoChatResponse | JSONResponse:
+    request_id = demo_request_id(request)
     if not settings.PUBLIC_DEMO_CHAT_ENABLED:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="The Bedrock demo is temporarily unavailable.")
+        return demo_error_response(503, "DEMO_DISABLED", "The AI demo is temporarily unavailable.", request_id)
 
     fingerprint = client_fingerprint(request)
-    record, remaining = reserve_demo_message(db, payload.session_id, fingerprint)
+    try:
+        record, remaining = reserve_demo_message(db, payload.session_id, fingerprint)
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+            return demo_error_response(429, "DEMO_LIMIT_REACHED", str(exc.detail), request_id)
+        raise
     history = [
         {"role": item.role, "content": item.content.strip()}
         for item in payload.history[-10:]
@@ -116,31 +160,51 @@ def demo_chat(payload: DemoChatRequest, request: Request, db: Session = Depends(
         {"role": "user", "content": payload.message.strip()},
     ]
 
-    try:
-        content, usage, selected_model = groq_service.complete(
-            messages,
-            provider="bedrock",
-            model=settings.bedrock_model,
-            temperature=0.45,
-            max_tokens=240,
-            request_timeout=35,
-            allow_bedrock_fallback=False,
-        )
-    except Exception as exc:
+    provider_error: Exception | None = None
+    max_attempts = 1 + max(0, min(settings.PUBLIC_DEMO_CHAT_MAX_RETRIES, 2))
+    for attempt in range(max_attempts):
+        try:
+            content, usage, selected_model = groq_service.complete(
+                messages,
+                provider="bedrock",
+                model=settings.bedrock_model,
+                temperature=0.45,
+                max_tokens=240,
+                request_timeout=35,
+                allow_bedrock_fallback=False,
+            )
+            break
+        except Exception as exc:
+            provider_error = exc
+            _, _, _, retryable = classify_provider_error(exc)
+            if not retryable or attempt + 1 >= max_attempts:
+                release_demo_message(db, payload.session_id)
+                error_status, error_code, error_message, _ = classify_provider_error(exc)
+                logger.warning(
+                    "public_demo_failure request_id=%s provider=bedrock model=%s region=%s exception=%s code=%s",
+                    request_id,
+                    settings.bedrock_model,
+                    settings.bedrock_region,
+                    type(exc).__name__,
+                    error_code,
+                )
+                return demo_error_response(error_status, error_code, error_message, request_id)
+            time.sleep(max(0.0, min(settings.PUBLIC_DEMO_CHAT_RETRY_BACKOFF_SECONDS, 2.0)) * (attempt + 1))
+    else:
         release_demo_message(db, payload.session_id)
-        logger.warning("Bedrock public demo request failed: %s", type(exc).__name__)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="The Bedrock demo could not answer right now. Please try again.",
-        ) from exc
+        error_status, error_code, error_message, _ = classify_provider_error(provider_error or RuntimeError("provider failed"))
+        return demo_error_response(error_status, error_code, error_message, request_id)
 
     normalized_content = content.strip()
     if not normalized_content:
         release_demo_message(db, payload.session_id)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="The Bedrock demo returned an empty answer. Please try again.",
+        logger.warning(
+            "public_demo_failure request_id=%s provider=bedrock model=%s region=%s exception=EmptyResponse code=PROVIDER_INVALID_RESPONSE",
+            request_id,
+            settings.bedrock_model,
+            settings.bedrock_region,
         )
+        return demo_error_response(503, "PROVIDER_INVALID_RESPONSE", "AI service returned an invalid response. Please retry.", request_id)
 
     db.add(APIUsage(
         user_id=None,

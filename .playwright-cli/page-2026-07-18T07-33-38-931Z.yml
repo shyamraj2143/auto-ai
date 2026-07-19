@@ -1,0 +1,25 @@
+- generic [active]:
+  - generic [ref=f1e4]:
+    - generic [ref=f1e6]:
+      - generic [ref=f1e7]: "> Detail: Connected"
+      - generic [ref=f1e8]: "> Location: Atlantic Ocean"
+      - generic [ref=f1e9]: "> Coordinates: Searching"
+    - generic [ref=f1e11]:
+      - generic [ref=f1e12]: Blue Marine Foundation
+      - generic [ref=f1e13]: All Rights Reserved
+      - generic [ref=f1e14]: Copyright 2021
+    - generic [ref=f1e23]:
+      - generic [ref=f1e24]: "25"
+      - generic [ref=f1e25]: "50"
+      - generic [ref=f1e26]: "75"
+      - generic [ref=f1e27]: "100"
+      - generic [ref=f1e28]:
+        - generic [ref=f1e29]: Loading
+        - generic [ref=f1e30]: Experience
+  - banner [ref=f1e46]:
+    - link "Return to homepage" [ref=f1e47] [cursor=pointer]:
+      - /url: https://www.bluemarinefoundation.com/the-sea-we-breathe/
+    - navigation [ref=f1e56]:
+      - list [ref=f1e57]:
+        - listitem [ref=f1e58]:
+          - button "EN" [ref=f1e59] [cursor=pointer]

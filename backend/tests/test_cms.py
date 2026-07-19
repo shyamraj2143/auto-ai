@@ -4,6 +4,7 @@ from io import BytesIO
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 from starlette.datastructures import Headers, UploadFile
@@ -16,6 +17,7 @@ from app.api.routes.cms import (
     publish_page_endpoint,
     replace_media,
     restore_revision,
+    save_page_draft,
     update_page,
     upload_media,
 )
@@ -24,8 +26,8 @@ from app.db.base import Base
 from app.models.cms import ContentPage, ContentRevision, GlobalContent, MediaAsset, UiTextEntry
 from app.models.user import User
 from app.main import app
-from app.schemas.cms import CmsAiAssistRequest, ContentBlockInput, ContentPageUpdate, PublishRequest, RestoreRevisionRequest
-from app.services.cms_service import ensure_cms_defaults, publish_due
+from app.schemas.cms import CmsAiAssistRequest, CmsDraftUpdate, ContentBlockInput, ContentPageUpdate, PublishRequest, RestoreRevisionRequest
+from app.services.cms_service import ensure_cms_defaults, publish_due, serialize_page
 from app.services.groq_service import groq_service
 
 
@@ -116,6 +118,77 @@ def test_draft_preview_publish_and_cached_public_fallback(db: Session) -> None:
     assert republished["status"] == "published"
     assert public_page("home", db)["hero_heading"] == "Unpublished Draft Hero"
     assert db.scalar(select(func.count()).select_from(ContentRevision).where(ContentRevision.content_id == page.id)) == 2
+
+
+def test_atomic_cms_draft_document_saves_and_preserves_published_content(db: Session) -> None:
+    ensure_cms_defaults(db)
+    admin = user(db, "atomic-draft-admin", "content_admin")
+    page = home(db)
+    published = publish_page_endpoint(
+        page.id,
+        PublishRequest(expected_version=page.version, change_summary="Publish baseline"),
+        admin,
+        db,
+    )
+    baseline_heading = public_page("home", db)["hero_heading"]
+    current = serialize_page(home(db))
+    first_block = current["blocks"][0]
+    payload = CmsDraftUpdate(
+        schema_version=1,
+        page_id=page.id,
+        expected_version=published["version"],
+        title=current["title"],
+        slug=current["slug"],
+        hero_heading="Atomic draft heading",
+        hero_description=current["hero_description"],
+        buttons=current["buttons"],
+        element_overrides={"footer.description": {"text": "Saved footer", "hidden": False}},
+        seo=current["seo"],
+        blocks=[
+            {
+                "id": first_block["id"],
+                "block_type": first_block["block_type"],
+                "content": {**first_block["content"], "text": "Updated first block"},
+                "is_visible": first_block["is_visible"],
+            },
+            {"block_type": "paragraph", "content": {"text": "New block"}, "is_visible": True},
+        ],
+    )
+
+    saved = save_page_draft(page.id, payload, admin, db)
+
+    assert saved["version"] == published["version"] + 1
+    assert saved["hero_heading"] == "Atomic draft heading"
+    assert saved["element_overrides"]["footer.description"]["text"] == "Saved footer"
+    assert [block["content"]["text"] for block in saved["blocks"]] == ["Updated first block", "New block"]
+    assert serialize_page(home(db))["blocks"] == saved["blocks"]
+    assert public_page("home", db)["hero_heading"] == baseline_heading
+
+    with pytest.raises(HTTPException) as conflict:
+        save_page_draft(page.id, payload, admin, db)
+    assert conflict.value.status_code == 409
+
+
+def test_cms_draft_contract_reports_unknown_editor_field() -> None:
+    with pytest.raises(ValidationError) as rejected:
+        CmsDraftUpdate.model_validate({
+            "schema_version": 1,
+            "page_id": "page-id",
+            "expected_version": 1,
+            "title": "Home",
+            "slug": "home",
+            "hero_heading": "Heading",
+            "hero_description": "Description",
+            "buttons": [],
+            "element_overrides": {},
+            "seo": {},
+            "blocks": [],
+            "selected_block_id": "runtime-only",
+        })
+
+    error = rejected.value.errors()[0]
+    assert error["loc"] == ("selected_block_id",)
+    assert error["type"] == "extra_forbidden"
 
 
 def test_content_editor_cannot_publish_and_unsafe_content_is_rejected(db: Session) -> None:

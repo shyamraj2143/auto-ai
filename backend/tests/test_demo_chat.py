@@ -49,7 +49,9 @@ def test_demo_chat_uses_bedrock_without_fallback_and_stores_no_chat(monkeypatch)
         return "Real Bedrock demo answer", {"prompt_tokens": 8, "completion_tokens": 5, "total_tokens": 13}, "amazon.nova-lite-v1:0"
 
     monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_ENABLED", True)
-    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_LIMIT", 20)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_LIMIT", 5)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_MAX_RETRIES", 1)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_RETRY_BACKOFF_SECONDS", 0)
     monkeypatch.setattr(demo_chat.groq_service, "complete", fake_complete)
 
     response = client.post("/api/v1/demo/chat", json=payload())
@@ -60,7 +62,7 @@ def test_demo_chat_uses_bedrock_without_fallback_and_stores_no_chat(monkeypatch)
         "provider": "bedrock",
         "model": "amazon.nova-lite-v1:0",
         "messages_used": 1,
-        "remaining": 19,
+        "remaining": 4,
     }
     assert calls[0][1]["provider"] == "bedrock"
     assert calls[0][1]["allow_bedrock_fallback"] is False
@@ -94,19 +96,27 @@ def test_demo_chat_enforces_server_side_limit(monkeypatch) -> None:
     db.close()
 
 
-def test_demo_chat_releases_quota_when_bedrock_fails(monkeypatch) -> None:
+def test_demo_chat_releases_quota_and_returns_structured_error_when_bedrock_fails(monkeypatch) -> None:
     client, db = demo_client()
     monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_ENABLED", True)
-    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_LIMIT", 20)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_LIMIT", 5)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_MAX_RETRIES", 1)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_RETRY_BACKOFF_SECONDS", 0)
+    calls = 0
 
     def fail(*args, **kwargs):
+        nonlocal calls
+        calls += 1
         raise HTTPException(status_code=503, detail="provider unavailable")
 
     monkeypatch.setattr(demo_chat.groq_service, "complete", fail)
     response = client.post("/api/v1/demo/chat", json=payload())
 
     assert response.status_code == 503
-    assert response.json()["detail"] == "The Bedrock demo could not answer right now. Please try again."
+    assert response.json()["error"]["code"] == "PROVIDER_UNAVAILABLE"
+    assert response.json()["error"]["message"] == "AI service is temporarily unavailable."
+    assert response.json()["error"]["request_id"] == response.headers["x-request-id"]
+    assert calls == 2
     assert db.get(DemoChatSession, "demo-session-0001").messages_used == 0
     db.close()
 
@@ -114,7 +124,7 @@ def test_demo_chat_releases_quota_when_bedrock_fails(monkeypatch) -> None:
 def test_demo_chat_config_exposes_active_bedrock_model(monkeypatch) -> None:
     client, db = demo_client()
     monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_ENABLED", True)
-    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_LIMIT", 20)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_LIMIT", 5)
     response = client.get("/api/v1/demo/chat/config")
 
     assert response.status_code == 200
@@ -122,6 +132,84 @@ def test_demo_chat_config_exposes_active_bedrock_model(monkeypatch) -> None:
         "enabled": True,
         "provider": "bedrock",
         "model": settings.bedrock_model,
-        "limit": 20,
+        "limit": 5,
     }
+    db.close()
+
+
+def test_demo_chat_maps_access_denied_without_retry(monkeypatch) -> None:
+    client, db = demo_client()
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_ENABLED", True)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_LIMIT", 5)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_MAX_RETRIES", 1)
+    calls = 0
+
+    def fail(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        raise HTTPException(status_code=403, detail="access denied")
+
+    monkeypatch.setattr(demo_chat.groq_service, "complete", fail)
+    response = client.post("/api/v1/demo/chat", json=payload())
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "PROVIDER_CONFIGURATION_ERROR"
+    assert calls == 1
+    db.close()
+
+
+def test_demo_chat_maps_throttling_after_bounded_retry(monkeypatch) -> None:
+    client, db = demo_client()
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_ENABLED", True)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_LIMIT", 5)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_MAX_RETRIES", 1)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_RETRY_BACKOFF_SECONDS", 0)
+    calls = 0
+
+    def fail(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        raise HTTPException(status_code=429, detail="throttled")
+
+    monkeypatch.setattr(demo_chat.groq_service, "complete", fail)
+    response = client.post("/api/v1/demo/chat", json=payload())
+
+    assert response.status_code == 429
+    assert response.json()["error"]["code"] == "PROVIDER_RATE_LIMITED"
+    assert calls == 2
+    db.close()
+
+
+def test_demo_chat_maps_timeout_without_retry(monkeypatch) -> None:
+    client, db = demo_client()
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_ENABLED", True)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_LIMIT", 5)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_MAX_RETRIES", 1)
+    calls = 0
+
+    def fail(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        raise HTTPException(status_code=504, detail="timeout")
+
+    monkeypatch.setattr(demo_chat.groq_service, "complete", fail)
+    response = client.post("/api/v1/demo/chat", json=payload())
+
+    assert response.status_code == 504
+    assert response.json()["error"]["code"] == "PROVIDER_TIMEOUT"
+    assert calls == 1
+    db.close()
+
+
+def test_demo_chat_rejects_empty_provider_response(monkeypatch) -> None:
+    client, db = demo_client()
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_ENABLED", True)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_LIMIT", 5)
+    monkeypatch.setattr(demo_chat.groq_service, "complete", lambda *args, **kwargs: ("", {}, "openai.gpt-oss-120b"))
+
+    response = client.post("/api/v1/demo/chat", json=payload())
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "PROVIDER_INVALID_RESPONSE"
+    assert db.get(DemoChatSession, "demo-session-0001").messages_used == 0
     db.close()

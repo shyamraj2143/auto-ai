@@ -15,7 +15,7 @@ from app.db.session import get_db
 from app.models.cms import Announcement, ContentAuditLog, ContentBlock, ContentPage, ContentRevision, FaqEntry, GlobalContent, MediaAsset, UiTextEntry
 from app.models.user import User
 from app.schemas.cms import (
-    AnnouncementCreate, AnnouncementUpdate, BlockOrderUpdate, CmsAiAssistRequest, ContentBlockInput, ContentBlockUpdate,
+    AnnouncementCreate, AnnouncementUpdate, BlockOrderUpdate, CmsAiAssistRequest, CmsDraftUpdate, ContentBlockInput, ContentBlockUpdate,
     ContentPageCreate, ContentPageUpdate, FaqCreate, FaqUpdate, MediaMetadataUpdate, PublishRequest,
     RestoreRevisionRequest, TextEntryUpdate, TextPublishRequest, reject_unsafe_markup,
 )
@@ -189,6 +189,77 @@ def update_page(page_id: str, payload: ContentPageUpdate, actor: User = Depends(
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Page slug already exists") from exc
     db.refresh(item)
+    return serialize_page(item)
+
+
+@admin_router.put("/pages/{page_id}/draft")
+def save_page_draft(page_id: str, payload: CmsDraftUpdate, actor: User = Depends(get_current_cms_editor), db: Session = Depends(get_db)) -> dict:
+    item = get_page(db, page_id)
+    if payload.page_id != item.id:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Draft page_id does not match the requested page")
+    require_version(item.version, payload.expected_version)
+
+    active_blocks = {
+        block.id: block
+        for block in db.scalars(
+            select(ContentBlock).where(ContentBlock.page_id == item.id, ContentBlock.is_deleted.is_(False))
+        ).all()
+    }
+    requested_ids = {block.id for block in payload.blocks if block.id is not None}
+    unknown_ids = sorted(requested_ids - set(active_blocks))
+    if unknown_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"field": "blocks.id", "message": "Draft contains a block that does not belong to this page"},
+        )
+
+    item.title = payload.title
+    item.slug = payload.slug
+    item.hero_heading = payload.hero_heading
+    item.hero_description = payload.hero_description
+    item.buttons = [button.model_dump() for button in payload.buttons]
+    item.element_overrides = {key: value.model_dump(exclude_none=True) for key, value in payload.element_overrides.items()}
+    item.seo = payload.seo.model_dump()
+
+    now = datetime.utcnow()
+    for block_id, block in active_blocks.items():
+        if block_id not in requested_ids:
+            block.is_deleted = True
+            block.deleted_at = now
+
+    for position, draft_block in enumerate(payload.blocks):
+        if draft_block.id is None:
+            block = ContentBlock(page_id=item.id)
+            db.add(block)
+        else:
+            block = active_blocks[draft_block.id]
+        block.block_type = draft_block.block_type
+        block.content = draft_block.content
+        block.position = position
+        block.is_visible = draft_block.is_visible
+        block.is_deleted = False
+        block.deleted_at = None
+
+    item.version += 1
+    item.status = "draft" if item.status != "archived" else item.status
+    item.updated_by = actor.id
+    item.updated_at = now
+    try:
+        audit(
+            db,
+            actor,
+            "edited",
+            "page",
+            item.id,
+            "Draft saved",
+            {"schema_version": payload.schema_version, "block_count": len(payload.blocks)},
+        )
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Page slug already exists") from exc
+    db.refresh(item)
+    db.expire(item, ["blocks"])
     return serialize_page(item)
 
 

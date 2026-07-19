@@ -101,9 +101,10 @@ Important environment variables:
 - `GROQ_VISION_MODEL`: Groq image analysis model
 - `GROQ_AUDIO_MODEL`: Groq transcription model
 - `BEDROCK_API_KEY`: Amazon Bedrock API key
-- `BEDROCK_REGION`: Amazon Bedrock runtime region, default `us-south-1`
+- `BEDROCK_REGION`: Amazon Bedrock region, default `ap-south-1`
 - `BEDROCK_MODEL`: Bedrock chat model, default `openai.gpt-oss-120b`
-- `BEDROCK_ENDPOINT_MODE`: Bedrock endpoint mode, `mantle`, `runtime`, or `auto`; default `mantle`
+- `BEDROCK_ENDPOINT_MODE`: Bedrock endpoint mode, `mantle`, `runtime`, or `converse`; default `mantle`
+- `PUBLIC_DEMO_CHAT_LIMIT`: Per-device public demo message limit, default `5`
 - `BEDROCK_MANTLE_BASE_URL`: optional Bedrock Mantle base URL override
 - `BEDROCK_AUTH_MODE`: Bedrock auth mode, `auto`, `api_key`, or `aws`; default `auto`
 - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`: optional SigV4 fallback credentials for Bedrock
@@ -218,4 +219,4 @@ Provider endpoints used by this build:
 - Amazon Bedrock Mantle Chat Completions endpoint: `https://bedrock-mantle.{region}.api.aws/v1/chat/completions`
 - Amazon Bedrock Converse endpoint: `https://bedrock-runtime.{region}.amazonaws.com/model/{modelId}/converse`
 
-Bedrock uses the Mantle Chat Completions endpoint by default because AWS recommends it for OpenAI-compatible chat. If the native runtime endpoint returns `Operation not allowed`, the key/role can read account model metadata but cannot invoke runtime models; enable Bedrock model invocation permissions such as `bedrock:InvokeModel`/Converse for the selected model and region or keep `BEDROCK_ENDPOINT_MODE=mantle`.
+Bedrock uses the Mantle Chat Completions endpoint by default. Mantle requires `openai.gpt-oss-120b`; Runtime/Converse requires `openai.gpt-oss-120b-1:0`. Endpoint interfaces and model IDs are validated and are not mixed during fallback.

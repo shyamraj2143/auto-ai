@@ -381,10 +381,57 @@ class GroqService:
             )
 
         prefix = f"Bedrock request failed ({auth_label} auth): "
+        if status_code in {408, 504}:
+            mapped_status = status.HTTP_504_GATEWAY_TIMEOUT
+        elif status_code == 429:
+            mapped_status = status.HTTP_429_TOO_MANY_REQUESTS
+        elif status_code in {400, 401, 403, 404}:
+            mapped_status = status_code
+        elif status_code >= 500:
+            mapped_status = status.HTTP_503_SERVICE_UNAVAILABLE
+        else:
+            mapped_status = status.HTTP_502_BAD_GATEWAY
         raise HTTPException(
-            status_code=status_code if status_code in {400, 401, 403, 404, 429} else status.HTTP_502_BAD_GATEWAY,
+            status_code=mapped_status,
             detail=f"{prefix}{detail}",
         )
+
+    @staticmethod
+    def _validate_bedrock_model(endpoint_mode: str, model: str) -> None:
+        if endpoint_mode == "mantle" and model.endswith("-1:0"):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="BEDROCK_MODEL must use the Mantle model name openai.gpt-oss-120b when BEDROCK_ENDPOINT_MODE=mantle.",
+            )
+        if endpoint_mode in {"runtime", "converse"} and model == "openai.gpt-oss-120b":
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="BEDROCK_MODEL must use the runtime model ID openai.gpt-oss-120b-1:0 when BEDROCK_ENDPOINT_MODE=runtime.",
+            )
+
+    @staticmethod
+    def _bedrock_endpoint_mode_for_model(model: str) -> str:
+        configured_mode = settings.bedrock_endpoint_mode.lower()
+        if model != settings.bedrock_model and model.endswith(":0"):
+            return "runtime"
+        return configured_mode
+
+    @staticmethod
+    def _bedrock_chat_completion(response: httpx.Response, model: str) -> tuple[str, dict[str, int], str]:
+        try:
+            completion = response.json()
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Bedrock returned malformed JSON.") from exc
+        choices = completion.get("choices") if isinstance(completion, dict) else None
+        if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Bedrock returned an invalid completion response.")
+        message = choices[0].get("message")
+        if not isinstance(message, dict):
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Bedrock returned an invalid completion message.")
+        content = GroqService._content_to_text(message.get("content")).strip()
+        if not content:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Bedrock returned an empty completion.")
+        return content, GroqService.extract_usage(completion), model
 
     def _bedrock_auth_attempts(self, *, host: str, path: str, body: bytes) -> list[tuple[str, dict[str, str]]]:
         auth_mode = settings.bedrock_auth_mode.lower()
@@ -474,18 +521,21 @@ class GroqService:
                 json=self._bedrock_mantle_payload(messages, model=model, max_tokens=max_tokens),
                 timeout=request_timeout or 90,
             )
-        except httpx.HTTPError as exc:
+        except httpx.TimeoutException as exc:
             raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Bedrock Mantle request failed: {exc}",
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail="Bedrock Mantle request timed out.",
+            ) from exc
+        except httpx.TransportError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Bedrock Mantle transport failed: {type(exc).__name__}",
             ) from exc
 
         if response.status_code >= 400:
             self._raise_bedrock_error(response.status_code, response.text, auth_label="mantle_api_key")
 
-        completion = response.json()
-        content = self._content_to_text(completion.get("choices", [{}])[0].get("message", {}).get("content"))
-        return content, self.extract_usage(completion), model
+        return self._bedrock_chat_completion(response, model)
 
     def _complete_bedrock_runtime(
         self,
@@ -511,14 +561,21 @@ class GroqService:
                     content=body,
                     timeout=request_timeout or 90,
                 )
-            except httpx.HTTPError as exc:
-                last_error = (status.HTTP_502_BAD_GATEWAY, str(exc), auth_label)
+            except httpx.TimeoutException as exc:
+                raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="Bedrock Runtime request timed out.") from exc
+            except httpx.TransportError as exc:
+                last_error = (status.HTTP_503_SERVICE_UNAVAILABLE, type(exc).__name__, auth_label)
                 continue
 
             if response.status_code < 400:
-                completion = response.json()
+                try:
+                    completion = response.json()
+                except ValueError as exc:
+                    raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Bedrock returned malformed JSON.") from exc
                 content_parts = completion.get("output", {}).get("message", {}).get("content", [])
-                content = self._content_to_text(content_parts)
+                content = self._content_to_text(content_parts).strip()
+                if not content:
+                    raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Bedrock returned an empty completion.")
                 return content, self.extract_usage(completion), model
 
             last_error = (response.status_code, response.text, auth_label)
@@ -546,45 +603,34 @@ class GroqService:
         request_timeout: float | None = None,
         allow_fallback: bool = True,
     ) -> tuple[str, dict[str, int], str]:
-        endpoint_mode = settings.bedrock_endpoint_mode.lower()
-        attempts: list[Any] = []
+        endpoint_mode = self._bedrock_endpoint_mode_for_model(model)
+        self._validate_bedrock_model(endpoint_mode, model)
         if endpoint_mode in {"runtime", "converse"}:
-            attempts.append(
-                lambda: self._complete_bedrock_runtime(
-                    messages,
-                    model=model,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    request_timeout=request_timeout,
-                )
+            operation = lambda: self._complete_bedrock_runtime(
+                messages,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                request_timeout=request_timeout,
             )
-            attempts.append(lambda: self._complete_bedrock_mantle(messages, model=model, max_tokens=max_tokens, request_timeout=request_timeout))
+        elif endpoint_mode == "mantle":
+            operation = lambda: self._complete_bedrock_mantle(
+                messages,
+                model=model,
+                max_tokens=max_tokens,
+                request_timeout=request_timeout,
+            )
         else:
-            attempts.append(lambda: self._complete_bedrock_mantle(messages, model=model, max_tokens=max_tokens, request_timeout=request_timeout))
-            attempts.append(
-                lambda: self._complete_bedrock_runtime(
-                    messages,
-                    model=model,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    request_timeout=request_timeout,
-                )
-            )
-
-        last_error: HTTPException | None = None
-        for attempt in attempts:
-            try:
-                return attempt()
-            except HTTPException as exc:
-                last_error = exc
-
-        if not allow_fallback:
-            if last_error:
-                raise last_error
             raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Bedrock request failed before fallback.",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="BEDROCK_ENDPOINT_MODE must be mantle, runtime, or converse.",
             )
+
+        try:
+            return operation()
+        except HTTPException:
+            if not allow_fallback:
+                raise
 
         try:
             return self._complete_groq(
@@ -716,6 +762,7 @@ class GroqService:
             messages,
             model=model,
             temperature=temperature,
+            allow_fallback=False,
         )
         yield {"bedrock_delta": content, "usage": usage}
 
@@ -728,44 +775,31 @@ class GroqService:
         web_search: bool = False,
         allow_fallback: bool = True,
     ) -> Iterable[Any]:
-        endpoint_mode = settings.bedrock_endpoint_mode.lower()
+        endpoint_mode = self._bedrock_endpoint_mode_for_model(model)
+        self._validate_bedrock_model(endpoint_mode, model)
 
         def iterator():
-            attempts: list[Any] = []
             if endpoint_mode in {"runtime", "converse"}:
-                attempts.append(
-                    lambda: self._stream_bedrock_runtime(
-                        messages,
-                        model=model,
-                        temperature=temperature,
-                    )
+                operation = lambda: self._stream_bedrock_runtime(
+                    messages,
+                    model=model,
+                    temperature=temperature,
                 )
-                attempts.append(lambda: self._stream_bedrock_mantle(messages, model=model))
+            elif endpoint_mode == "mantle":
+                operation = lambda: self._stream_bedrock_mantle(messages, model=model)
             else:
-                attempts.append(lambda: self._stream_bedrock_mantle(messages, model=model))
-                attempts.append(
-                    lambda: self._stream_bedrock_runtime(
-                        messages,
-                        model=model,
-                        temperature=temperature,
-                    )
-                )
-
-            last_error: HTTPException | None = None
-            for attempt in attempts:
-                try:
-                    yield from attempt()
-                    return
-                except HTTPException as exc:
-                    last_error = exc
-
-            if not allow_fallback:
-                if last_error:
-                    raise last_error
                 raise HTTPException(
-                    status_code=status.HTTP_502_BAD_GATEWAY,
-                    detail="Bedrock request failed before fallback.",
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="BEDROCK_ENDPOINT_MODE must be mantle, runtime, or converse.",
                 )
+
+            try:
+                yield from operation()
+                return
+            except HTTPException as exc:
+                last_error = exc
+                if not allow_fallback:
+                    raise
 
             try:
                 yield from self._stream_groq(

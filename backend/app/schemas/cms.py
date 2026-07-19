@@ -161,6 +161,18 @@ class ContentBlockUpdate(StrictModel):
         return ContentBlockInput(block_type="paragraph", content=content).content
 
 
+class CmsDraftBlock(StrictModel):
+    id: str | None = Field(default=None, min_length=1, max_length=64)
+    block_type: BlockType
+    content: dict[str, Any] = Field(default_factory=dict)
+    is_visible: bool = True
+
+    @field_validator("content")
+    @classmethod
+    def safe_content(cls, content: dict[str, Any]) -> dict[str, Any]:
+        return ContentBlockInput(block_type="paragraph", content=content).content
+
+
 class BlockOrderUpdate(StrictModel):
     block_ids: list[str] = Field(min_length=1, max_length=200)
     expected_page_version: int = Field(ge=1)
@@ -213,6 +225,40 @@ class ContentPageUpdate(StrictModel):
     _safe_element_keys = field_validator("element_overrides")(
         classmethod(lambda cls, value: validate_element_override_keys(value))
     )
+
+
+class CmsDraftUpdate(StrictModel):
+    schema_version: Literal[1] = 1
+    page_id: str = Field(min_length=1, max_length=64)
+    expected_version: int = Field(ge=1)
+    title: str = Field(min_length=1, max_length=160)
+    slug: str = Field(pattern=r"^/?[a-z0-9][a-z0-9/_-]{0,158}$")
+    hero_heading: str = Field(default="", max_length=200)
+    hero_description: str = Field(default="", max_length=2000)
+    buttons: list[ContentButton] = Field(default_factory=list, max_length=8)
+    element_overrides: dict[str, ContentElementOverride] = Field(default_factory=dict, max_length=500)
+    seo: SeoFields = Field(default_factory=SeoFields)
+    blocks: list[CmsDraftBlock] = Field(default_factory=list, max_length=200)
+
+    @field_validator("slug")
+    @classmethod
+    def normalize_slug(cls, value: str) -> str:
+        value = value.strip("/")
+        return value or "home"
+
+    _safe_text = field_validator("hero_heading", "hero_description")(
+        classmethod(lambda cls, value: reject_unsafe_markup(value))
+    )
+    _safe_element_keys = field_validator("element_overrides")(
+        classmethod(lambda cls, value: validate_element_override_keys(value))
+    )
+
+    @model_validator(mode="after")
+    def unique_block_ids(self):
+        ids = [block.id for block in self.blocks if block.id is not None]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Draft block IDs must be unique")
+        return self
 
 
 class PublishRequest(StrictModel):

@@ -1,0 +1,80 @@
+- generic [active] [ref=f1e64]:
+  - banner [ref=f1e46]:
+    - link "Return to homepage" [ref=f1e47] [cursor=pointer]:
+      - /url: https://www.bluemarinefoundation.com/the-sea-we-breathe/
+    - navigation [ref=f1e56]:
+      - list [ref=f1e57]:
+        - listitem [ref=f1e108]:
+          - link "Journeys" [ref=f1e109] [cursor=pointer]:
+            - /url: https://www.bluemarinefoundation.com/the-sea-we-breathe/journeys/
+        - listitem [ref=f1e110]:
+          - link "About" [ref=f1e111] [cursor=pointer]:
+            - /url: /the-sea-we-breathe/about/#about-content
+        - listitem [ref=f1e112]:
+          - link "Get Involved" [ref=f1e113] [cursor=pointer]:
+            - /url: /the-sea-we-breathe/about/#get-involved-content
+        - listitem [ref=f1e114]:
+          - link "Education" [ref=f1e115] [cursor=pointer]:
+            - /url: /the-sea-we-breathe/about/#education-content
+        - listitem [ref=f1e116]:
+          - button "Share" [ref=f1e117] [cursor=pointer]
+          - generic [ref=f1e122]:
+            - link "Share the current page on facebook" [ref=f1e123] [cursor=pointer]:
+              - /url: https://www.facebook.com/sharer/sharer.php?u=https://www.bluemarinefoundation.com/the-sea-we-breathe/journeys/marine-protected-areas/
+              - generic [ref=f1e124]:
+                - generic [ref=f1e125]: Share the current page on facebook
+                - generic [ref=f1e129]: Share the current page on facebook
+            - link "Share the current page on twitter" [ref=f1e136] [cursor=pointer]:
+              - /url: https://twitter.com/intent/tweet?url=https://www.bluemarinefoundation.com/the-sea-we-breathe/journeys/marine-protected-areas/
+              - generic [ref=f1e137]:
+                - generic [ref=f1e138]: Share the current page on twitter
+                - generic [ref=f1e142]: Share the current page on twitter
+        - listitem [ref=f1e58]:
+          - button "EN" [ref=f1e59] [cursor=pointer]
+  - button "Audio" [ref=f1e150] [cursor=pointer]
+  - generic [ref=f1e151]:
+    - generic:
+      - generic:
+        - generic:
+          - paragraph: Atlantic Ocean
+          - paragraph: "Discovery Progress: 0%"
+          - generic:
+            - generic:
+              - generic:
+                - paragraph:
+                  - generic: "Depth:"
+                  - generic: 5m
+              - generic:
+                - paragraph:
+                  - generic: "Temp:"
+                  - generic: 21°c
+  - generic [ref=f1e62]:
+    - main:
+      - generic [ref=f1e174]: Scroll to explore
+  - generic:
+    - generic:
+      - generic [ref=f1e186]:
+        - paragraph [ref=f1e187]:
+          - generic [ref=f1e188]: A Journey by Blue Marine Foundation
+        - heading "Protecting the Underwater World" [level=1] [ref=f1e189]:
+          - generic [ref=f1e190]: Protecting the
+          - generic [ref=f1e192]: Underwater World
+        - heading "Areas of ocean safe from human impact" [level=2] [ref=f1e194]
+      - generic [ref=f1e199]:
+        - heading "Rainforests of the Sea" [level=2] [ref=f1e200]:
+          - generic [ref=f1e201]: Rainforests
+          - generic [ref=f1e203]: of the Sea
+        - link "Dive In" [ref=f1e205] [cursor=pointer]:
+          - /url: https://www.bluemarinefoundation.com/the-sea-we-breathe/journeys/blue-carbon-habitats/
+          - generic [ref=f1e206]:
+            - generic [ref=f1e207]: Dive In
+            - generic [ref=f1e208]: Dive In
+      - generic [ref=f1e213]:
+        - heading "The Ocean's Web of Life" [level=2] [ref=f1e214]:
+          - generic [ref=f1e215]: The Ocean's
+          - generic [ref=f1e217]: Web of Life
+        - link "Dive In" [ref=f1e219] [cursor=pointer]:
+          - /url: https://www.bluemarinefoundation.com/the-sea-we-breathe/journeys/sustainable-fisheries/
+          - generic [ref=f1e220]:
+            - generic [ref=f1e221]: Dive In
+            - generic [ref=f1e222]: Dive In

@@ -122,7 +122,7 @@ class Settings(BaseSettings):
     GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai"
 
     BEDROCK_API_KEY: str | None = None
-    BEDROCK_REGION: str = "us-south-1"
+    BEDROCK_REGION: str = "ap-south-1"
     BEDROCK_MODEL: str = "openai.gpt-oss-120b"
     BEDROCK_BASE_URL: str | None = None
     BEDROCK_AUTH_MODE: str = "auto"
@@ -188,8 +188,10 @@ class Settings(BaseSettings):
 
     RATE_LIMIT_PER_MINUTE: int = 90
     PUBLIC_DEMO_CHAT_ENABLED: bool = True
-    PUBLIC_DEMO_CHAT_LIMIT: int = 20
+    PUBLIC_DEMO_CHAT_LIMIT: int = 5
     PUBLIC_DEMO_CHAT_TTL_HOURS: int = 24
+    PUBLIC_DEMO_CHAT_MAX_RETRIES: int = 1
+    PUBLIC_DEMO_CHAT_RETRY_BACKOFF_SECONDS: float = 0.25
     ADMIN_EMAIL: EmailStr | None = None
     ADMIN_PASSWORD: SecretStr | None = Field(default=None, min_length=8, max_length=128)
     ADMIN_NAME: str | None = Field(default=None, min_length=2, max_length=120)
@@ -361,6 +363,13 @@ class Settings(BaseSettings):
                 return value or None
         return None
 
+    @staticmethod
+    def _clean_env_value(value: str | None) -> str | None:
+        candidate = (value or "").strip()
+        if len(candidate) >= 2 and candidate[0] == candidate[-1] and candidate[0] in {"'", '"'}:
+            candidate = candidate[1:-1].strip()
+        return candidate or None
+
     @property
     def groq_api_key(self) -> str | None:
         return (
@@ -372,47 +381,47 @@ class Settings(BaseSettings):
 
     @property
     def bedrock_api_key(self) -> str | None:
-        return self._project_env_value("BEDROCK_API_KEY") or self.BEDROCK_API_KEY
+        return self._clean_env_value(self._project_env_value("BEDROCK_API_KEY") or self.BEDROCK_API_KEY)
 
     @property
     def bedrock_region(self) -> str:
-        return self._project_env_value("BEDROCK_REGION") or self.BEDROCK_REGION
+        return self._clean_env_value(self._project_env_value("BEDROCK_REGION") or self.BEDROCK_REGION) or "ap-south-1"
 
     @property
     def bedrock_model(self) -> str:
-        return self._project_env_value("BEDROCK_MODEL") or self.BEDROCK_MODEL
+        return self._clean_env_value(self._project_env_value("BEDROCK_MODEL") or self.BEDROCK_MODEL) or "openai.gpt-oss-120b"
 
     @property
     def bedrock_base_url(self) -> str | None:
-        return self._project_env_value("BEDROCK_BASE_URL") or self.BEDROCK_BASE_URL
+        return self._clean_env_value(self._project_env_value("BEDROCK_BASE_URL") or self.BEDROCK_BASE_URL)
 
     @property
     def bedrock_auth_mode(self) -> str:
-        return self._project_env_value("BEDROCK_AUTH_MODE") or self.BEDROCK_AUTH_MODE
+        return self._clean_env_value(self._project_env_value("BEDROCK_AUTH_MODE") or self.BEDROCK_AUTH_MODE) or "auto"
 
     @property
     def bedrock_endpoint_mode(self) -> str:
-        return self._project_env_value("BEDROCK_ENDPOINT_MODE") or self.BEDROCK_ENDPOINT_MODE
+        return self._clean_env_value(self._project_env_value("BEDROCK_ENDPOINT_MODE") or self.BEDROCK_ENDPOINT_MODE) or "mantle"
 
     @property
     def bedrock_mantle_base_url(self) -> str:
         return (
-            self._project_env_value("BEDROCK_MANTLE_BASE_URL")
+            self._clean_env_value(self._project_env_value("BEDROCK_MANTLE_BASE_URL"))
             or self.BEDROCK_MANTLE_BASE_URL
             or f"https://bedrock-mantle.{self.bedrock_region}.api.aws/v1"
         ).rstrip("/")
 
     @property
     def aws_access_key_id(self) -> str | None:
-        return self._project_env_value("AWS_ACCESS_KEY_ID") or self.AWS_ACCESS_KEY_ID
+        return self._clean_env_value(self._project_env_value("AWS_ACCESS_KEY_ID") or self.AWS_ACCESS_KEY_ID)
 
     @property
     def aws_secret_access_key(self) -> str | None:
-        return self._project_env_value("AWS_SECRET_ACCESS_KEY") or self.AWS_SECRET_ACCESS_KEY
+        return self._clean_env_value(self._project_env_value("AWS_SECRET_ACCESS_KEY") or self.AWS_SECRET_ACCESS_KEY)
 
     @property
     def aws_session_token(self) -> str | None:
-        return self._project_env_value("AWS_SESSION_TOKEN") or self.AWS_SESSION_TOKEN
+        return self._clean_env_value(self._project_env_value("AWS_SESSION_TOKEN") or self.AWS_SESSION_TOKEN)
 
     @property
     def payment_upi_id(self) -> str | None:
