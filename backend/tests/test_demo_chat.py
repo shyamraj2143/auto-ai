@@ -60,7 +60,7 @@ def test_demo_chat_prefers_bedrock_with_fallback_and_stores_no_chat(monkeypatch)
         "provider": "bedrock",
         "model": settings.bedrock_model,
         "messages_used": 1,
-        "remaining": 19,
+        "remaining": 4,
     }
     assert calls[0][1]["provider"] == "bedrock"
     assert calls[0][1]["allow_bedrock_fallback"] is True
@@ -147,6 +147,6 @@ def test_demo_chat_config_exposes_active_bedrock_model(monkeypatch) -> None:
         "enabled": True,
         "provider": "bedrock",
         "model": settings.bedrock_model,
-        "limit": 20,
+        "limit": 5,
     }
     db.close()

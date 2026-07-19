@@ -162,5 +162,12 @@ export function PrismEmptyState({ icon, title, description }: { icon: ReactNode;
 }
 
 export function PrismReveal({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={clsx("prism-reveal", className)} {...props} />;
+  return (
+    <div
+      data-kinetic-reveal="depth-landing"
+      data-kinetic-group
+      className={clsx("prism-reveal", className)}
+      {...props}
+    />
+  );
 }

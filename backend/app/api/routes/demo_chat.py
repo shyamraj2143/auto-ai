@@ -16,6 +16,7 @@ from app.services.groq_service import groq_service
 
 router = APIRouter(prefix="/demo", tags=["public-demo"])
 logger = logging.getLogger("auto_ai.public_demo")
+PUBLIC_DEMO_CHAT_LIMIT_CAP = 5
 
 
 DEMO_SYSTEM_PROMPT = """You are Auto-AI in a public, text-only website demo.
@@ -34,9 +35,13 @@ def client_fingerprint(request: Request) -> str:
     return hashlib.sha256(f"{client_ip}|{user_agent}".encode("utf-8")).hexdigest()
 
 
+def public_demo_chat_limit() -> int:
+    return min(PUBLIC_DEMO_CHAT_LIMIT_CAP, max(1, settings.PUBLIC_DEMO_CHAT_LIMIT))
+
+
 def reserve_demo_message(db: Session, session_id: str, fingerprint: str) -> tuple[DemoChatSession, int]:
     now = utc_now_naive()
-    limit = max(1, settings.PUBLIC_DEMO_CHAT_LIMIT)
+    limit = public_demo_chat_limit()
     expires_at = now + timedelta(hours=max(1, settings.PUBLIC_DEMO_CHAT_TTL_HOURS))
     record = db.scalar(
         select(DemoChatSession)
@@ -102,7 +107,7 @@ def demo_chat_config() -> DemoChatConfig:
     return DemoChatConfig(
         enabled=settings.PUBLIC_DEMO_CHAT_ENABLED,
         model=settings.bedrock_model,
-        limit=max(1, settings.PUBLIC_DEMO_CHAT_LIMIT),
+        limit=public_demo_chat_limit(),
     )
 
 

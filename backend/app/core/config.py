@@ -188,7 +188,7 @@ class Settings(BaseSettings):
 
     RATE_LIMIT_PER_MINUTE: int = 90
     PUBLIC_DEMO_CHAT_ENABLED: bool = True
-    PUBLIC_DEMO_CHAT_LIMIT: int = 20
+    PUBLIC_DEMO_CHAT_LIMIT: int = 5
     PUBLIC_DEMO_CHAT_TTL_HOURS: int = 24
     ADMIN_EMAIL: EmailStr | None = None
     ADMIN_PASSWORD: SecretStr | None = Field(default=None, min_length=8, max_length=128)

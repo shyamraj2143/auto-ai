@@ -411,7 +411,7 @@ export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
   const scrollToSection = useCallback((sectionId: string) => {
     setMobileMenuOpen(false);
     closeCommand();
-    const behavior = document.documentElement.dataset.autoAiCrystal === "full" ? "smooth" : "auto";
+    const behavior = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
     document.getElementById(sectionId)?.scrollIntoView({ behavior, block: "start" });
   }, [closeCommand]);
 
@@ -676,7 +676,7 @@ export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
             <div className="prism-preview-topbar">
               <span className="prism-preview-brand" style={elementStyle("preview.brand")} {...editableElementProps("preview.brand", "text", "Preview Brand", elementText("preview.brand", "Auto-AI"))}><LogoIcon /> {elementText("preview.brand", "Auto-AI")}</span>
               <div className="prism-preview-statuses">
-                <PrismStatusChip tone="active"><span style={elementStyle("preview.remaining")} {...editableElementProps("preview.remaining", "text", "Demo Limit", elementText("preview.remaining", `${demoRemaining} demo chats left`))}>{elementText("preview.remaining", `${demoRemaining} demo chats left`)}</span></PrismStatusChip>
+                <PrismStatusChip tone="active"><span style={elementStyle("preview.remaining")}>{demoRemaining} demo chats left</span></PrismStatusChip>
                 <PrismStatusChip className="prism-bedrock-chip" tone="success" icon={<span className="prism-live-dot" />}>
                   <span style={elementStyle("preview.provider")}>{demoProviderLabel(demoProvider)}</span> <span style={elementStyle("preview.model")}>{demoModel}</span>
                 </PrismStatusChip>
@@ -738,7 +738,7 @@ export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
         </div>
 
         {extraBlocks.length > 0 && (
-          <PrismReveal className="prism-public-section prism-cms-section">
+          <PrismReveal className="prism-public-section prism-cms-section" data-kinetic-reveal="container-drop">
             <PublishedContentBlocks
               blocks={extraBlocks}
               editMode={editor?.editMode && !editor.previewMode}
@@ -750,7 +750,7 @@ export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
         )}
 
         <section id="features" className="prism-public-section prism-feature-section" style={elementStyle("features")} aria-labelledby="features-heading" {...editableElementProps("features", "page_section", "Features Section")}>
-          <PrismReveal>
+          <PrismReveal data-kinetic-reveal="left-flight">
             <div className="prism-section-heading">
               <PrismBadge><BrainCircuit size={14} /> <span data-kinetic-reveal={LANDING_KINETIC_MAP.label} style={elementStyle("features.badge")} {...editableElementProps("features.badge", "badge", "Features Badge", elementText("features.badge", "Connected intelligence"))}>{elementText("features.badge", "Connected intelligence")}</span></PrismBadge>
               <h2 id="features-heading" data-kinetic-reveal={LANDING_KINETIC_MAP.sectionOneHeading} {...(featureHeadingBlock ? editorProps(featureHeadingBlock.id, "heading", "text", { editable: "text", label: "Heading", currentValue: featureHeading }) : editableElementProps("features.heading", "heading", "Heading", elementText("features.heading", featureHeading)))}>{featureHeadingBlock ? featureHeading : elementText("features.heading", featureHeading)}</h2>
@@ -782,7 +782,7 @@ export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
         </section>
 
         <section className="prism-public-section prism-loop-section" style={elementStyle("workflow")} aria-labelledby="loop-heading" {...editableElementProps("workflow", "page_section", "Workflow Section")}>
-          <PrismReveal>
+          <PrismReveal data-kinetic-reveal="right-flight">
             <PrismSurface className="prism-loop-band">
               <div>
                 <PrismBadge><Network size={14} /> <span data-kinetic-reveal={LANDING_KINETIC_MAP.label} style={elementStyle("workflow.badge")} {...editableElementProps("workflow.badge", "badge", "Workflow Badge", elementText("workflow.badge", "One workspace"))}>{elementText("workflow.badge", "One workspace")}</span></PrismBadge>
@@ -797,7 +797,7 @@ export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
         </section>
 
         <section id="android" className="prism-public-section" style={elementStyle("android")} aria-labelledby="android-heading" {...editableElementProps("android", "page_section", "Android Section")}>
-          <PrismReveal>
+          <PrismReveal data-kinetic-reveal="diagonal-prism-left">
             <div className="prism-android-layout">
               <div className="prism-android-copy">
                 <PrismBadge><Smartphone size={14} /> <span data-kinetic-reveal={LANDING_KINETIC_MAP.label} style={elementStyle("android.badge")} {...editableElementProps("android.badge", "badge", "Android Badge", elementText("android.badge", "Android application"))}>{elementText("android.badge", "Android application")}</span></PrismBadge>
@@ -842,7 +842,7 @@ export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
         </section>
 
         <section className="prism-public-section" style={elementStyle("testimonials")} aria-labelledby="trust-heading" {...editableElementProps("testimonials", "page_section", "Testimonials Section")}>
-          <PrismReveal>
+          <PrismReveal data-kinetic-reveal="diagonal-prism-right">
             <div className="prism-section-heading prism-section-heading-left">
               <PrismBadge><Sparkles size={14} /> <span data-kinetic-reveal={LANDING_KINETIC_MAP.label} style={elementStyle("testimonials.badge")} {...editableElementProps("testimonials.badge", "badge", "Testimonials Badge", elementText("testimonials.badge", "Built for real work"))}>{elementText("testimonials.badge", "Built for real work")}</span></PrismBadge>
               <h2 id="trust-heading" data-kinetic-reveal={LANDING_KINETIC_MAP.sectionOneHeading} style={elementStyle("testimonials.heading")} {...editableElementProps("testimonials.heading", "heading", "Testimonials Heading", elementText("testimonials.heading", "Clear enough for every day. Capable enough for the hard days."))}>{elementText("testimonials.heading", "Clear enough for every day. Capable enough for the hard days.")}</h2>
@@ -859,7 +859,7 @@ export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
         </section>
 
         <section id="pricing" className="prism-public-section" style={elementStyle("pricing")} aria-labelledby="pricing-heading" {...editableElementProps("pricing", "page_section", "Pricing Section")}>
-          <PrismReveal>
+          <PrismReveal data-kinetic-reveal="depth-landing">
             <div className="prism-section-heading">
               <PrismBadge><Zap size={14} /> <span data-kinetic-reveal={LANDING_KINETIC_MAP.label} style={elementStyle("pricing.badge")} {...editableElementProps("pricing.badge", "badge", "Pricing Badge", elementText("pricing.badge", "Flexible plans"))}>{elementText("pricing.badge", "Flexible plans")}</span></PrismBadge>
               <h2 id="pricing-heading" aria-label={elementText("pricing.heading", "Start focused. Scale when the work grows.")} data-kinetic-reveal={LANDING_KINETIC_MAP.pricingHeading} style={elementStyle("pricing.heading")} {...editableElementProps("pricing.heading", "heading", "Pricing Heading", elementText("pricing.heading", "Start focused. Scale when the work grows."))}><KineticSplitText disabled={editorIsInteractive} text={elementText("pricing.heading", "Start focused. Scale when the work grows.")} /></h2>
@@ -888,7 +888,7 @@ export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
         </section>
 
         <section className="prism-public-section prism-cta-section" style={finalCta ? undefined : elementStyle("cta")} aria-labelledby="cta-heading" {...(finalCta ? editorProps(finalCta.id, "call_to_action", "", { editable: "container", label: "Call To Action" }) : editableElementProps("cta", "call_to_action", "Call To Action"))}>
-          <PrismReveal>
+          <PrismReveal data-kinetic-reveal="container-drop">
             <div className="prism-final-cta">
               <div>
                 <PrismBadge><LogoIcon /> <span data-kinetic-reveal={LANDING_KINETIC_MAP.label} style={elementStyle("cta.badge")} {...editableElementProps("cta.badge", "badge", "CTA Badge", elementText("cta.badge", "Auto-AI"))}>{elementText("cta.badge", "Auto-AI")}</span></PrismBadge>
@@ -909,7 +909,7 @@ export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
         </section>
 
         <section id="faq" className="prism-public-section prism-faq-section" style={elementStyle("faq")} aria-labelledby="faq-heading" {...editableElementProps("faq", "page_section", "FAQ Section")}>
-          <PrismReveal>
+          <PrismReveal data-kinetic-reveal="sky-drop">
             <div className="prism-section-heading">
               <PrismBadge><MessageSquare size={14} /> <span data-kinetic-reveal={LANDING_KINETIC_MAP.label} style={elementStyle("faq.badge")} {...editableElementProps("faq.badge", "badge", "FAQ Badge", elementText("faq.badge", "FAQ"))}>{elementText("faq.badge", "FAQ")}</span></PrismBadge>
               <h2 id="faq-heading" data-kinetic-reveal={LANDING_KINETIC_MAP.faqHeading} style={elementStyle("faq.heading")} {...editableElementProps("faq.heading", "heading", "FAQ Heading", elementText("faq.heading", "A few useful answers before you begin."))}>{elementText("faq.heading", "A few useful answers before you begin.")}</h2>
