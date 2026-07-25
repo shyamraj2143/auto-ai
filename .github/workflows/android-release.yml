@@ -17,7 +17,7 @@ jobs:
   build-and-publish:
     runs-on: ubuntu-latest
     env:
-      AUTO_AI_API_BASE_URL: ${{ secrets.AUTO_AI_API_BASE_URL || 'https://auto-ai-production-a6ef.up.railway.app/api/v1' }}
+      AUTO_AI_API_BASE_URL: https://auto-ai-production-a6ef.up.railway.app/api/v1
       AUTO_AI_ADMIN_EMAIL: ${{ secrets.AUTO_AI_ADMIN_EMAIL }}
       AUTO_AI_ADMIN_PASSWORD: ${{ secrets.AUTO_AI_ADMIN_PASSWORD }}
       AUTO_AI_ANDROID_KEYSTORE_BASE64: ${{ secrets.AUTO_AI_ANDROID_KEYSTORE_BASE64 }}
@@ -78,8 +78,14 @@ jobs:
       - name: Build Android APK
         shell: bash
         run: |
-          chmod +x scripts/build_android_apk.sh
-          APK_OUTPUT_PATH=output/android/auto-ai.apk VITE_API_URL="$AUTO_AI_API_BASE_URL" ./scripts/build_android_apk.sh
+          npm ci --prefix frontend
+          AUTO_AI_SKIP_COMPRESSION=1 VITE_API_URL="$AUTO_AI_API_BASE_URL" VITE_GOOGLE_WEB_CLIENT_ID="$AUTO_AI_GOOGLE_WEB_CLIENT_ID" npm run build
+          npx cap sync android
+          chmod +x android/gradlew
+          ./android/gradlew -p android assembleRelease
+          test -f android/app/build/outputs/apk/release/app-release.apk
+          mkdir -p output/android
+          cp android/app/build/outputs/apk/release/app-release.apk output/android/auto-ai.apk
 
       - name: Publish GitHub APK release
         shell: bash
