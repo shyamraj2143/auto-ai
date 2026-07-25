@@ -110,6 +110,15 @@ public class AutoAiGoogleAuthPlugin extends Plugin {
     }
 
     private String googleSignInErrorMessage(int statusCode) {
+        if (statusCode == 7) {
+            return "Google Sign-In could not reach Google Play services. Check mobile data or Wi-Fi, disable VPN/private DNS temporarily, update Google Play services, and try again.";
+        }
+        if (statusCode == 8) {
+            return "Google Sign-In is temporarily unavailable. Please try again.";
+        }
+        if (statusCode == 12501) {
+            return "Google Sign-In was cancelled.";
+        }
         if (statusCode == 10) {
             return "Google Sign-In is not configured for this Android app. Add package "
                 + getContext().getPackageName()

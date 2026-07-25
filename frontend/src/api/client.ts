@@ -679,6 +679,7 @@ export const api = {
     apiFetch<AuthSession>("/auth/login", {
       method: "POST",
       operation: "auth.login",
+      timeoutMs: 20000,
       body: JSON.stringify(payload)
     }),
   requestPasswordReset: (payload: { email: string }) =>
@@ -702,6 +703,7 @@ export const api = {
     apiFetch<AuthSession>("/auth/google", {
       method: "POST",
       operation: "auth.google",
+      timeoutMs: 20000,
       body: JSON.stringify(payload)
     }),
   refreshSession: (refreshToken?: string | null) =>

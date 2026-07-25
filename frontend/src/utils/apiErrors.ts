@@ -7,7 +7,9 @@ export function loginErrorMessage(error: unknown) {
     if (error.status === 422) return "Login request format is invalid.";
     if (error.status && error.status >= 500) return "Server error. Please try again.";
     if (["network_unavailable", "server_unreachable", "cors_blocked", "ssl_certificate_issue"].includes(error.kind)) {
-      return "Auto-AI server is unreachable.";
+      return error.kind === "network_unavailable"
+        ? "You are offline. Check mobile data or Wi-Fi and try again."
+        : "Login timed out. Check your connection and try again.";
     }
   }
   return authErrorMessage(error, "Unable to log in");
@@ -20,7 +22,9 @@ export function registerErrorMessage(error: unknown) {
     if (error.status === 422) return "Please check the registration details.";
     if (error.status && error.status >= 500) return "Server error. Please try again.";
     if (["network_unavailable", "server_unreachable", "cors_blocked", "ssl_certificate_issue"].includes(error.kind)) {
-      return "Auto-AI server is unreachable.";
+      return error.kind === "network_unavailable"
+        ? "You are offline. Check mobile data or Wi-Fi and try again."
+        : "Registration timed out. Check your connection and try again.";
     }
   }
   return authErrorMessage(error, "Unable to register");
