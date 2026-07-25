@@ -17,7 +17,7 @@ jobs:
   build-and-publish:
     runs-on: ubuntu-latest
     env:
-      AUTO_AI_API_BASE_URL: ${{ secrets.AUTO_AI_API_BASE_URL || 'auto-ai-production-a6ef.up.railway.app/api/v1' }}
+      AUTO_AI_API_BASE_URL: ${{ secrets.AUTO_AI_API_BASE_URL || 'https://auto-ai-production-a6ef.up.railway.app/api/v1' }}
       AUTO_AI_ADMIN_EMAIL: ${{ secrets.AUTO_AI_ADMIN_EMAIL }}
       AUTO_AI_ADMIN_PASSWORD: ${{ secrets.AUTO_AI_ADMIN_PASSWORD }}
       AUTO_AI_ANDROID_KEYSTORE_BASE64: ${{ secrets.AUTO_AI_ANDROID_KEYSTORE_BASE64 }}

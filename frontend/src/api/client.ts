@@ -57,7 +57,7 @@ declare global {
   }
 }
 
-const PUBLIC_API_BASE_URL = "auto-ai-production-a6ef.up.railway.app/api/v1";
+const PUBLIC_API_BASE_URL = "https://auto-ai-production-a6ef.up.railway.app/api/v1";
 const API_V1_PREFIX = "/api/v1";
 const DEFAULT_API_TIMEOUT_MS = 8000;
 const API_DIAGNOSTIC_TIMEOUT_MS = 2500;
@@ -181,13 +181,17 @@ function normalizeBaseUrl(url: string) {
   return url.replace(/\/+$/, "");
 }
 
-function normalizeApiUrl(value?: string) {
+export function normalizeApiUrl(value?: string) {
   const trimmed = value?.trim();
   if (!trimmed) return "";
 
+  const absoluteCandidate = /^[A-Za-z0-9.-]+(?::\d+)?(?:\/|$)/.test(trimmed)
+    ? `https://${trimmed}`
+    : trimmed;
+
   try {
     const url = new URL(
-      trimmed,
+      absoluteCandidate,
       isBrowser() ? window.location.origin : PUBLIC_API_BASE_URL
     );
 
