@@ -42,6 +42,8 @@ import { useTheme } from "../../contexts/ThemeContext";
 import type { AiProvider, ResearchProvider } from "../../types";
 import { SubscriptionBillingCenter } from "./SubscriptionBillingCenter";
 import { CallSettings } from "../../features/calls/CallSettings";
+import { useScreenShare } from "../../features/screenShare/useScreenShare";
+import type { ScreenShareQualityMode } from "../../features/screenShare/types";
 import { ProfileAccountCard } from "./ProfileAccountCard";
 import { userMessagesApi } from "../../features/userMessages/userMessagesApi";
 import type { ChatSettings } from "../../features/userMessages/types";
@@ -79,7 +81,7 @@ const PROVIDER_LABELS: Record<AiProvider, string> = {
   gemini: "Gemini"
 };
 
-type SettingsSection = "main" | "general" | "visual" | "subscription" | "privacy" | "calls" | "chat";
+type SettingsSection = "main" | "general" | "ai" | "screen-share" | "visual" | "subscription" | "privacy" | "calls" | "chat";
 type Accent = "cyan" | "violet" | "amber" | "green" | "rose" | "red";
 
 function SettingsIcon({ icon: Icon, accent = "cyan" }: { icon: LucideIcon; accent?: Accent }) {
@@ -218,6 +220,7 @@ export function SettingsPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { token, logout } = useAuth();
+  const screenShare = useScreenShare();
   const { chats, refreshChats, setActiveChat } = useChat();
   const { theme, setTheme } = useTheme();
   const {
@@ -256,7 +259,7 @@ export function SettingsPage() {
 
   const section = useMemo<SettingsSection>(() => {
     const current = new URLSearchParams(location.search).get("section");
-    return current === "general" || current === "visual" || current === "subscription" || current === "privacy" || current === "calls" || current === "chat" ? current : "main";
+    return current === "general" || current === "ai" || current === "screen-share" || current === "visual" || current === "subscription" || current === "privacy" || current === "calls" || current === "chat" ? current : "main";
   }, [location.search]);
 
   const providerModels = useMemo(
@@ -264,7 +267,7 @@ export function SettingsPage() {
     [settings.defaultProvider]
   );
   const selectedModelLabel = providerModels.find((item) => item.value === settings.defaultModel)?.label ?? settings.defaultModel;
-  const sectionTitle = section === "general" ? "General" : section === "visual" ? "Visual Effects" : section === "subscription" ? "Subscription" : section === "privacy" ? "Privacy & Security" : section === "calls" ? "Calls" : section === "chat" ? "Chat" : "Settings";
+  const sectionTitle = section === "general" ? "General" : section === "ai" ? "AI Chat" : section === "screen-share" ? "Screen Share" : section === "visual" ? "Visual Effects" : section === "subscription" ? "Subscription" : section === "privacy" ? "Privacy & Security" : section === "calls" ? "Calls" : section === "chat" ? "Messages" : "Settings";
 
   useEffect(() => {
     setNotificationPermission("Notification" in window ? Notification.permission : "unsupported");
@@ -303,7 +306,7 @@ export function SettingsPage() {
       return;
     }
     try {
-      const result = navigate("/chat") as void | Promise<void>;
+      const result = navigate("/hub") as void | Promise<void>;
       if (result && typeof result.catch === "function") {
         void result.catch((error: unknown) => {
           console.error("[Auto-AI Navigation] Failed to leave settings.", error);
@@ -311,7 +314,7 @@ export function SettingsPage() {
       }
     } catch (error) {
       console.error("[Auto-AI Navigation] Failed to leave settings.", error);
-      navigate("/chat");
+      navigate("/hub");
     }
   }
 
@@ -366,7 +369,7 @@ export function SettingsPage() {
 
   function restartInSafeMode() {
     enableSafeMode("settings");
-    navigate("/chat", { replace: true });
+    navigate("/hub", { replace: true });
     window.setTimeout(() => window.location.reload(), 80);
   }
 
@@ -382,8 +385,22 @@ export function SettingsPage() {
         <SettingsRow
           icon={SlidersHorizontal}
           title="General"
-          description="Profile, account, theme, AI model and language"
+          description="Profile, account, theme, language and notifications"
           onClick={() => openSection("general")}
+        />
+        <SettingsRow
+          icon={Bot}
+          accent="violet"
+          title="AI Chat"
+          description="Models, response streaming, voice, memory and research"
+          onClick={() => openSection("ai")}
+        />
+        <SettingsRow
+          icon={Monitor}
+          accent="cyan"
+          title="Screen Share"
+          description="Quality, connection status and session controls"
+          onClick={() => openSection("screen-share")}
         />
         <SettingsRow
           icon={CreditCard}
@@ -416,26 +433,10 @@ export function SettingsPage() {
         <SettingsRow
           icon={MessageCircle}
           accent="violet"
-          title="Chat"
+          title="Messages"
           description="Message privacy, read receipts and typing"
           onClick={() => openSection("chat")}
         />
-        <SettingsRow
-          icon={Bot}
-          accent="cyan"
-          title="Context & Memory"
-          description="Open documents, saved memory and human signals"
-          onClick={openContextMemory}
-        />
-        <SettingsRow icon={Shield} title="Memory" description="Use saved memory and selected context">
-          <Toggle checked={settings.memoryEnabled} onChange={setMemoryEnabled} />
-        </SettingsRow>
-        <SettingsRow icon={Radio} accent="cyan" title="Streaming" description="Stream responses as generated">
-          <Toggle checked={settings.streamingEnabled} onChange={setStreamingEnabled} />
-        </SettingsRow>
-        <SettingsRow icon={Mic} accent="violet" title="Voice Input" description="Show microphone controls">
-          <Toggle checked={settings.voiceEnabled} onChange={setVoiceEnabled} />
-        </SettingsRow>
         <SettingsRow icon={Monitor} title="App Version" description="Installed frontend build">
           <span className="text-[11px] font-semibold text-slate-300">v{APP_VERSION}</span>
         </SettingsRow>
@@ -562,80 +563,6 @@ export function SettingsPage() {
 
         <SettingsCard>
           <SettingsRow
-            icon={BrainCircuit}
-            accent="cyan"
-            title="AI Model Preferences"
-            description={`${PROVIDER_LABELS[settings.defaultProvider]} - ${selectedModelLabel}`}
-          >
-            <Select value={settings.defaultProvider} onChange={updateProvider} label="Default AI provider">
-              {Object.entries(PROVIDER_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </Select>
-            <Select value={settings.defaultModel} onChange={setDefaultModel} label="Default AI model">
-              {providerModels.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-          </SettingsRow>
-          <SettingsRow
-            icon={SlidersHorizontal}
-            accent="green"
-            title="Deep Research Settings"
-            description={`${settings.deepResearchAllModels ? "All models" : `${settings.deepResearchMaxModels} model limit`} - ${settings.deepResearchTimeoutSeconds}s timeout`}
-          >
-            <div className="flex w-full flex-wrap items-center gap-1 sm:w-auto">
-              {(["groq", "bedrock", "openai", "gemini"] as ResearchProvider[]).map((provider) => (
-                <button
-                  key={provider}
-                  type="button"
-                  onClick={() => toggleResearchProvider(provider)}
-                  className={clsx(
-                    "h-8 rounded-md border px-2 text-[11px] font-semibold transition",
-                    settings.deepResearchProviders.includes(provider)
-                      ? "border-cyan-200/35 bg-cyan-200/12 text-cyan-50"
-                      : "border-white/10 bg-white/5 text-slate-400"
-                  )}
-                >
-                  {PROVIDER_LABELS[provider]}
-                </button>
-              ))}
-            </div>
-            <Select
-              value={settings.deepResearchMaxModels}
-              onChange={(value) => setDeepResearchMaxModels(Number(value))}
-              disabled={settings.deepResearchAllModels}
-              label="Max deep research models"
-            >
-              {[1, 2, 3, 4, 5, 6].map((value) => (
-                <option key={value} value={value}>
-                  Max {value}
-                </option>
-              ))}
-            </Select>
-            <Select
-              value={settings.deepResearchTimeoutSeconds}
-              onChange={(value) => setDeepResearchTimeoutSeconds(Number(value))}
-              label="Deep research timeout"
-            >
-              {[20, 35, 45, 60, 90, 120].map((value) => (
-                <option key={value} value={value}>
-                  {value}s
-                </option>
-              ))}
-            </Select>
-          </SettingsRow>
-          <SettingsRow icon={Sparkles} accent="violet" title="Use all deep research models" description="Overrides max model limit">
-            <Toggle checked={settings.deepResearchAllModels} onChange={setDeepResearchAllModels} />
-          </SettingsRow>
-        </SettingsCard>
-
-        <SettingsCard>
-          <SettingsRow
             icon={Bell}
             accent="rose"
             title="Notifications"
@@ -658,6 +585,83 @@ export function SettingsPage() {
           </SettingsRow>
         </SettingsCard>
       </div>
+    );
+  }
+
+  function renderAiSettings() {
+    return (
+      <div className="grid gap-3">
+        <SettingsCard>
+          <SettingsRow
+            icon={BrainCircuit}
+            accent="cyan"
+            title="AI Model Preferences"
+            description={`${PROVIDER_LABELS[settings.defaultProvider]} - ${selectedModelLabel}`}
+          >
+            <Select value={settings.defaultProvider} onChange={updateProvider} label="Default AI provider">
+              {Object.entries(PROVIDER_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </Select>
+            <Select value={settings.defaultModel} onChange={setDefaultModel} label="Default AI model">
+              {providerModels.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </Select>
+          </SettingsRow>
+          <SettingsRow icon={Shield} title="Memory & personalization" description="Use saved memory and selected document context">
+            <Toggle checked={settings.memoryEnabled} onChange={setMemoryEnabled} />
+          </SettingsRow>
+          <SettingsRow icon={Radio} accent="cyan" title="Response streaming" description="Stream AI responses as they are generated">
+            <Toggle checked={settings.streamingEnabled} onChange={setStreamingEnabled} />
+          </SettingsRow>
+          <SettingsRow icon={Mic} accent="violet" title="Voice input" description="Show AI Chat microphone controls">
+            <Toggle checked={settings.voiceEnabled} onChange={setVoiceEnabled} />
+          </SettingsRow>
+          <SettingsRow icon={Bot} accent="cyan" title="Context, files & memory" description="Manage AI documents, saved memory and human signals" onClick={openContextMemory} />
+        </SettingsCard>
+        <SettingsCard>
+          <SettingsRow
+            icon={SlidersHorizontal}
+            accent="green"
+            title="Deep Research Settings"
+            description={`${settings.deepResearchAllModels ? "All models" : `${settings.deepResearchMaxModels} model limit`} - ${settings.deepResearchTimeoutSeconds}s timeout`}
+          >
+            <div className="flex w-full flex-wrap items-center gap-1 sm:w-auto">
+              {(["groq", "bedrock", "openai", "gemini"] as ResearchProvider[]).map((provider) => (
+                <button key={provider} type="button" onClick={() => toggleResearchProvider(provider)} className={clsx("h-8 rounded-md border px-2 text-[11px] font-semibold transition", settings.deepResearchProviders.includes(provider) ? "border-cyan-200/35 bg-cyan-200/12 text-cyan-50" : "border-white/10 bg-white/5 text-slate-400")}>{PROVIDER_LABELS[provider]}</button>
+              ))}
+            </div>
+            <Select value={settings.deepResearchMaxModels} onChange={(value) => setDeepResearchMaxModels(Number(value))} disabled={settings.deepResearchAllModels} label="Max deep research models">
+              {[1, 2, 3, 4, 5, 6].map((value) => <option key={value} value={value}>Max {value}</option>)}
+            </Select>
+            <Select value={settings.deepResearchTimeoutSeconds} onChange={(value) => setDeepResearchTimeoutSeconds(Number(value))} label="Deep research timeout">
+              {[20, 35, 45, 60, 90, 120].map((value) => <option key={value} value={value}>{value}s</option>)}
+            </Select>
+          </SettingsRow>
+          <SettingsRow icon={Sparkles} accent="violet" title="Use all deep research models" description="Overrides max model limit">
+            <Toggle checked={settings.deepResearchAllModels} onChange={setDeepResearchAllModels} />
+          </SettingsRow>
+        </SettingsCard>
+      </div>
+    );
+  }
+
+  function renderScreenShareSettings() {
+    const active = !["idle", "ended", "failed"].includes(screenShare.uiState);
+    return (
+      <SettingsCard>
+        <SettingsRow icon={Monitor} accent="cyan" title="Share quality" description="Used by the existing screen-sharing sender">
+          <Select value={screenShare.qualityMode} onChange={(value) => screenShare.setQualityMode(value as ScreenShareQualityMode)} label="Screen share quality">
+            <option value="auto">Auto</option>
+            <option value="data-saver">Data Saver</option>
+            <option value="sharp-text">Sharp Text</option>
+            <option value="smooth-motion">Smooth Motion</option>
+            <option value="hd">HD</option>
+          </Select>
+        </SettingsRow>
+        <SettingsRow icon={Radio} accent={active ? "green" : "cyan"} title="Connection status" description={active ? `${screenShare.uiState} · ${screenShare.networkQuality} network` : "No active screen-sharing session"} />
+        <SettingsRow icon={Mic} accent="violet" title="Shared audio and session controls" description="Microphone, pause, viewer access and copy-code controls appear only during an active session" />
+        <SettingsRow icon={Monitor} title="Screen permission" description="Requested only after you choose Share Screen">
+          <button className="btn-secondary min-h-8 px-2.5 py-1 text-[11px]" type="button" onClick={screenShare.requestInviteShare}>Open share controls</button>
+        </SettingsRow>
+      </SettingsCard>
     );
   }
 
@@ -720,6 +724,8 @@ export function SettingsPage() {
         <div className="grid gap-3">
           {section === "main" && renderMainSettings()}
           {section === "general" && renderGeneralSettings()}
+          {section === "ai" && renderAiSettings()}
+          {section === "screen-share" && renderScreenShareSettings()}
           {section === "visual" && renderVisualEffectsSettings()}
           {section === "subscription" && <SubscriptionBillingCenter />}
           {section === "privacy" && renderPrivacySettings()}

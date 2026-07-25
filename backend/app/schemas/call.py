@@ -137,6 +137,7 @@ class CallFeatureConfig(BaseModel):
     ring_timeout_seconds: int
     reconnect_grace_seconds: int
     diagnostic: str | None = None
+    limitations: list[str] = Field(default_factory=list)
 
 
 class CallHealth(BaseModel):
@@ -144,6 +145,8 @@ class CallHealth(BaseModel):
     redis_configured: bool
     redis_reachable: bool
     websocket_ready: bool
+    firebase_configured: bool
+    turn_configured: bool
 
 
 class BlockRequest(BaseModel):

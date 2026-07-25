@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 
 import fakeredis.aioredis
 import pytest
+from pydantic import EmailStr, TypeAdapter
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -80,6 +81,10 @@ def test_guests_create_and_join_screen_share_without_login(monkeypatch) -> None:
         )
         assert ended.status_code == 200
         assert ended.json()["status"] == "ended"
+
+    with test_sessions() as db:
+        host = screen_share_service._guest_host_user(db)
+        assert TypeAdapter(EmailStr).validate_python(host.email) == host.email
 
 
 def test_guest_screen_share_websocket_accepts_realtime_ticket(monkeypatch) -> None:

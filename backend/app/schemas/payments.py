@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -162,14 +163,27 @@ class PaymentHistoryRead(BaseModel):
     currency: str
     plan: str
     status: str
-    invoice_url: str
+    receipt_number: str | None = None
+    payment_id: str | None = None
+    order_id: str | None = None
+    original_amount_paise: int
+    discount_amount_paise: int = 0
+    promo_code: str | None = None
+    receipt_url: str | None = None
+
+
+class PaymentHistoryPage(BaseModel):
+    items: list[PaymentHistoryRead]
+    page: int
+    page_size: int
+    total: int
+    total_pages: int
 
 
 class BillingCenterRead(BaseModel):
     current_plan: BillingCurrentPlanRead
     plans: list[BillingPlanRead]
     payment_history: list[PaymentHistoryRead]
-    payment_methods: list[str]
     support_email: str | None = None
 
 
@@ -185,10 +199,13 @@ class PromoCodeRequest(BaseModel):
 
 class PromoCodeResponse(BaseModel):
     code: str
-    discount_percent: int
+    discount_type: str
+    discount_value: Decimal
     plan: PaidPlan
     original_amount_paise: int
+    discount_amount_paise: int
     discounted_amount_paise: int
+    expires_at: datetime | None = None
 
 
 class AutoRenewalUpdate(BaseModel):

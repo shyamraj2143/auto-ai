@@ -71,7 +71,7 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=["x-request-id", "x-railway-request-id"],
+        expose_headers=["x-request-id", "x-railway-request-id", "content-disposition"],
     )
 
     app.add_middleware(InMemoryRateLimitMiddleware)

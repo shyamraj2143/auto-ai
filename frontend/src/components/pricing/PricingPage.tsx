@@ -94,6 +94,7 @@ export function PricingPage() {
           contact: user.mobile || ""
         },
         onDismiss: () => {
+          void api.cancelPaymentSession(token, session.session_id).catch(() => undefined);
           setBusyPlan(null);
           setError("Payment cancelled.");
         },
@@ -114,6 +115,7 @@ export function PricingPage() {
         }
       }));
       checkout.on("payment.failed", (response) => {
+        void api.cancelPaymentSession(token, session.session_id).catch(() => undefined);
         setBusyPlan(null);
         const description = response.error?.description || response.error?.reason || "Payment failed.";
         setError(description.toLowerCase().includes("api key") && description.toLowerCase().includes("expired")
@@ -140,7 +142,7 @@ export function PricingPage() {
           <Link to="/admin/login">Admin</Link>
         </nav>
         <div className="nav-actions">
-          <Link className="btn-primary" to={user ? "/chat" : "/login"}>
+          <Link className="btn-primary" to={user ? "/hub" : "/login"}>
             {user ? "Open app" : "Sign in"}
             <ArrowRight size={16} />
           </Link>
@@ -179,7 +181,7 @@ export function PricingPage() {
                   ))}
                 </ul>
                 {plan.id === "free" ? (
-                  <Link className="btn-secondary" to={user ? "/chat" : "/register"}>Start free</Link>
+                  <Link className="btn-secondary" to={user ? "/hub" : "/register"}>Start free</Link>
                 ) : (
                   <div className="pricing-actions">
                     {upiId && <UpiPaymentBox upiId={upiId} payeeName={upiPayeeName} amountPaise={plan.price_paise} planLabel={plan.label} />}

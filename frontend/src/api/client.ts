@@ -2,6 +2,7 @@ import type {
   AdminAnalytics,
   AdminFeaturesResponse,
   AdminFeatureFlag,
+  AdminPaymentPage,
   AdminPaymentRecord,
   AdminPlanLimit,
   AdminPlanName,
@@ -25,7 +26,11 @@ import type {
   LiveMessageResponse,
   LiveSessionStart,
   PaymentConfig,
+  PaymentHistoryPage,
   PaymentSession,
+  PromoCode,
+  PromoCodePage,
+  PromoCodePayload,
   PromoCodeResponse,
   PaidPricingPlanName,
   ResponseModelInfo,
@@ -958,6 +963,15 @@ export const api = {
   paymentConfig: () => apiFetch<PaymentConfig>("/payments/config", { operation: "payments.config" }),
   paymentPlans: () => apiFetch<BillingPlan[]>("/payments/plans", { operation: "payments.plans" }),
   billingCenter: (token: string) => apiFetch<BillingCenter>("/payments/billing", { token, operation: "payments.billing" }),
+  paymentHistory: (token: string, options: { query?: string; status?: "all" | "success" | "failed"; page?: number; pageSize?: number } = {}) => {
+    const params = new URLSearchParams({
+      query: options.query?.trim() || "",
+      status: options.status || "all",
+      page: String(options.page || 1),
+      page_size: String(options.pageSize || 20)
+    });
+    return apiFetch<PaymentHistoryPage>(`/payments/history?${params}`, { token, operation: "payments.history" });
+  },
   applyPromoCode: (token: string, payload: { code: string; plan: PaidPricingPlanName }) =>
     apiFetch<PromoCodeResponse>("/payments/promo-code", {
       method: "POST",
@@ -1013,6 +1027,12 @@ export const api = {
   paymentSession: (sessionId: string) =>
     apiFetch<PaymentSession>(`/payments/sessions/${encodeURIComponent(sessionId)}`, {
       operation: "payments.session"
+    }),
+  cancelPaymentSession: (token: string, sessionId: string) =>
+    apiFetch<void>(`/payments/sessions/${encodeURIComponent(sessionId)}/cancel`, {
+      method: "POST",
+      token,
+      operation: "payments.cancelSession"
     }),
   verifyRazorpayPayment: (
     token: string | null,
@@ -1212,8 +1232,50 @@ export const api = {
       body: JSON.stringify(payload)
     }),
   adminAnalytics: (token: string) => apiFetch<AdminAnalytics>("/admin/analytics", { token, operation: "admin.analytics" }),
-  adminPayments: (token: string) =>
-    apiFetch<AdminPaymentRecord[]>("/admin/subscriptions/payments", { token, operation: "admin.payments" })
+  adminPayments: (
+    token: string,
+    options: { query?: string; status?: "all" | "success" | "failed"; page?: number; pageSize?: number; dateFrom?: string; dateTo?: string } = {}
+  ) => {
+    const params = new URLSearchParams({
+      query: options.query?.trim() || "",
+      status: options.status || "all",
+      page: String(options.page || 1),
+      page_size: String(options.pageSize || 20)
+    });
+    if (options.dateFrom) params.set("date_from", options.dateFrom);
+    if (options.dateTo) params.set("date_to", options.dateTo);
+    return apiFetch<AdminPaymentPage>(`/admin/subscriptions/payments?${params}`, { token, operation: "admin.payments" });
+  },
+  adminPromoCodes: (token: string, options: { query?: string; status?: string; page?: number; pageSize?: number } = {}) => {
+    const params = new URLSearchParams({
+      query: options.query?.trim() || "",
+      status: options.status || "all",
+      page: String(options.page || 1),
+      page_size: String(options.pageSize || 20)
+    });
+    return apiFetch<PromoCodePage>(`/admin/promo-codes?${params}`, { token, operation: "admin.promos.list" });
+  },
+  adminCreatePromoCode: (token: string, payload: PromoCodePayload) =>
+    apiFetch<PromoCode>("/admin/promo-codes", {
+      method: "POST",
+      token,
+      operation: "admin.promos.create",
+      body: JSON.stringify(payload)
+    }),
+  adminUpdatePromoCode: (token: string, promoId: string, payload: Partial<Omit<PromoCodePayload, "code">>) =>
+    apiFetch<PromoCode>(`/admin/promo-codes/${encodeURIComponent(promoId)}`, {
+      method: "PATCH",
+      token,
+      operation: "admin.promos.update",
+      body: JSON.stringify(payload)
+    }),
+  adminArchivePromoCode: (token: string, promoId: string, archived = true) =>
+    apiFetch<PromoCode>(`/admin/promo-codes/${encodeURIComponent(promoId)}/archive`, {
+      method: "PATCH",
+      token,
+      operation: "admin.promos.archive",
+      body: JSON.stringify({ archived })
+    })
 };
 
 export async function streamChat(

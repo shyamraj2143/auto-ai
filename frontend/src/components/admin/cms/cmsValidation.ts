@@ -34,7 +34,7 @@ export function validateCmsPage(page: CmsPage): CmsValidationIssue[] {
     }
   });
   Object.entries(page.element_overrides ?? {}).forEach(([key, override]) => {
-    if (!override.hidden && override.href !== undefined && !isSafeCmsUrl(override.href)) {
+    if (!override.hidden && typeof override.href === "string" && !isSafeCmsUrl(override.href)) {
       issues.push({ id: `element-${key}-href`, blockId: `element:${key}`, severity: "error", message: "Link is empty, unsafe or invalid." });
     }
   });

@@ -88,6 +88,11 @@ async def call_feature_config(current_user: User = Depends(get_current_user)) ->
         diagnostic = "Realtime calling is temporarily unavailable."
     elif settings.is_production and not settings.turn_configured:
         diagnostic = TURN_UNAVAILABLE_MESSAGE
+    limitations = []
+    if not firebase_notification_service.configured:
+        limitations.append("Background and closed-app incoming calls require Firebase configuration.")
+    if not settings.turn_configured:
+        limitations.append("TURN relay is not configured; some mobile and restricted networks cannot connect media.")
     return CallFeatureConfig(
         enabled=settings.CALL_FEATURE_ENABLED,
         realtime_configured=realtime_ready,
@@ -96,6 +101,7 @@ async def call_feature_config(current_user: User = Depends(get_current_user)) ->
         ring_timeout_seconds=settings.CALL_RING_TIMEOUT_SECONDS,
         reconnect_grace_seconds=settings.CALL_RECONNECT_GRACE_SECONDS,
         diagnostic=diagnostic,
+        limitations=limitations,
     )
 
 
@@ -108,6 +114,8 @@ async def call_health() -> CallHealth:
         redis_configured=redis_configured,
         redis_reachable=redis_reachable,
         websocket_ready=settings.CALL_FEATURE_ENABLED and redis_reachable,
+        firebase_configured=firebase_notification_service.configured,
+        turn_configured=settings.turn_configured,
     )
 
 

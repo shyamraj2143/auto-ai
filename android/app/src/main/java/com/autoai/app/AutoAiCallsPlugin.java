@@ -58,6 +58,13 @@ public class AutoAiCallsPlugin extends Plugin {
         result.put("appVersion", BuildConfig.VERSION_NAME);
         result.put("appVersionCode", BuildConfig.VERSION_CODE);
         result.put("deviceName", PushTokenRegistrar.deviceName());
+        result.put("firebaseConfigured", BuildConfig.AUTO_AI_FIREBASE_CONFIGURED);
+
+        if (!BuildConfig.AUTO_AI_FIREBASE_CONFIGURED) {
+            Log.w(TAG, "FCM registration skipped: google-services.json is not configured.");
+            call.resolve(result);
+            return;
+        }
 
         try {
             FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {

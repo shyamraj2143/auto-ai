@@ -3370,7 +3370,7 @@ button:disabled {
 
 .billing-tools-grid {
   margin-top: 12px;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.2fr) minmax(220px, 0.7fr);
+  grid-template-columns: minmax(0, 1.7fr) minmax(260px, 0.7fr);
 }
 
 .billing-promo-row {
@@ -3389,6 +3389,123 @@ button:disabled {
 
 .billing-actions-card .btn-secondary {
   justify-content: center;
+}
+
+.billing-promo-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.billing-promo-summary span {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.billing-promo-summary strong {
+  display: block;
+  margin-top: 3px;
+  color: #e2e8f0;
+  font-size: 13px;
+}
+
+.billing-promo-summary small,
+.billing-promo-summary button {
+  align-self: center;
+}
+
+.billing-history-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.billing-history-toolbar label {
+  display: flex;
+  min-width: min(340px, 100%);
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  background: rgba(2, 6, 23, 0.55);
+  padding: 0 9px;
+}
+
+.billing-history-toolbar input,
+.billing-history-toolbar select {
+  min-height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  background: rgba(2, 6, 23, 0.7);
+  color: #e2e8f0;
+}
+
+.billing-history-toolbar input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  outline: 0;
+}
+
+.billing-history-toolbar select {
+  padding: 0 9px;
+}
+
+.billing-payment-status {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(148, 163, 184, 0.13);
+  color: #cbd5e1;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.billing-payment-status-paid,
+.billing-payment-status-verified,
+.billing-payment-status-captured,
+.billing-payment-status-succeeded {
+  background: rgba(16, 185, 129, 0.16);
+  color: #86efac;
+}
+
+.billing-payment-status-failed {
+  background: rgba(239, 68, 68, 0.16);
+  color: #fca5a5;
+}
+
+.billing-payment-status-created,
+.billing-payment-status-pending {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fcd34d;
+}
+
+.billing-receipt-actions,
+.billing-history-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.billing-history-pagination {
+  justify-content: flex-end;
+  margin-top: 10px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.billing-history-error {
+  margin: 8px 0;
+  color: #fca5a5;
+  font-size: 12px;
+}
+
+.billing-history-error button {
+  text-decoration: underline;
 }
 
 .billing-history-card {
@@ -3553,6 +3670,17 @@ button:disabled {
 
   .billing-promo-row {
     grid-template-columns: 1fr;
+  }
+
+  .billing-promo-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .billing-history-toolbar,
+  .billing-history-toolbar label,
+  .billing-history-toolbar select,
+  .billing-history-toolbar .chip-dark {
+    width: 100%;
   }
 
   .landing-nav {

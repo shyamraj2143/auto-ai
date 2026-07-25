@@ -219,6 +219,7 @@ def ensure_runtime_schema() -> None:
 
     if "payment_records" in table_names:
         payment_columns = {column["name"] for column in inspector.get_columns("payment_records")}
+        payment_indexes = {index["name"] for index in inspector.get_indexes("payment_records")}
         payment_record_columns = {
             "user_email": "VARCHAR(255)",
             "plan_id": "VARCHAR(32) NOT NULL DEFAULT 'free'",
@@ -227,12 +228,45 @@ def ensure_runtime_schema() -> None:
             "razorpay_payment_id": "VARCHAR(120)",
             "razorpay_signature": "VARCHAR(255)",
             "paid_at": "datetime",
+            "verified_at": "datetime",
+            "receipt_number": "VARCHAR(64)",
+            "original_amount_paise": "INTEGER",
+            "discount_amount_paise": "INTEGER NOT NULL DEFAULT 0",
+            "promo_code_id": "VARCHAR(36)",
+            "promo_code_snapshot": "VARCHAR(40)",
+            "plan_name_snapshot": "VARCHAR(80)",
+            "billing_period_snapshot": "VARCHAR(40)",
             "updated_at": "datetime",
         }
         for column_name, definition in payment_record_columns.items():
             if column_name not in payment_columns:
                 add_column("payment_records", column_name, definition)
+        if "ix_payment_records_receipt_number" not in payment_indexes:
+            statements.append(
+                f"CREATE UNIQUE INDEX {quote('ix_payment_records_receipt_number')} ON "
+                f"{quote('payment_records')} ({quote('receipt_number')})"
+            )
+        if "ix_payment_records_status_created" not in payment_indexes:
+            statements.append(
+                f"CREATE INDEX {quote('ix_payment_records_status_created')} ON "
+                f"{quote('payment_records')} ({quote('status')}, {quote('created_at')})"
+            )
 
+    if "promo_codes" in table_names:
+        promo_columns = {column["name"] for column in inspector.get_columns("promo_codes")}
+        if "reserved_count" not in promo_columns:
+            add_column("promo_codes", "reserved_count", "INTEGER NOT NULL DEFAULT 0")
+
+    if "promo_redemptions" in table_names:
+        redemption_columns = {column["name"] for column in inspector.get_columns("promo_redemptions")}
+        redemption_indexes = {index["name"] for index in inspector.get_indexes("promo_redemptions")}
+        if "usage_slot" not in redemption_columns:
+            add_column("promo_redemptions", "usage_slot", "INTEGER")
+        if "uq_promo_redemptions_user_slot" not in redemption_indexes:
+            statements.append(
+                f"CREATE UNIQUE INDEX {quote('uq_promo_redemptions_user_slot')} ON {quote('promo_redemptions')} "
+                f"({quote('promo_code_id')}, {quote('user_id')}, {quote('usage_slot')})"
+            )
     if "api_usage" in table_names:
         usage_columns = {column["name"] for column in inspector.get_columns("api_usage")}
         if "provider" not in usage_columns:
@@ -417,6 +451,12 @@ def ensure_runtime_schema() -> None:
             connection.execute(text(f"UPDATE {quote('users')} SET {quote('message_permission')} = 'everyone' WHERE {quote('message_permission')} IS NULL OR TRIM({quote('message_permission')}) = ''"))
             connection.execute(text(f"UPDATE {quote('users')} SET {quote('subscription_status')} = 'free' WHERE {quote('subscription_status')} IS NULL OR TRIM({quote('subscription_status')}) = ''"))
             connection.execute(text(f"UPDATE {quote('users')} SET {quote('role')} = 'user' WHERE {quote('role')} IS NULL OR TRIM({quote('role')}) = ''"))
+            connection.execute(
+                text(
+                    f"UPDATE {quote('users')} SET {quote('email')} = 'screen-share-guest@autoai.site.je' "
+                    f"WHERE {quote('email')} = 'screen-share-guest@internal.invalid'"
+                )
+            )
             connection.execute(text(f"UPDATE {quote('users')} SET {quote('role')} = 'admin' WHERE {quote('is_admin')} = TRUE AND {quote('role')} NOT IN ('admin', 'super_admin', 'content_admin', 'content_editor', 'content_viewer')"))
             connection.execute(text(f"UPDATE {quote('users')} SET {quote('is_admin')} = TRUE WHERE {quote('role')} IN ('admin', 'super_admin', 'content_admin', 'content_editor', 'content_viewer') AND {quote('is_admin')} = FALSE"))
             connection.execute(text(f"UPDATE {quote('users')} SET {quote('created_at')} = CURRENT_TIMESTAMP WHERE {quote('created_at')} IS NULL"))
@@ -463,6 +503,8 @@ def ensure_runtime_schema() -> None:
             connection.execute(text(f"UPDATE {payment_records} SET {quote('razorpay_order_id')} = {quote('subscription_id')} WHERE ({quote('razorpay_order_id')} IS NULL OR TRIM({quote('razorpay_order_id')}) = '') AND {quote('provider')} = 'razorpay'"))
             connection.execute(text(f"UPDATE {payment_records} SET {quote('razorpay_payment_id')} = {quote('payment_id')} WHERE ({quote('razorpay_payment_id')} IS NULL OR TRIM({quote('razorpay_payment_id')}) = '') AND {quote('provider')} = 'razorpay'"))
             connection.execute(text(f"UPDATE {payment_records} SET {quote('paid_at')} = {quote('created_at')} WHERE {quote('paid_at')} IS NULL AND {quote('status')} IN ('paid', 'verified', 'captured', 'succeeded')"))
+            if "verified_at" in payment_columns or any("verified_at" in statement for statement in statements):
+                connection.execute(text(f"UPDATE {payment_records} SET {quote('verified_at')} = {quote('paid_at')} WHERE {quote('verified_at')} IS NULL AND {quote('status')} IN ('paid', 'verified', 'captured', 'succeeded')"))
             connection.execute(text(f"UPDATE {payment_records} SET {quote('updated_at')} = {quote('created_at')} WHERE {quote('updated_at')} IS NULL"))
         if "api_usage" in table_names:
             api_usage = quote("api_usage")

@@ -8,6 +8,7 @@ import {
   CreditCard,
   Database,
   Download,
+  Eye,
   KeyRound,
   MessageSquare,
   RefreshCw,
@@ -16,6 +17,7 @@ import {
   Settings,
   SlidersHorizontal,
   Smartphone,
+  Tag,
   Trash2,
   Upload,
   UserCheck,
@@ -30,6 +32,7 @@ import type {
   AdminAnalytics,
   AdminFeaturesResponse,
   AdminPaymentRecord,
+  AdminPaymentPage,
   AdminPlanLimit,
   AdminPlanName,
   AdminQuota,
@@ -41,8 +44,10 @@ import type {
   ApkStats,
   UserRole
 } from "../../types";
+import { AdminPromoCodes } from "./AdminPromoCodes";
+import { downloadAuthenticatedReceipt } from "../../utils/receipt";
 
-type AdminSection = "dashboard" | "users" | "tokens" | "subscriptions" | "usage" | "features" | "mobile" | "payments" | "website-builder" | "live-pages" | "content" | "settings";
+type AdminSection = "dashboard" | "users" | "tokens" | "subscriptions" | "usage" | "features" | "mobile" | "payments" | "promo-codes" | "website-builder" | "live-pages" | "content" | "settings";
 
 const sections: Array<{ id: AdminSection; label: string; icon: ReactNode }> = [
   { id: "dashboard", label: "Dashboard", icon: <BarChart3 size={15} /> },
@@ -53,6 +58,7 @@ const sections: Array<{ id: AdminSection; label: string; icon: ReactNode }> = [
   { id: "features", label: "Feature Controls", icon: <SlidersHorizontal size={15} /> },
   { id: "mobile", label: "Mobile App", icon: <Smartphone size={15} /> },
   { id: "payments", label: "Payments", icon: <Wallet size={15} /> },
+  { id: "promo-codes", label: "Promo Codes", icon: <Tag size={15} /> },
   { id: "website-builder", label: "Website Builder", icon: <BookOpen size={15} /> },
   { id: "live-pages", label: "Edit Live Website", icon: <BookOpen size={15} /> },
   { id: "settings", label: "Settings", icon: <Settings size={15} /> }
@@ -229,6 +235,10 @@ export function AdminDashboard() {
   const [features, setFeatures] = useState<AdminFeaturesResponse | null>(null);
   const [planLimitDrafts, setPlanLimitDrafts] = useState<Record<string, AdminPlanLimit>>({});
   const [payments, setPayments] = useState<AdminPaymentRecord[]>([]);
+  const [paymentPage, setPaymentPage] = useState<AdminPaymentPage>({ items: [], page: 1, page_size: 20, total: 0, total_pages: 1 });
+  const [paymentQuery, setPaymentQuery] = useState("");
+  const [paymentQueryDraft, setPaymentQueryDraft] = useState("");
+  const [paymentStatus, setPaymentStatus] = useState<"all" | "success" | "failed">("all");
   const [apkVersions, setApkVersions] = useState<ApkRelease[]>([]);
   const [apkStats, setApkStats] = useState<ApkStats | null>(null);
   const [apkFile, setApkFile] = useState<File | null>(null);
@@ -290,7 +300,8 @@ export function AdminDashboard() {
       setUsage(nextUsage);
       setFeatures(nextFeatures);
       setAnalytics(nextAnalytics);
-      setPayments(nextPayments);
+      setPayments(nextPayments.items);
+      setPaymentPage(nextPayments);
       setApkVersions(nextApkVersions);
       setApkStats(nextApkStats);
       setSelectedUser((current) => nextUsers.find((item) => item.id === current?.id) ?? null);
@@ -683,27 +694,39 @@ export function AdminDashboard() {
     }
   }
 
+  async function loadPayments(options: { query?: string; status?: "all" | "success" | "failed"; page?: number } = {}) {
+    if (!token) return;
+    const nextQuery = options.query ?? paymentQuery;
+    const nextStatus = options.status ?? paymentStatus;
+    const nextPage = options.page ?? paymentPage.page;
+    setBusyId("payments-load");
+    setError("");
+    try {
+      const result = await api.adminPayments(token, { query: nextQuery, status: nextStatus, page: nextPage, pageSize: 20 });
+      setPayments(result.items);
+      setPaymentPage(result);
+      setPaymentQuery(nextQuery);
+      setPaymentStatus(nextStatus);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load payments");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function downloadAdminInvoice(payment: AdminPaymentRecord) {
-    if (!token || !payment.invoice_url) return;
+    if (!token || !payment.receipt_url) return;
     setBusyId(`invoice-${payment.id}`);
     setError("");
     try {
       const apiOrigin = API_BASE_URL.replace(/\/api\/v1\/?$/, "");
-      const response = await fetch(`${apiOrigin}${payment.invoice_url}`, {
-        headers: { Authorization: `Bearer ${token}` }
+      await downloadAuthenticatedReceipt({
+        url: `${apiOrigin}${payment.receipt_url}`,
+        token,
+        fallbackFilename: `AutoAI-Receipt-${payment.receipt_number || payment.id}.pdf`
       });
-      if (!response.ok) throw new Error("Unable to download invoice");
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `auto-ai-invoice-${payment.id}.pdf`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to download invoice");
+      setError(err instanceof Error ? err.message : "Unable to download receipt");
     } finally {
       setBusyId(null);
     }
@@ -1076,9 +1099,17 @@ export function AdminDashboard() {
                       return (
                         <tr key={account.id} className="text-slate-200">
                           <td className="px-4 py-3">
-                            <button className="text-left font-semibold text-white hover:text-cyan-200" onClick={() => setSelectedUser(account)} type="button">
-                              {account.name}
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-white">{account.name}</span>
+                              <button
+                                aria-label={`View ${account.name}`}
+                                className="chip-dark inline-flex items-center gap-1 px-2 py-1 text-xs"
+                                onClick={() => setSelectedUser(account)}
+                                type="button"
+                              >
+                                <Eye size={13} /> View
+                              </button>
+                            </div>
                             {isSelf && <div className="text-xs text-cyan-200">Current admin</div>}
                           </td>
                           <td className="px-4 py-3">
@@ -1599,6 +1630,12 @@ export function AdminDashboard() {
             <section className="rounded-lg border border-white/10 bg-white/[0.045]">
               <div className="border-b border-white/10 p-4">
                 <SectionTitle title="Payments" subtitle="Recorded Razorpay/Stripe/manual payment records" />
+                <form className="flex flex-wrap gap-2" onSubmit={(event) => { event.preventDefault(); void loadPayments({ query: paymentQueryDraft, page: 1 }); }}>
+                  <label className="relative min-w-[260px] flex-1"><Search className="absolute left-3 top-3 text-slate-500" size={15} /><input className="input-dark h-10 w-full pl-9" value={paymentQueryDraft} onChange={(event) => setPaymentQueryDraft(event.target.value)} placeholder="User, email, receipt, payment, order or plan" /></label>
+                  <select className="model-select-dark h-10" value={paymentStatus} onChange={(event) => void loadPayments({ status: event.target.value as "all" | "success" | "failed", page: 1 })}><option value="all">All</option><option value="success">Success</option><option value="failed">Failed</option></select>
+                  <button className="chip-dark" disabled={busyId === "payments-load"} type="submit">Search</button>
+                  {(paymentQuery || paymentStatus !== "all") && <button className="chip-dark" onClick={() => { setPaymentQueryDraft(""); void loadPayments({ query: "", status: "all", page: 1 }); }} type="button">Clear</button>}
+                </form>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[1280px] border-collapse text-left text-sm">
@@ -1611,6 +1648,7 @@ export function AdminDashboard() {
                       <th className="px-4 py-3">Status</th>
                       <th className="px-4 py-3">Subscription</th>
                       <th className="px-4 py-3">Customer / Payment</th>
+                      <th className="px-4 py-3">Promo</th>
                       <th className="px-4 py-3">Paid</th>
                       <th className="px-4 py-3">Created</th>
                       <th className="px-4 py-3">Actions</th>
@@ -1626,14 +1664,15 @@ export function AdminDashboard() {
                         <td className="px-4 py-3">{payment.status}</td>
                         <td className="px-4 py-3">{payment.subscription_status ?? "No subscription"}</td>
                         <td className="px-4 py-3 text-xs"><div>{payment.customer_id ?? "No customer ID"}</div><div>{payment.razorpay_payment_id ?? payment.payment_id ?? "No payment ID"}</div><div>{payment.razorpay_order_id ?? payment.subscription_id ?? "No order ID"}</div></td>
+                        <td className="px-4 py-3 text-xs"><div>{payment.promo_code ?? "None"}</div><div>{payment.discount_amount_paise ? `-${money(payment.discount_amount_paise, payment.currency)}` : "No discount"}</div></td>
                         <td className="px-4 py-3">{payment.paid_at ? formatDate(payment.paid_at) : "Not paid"}</td>
                         <td className="px-4 py-3">{formatDate(payment.created_at)}</td>
                         <td className="px-4 py-3">
                           <div className="flex flex-wrap gap-2">
-                            {payment.invoice_url && (
+                            {payment.receipt_url && (
                               <button className="chip-dark" disabled={busyId === `invoice-${payment.id}`} onClick={() => downloadAdminInvoice(payment)} type="button">
                                 <Download size={14} />
-                                Invoice
+                                Receipt
                               </button>
                             )}
                             <button className="chip-dark" disabled={busyId === `refund-${payment.id}` || payment.status === "refunded"} onClick={() => refundPayment(payment)} type="button">
@@ -1645,13 +1684,16 @@ export function AdminDashboard() {
                       </tr>
                     ))}
                     {payments.length === 0 && (
-                      <tr><td className="px-4 py-6 text-sm text-slate-400" colSpan={10}>No payment records yet.</td></tr>
+                      <tr><td className="px-4 py-6 text-sm text-slate-400" colSpan={11}>{paymentQuery || paymentStatus !== "all" ? "No matching payment records." : "No payment records yet."}</td></tr>
                     )}
                   </tbody>
                 </table>
               </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 p-4 text-xs text-slate-400"><span>{paymentPage.total} payments</span><div className="flex items-center gap-2"><button className="chip-dark" disabled={busyId === "payments-load" || paymentPage.page <= 1} onClick={() => void loadPayments({ page: paymentPage.page - 1 })} type="button">Previous</button><span>Page {paymentPage.page} of {paymentPage.total_pages}</span><button className="chip-dark" disabled={busyId === "payments-load" || paymentPage.page >= paymentPage.total_pages} onClick={() => void loadPayments({ page: paymentPage.page + 1 })} type="button">Next</button></div></div>
             </section>
           )}
+
+          {activeSection === "promo-codes" && <AdminPromoCodes />}
 
           {(activeSection === "website-builder" || activeSection === "live-pages" || activeSection === "content") && (
             <section className="border-t border-white/10 pt-4">

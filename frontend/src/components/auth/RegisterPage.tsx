@@ -53,7 +53,7 @@ export function RegisterPage() {
     setError(message);
   }, []);
 
-  if (user) return <Navigate to="/chat" replace />;
+  if (user) return <Navigate to="/hub" replace />;
 
   return (
     <AnimatedPage className="auth-page">

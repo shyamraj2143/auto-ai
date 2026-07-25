@@ -370,23 +370,88 @@ export type PaymentHistoryItem = {
   currency: string;
   plan: string;
   status: string;
-  invoice_url: string;
+  receipt_number?: string | null;
+  payment_id?: string | null;
+  order_id?: string | null;
+  original_amount_paise: number;
+  discount_amount_paise: number;
+  promo_code?: string | null;
+  receipt_url?: string | null;
+};
+
+export type PaymentHistoryPage = {
+  items: PaymentHistoryItem[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
 };
 
 export type BillingCenter = {
   current_plan: BillingCurrentPlan;
   plans: BillingPlan[];
   payment_history: PaymentHistoryItem[];
-  payment_methods: string[];
   support_email?: string | null;
 };
 
 export type PromoCodeResponse = {
   code: string;
-  discount_percent: number;
+  discount_type: "percentage" | "fixed";
+  discount_value: number | string;
   plan: PaidPricingPlanName;
   original_amount_paise: number;
+  discount_amount_paise: number;
   discounted_amount_paise: number;
+  expires_at?: string | null;
+};
+
+export type PromoCode = {
+  id: string;
+  code: string;
+  description: string;
+  discount_type: "percentage" | "fixed";
+  discount_value: number | string;
+  currency?: string | null;
+  eligible_plans: PaidPricingPlanName[];
+  minimum_amount?: number | string | null;
+  maximum_discount?: number | string | null;
+  starts_at?: string | null;
+  expires_at?: string | null;
+  total_usage_limit?: number | null;
+  per_user_limit: number;
+  usage_count: number;
+  is_active: boolean;
+  is_archived: boolean;
+  new_users_only: boolean;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+  status: string;
+};
+
+export type PromoCodePage = {
+  items: PromoCode[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+};
+
+export type PromoCodePayload = {
+  code: string;
+  description: string;
+  discount_type: "percentage" | "fixed";
+  discount_value: number;
+  currency?: string | null;
+  eligible_plans: PaidPricingPlanName[];
+  minimum_amount?: number | null;
+  maximum_discount?: number | null;
+  starts_at?: string | null;
+  expires_at?: string | null;
+  total_usage_limit?: number | null;
+  per_user_limit: number;
+  is_active: boolean;
+  new_users_only: boolean;
 };
 
 export type RestorePurchaseResponse = {
@@ -520,9 +585,21 @@ export type AdminPaymentRecord = {
   razorpay_payment_id?: string | null;
   paid_at?: string | null;
   subscription_status?: string | null;
-  invoice_url?: string | null;
+  receipt_number?: string | null;
+  receipt_url?: string | null;
+  original_amount_paise: number;
+  discount_amount_paise: number;
+  promo_code?: string | null;
   created_at: string;
   updated_at?: string | null;
+};
+
+export type AdminPaymentPage = {
+  items: AdminPaymentRecord[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
 };
 
 export type AdminAnalytics = {

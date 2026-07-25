@@ -73,7 +73,8 @@ export function cleanInlineText(value: string) {
   return value.replace(/\u00a0/g, " ").replace(/\r\n?/g, "\n").trim();
 }
 
-export function isSafeCmsUrl(value: string) {
+export function isSafeCmsUrl(value: unknown) {
+  if (typeof value !== "string") return false;
   const url = value.trim();
   if (!url) return false;
   if ((url.startsWith("/") && !url.startsWith("//")) || url.startsWith("#")) return true;

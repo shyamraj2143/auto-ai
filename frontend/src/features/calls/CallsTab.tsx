@@ -1,6 +1,6 @@
 import { Bell, Check, Clock3, LoaderCircle, MessageCircle, Phone, Search, Settings, ShieldAlert, UserPlus, Video, X } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { resolveApiAssetUrl } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { CallSettings } from "./CallSettings";
@@ -14,7 +14,7 @@ type CallsTabProps = {
   onRefreshingChange: (refreshing: boolean) => void;
 };
 
-type View = "chats" | "calls" | "search" | "requests" | "notifications" | "settings";
+type View = "quick" | "chats" | "calls" | "search" | "requests" | "notifications" | "settings";
 
 function errorText(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
@@ -59,11 +59,16 @@ function followButtonLabel(profile: SocialProfile) {
 export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps) {
   const { token, user: currentUser } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { config, error, clearError, refreshRealtime, signalingState, startCall } = useCallSession();
-  const [view, setView] = useState<View>("search");
-  const [query, setQuery] = useState("");
+  const requestedView = searchParams.get("view");
+  const requestedCallType = searchParams.get("type") === "video" ? "video" : searchParams.get("type") === "audio" ? "audio" : null;
+  const requestedQuery = (searchParams.get("q") || "").slice(0, 80);
+  const [view, setView] = useState<View>(() => requestedView === "quick" || requestedView === "chats" || requestedView === "calls" || requestedView === "search" || requestedView === "requests" || requestedView === "notifications" || requestedView === "settings" ? requestedView : "quick");
+  const [query, setQuery] = useState(requestedQuery);
   const [results, setResults] = useState<SocialProfile[]>([]);
   const [history, setHistory] = useState<CallRecord[]>([]);
+  const [activeUsers, setActiveUsers] = useState<PublicCallUser[]>([]);
   const [selected, setSelected] = useState<SocialProfile | null>(null);
   const [incoming, setIncoming] = useState<SocialRequest[]>([]);
   const [sent, setSent] = useState<SocialRequest[]>([]);
@@ -81,6 +86,11 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
     setToast(text);
     window.setTimeout(() => setToast(""), 4500);
   }, []);
+
+  useEffect(() => {
+    if (requestedView === "quick" || requestedView === "chats" || requestedView === "calls" || requestedView === "search" || requestedView === "requests" || requestedView === "notifications" || requestedView === "settings") setView(requestedView);
+    if (requestedQuery) setQuery(requestedQuery);
+  }, [requestedQuery, requestedView]);
 
   useEffect(() => {
     if (!error) return;
@@ -160,11 +170,13 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
         refreshRealtime(),
         normalized.length >= 2 ? socialApi.searchUsers(token, normalized, 1, 20) : Promise.resolve(null),
         socialApi.notifications(token, 1, 1),
+        callApi.onlineUsers(token, 1, 12),
       ] as const;
-      const [historyResult, realtimeResult, searchResult, notificationResult] = await Promise.allSettled(requests);
+      const [historyResult, realtimeResult, searchResult, notificationResult, activeResult] = await Promise.allSettled(requests);
       if (historyResult.status === "fulfilled") setHistory(historyResult.value.items);
       if (searchResult.status === "fulfilled" && searchResult.value) setResults(searchResult.value.items.filter((item) => item.id !== currentUser?.id));
       if (notificationResult.status === "fulfilled") setUnread(notificationResult.value.unread_count);
+      if (activeResult.status === "fulfilled") setActiveUsers(activeResult.value.items);
       if (realtimeResult.status === "rejected" && notifyOnError) showToast("Realtime calling is temporarily unavailable.");
     } finally {
       onRefreshingChange(false);
@@ -326,6 +338,7 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
   return (
     <div className="calls-tab">
       <div className="calls-subtabs social-tabs">
+        <button type="button" className={view === "quick" ? "active" : ""} onClick={() => setView("quick")}><Phone size={14} /> Quick</button>
         <button type="button" className={view === "chats" ? "active" : ""} onClick={() => setView("chats")}><MessageCircle size={14} /> Chats</button>
         <button type="button" className={view === "calls" ? "active" : ""} onClick={() => setView("calls")}><Clock3 size={14} /> Calls</button>
         <button type="button" className={view === "search" ? "active" : ""} onClick={() => setView("search")}><Search size={14} /> Search</button>
@@ -335,7 +348,33 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
       </div>
       {!featureEnabled && <div className="calls-inline-alert"><ShieldAlert size={14} /> Calls are disabled.</div>}
       {config?.diagnostic && <div className="calls-inline-alert"><ShieldAlert size={14} /> {config.diagnostic}</div>}
+      {config?.limitations?.map((limitation) => <div className="calls-inline-alert" key={limitation}><ShieldAlert size={14} /> {limitation}</div>)}
       {message && <div className="calls-inline-alert"><ShieldAlert size={14} /> {message}</div>}
+
+      {view === "quick" && (
+        <div className="calls-list social-panel">
+          <p className="calls-section-label">Active friends</p>
+          {activeUsers.map((profile) => (
+            <div className="call-history-row" key={profile.id}>
+              <Avatar profile={profile} />
+              <span><strong>{profile.display_name}</strong><small>{profile.availability}</small></span>
+              <button type="button" onClick={() => void startCall(profile, "audio")} disabled={!callingAvailable || !profile.can_audio_call} aria-label={`Audio call ${profile.display_name}`}><Phone size={15} /></button>
+              <button type="button" onClick={() => void startCall(profile, "video")} disabled={!callingAvailable || !profile.can_video_call} aria-label={`Video call ${profile.display_name}`}><Video size={15} /></button>
+            </div>
+          ))}
+          {!activeUsers.length && <div className="calls-empty">No friends are available right now</div>}
+          <p className="calls-section-label calls-section-label-spaced">Recent people</p>
+          {Array.from(new Map(history.map((item) => [item.peer.id, item.peer])).values()).slice(0, 8).map((profile) => (
+            <div className="call-history-row" key={profile.id}>
+              <Avatar profile={profile} />
+              <span><strong>{profile.display_name}</strong><small>@{profile.username}</small></span>
+              <button type="button" onClick={() => void startCall(profile, "audio")} disabled={!callingAvailable || !profile.can_audio_call} aria-label={`Audio call ${profile.display_name}`}><Phone size={15} /></button>
+              <button type="button" onClick={() => void startCall(profile, "video")} disabled={!callingAvailable || !profile.can_video_call} aria-label={`Video call ${profile.display_name}`}><Video size={15} /></button>
+            </div>
+          ))}
+          {!history.length && <div className="calls-empty">No recent calls</div>}
+        </div>
+      )}
 
       {view === "chats" && (
         <div className="calls-list social-panel">
@@ -345,6 +384,7 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
 
       {view === "search" && (
         <div className="calls-list social-panel">
+          {requestedCallType && <p className="calls-section-label">Choose a permitted contact to start a {requestedCallType === "audio" ? "voice" : "video"} call.</p>}
           <form className="calls-search-wrap" onSubmit={submitSearch}>
             <Search size={15} />
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name or username" aria-label="Search users" />

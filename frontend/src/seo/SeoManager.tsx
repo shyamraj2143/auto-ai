@@ -15,6 +15,7 @@ type SeoRoute = {
 };
 
 const routes = seoData.routes as SeoRoute[];
+const CMS_PAGE_PATHS = new Set(["/", "/about", "/features", "/contact", "/help", "/privacy-policy", "/terms-and-conditions"]);
 const siteUrl = seoData.siteUrl.replace(/\/$/, "");
 const defaultImageUrl = absoluteUrl(seoData.defaultImage);
 
@@ -137,7 +138,7 @@ export function SeoManager() {
 
     applyStructuredData();
 
-    if (location.pathname.startsWith("/admin") || location.pathname.startsWith("/chat") || location.pathname.startsWith("/settings")) return;
+    if (!CMS_PAGE_PATHS.has(location.pathname)) return;
     const cmsSlug = location.pathname === "/" ? "home" : location.pathname.replace(/^\/+|\/+$/g, "");
     if (!cmsSlug) return;
     let active = true;

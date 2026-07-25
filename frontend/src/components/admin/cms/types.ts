@@ -23,7 +23,7 @@ export type CmsSeo = {
 };
 
 export type CmsButton = { label: string; url: string; style: "primary" | "secondary" };
-export type CmsElementOverride = { text?: string; href?: string; hidden?: boolean };
+export type CmsElementOverride = { text?: string | null; href?: string | null; hidden?: boolean };
 export type CmsBlock = {
   id: string;
   block_type: CmsBlockType;

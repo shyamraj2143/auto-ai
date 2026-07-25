@@ -21,6 +21,12 @@ describe("CMS cursor selection helpers", () => {
     expect(isSafeCmsUrl("https://autoai.site.je")).toBe(true);
     expect(isSafeCmsUrl("javascript:alert(1)")).toBe(false);
     expect(isSafeCmsUrl("//evil.example")).toBe(false);
+    expect(isSafeCmsUrl(null)).toBe(false);
+  });
+  it("accepts nullable element links returned by the API", () => {
+    const draft = page();
+    draft.element_overrides["footer.brand"] = { text: "Auto-AI", href: null };
+    expect(validateCmsPage(draft)).toEqual([]);
   });
   it("reports publish-blocking link errors and accessibility warnings", () => {
     const draft = page();

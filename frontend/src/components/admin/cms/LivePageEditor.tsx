@@ -56,6 +56,33 @@ function clone(page: CmsPage): CmsPage {
   return JSON.parse(JSON.stringify(page)) as CmsPage;
 }
 
+function normalizePage(page: CmsPage): CmsPage {
+  const raw = page as CmsPage & Record<string, unknown>;
+  const buttons = Array.isArray(raw.buttons)
+    ? raw.buttons.filter((button): button is CmsPage["buttons"][number] => Boolean(button && typeof button === "object"))
+    : [];
+  const blocks = Array.isArray(raw.blocks)
+    ? raw.blocks
+        .filter((block): block is CmsBlock => Boolean(block && typeof block === "object" && typeof block.id === "string"))
+        .map((block, position) => ({
+          ...block,
+          content: block.content && typeof block.content === "object" ? block.content : {},
+          position: Number.isFinite(block.position) ? block.position : position,
+          is_visible: block.is_visible !== false
+        }))
+    : [];
+  const elementOverrides = raw.element_overrides && typeof raw.element_overrides === "object"
+    ? Object.fromEntries(Object.entries(raw.element_overrides).filter((entry) => entry[1] && typeof entry[1] === "object"))
+    : {};
+  return {
+    ...page,
+    buttons,
+    blocks,
+    element_overrides: elementOverrides,
+    seo: page.seo ?? {}
+  };
+}
+
 function isHomePage(page: CmsPage | null) {
   return page?.slug === "home" || page?.page_key === "home";
 }
@@ -169,13 +196,13 @@ export function LivePageEditor({ canEdit, canPublish }: { canEdit: boolean; canP
       : result.items.find((item) => item.slug === "home") ?? result.items.find((item) => item.status === "published") ?? result.items[0];
     if (!target) return;
     const serverResponse = await cmsApi.page(token, target.id);
-    const server = { ...serverResponse, element_overrides: serverResponse.element_overrides ?? {} };
+    const server = normalizePage(serverResponse);
     const recoveryJson = localStorage.getItem(`auto-ai-cms-recovery:${server.id}`);
     let detail = server;
     if (recoveryJson) {
       try {
         const parsedRecovery = JSON.parse(recoveryJson) as CmsPage;
-        const recovery = { ...parsedRecovery, element_overrides: parsedRecovery.element_overrides ?? {} };
+        const recovery = normalizePage(parsedRecovery);
         if (recovery.id === server.id && recovery.version === server.version) {
           detail = recovery;
           setSaveState("Unsaved");

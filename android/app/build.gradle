@@ -20,6 +20,8 @@ def autoAiApiBaseUrl = signingValue('AUTO_AI_API_BASE_URL') ?: 'https://auto-ai-
 def googleWebClientId = signingValue('AUTO_AI_GOOGLE_WEB_CLIENT_ID') ?: signingValue('GOOGLE_WEB_CLIENT_ID') ?: signingValue('VITE_GOOGLE_WEB_CLIENT_ID') ?: ''
 def autoAiVersionCode = (signingValue('AUTO_AI_ANDROID_VERSION_CODE') ?: '21') as Integer
 def autoAiVersionName = signingValue('AUTO_AI_ANDROID_VERSION_NAME') ?: '1.0.19'
+def firebaseServicesFile = file('google-services.json')
+def firebaseConfigured = firebaseServicesFile.isFile() && firebaseServicesFile.length() > 0
 
 android {
     namespace = "com.autoai.app"
@@ -34,6 +36,7 @@ android {
         versionCode autoAiVersionCode
         versionName autoAiVersionName
         buildConfigField "String", "AUTO_AI_API_BASE_URL", "\"${autoAiApiBaseUrl.replace('\\', '\\\\').replace('"', '\\"')}\""
+        buildConfigField "boolean", "AUTO_AI_FIREBASE_CONFIGURED", firebaseConfigured.toString()
         resValue "string", "auto_ai_google_web_client_id", googleWebClientId
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
@@ -93,11 +96,19 @@ dependencies {
 
 apply from: 'capacitor.build.gradle'
 
-try {
-    def servicesJSON = file('google-services.json')
-    if (servicesJSON.text) {
-        apply plugin: 'com.google.gms.google-services'
+if (firebaseConfigured) {
+    apply plugin: 'com.google.gms.google-services'
+} else {
+    logger.warn("google-services.json not found. Firebase push notifications will not work, and release builds are disabled.")
+
+    tasks.configureEach { task ->
+        if (task.name == 'assembleRelease' || task.name == 'bundleRelease') {
+            task.doFirst {
+                throw new GradleException(
+                    "Production calls require android/app/google-services.json for package com.autoai.app. " +
+                    "Register the Android app in Firebase and download the generated file."
+                )
+            }
+        }
     }
-} catch(Exception e) {
-    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
 }

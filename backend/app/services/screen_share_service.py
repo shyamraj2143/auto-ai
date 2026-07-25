@@ -295,7 +295,7 @@ class ScreenShareService:
             return host
         host = User(
             id=GUEST_HOST_USER_ID,
-            email="screen-share-guest@internal.invalid",
+            email="screen-share-guest@autoai.site.je",
             name="Screen Share Guest",
             hashed_password=secrets.token_urlsafe(48),
             provider="system",

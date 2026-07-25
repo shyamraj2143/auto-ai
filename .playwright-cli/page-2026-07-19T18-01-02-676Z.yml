@@ -1,0 +1,219 @@
+- generic [ref=f13e3]:
+  - generic [ref=f13e4]:
+    - generic [ref=f13e6]: AUTO—AI
+    - generic [ref=f13e8]: PRISM
+    - generic [ref=f13e11]:
+      - generic [ref=f13e12]:
+        - generic [ref=f13e13]: A
+        - generic [ref=f13e14]: U
+        - generic [ref=f13e15]: T
+        - generic [ref=f13e16]: O
+        - generic [ref=f13e17]: –
+      - generic [ref=f13e18]: Prism Intelligence
+    - generic [ref=f13e19]: 002%
+  - banner [ref=f13e20]:
+    - link "Auto-AI home" [ref=f13e21] [cursor=pointer]:
+      - /url: /
+      - img "Auto-AI logo" [ref=f13e23]
+    - generic [ref=f13e24]:
+      - button "Open quick navigation" [ref=f13e26] [cursor=pointer]
+      - button "Switch to light mode" [ref=f13e31] [cursor=pointer]
+      - button "Open navigation menu" [ref=f13e38] [cursor=pointer]
+  - main [ref=f13e40]:
+    - region [ref=f13e41]:
+      - generic [ref=f13e42]:
+        - generic [ref=f13e43]: AutoAI Prism Intelligence
+        - heading [level=1] [ref=f13e47]
+        - paragraph [ref=f13e52]: Chat, speak, research, share, and build with one adaptive AI workspace designed to keep context clear.
+        - generic [ref=f13e53]:
+          - link "Start Chatting" [ref=f13e54] [cursor=pointer]:
+            - /url: /register
+          - button "Explore Features" [ref=f13e57] [cursor=pointer]
+        - generic "Product assurances" [ref=f13e58]:
+          - generic [ref=f13e59]: Private by design
+          - generic [ref=f13e63]: Responsive streaming
+      - generic "Auto-AI workspace preview" [ref=f13e66]:
+        - generic [ref=f13e67]:
+          - generic [ref=f13e68]:
+            - img "Auto-AI logo" [ref=f13e69]
+            - text: Auto-AI
+          - generic [ref=f13e71]:
+            - generic [ref=f13e73]: Bedrock
+            - generic [ref=f13e74]: Amazon Bedrock
+        - tablist "Preview mode" [ref=f13e75]:
+          - tab "Chat" [selected] [ref=f13e76] [cursor=pointer]
+          - tab "Research" [ref=f13e77] [cursor=pointer]
+          - tab "Vision" [ref=f13e78] [cursor=pointer]
+        - generic [ref=f13e85]:
+          - generic [ref=f13e86]: Bedrock context
+          - generic [ref=f13e101]:
+            - textbox "Demo message" [ref=f13e102]:
+              - /placeholder: Message the AI demo
+            - button "Send demo message" [disabled] [ref=f13e103]
+    - generic "Auto-AI status" [ref=f13e106]:
+      - generic [ref=f13e107]: 8 connected capabilities
+      - generic [ref=f13e108]: 1 continuous workspace
+      - generic [ref=f13e109]: 0 silent screen capture
+    - region [ref=f13e110]:
+      - generic [ref=f13e111]:
+        - generic [ref=f13e112]:
+          - generic [ref=f13e113]: Connected intelligence
+          - heading "One intelligence layer. Every way you work." [level=2] [ref=f13e127]
+          - paragraph [ref=f13e128]: Each capability is useful on its own. Together, they keep context moving without forcing you to rebuild it.
+        - generic [ref=f13e129]:
+          - article [ref=f13e130]:
+            - generic [ref=f13e131]: Streaming
+            - generic [ref=f13e137]:
+              - heading "AI Chat" [level=3] [ref=f13e138]
+              - paragraph [ref=f13e139]: A fast, context-aware conversation workspace for ideas, documents, decisions, and follow-up work.
+          - article [ref=f13e140]:
+            - generic [ref=f13e141]: Listening
+            - generic [ref=f13e146]:
+              - heading "Voice Mode" [level=3] [ref=f13e147]
+              - paragraph [ref=f13e148]: Speak naturally, listen to clear answers, and stay in the flow without reaching for the keyboard.
+          - article [ref=f13e149]:
+            - generic [ref=f13e150]: Visual context
+            - generic [ref=f13e157]:
+              - heading "Vision" [level=3] [ref=f13e158]
+              - paragraph [ref=f13e159]: Bring screenshots and images into the same conversation for precise visual understanding.
+          - article [ref=f13e160]:
+            - generic [ref=f13e161]: WebRTC
+            - generic [ref=f13e169]:
+              - heading "Screen Sharing" [level=3] [ref=f13e170]
+              - paragraph [ref=f13e171]: Share with a secure 8-digit code and work across phone and laptop without installing viewer software.
+          - article [ref=f13e172]:
+            - generic [ref=f13e173]: Connected
+            - generic [ref=f13e181]:
+              - heading "Audio & Video Calls" [level=3] [ref=f13e182]
+              - paragraph [ref=f13e183]: Move from messages to a direct conversation with clear connection and call states.
+          - article [ref=f13e184]:
+            - generic [ref=f13e185]: Source aware
+            - generic [ref=f13e192]:
+              - heading "Deep Research" [level=3] [ref=f13e193]
+              - paragraph [ref=f13e194]: Build source-grounded answers while keeping evidence and uncertainty visible.
+          - article [ref=f13e195]:
+            - generic [ref=f13e196]: Adaptive
+            - generic [ref=f13e205]:
+              - heading "Multi-model Routing" [level=3] [ref=f13e206]
+              - paragraph [ref=f13e207]: Match each task to the right intelligence path while keeping one consistent workspace.
+          - article [ref=f13e208]:
+            - generic [ref=f13e209]: Protected
+            - generic [ref=f13e216]:
+              - heading "Secure Conversations" [level=3] [ref=f13e217]
+              - paragraph [ref=f13e218]: Private sessions, visible permissions, and user-controlled data keep every interaction intentional.
+    - region [ref=f13e219]:
+      - generic [ref=f13e221]:
+        - generic [ref=f13e222]:
+          - generic [ref=f13e223]: One workspace
+          - heading "From first thought to finished answer." [level=2] [ref=f13e230]:
+            - generic [ref=f13e231]:
+              - generic [ref=f13e232]: From
+              - generic [ref=f13e233]: first
+              - generic [ref=f13e234]: thought
+              - generic [ref=f13e235]: to
+              - generic [ref=f13e236]: finished
+              - generic [ref=f13e237]: answer.
+          - paragraph [ref=f13e238]: Keep the conversation, supporting files, voice, visual context, and next action in one readable place.
+        - generic [ref=f13e239]:
+          - generic [ref=f13e240]: Streaming chat
+          - generic [ref=f13e243]: Voice input
+          - generic [ref=f13e246]: Image analysis
+          - generic [ref=f13e249]: Memory panel
+          - generic [ref=f13e252]: Search mode
+          - generic [ref=f13e255]: File context
+          - generic [ref=f13e258]: Screen sharing
+          - generic [ref=f13e261]: Secure calls
+    - region [ref=f13e264]:
+      - generic [ref=f13e266]:
+        - generic [ref=f13e267]:
+          - generic [ref=f13e268]: Android application
+          - heading "Your Auto-AI workspace, ready to move." [level=2] [ref=f13e272]
+          - paragraph [ref=f13e273]: Use the same account, chat history, calls, screen sharing, uploads, settings, and AI context from your phone.
+          - generic [ref=f13e274]:
+            - generic [ref=f13e275]: Latest Checking
+            - generic [ref=f13e276]: Released Pending release
+            - generic [ref=f13e277]: Downloads 0
+          - generic [ref=f13e278]:
+            - button "Download APK" [ref=f13e279] [cursor=pointer]
+            - link "App details" [ref=f13e283] [cursor=pointer]:
+              - /url: /download
+        - generic [ref=f13e284]:
+          - generic "Auto-AI Android preview" [ref=f13e285]:
+            - generic [ref=f13e286]:
+              - generic [ref=f13e287]: 9:41
+              - generic [ref=f13e292]:
+                - img "Auto-AI logo" [ref=f13e293]
+                - text: Auto-AI
+              - generic [ref=f13e294]: Share the latest screen.
+              - generic [ref=f13e295]: Your secure code is ready.
+              - generic [ref=f13e296]: 8-digit screen share
+          - generic [ref=f13e301]:
+            - img "QR code loading" [ref=f13e302]
+            - generic [ref=f13e308]: Scan for Android
+    - region [ref=f13e309]:
+      - generic [ref=f13e310]:
+        - generic [ref=f13e311]:
+          - generic [ref=f13e312]: Built for real work
+          - heading "Clear enough for every day. Capable enough for the hard days." [level=2] [ref=f13e316]
+        - generic [ref=f13e317]:
+          - article [ref=f13e318]:
+            - blockquote [ref=f13e319]: The workspace stays clear even when the project gets complicated.
+            - generic [ref=f13e320]:
+              - generic [ref=f13e321]: Verified user
+              - generic [ref=f13e322]: Active workspace
+          - article [ref=f13e324]:
+            - blockquote [ref=f13e325]: Research, uploads, and conversation finally feel like one continuous thought.
+            - generic [ref=f13e326]:
+              - generic [ref=f13e327]: Verified user
+              - generic [ref=f13e328]: Active workspace
+          - article [ref=f13e330]:
+            - blockquote [ref=f13e331]: It is quick enough for daily work and calm enough for long sessions.
+            - generic [ref=f13e332]:
+              - generic [ref=f13e333]: Verified user
+              - generic [ref=f13e334]: Active workspace
+    - region [ref=f13e336]:
+      - generic [ref=f13e337]:
+        - generic [ref=f13e338]:
+          - generic [ref=f13e339]: Flexible plans
+          - heading "Start focused. Scale when the work grows." [level=2] [ref=f13e343]:
+            - generic [ref=f13e344]:
+              - generic [ref=f13e345]: Start
+              - generic [ref=f13e346]: focused.
+              - generic [ref=f13e347]: Scale
+              - generic [ref=f13e348]: when
+              - generic [ref=f13e349]: the
+              - generic [ref=f13e350]: work
+              - generic [ref=f13e351]: grows.
+          - paragraph [ref=f13e352]: Choose the workspace capacity that fits today and move up when you need more.
+        - status [ref=f13e353]:
+          - heading "Plans are syncing" [level=3] [ref=f13e357]
+          - paragraph [ref=f13e358]: Current plan details will appear when the pricing service is available.
+    - region [ref=f13e359]:
+      - generic [ref=f13e361]:
+        - generic [ref=f13e362]:
+          - generic [ref=f13e363]:
+            - img "Auto-AI logo" [ref=f13e364]
+            - generic [ref=f13e365]: Auto-AI
+          - heading "Bring the whole workspace into one conversation." [level=2] [ref=f13e366]
+        - generic [ref=f13e367]:
+          - link "Create account" [ref=f13e368] [cursor=pointer]:
+            - /url: /register
+          - button "Copy link" [ref=f13e371] [cursor=pointer]
+    - region [ref=f13e375]:
+      - generic [ref=f13e376]:
+        - generic [ref=f13e377]:
+          - generic [ref=f13e378]: FAQ
+          - heading "A few useful answers before you begin." [level=2] [ref=f13e382]
+        - generic [ref=f13e383]:
+          - group [ref=f13e384]:
+            - generic "Does Auto-AI remember me?" [ref=f13e385] [cursor=pointer]
+          - group [ref=f13e386]:
+            - generic "Can I chat with files?" [ref=f13e387] [cursor=pointer]
+          - group [ref=f13e388]:
+            - generic "Can I use Auto-AI on mobile?" [ref=f13e389] [cursor=pointer]
+  - contentinfo [ref=f13e390]:
+    - link [ref=f13e391] [cursor=pointer]:
+      - /url: /
+      - img "Auto-AI logo" [ref=f13e393]
+    - paragraph [ref=f13e394]: A connected AI workspace for thoughtful, secure, human-feeling work.
+    - generic [ref=f13e395]: Connected

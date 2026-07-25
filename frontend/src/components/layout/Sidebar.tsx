@@ -139,7 +139,7 @@ export function Sidebar() {
             <span className="grid h-9 w-9 place-items-center rounded-lg border border-cyan-200/30 bg-cyan-200/15 text-cyan-100">
               <LogoIcon />
             </span>
-            <Link className="font-semibold" to="/chat">
+            <Link className="font-semibold" to="/hub">
               Auto-AI
             </Link>
           </div>

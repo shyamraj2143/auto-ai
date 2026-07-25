@@ -306,7 +306,8 @@ export function Composer({
   onSend,
   onStop,
   onOpenLiveMode,
-  focusKey
+  focusKey,
+  initialDraft = ""
 }: {
   disabled?: boolean;
   selectedDocuments: DocumentItem[];
@@ -318,6 +319,7 @@ export function Composer({
   onStop?: () => Promise<void> | void;
   onOpenLiveMode: () => void;
   focusKey?: string;
+  initialDraft?: string;
 }) {
   const uiText = usePublishedUiText();
   const { token } = useAuth();
@@ -351,6 +353,7 @@ export function Composer({
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [imageAttachments, setImageAttachments] = useState<ImageAttachment[]>([]);
   const [error, setError] = useState("");
+  const appliedInitialDraftRef = useRef("");
 
   const uploading = uploadTasks.some((task) => task.status === "uploading" || task.status === "processing");
   const canSend = Boolean(draft.trim() || imageAttachments.length) && !disabled && !sending && !uploading;
@@ -377,6 +380,13 @@ export function Composer({
   useEffect(() => {
     textareaRef.current?.focus({ preventScroll: true });
   }, [focusKey]);
+
+  useEffect(() => {
+    const next = initialDraft.trim();
+    if (!next || appliedInitialDraftRef.current === next) return;
+    appliedInitialDraftRef.current = next;
+    setDraft((current) => current.trim() ? current : next);
+  }, [initialDraft]);
 
   useEffect(() => {
     const handleAndroidBack = (event: Event) => {

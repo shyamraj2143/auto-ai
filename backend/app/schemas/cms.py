@@ -215,6 +215,36 @@ class ContentPageUpdate(StrictModel):
     )
 
 
+class ContentDraftBlock(ContentBlockInput):
+    id: str | None = Field(default=None, pattern=r"^[0-9a-fA-F-]{36}$")
+
+
+class ContentPageDraftUpdate(StrictModel):
+    schema_version: Literal[1]
+    page_id: str = Field(pattern=r"^[0-9a-fA-F-]{36}$")
+    expected_version: int = Field(ge=1)
+    title: str = Field(min_length=1, max_length=160)
+    slug: str = Field(pattern=r"^/?[a-z0-9][a-z0-9/_-]{0,158}$")
+    hero_heading: str = Field(max_length=200)
+    hero_description: str = Field(max_length=2000)
+    buttons: list[ContentButton] = Field(max_length=8)
+    element_overrides: dict[str, ContentElementOverride] = Field(max_length=500)
+    seo: SeoFields
+    blocks: list[ContentDraftBlock] = Field(max_length=200)
+
+    @field_validator("slug")
+    @classmethod
+    def normalize_slug(cls, value: str) -> str:
+        return value.strip("/") or "home"
+
+    _safe_text = field_validator("hero_heading", "hero_description")(
+        classmethod(lambda cls, value: reject_unsafe_markup(value))
+    )
+    _safe_element_keys = field_validator("element_overrides")(
+        classmethod(lambda cls, value: validate_element_override_keys(value))
+    )
+
+
 class PublishRequest(StrictModel):
     expected_version: int = Field(ge=1)
     change_summary: str = Field(default="", max_length=255)

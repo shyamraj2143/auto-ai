@@ -6,9 +6,10 @@ import razorpay
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from razorpay.errors import BadRequestError, GatewayError, ServerError
-from sqlalchemy import func, or_, select
+from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from pydantic import ValidationError
 
 from app.api.deps import get_current_admin
 from app.core.config import settings
@@ -19,6 +20,7 @@ from app.models.api_usage import APIUsage
 from app.models.chat import Chat
 from app.models.document import Document
 from app.models.message import Message
+from app.models.promo import PromoCode, PromoRedemption
 from app.models.user import User
 from app.schemas.admin import (
     AdminAnalyticsResponse,
@@ -27,6 +29,7 @@ from app.schemas.admin import (
     AdminFeatureFlagUpdate,
     AdminFeaturesResponse,
     AdminPaymentRecordRead,
+    AdminPaymentPage,
     AdminPlanLimitRead,
     AdminPlanLimitUpdate,
     AdminQuotaRead,
@@ -49,7 +52,16 @@ from app.schemas.admin import (
     TokenUsageSummary,
 )
 from app.schemas.download import ApkReleaseRead, ApkVersionUpsert
-from app.utils.pdf import build_text_pdf
+from app.schemas.promo import (
+    PromoArchiveRequest,
+    PromoCodeCreate,
+    PromoCodePage,
+    PromoCodeRead,
+    PromoCodeUpdate,
+    PromoRedemptionPage,
+    PromoRedemptionRead,
+    PromoStatusFilter,
+)
 from app.services.admin_control import (
     FEATURE_DEFINITIONS,
     activate_subscription_plan,
@@ -66,6 +78,7 @@ from app.services.admin_control import (
     refresh_quota_periods,
 )
 from app.services.apk_service import apk_service
+from app.services.promo_service import SUCCESS_PAYMENT_STATUSES, promo_status
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -271,9 +284,247 @@ def to_payment_read(
         razorpay_payment_id=payment.razorpay_payment_id or payment.payment_id,
         paid_at=payment.paid_at,
         subscription_status=subscription.status if subscription else None,
-        invoice_url=f"/api/v1/admin/subscriptions/payments/{payment.id}/invoice",
+        receipt_number=payment.receipt_number,
+        receipt_url=(
+            f"/api/v1/admin/subscriptions/payments/{payment.id}/receipt"
+            if payment.status in SUCCESS_PAYMENT_STATUSES and payment.verified_at is not None
+            else None
+        ),
+        original_amount_paise=payment.original_amount_paise or amount,
+        discount_amount_paise=payment.discount_amount_paise or 0,
+        promo_code=payment.promo_code_snapshot,
         created_at=payment.created_at,
         updated_at=payment.updated_at,
+    )
+
+
+def to_promo_read(promo: PromoCode) -> PromoCodeRead:
+    return PromoCodeRead(
+        id=promo.id,
+        code=promo.normalized_code,
+        description=promo.description,
+        discount_type=promo.discount_type,
+        discount_value=promo.discount_value,
+        currency=promo.currency,
+        eligible_plans=list(promo.eligible_plans or []),
+        minimum_amount=promo.minimum_amount,
+        maximum_discount=promo.maximum_discount,
+        starts_at=promo.starts_at,
+        expires_at=promo.expires_at,
+        total_usage_limit=promo.total_usage_limit,
+        per_user_limit=promo.per_user_limit,
+        usage_count=promo.usage_count,
+        is_active=promo.is_active,
+        is_archived=promo.is_archived,
+        new_users_only=promo.new_users_only,
+        created_by=promo.created_by,
+        created_at=promo.created_at,
+        updated_at=promo.updated_at,
+        status=promo_status(promo),
+    )
+
+
+def log_promo_action(db: Session, admin: User, promo: PromoCode, action: str, metadata: dict | None = None) -> None:
+    db.add(
+        AuditLog(
+            actor_user_id=admin.id,
+            action=action,
+            reason=f"Promo {promo.normalized_code}",
+            audit_metadata={"promo_code_id": promo.id, "code": promo.normalized_code, **(metadata or {})},
+        )
+    )
+
+
+@router.get("/promo-codes", response_model=PromoCodePage)
+def list_promo_codes(
+    query: str = Query(default="", max_length=80),
+    status_filter: PromoStatusFilter = Query(default="all", alias="status"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    _: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> PromoCodePage:
+    now = datetime.utcnow()
+    statement = select(PromoCode)
+    term = query.strip()
+    if term:
+        pattern = f"%{term}%"
+        statement = statement.where(or_(PromoCode.normalized_code.ilike(pattern), PromoCode.description.ilike(pattern)))
+    if status_filter == "active":
+        statement = statement.where(
+            PromoCode.is_archived.is_(False),
+            PromoCode.is_active.is_(True),
+            or_(PromoCode.starts_at.is_(None), PromoCode.starts_at <= now),
+            or_(PromoCode.expires_at.is_(None), PromoCode.expires_at > now),
+        )
+    elif status_filter == "inactive":
+        statement = statement.where(PromoCode.is_archived.is_(False), PromoCode.is_active.is_(False))
+    elif status_filter == "archived":
+        statement = statement.where(PromoCode.is_archived.is_(True))
+    elif status_filter == "expired":
+        statement = statement.where(PromoCode.is_archived.is_(False), PromoCode.expires_at <= now)
+    elif status_filter == "scheduled":
+        statement = statement.where(PromoCode.is_archived.is_(False), PromoCode.starts_at > now)
+    total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
+    promos = db.scalars(
+        statement.order_by(PromoCode.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    ).all()
+    return PromoCodePage(
+        items=[to_promo_read(promo) for promo in promos],
+        page=page,
+        page_size=page_size,
+        total=total,
+        total_pages=max(1, (total + page_size - 1) // page_size),
+    )
+
+
+@router.post("/promo-codes", response_model=PromoCodeRead, status_code=status.HTTP_201_CREATED)
+def create_promo_code(
+    payload: PromoCodeCreate,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> PromoCodeRead:
+    promo = PromoCode(
+        normalized_code=payload.code,
+        description=payload.description.strip(),
+        discount_type=payload.discount_type,
+        discount_value=payload.discount_value,
+        currency=payload.currency,
+        eligible_plans=list(payload.eligible_plans),
+        minimum_amount=payload.minimum_amount,
+        maximum_discount=payload.maximum_discount,
+        starts_at=payload.starts_at,
+        expires_at=payload.expires_at,
+        total_usage_limit=payload.total_usage_limit,
+        per_user_limit=payload.per_user_limit,
+        is_active=payload.is_active,
+        new_users_only=payload.new_users_only,
+        created_by=current_admin.id,
+    )
+    try:
+        db.add(promo)
+        db.flush()
+        log_promo_action(db, current_admin, promo, "promo.created")
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Promo code already exists.") from exc
+    db.refresh(promo)
+    return to_promo_read(promo)
+
+
+@router.get("/promo-codes/{promo_id}", response_model=PromoCodeRead)
+def get_promo_code(
+    promo_id: str,
+    _: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> PromoCodeRead:
+    promo = db.get(PromoCode, promo_id)
+    if not promo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Promo code not found.")
+    return to_promo_read(promo)
+
+
+@router.patch("/promo-codes/{promo_id}", response_model=PromoCodeRead)
+def update_promo_code(
+    promo_id: str,
+    payload: PromoCodeUpdate,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> PromoCodeRead:
+    promo = db.get(PromoCode, promo_id)
+    if not promo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Promo code not found.")
+    changes = payload.model_dump(exclude_unset=True)
+    merged = {
+        "code": promo.normalized_code,
+        "description": changes.get("description", promo.description),
+        "discount_type": changes.get("discount_type", promo.discount_type),
+        "discount_value": changes.get("discount_value", promo.discount_value),
+        "currency": changes.get("currency", promo.currency),
+        "eligible_plans": changes.get("eligible_plans", promo.eligible_plans),
+        "minimum_amount": changes.get("minimum_amount", promo.minimum_amount),
+        "maximum_discount": changes.get("maximum_discount", promo.maximum_discount),
+        "starts_at": changes.get("starts_at", promo.starts_at),
+        "expires_at": changes.get("expires_at", promo.expires_at),
+        "total_usage_limit": changes.get("total_usage_limit", promo.total_usage_limit),
+        "per_user_limit": changes.get("per_user_limit", promo.per_user_limit),
+        "is_active": changes.get("is_active", promo.is_active),
+        "new_users_only": changes.get("new_users_only", promo.new_users_only),
+    }
+    try:
+        validated = PromoCodeCreate.model_validate(merged)
+    except ValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.errors()) from exc
+    for field, value in validated.model_dump(exclude={"code"}).items():
+        setattr(promo, field, value)
+    promo.updated_at = datetime.utcnow()
+    action = "promo.status_changed" if set(changes) == {"is_active"} else "promo.edited"
+    log_promo_action(db, current_admin, promo, action, {"fields": sorted(changes)})
+    db.commit()
+    db.refresh(promo)
+    return to_promo_read(promo)
+
+
+@router.patch("/promo-codes/{promo_id}/archive", response_model=PromoCodeRead)
+def archive_promo_code(
+    promo_id: str,
+    payload: PromoArchiveRequest,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> PromoCodeRead:
+    promo = db.get(PromoCode, promo_id)
+    if not promo:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Promo code not found.")
+    promo.is_archived = payload.archived
+    if payload.archived:
+        promo.is_active = False
+    promo.updated_at = datetime.utcnow()
+    log_promo_action(db, current_admin, promo, "promo.archived" if payload.archived else "promo.restored")
+    db.commit()
+    db.refresh(promo)
+    return to_promo_read(promo)
+
+
+@router.get("/promo-codes/{promo_id}/redemptions", response_model=PromoRedemptionPage)
+def promo_redemptions(
+    promo_id: str,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    _: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> PromoRedemptionPage:
+    if not db.get(PromoCode, promo_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Promo code not found.")
+    statement = (
+        select(PromoRedemption, User)
+        .outerjoin(User, PromoRedemption.user_id == User.id)
+        .where(PromoRedemption.promo_code_id == promo_id)
+    )
+    total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
+    rows = db.execute(
+        statement.order_by(PromoRedemption.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    ).all()
+    return PromoRedemptionPage(
+        items=[
+            PromoRedemptionRead(
+                id=redemption.id,
+                user_id=redemption.user_id,
+                user_email=user.email if user else None,
+                payment_id=redemption.payment_id,
+                original_amount=redemption.original_amount,
+                discount_amount=redemption.discount_amount,
+                final_amount=redemption.final_amount,
+                status=redemption.status,
+                redeemed_at=redemption.redeemed_at,
+                created_at=redemption.created_at,
+            )
+            for redemption, user in rows
+        ],
+        page=page,
+        page_size=page_size,
+        total=total,
+        total_pages=max(1, (total + page_size - 1) // page_size),
     )
 
 
@@ -832,45 +1083,71 @@ def suspend_subscription(
     return to_subscription_read(subscription, user)
 
 
-@router.get("/subscriptions/payments", response_model=list[AdminPaymentRecordRead])
-def list_payments(_: User = Depends(get_current_admin), db: Session = Depends(get_db)) -> list[AdminPaymentRecordRead]:
-    rows = db.execute(
+@router.get("/subscriptions/payments", response_model=AdminPaymentPage)
+def list_payments(
+    query: str = Query(default="", max_length=120),
+    payment_status: str = Query(default="all", alias="status", pattern="^(all|success|failed)$"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    date_from: datetime | None = Query(default=None),
+    date_to: datetime | None = Query(default=None),
+    _: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AdminPaymentPage:
+    statement = (
         select(PaymentRecord, User, UserSubscription)
         .outerjoin(User, PaymentRecord.user_id == User.id)
         .outerjoin(UserSubscription, UserSubscription.user_id == PaymentRecord.user_id)
-        .order_by(PaymentRecord.created_at.desc())
+    )
+    term = query.strip()
+    if payment_status == "success":
+        statement = statement.where(PaymentRecord.status.in_(SUCCESS_PAYMENT_STATUSES))
+    elif payment_status == "failed":
+        statement = statement.where(PaymentRecord.status == "failed")
+    if date_from:
+        statement = statement.where(PaymentRecord.created_at >= date_from)
+    if date_to:
+        statement = statement.where(PaymentRecord.created_at <= date_to)
+    if term:
+        pattern = f"%{term}%"
+        statement = statement.where(
+            or_(
+                User.name.ilike(pattern),
+                User.email.ilike(pattern),
+                PaymentRecord.user_email.ilike(pattern),
+                PaymentRecord.receipt_number.ilike(pattern),
+                PaymentRecord.payment_id.ilike(pattern),
+                PaymentRecord.razorpay_payment_id.ilike(pattern),
+                PaymentRecord.subscription_id.ilike(pattern),
+                PaymentRecord.razorpay_order_id.ilike(pattern),
+                PaymentRecord.plan.ilike(pattern),
+                PaymentRecord.plan_id.ilike(pattern),
+                cast(PaymentRecord.amount, String).ilike(pattern),
+            )
+        )
+    total = int(db.scalar(select(func.count()).select_from(statement.subquery())) or 0)
+    rows = db.execute(
+        statement.order_by(PaymentRecord.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
     ).all()
-    return [to_payment_read(payment, user, subscription) for payment, user, subscription in rows]
+    return AdminPaymentPage(
+        items=[to_payment_read(payment, user, subscription) for payment, user, subscription in rows],
+        page=page,
+        page_size=page_size,
+        total=total,
+        total_pages=max(1, (total + page_size - 1) // page_size),
+    )
 
 
-@router.get("/subscriptions/payments/{payment_id}/invoice")
-def download_admin_invoice(
+@router.get("/subscriptions/payments/{payment_id}/invoice", include_in_schema=False)
+@router.get("/subscriptions/payments/{payment_id}/receipt")
+def download_admin_receipt(
     payment_id: str,
     _: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> Response:
-    payment = db.get(PaymentRecord, payment_id)
-    if not payment:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
-    user = db.get(User, payment.user_id) if payment.user_id else None
-    invoice = build_text_pdf(
-        "Auto-AI Invoice",
-        [
-            f"Invoice ID: {payment.id}",
-            f"Date: {(payment.paid_at or payment.created_at).isoformat()}",
-            f"Email: {user.email if user else payment.user_email or 'N/A'}",
-            f"Plan: {payment.plan_id or payment.plan}",
-            f"Amount: {int(payment.amount or payment.amount_cents or 0) / 100:.2f} {payment.currency}",
-            f"Status: {payment.status}",
-            f"Payment ID: {payment.razorpay_payment_id or payment.payment_id or 'N/A'}",
-            f"Order ID: {payment.razorpay_order_id or payment.subscription_id or 'N/A'}",
-        ],
-    )
-    return Response(
-        content=invoice,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="auto-ai-invoice-{payment.id}.pdf"'},
-    )
+    from app.api.routes.payments import download_receipt
+
+    return download_receipt(payment_id, _, db)
 
 
 @router.post("/subscriptions/payments/{payment_id}/refund", response_model=AdminPaymentRecordRead)

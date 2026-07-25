@@ -16,7 +16,7 @@ from app.models.cms import Announcement, ContentAuditLog, ContentBlock, ContentP
 from app.models.user import User
 from app.schemas.cms import (
     AnnouncementCreate, AnnouncementUpdate, BlockOrderUpdate, CmsAiAssistRequest, ContentBlockInput, ContentBlockUpdate,
-    ContentPageCreate, ContentPageUpdate, FaqCreate, FaqUpdate, MediaMetadataUpdate, PublishRequest,
+    ContentPageCreate, ContentPageDraftUpdate, ContentPageUpdate, FaqCreate, FaqUpdate, MediaMetadataUpdate, PublishRequest,
     RestoreRevisionRequest, TextEntryUpdate, TextPublishRequest, reject_unsafe_markup,
 )
 from app.services.cms_service import (
@@ -190,6 +190,58 @@ def update_page(page_id: str, payload: ContentPageUpdate, actor: User = Depends(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Page slug already exists") from exc
     db.refresh(item)
     return serialize_page(item)
+
+
+@admin_router.put("/pages/{page_id}/draft")
+def save_page_draft(page_id: str, payload: ContentPageDraftUpdate, actor: User = Depends(get_current_cms_editor), db: Session = Depends(get_db)) -> dict:
+    if payload.page_id != page_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Draft page ID does not match request path")
+    page = get_page(db, page_id)
+    require_version(page.version, payload.expected_version)
+
+    existing = {block.id: block for block in page.blocks}
+    requested_ids = [block.id for block in payload.blocks if block.id is not None]
+    if len(requested_ids) != len(set(requested_ids)):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Draft contains duplicate block IDs")
+    unknown_ids = set(requested_ids) - set(existing)
+    if unknown_ids:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Draft contains blocks from another page")
+
+    page.title = payload.title
+    page.slug = payload.slug
+    page.hero_heading = payload.hero_heading
+    page.hero_description = payload.hero_description
+    page.buttons = [button.model_dump() for button in payload.buttons]
+    page.element_overrides = {key: value.model_dump() for key, value in payload.element_overrides.items()}
+    page.seo = payload.seo.model_dump()
+    retained_ids = set(requested_ids)
+    for block in existing.values():
+        if block.id not in retained_ids:
+            db.delete(block)
+    for position, block_payload in enumerate(payload.blocks):
+        block = existing.get(block_payload.id) if block_payload.id else None
+        if block is None:
+            block = ContentBlock(page_id=page.id)
+            db.add(block)
+        block.block_type = block_payload.block_type
+        block.content = block_payload.content
+        block.is_visible = block_payload.is_visible
+        block.is_deleted = False
+        block.deleted_at = None
+        block.position = position
+
+    page.version += 1
+    page.status = "draft" if page.status != "archived" else page.status
+    page.updated_by = actor.id
+    page.updated_at = datetime.utcnow()
+    try:
+        audit(db, actor, "edited", "page", page.id, "Visual draft saved", {"block_count": len(payload.blocks)})
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Page slug already exists") from exc
+    db.expire(page, ["blocks"])
+    return serialize_page(page)
 
 
 @admin_router.post("/pages/{page_id}/blocks", status_code=status.HTTP_201_CREATED)

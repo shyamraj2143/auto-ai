@@ -1,23 +1,16 @@
 import { memo, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
-  Bookmark,
-  BookmarkCheck,
   Bot,
   Check,
   Copy,
-  CornerDownRight,
   Cpu,
   FileText,
   ImageIcon,
-  Pencil,
   RefreshCw,
   Share2,
   Search,
-  ThumbsDown,
-  ThumbsUp,
-  User,
-  Volume2
+  User
 } from "lucide-react";
 import { motion } from "framer-motion";
 import clsx from "clsx";
@@ -28,8 +21,6 @@ import { SourceCards } from "./SourceCards";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import { useMotionMode } from "../../motion/MotionProvider";
 import { StreamingPulse } from "../../motion/primitives";
-
-export type MessageReaction = "up" | "down" | null;
 
 const THINK_BLOCK_PATTERN = /<think\b[^>]*>[\s\S]*?<\/think>\s*/gi;
 const OPEN_THINK_BLOCK_PATTERN = /<think\b[^>]*>[\s\S]*$/i;
@@ -141,27 +132,15 @@ function MessageBubbleComponent({
   message,
   isStreaming,
   isSearchingWeb,
-  reaction,
-  bookmarked,
-  onReact,
   onRegenerate,
-  onEdit,
-  onContinue,
-  onBookmark,
   onShare,
   fallbackModel
 }: {
   message: Message;
   isStreaming?: boolean;
   isSearchingWeb?: boolean;
-  reaction?: MessageReaction;
-  bookmarked?: boolean;
   fallbackModel?: ResponseModelInfo | null;
-  onReact: (messageId: string, reaction: MessageReaction) => void;
   onRegenerate: (messageId: string) => void;
-  onEdit: (messageId: string) => void;
-  onContinue: (messageId: string) => void;
-  onBookmark: (messageId: string) => void;
   onShare: (messageId: string) => void;
 }) {
   const isAssistant = message.role === "assistant";
@@ -194,13 +173,6 @@ function MessageBubbleComponent({
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1300);
     });
-  }
-
-  function speakMessage() {
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(content);
-    utterance.rate = 1;
-    window.speechSynthesis.speak(utterance);
   }
 
   return (
@@ -271,42 +243,15 @@ function MessageBubbleComponent({
             <button className="message-action" onClick={copyMessage} title="Copy message">
               {copied ? <Check size={15} /> : <Copy size={15} />}
             </button>
-            <button
-              className={clsx("message-action", reaction === "up" && "message-action-active")}
-              onClick={() => onReact(message.id, reaction === "up" ? null : "up")}
-              title="Good response"
-            >
-              <ThumbsUp size={15} />
-            </button>
-            <button
-              className={clsx("message-action", reaction === "down" && "message-action-active")}
-              onClick={() => onReact(message.id, reaction === "down" ? null : "down")}
-              title="Poor response"
-            >
-              <ThumbsDown size={15} />
-            </button>
-            <button className="message-action" onClick={() => onBookmark(message.id)} title="Bookmark message">
-              {bookmarked ? <BookmarkCheck size={15} /> : <Bookmark size={15} />}
-            </button>
-            <button className="message-action" onClick={() => onShare(message.id)} title="Share message">
-              <Share2 size={15} />
-            </button>
-            {isAssistant ? (
+            {isAssistant && (
               <>
-                <button className="message-action" onClick={speakMessage} title="Read aloud">
-                  <Volume2 size={15} />
+                <button className="message-action" onClick={() => onShare(message.id)} title="Share message">
+                  <Share2 size={15} />
                 </button>
                 <button className="message-action" onClick={() => onRegenerate(message.id)} title="Regenerate response">
                   <RefreshCw size={15} />
                 </button>
-                <button className="message-action" onClick={() => onContinue(message.id)} title="Continue response">
-                  <CornerDownRight size={15} />
-                </button>
               </>
-            ) : (
-              <button className="message-action" onClick={() => onEdit(message.id)} title="Edit prompt">
-                <Pencil size={15} />
-              </button>
             )}
           </div>
         )}
@@ -320,8 +265,6 @@ export const MessageBubble = memo(MessageBubbleComponent, (previous, next) => {
     previous.message === next.message &&
     previous.isStreaming === next.isStreaming &&
     previous.isSearchingWeb === next.isSearchingWeb &&
-    previous.reaction === next.reaction &&
-    previous.bookmarked === next.bookmarked &&
     previous.fallbackModel === next.fallbackModel
   );
 });

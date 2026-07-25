@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowDown, Brain, Menu, MessageSquarePlus, PhoneCall, ScreenShare, Settings, Sparkles, Square } from "lucide-react";
 import { ApiClientError, api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
@@ -10,7 +10,7 @@ import type { ChatAttachment, ChatGeneration, ChatRequest, DocumentItem, Message
 import { coerceTextContent } from "../../utils/text";
 import { Composer, type ComposerOptions, type UploadTask } from "./Composer";
 import { ContextPanel } from "./ContextPanel";
-import { MessageBubble, type MessageReaction } from "./MessageBubble";
+import { MessageBubble } from "./MessageBubble";
 import { useAppSettings } from "../../contexts/AppSettingsContext";
 import { useShell } from "../../contexts/ShellContext";
 import { useSettingsNavigation } from "../../hooks/useSettingsNavigation";
@@ -141,6 +141,7 @@ function thinkingPhase(options: ComposerOptions, attachments: ChatAttachment[], 
 export function ChatPage() {
   const uiText = usePublishedUiText();
   const navigate = useNavigate();
+  const location = useLocation();
   const { chatId } = useParams();
   const { config: callConfig } = useCallSession();
   const screenShare = useScreenShare();
@@ -160,8 +161,6 @@ export function ChatPage() {
   const [searchingMessageId, setSearchingMessageId] = useState<string | null>(null);
   const [activeGeneration, setActiveGeneration] = useState<ChatGeneration | null>(null);
   const [requestState, setRequestState] = useState<ChatRequestState>("idle");
-  const [reactions, setReactions] = useState<Record<string, MessageReaction>>({});
-  const [bookmarks, setBookmarks] = useState<Record<string, boolean>>({});
   const [isContextOpen, setIsContextOpen] = useState(false);
   const [chatNotice, setChatNotice] = useState("");
   const [liveModeOpen, setLiveModeOpen] = useState(false);
@@ -182,6 +181,9 @@ export function ChatPage() {
   const activeStartControllerRef = useRef<AbortController | null>(null);
   const displayedChatIdRef = useRef<string | null>(null);
   const composerFocusKey = activeChat?.id ?? chatId ?? "new";
+  const hubPrompt = typeof (location.state as { hubPrompt?: unknown } | null)?.hubPrompt === "string"
+    ? String((location.state as { hubPrompt: string }).hubPrompt).slice(0, 2000)
+    : "";
 
   const openLiveMode = useCallback(async () => {
     try {
@@ -850,14 +852,6 @@ export function ChatPage() {
     return true;
   }
 
-  function handleReact(messageId: string, reaction: MessageReaction) {
-    setReactions((current) => ({ ...current, [messageId]: reaction }));
-  }
-
-  function handleBookmark(messageId: string) {
-    setBookmarks((current) => ({ ...current, [messageId]: !current[messageId] }));
-  }
-
   async function handleShare(messageId: string) {
     const message = messages.find((item) => item.id === messageId);
     if (!message) return;
@@ -918,37 +912,6 @@ export function ChatPage() {
       setSubmittingGeneration(false);
       setRequestState("failed");
     }
-  }
-
-  async function handleEdit(messageId: string) {
-    if (visibleChatBusy) return;
-    const index = messages.findIndex((message) => message.id === messageId);
-    const message = messages[index];
-    if (!message || message.role !== "user") return;
-    const nextPrompt = window.prompt("Edit prompt", coerceTextContent(message.content));
-    if (!nextPrompt?.trim()) return;
-    if (activeChat?.id) {
-      const trimmedMessages = messages.slice(0, index);
-      setMessages(trimmedMessages);
-      syncActiveChatMessages(activeChat.id, trimmedMessages);
-    }
-    await handleSend(nextPrompt.trim(), lastOptionsRef.current, []);
-  }
-
-  async function handleContinue() {
-    if (visibleChatBusy) return;
-    const failedWithoutPartial =
-      visibleGeneration?.status === "failed" &&
-      !coerceTextContent(visibleGeneration.assistant_message?.content).trim();
-    if (failedWithoutPartial) {
-      await handleRetryGeneration();
-      return;
-    }
-    await handleSend(
-      "Continue the previous response from where it stopped. Do not restart the answer.",
-      lastOptionsRef.current,
-      []
-    );
   }
 
   async function handleStopGeneration() {
@@ -1113,14 +1076,8 @@ export function ChatPage() {
                   message={message}
                   isStreaming={message.id === visibleStreamingMessageId}
                   isSearchingWeb={message.id === searchingMessageId}
-                  reaction={reactions[message.id]}
-                  bookmarked={bookmarks[message.id]}
                   fallbackModel={message.role === "assistant" ? fallbackResponseModel : null}
-                  onReact={handleReact}
                   onRegenerate={handleRegenerate}
-                  onEdit={handleEdit}
-                  onContinue={handleContinue}
-                  onBookmark={handleBookmark}
                   onShare={handleShare}
                 />
               ))
@@ -1191,6 +1148,7 @@ export function ChatPage() {
 
         <Composer
           focusKey={composerFocusKey}
+          initialDraft={hubPrompt}
           disabled={visibleChatBusy}
           selectedDocuments={selectedDocuments}
           uploadTasks={uploadTasks}

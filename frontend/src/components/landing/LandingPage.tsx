@@ -291,14 +291,14 @@ export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
   const qrUrl = resolveApkDownloadUrl();
   const cmsBlocks = cmsPage?.blocks ?? [];
   const featureHeadingBlock = cmsBlocks.find((block) => block.block_type === "heading");
-  const featureHeading = String(featureHeadingBlock?.content.text ?? "One intelligence layer. Every way you work.");
+  const featureHeading = String(featureHeadingBlock?.content?.text ?? "One intelligence layer. Every way you work.");
   const finalCta = cmsBlocks.find((block) => block.block_type === "call_to_action");
   const extraBlocks = cmsBlocks.filter((block) => !["heading", "feature_grid", "call_to_action"].includes(block.block_type));
   const visibleFaqs = publishedFaqs?.length ? publishedFaqs.map((item) => [item.question, item.answer]) : fallbackFaqs;
   const currentDemoMessages = demoThreads[previewMode];
   const demoRemaining = Math.max(0, demoLimit - demoTurns);
-  const primaryHeroButton = cmsPage ? cmsPage.buttons[0] : { label: "Start Chatting", url: "/register", style: "primary" as const };
-  const secondaryHeroButton = cmsPage ? cmsPage.buttons[1] : { label: "Explore Features", url: "#features", style: "secondary" as const };
+  const primaryHeroButton = cmsPage?.buttons?.[0] ?? { label: "Start Chatting", url: "/register", style: "primary" as const };
+  const secondaryHeroButton = cmsPage?.buttons?.[1] ?? { label: "Explore Features", url: "#features", style: "secondary" as const };
   const elementOverrides = cmsPage?.element_overrides ?? {};
   const elementText = (key: string, fallback: string) => elementOverrides[key]?.text ?? fallback;
   const elementVisible = (key: string) => elementOverrides[key]?.hidden !== true;
@@ -321,7 +321,7 @@ export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
   ], [globalContent]);
 
   const commandItems = useMemo<CommandItem[]>(() => [
-    { label: "Start a conversation", detail: "Open the Auto-AI chat workspace", to: user ? "/chat" : "/register" },
+    { label: "Open Action Hub", detail: "Choose chat, screen sharing, or calling", to: user ? "/hub" : "/register" },
     { label: "Explore features", detail: "See chat, voice, vision, calls, and sharing", section: "features" },
     { label: "Download Android app", detail: "View the current APK release", to: "/download" },
     { label: "Compare plans", detail: "Review available Auto-AI plans", to: "/pricing" },
@@ -595,7 +595,7 @@ export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
             <ScreenShare size={16} />
             <span>{elementText("header.screen-share", "Screen Share")}</span>
           </button>
-          <Link className="prism-button prism-nav-cta" style={elementStyle("header.sign-in")} to={elementHref("header.sign-in", user ? "/chat" : "/login")} {...editableElementProps("header.sign-in", "button", "Sign In", elementText("header.sign-in", user ? "Open app" : globalContent?.["header.sign_in"] || "Sign in"), elementHref("header.sign-in", user ? "/chat" : "/login"))}>
+          <Link className="prism-button prism-nav-cta" style={elementStyle("header.sign-in")} to={elementHref("header.sign-in", user ? "/hub" : "/login")} {...editableElementProps("header.sign-in", "button", "Sign In", elementText("header.sign-in", user ? "Open app" : globalContent?.["header.sign_in"] || "Sign in"), elementHref("header.sign-in", user ? "/hub" : "/login"))}>
             {elementText("header.sign-in", user ? "Open app" : globalContent?.["header.sign_in"] || "Sign in")}
           </Link>
           <span className="cms-editable-control" style={elementStyle("header.theme")} {...editableElementProps("header.theme", "button", "Theme Toggle")}><ThemeToggleButton /></span>
@@ -626,7 +626,7 @@ export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
             >
               <ScreenShare size={16} /> Screen Share
             </button>
-            <Link to={user ? "/chat" : "/login"} onClick={() => setMobileMenuOpen(false)}>
+            <Link to={user ? "/hub" : "/login"} onClick={() => setMobileMenuOpen(false)}>
               {user ? "Open app" : "Sign in"}
             </Link>
           </PrismNavigation>
@@ -645,7 +645,7 @@ export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
               {cmsPage?.hero_description ?? "Chat, speak, research, share, and build with one adaptive AI workspace designed to keep context clear."}
             </p>
             <div className="prism-hero-actions">
-              {primaryHeroButton && <Link className="prism-button prism-button-primary" to={user ? "/chat" : primaryHeroButton.url} {...editorProps("page-button-0", "button", "buttons.0.label", { editable: "text", label: "Button", currentValue: primaryHeroButton.label, currentHref: primaryHeroButton.url })}>
+              {primaryHeroButton && <Link className="prism-button prism-button-primary" to={user ? "/hub" : primaryHeroButton.url} {...editorProps("page-button-0", "button", "buttons.0.label", { editable: "text", label: "Button", currentValue: primaryHeroButton.label, currentHref: primaryHeroButton.url })}>
                 {primaryHeroButton.label} <ArrowRight size={17} />
               </Link>}
               {secondaryHeroButton && <button className="prism-button prism-button-secondary" type="button" onClick={() => scrollToSection("features")} {...editorProps("page-button-1", "button", "buttons.1.label", { editable: "text", label: "Button", currentValue: secondaryHeroButton.label, currentHref: secondaryHeroButton.url })}>
@@ -882,7 +882,7 @@ export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
                 <h2 id="cta-heading" data-kinetic-reveal={LANDING_KINETIC_MAP.importantCta} {...(finalCta ? editorProps(finalCta.id, "call_to_action", "heading", { editable: "text", label: "Heading", currentValue: String(finalCta.content.heading ?? "") }) : editableElementProps("cta.heading", "heading", "CTA Heading", elementText("cta.heading", "Bring the whole workspace into one conversation.")))}>{finalCta ? String(finalCta.content.heading ?? "") : elementText("cta.heading", "Bring the whole workspace into one conversation.")}</h2>
               </div>
               <div className="prism-final-actions">
-                <Link className="prism-button prism-button-primary" style={elementStyle("cta.primary")} to={elementHref("cta.primary", user ? "/chat" : "/register")} {...editableElementProps("cta.primary", "button", "CTA Button", elementText("cta.primary", user ? "Open app" : String(finalCta?.content.button_text ?? globalContent?.["cta.default"] ?? "Create account")), elementHref("cta.primary", user ? "/chat" : "/register"))}>
+                <Link className="prism-button prism-button-primary" style={elementStyle("cta.primary")} to={elementHref("cta.primary", user ? "/hub" : "/register")} {...editableElementProps("cta.primary", "button", "CTA Button", elementText("cta.primary", user ? "Open app" : String(finalCta?.content.button_text ?? globalContent?.["cta.default"] ?? "Create account")), elementHref("cta.primary", user ? "/hub" : "/register"))}>
                   {elementText("cta.primary", user ? "Open app" : String(finalCta?.content.button_text ?? globalContent?.["cta.default"] ?? "Create account"))}
                   <ArrowRight size={17} />
                 </Link>

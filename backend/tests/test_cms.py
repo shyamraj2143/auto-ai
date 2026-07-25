@@ -16,6 +16,7 @@ from app.api.routes.cms import (
     publish_page_endpoint,
     replace_media,
     restore_revision,
+    save_page_draft,
     update_page,
     upload_media,
 )
@@ -24,7 +25,7 @@ from app.db.base import Base
 from app.models.cms import ContentPage, ContentRevision, GlobalContent, MediaAsset, UiTextEntry
 from app.models.user import User
 from app.main import app
-from app.schemas.cms import CmsAiAssistRequest, ContentBlockInput, ContentPageUpdate, PublishRequest, RestoreRevisionRequest
+from app.schemas.cms import CmsAiAssistRequest, ContentBlockInput, ContentPageDraftUpdate, ContentPageUpdate, PublishRequest, RestoreRevisionRequest
 from app.services.cms_service import ensure_cms_defaults, publish_due
 from app.services.groq_service import groq_service
 
@@ -116,6 +117,38 @@ def test_draft_preview_publish_and_cached_public_fallback(db: Session) -> None:
     assert republished["status"] == "published"
     assert public_page("home", db)["hero_heading"] == "Unpublished Draft Hero"
     assert db.scalar(select(func.count()).select_from(ContentRevision).where(ContentRevision.content_id == page.id)) == 2
+
+
+def test_atomic_visual_draft_save_updates_page_and_reconciles_blocks(db: Session) -> None:
+    ensure_cms_defaults(db)
+    admin = user(db, "visual-admin", "content_admin")
+    page = home(db)
+    original_id = page.blocks[0].id
+    saved = save_page_draft(
+        page.id,
+        ContentPageDraftUpdate(
+            schema_version=1,
+            page_id=page.id,
+            expected_version=page.version,
+            title="Updated home",
+            slug="home",
+            hero_heading="Atomic heading",
+            hero_description="Atomic description",
+            buttons=[],
+            element_overrides={"footer.description": {"text": "Updated footer"}},
+            seo={"title": "Updated home"},
+            blocks=[
+                {"id": original_id, "block_type": "heading", "content": {"text": "Existing"}, "is_visible": True},
+                {"block_type": "paragraph", "content": {"text": "New block"}, "is_visible": False},
+            ],
+        ),
+        admin,
+        db,
+    )
+    assert saved["version"] == 2
+    assert saved["hero_heading"] == "Atomic heading"
+    assert [block["content"]["text"] for block in saved["blocks"]] == ["Existing", "New block"]
+    assert saved["blocks"][1]["is_visible"] is False
 
 
 def test_content_editor_cannot_publish_and_unsafe_content_is_rejected(db: Session) -> None:

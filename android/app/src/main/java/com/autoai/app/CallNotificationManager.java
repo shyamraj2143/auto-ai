@@ -17,10 +17,6 @@ import android.os.Build;
 import android.provider.Settings;
 import android.util.Log;
 
-import org.json.JSONObject;
-
-import java.io.BufferedInputStream;
-import java.io.ByteArrayOutputStream;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -89,10 +85,11 @@ public final class CallNotificationManager {
             Log.w(TAG, "Incoming call FCM ignored callId=" + callId + " reason=post_notifications_denied");
             return;
         }
-        if (!validateIncomingCall(context, callId)) {
-            Log.w(TAG, "Incoming call FCM ignored callId=" + callId + " reason=backend_validation_failed");
-            return;
-        }
+        // Firebase invokes onMessageReceived on the application main thread. Never block
+        // incoming-call presentation on a synchronous HTTP request here: Android throws
+        // NetworkOnMainThreadException and valid calls are silently discarded. The data
+        // message is authenticated by FCM, bounded by expiresAt/eventId, and the accept
+        // path revalidates the authoritative call state before media starts.
         boolean silent = Boolean.parseBoolean(data.get("silent"));
         savePending(context, callId, null, expiresAt);
         createChannels(context);
@@ -282,49 +279,6 @@ public final class CallNotificationManager {
                 if (connection != null) connection.disconnect();
             }
         });
-    }
-
-    private static boolean validateIncomingCall(Context context, String callId) {
-        String accessToken = AutoAiSecureStoragePlugin.readStoredValue(context, "auto-ai-access-token");
-        if (accessToken == null || accessToken.trim().isEmpty()) {
-            Log.w(TAG, "Incoming call validation failed callId=" + callId + " reason=no_access_token");
-            return false;
-        }
-        HttpURLConnection connection = null;
-        try {
-            URL url = new URL(trimTrailingSlash(BuildConfig.AUTO_AI_API_BASE_URL) + "/calls/" + callId);
-            connection = (HttpURLConnection) url.openConnection();
-            connection.setConnectTimeout(5000);
-            connection.setReadTimeout(7000);
-            connection.setRequestMethod("GET");
-            connection.setRequestProperty("Authorization", "Bearer " + accessToken.trim());
-            connection.setRequestProperty("Accept", "application/json");
-            int status = connection.getResponseCode();
-            if (status < 200 || status >= 300) {
-                Log.w(TAG, "Incoming call validation failed callId=" + callId + " status=" + status);
-                return false;
-            }
-            JSONObject payload = new JSONObject(readResponseBody(connection));
-            String callStatus = payload.optString("status", "");
-            boolean valid = "initiated".equals(callStatus) || "ringing".equals(callStatus);
-            Log.i(TAG, "Incoming call validation callId=" + callId + " status=" + callStatus + " valid=" + valid);
-            return valid;
-        } catch (Exception ignored) {
-            Log.w(TAG, "Incoming call validation failed callId=" + callId, ignored);
-            return false;
-        } finally {
-            if (connection != null) connection.disconnect();
-        }
-    }
-
-    private static String readResponseBody(HttpURLConnection connection) throws Exception {
-        try (BufferedInputStream input = new BufferedInputStream(connection.getInputStream());
-             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            byte[] buffer = new byte[2048];
-            int read;
-            while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
-            return output.toString("UTF-8");
-        }
     }
 
     private static String trimTrailingSlash(String value) {

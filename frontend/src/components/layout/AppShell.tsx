@@ -22,6 +22,7 @@ export function AppShell() {
     isSidebarCollapsed
   } = useShell();
   const fullCanvasAdmin = location.pathname.startsWith("/admin/live-pages");
+  const fullCanvasHub = location.pathname === "/hub" || location.pathname === "/activity";
 
   useEffect(() => {
     closeSidebar();
@@ -51,8 +52,8 @@ export function AppShell() {
           <ChatProvider>
           <AndroidBackHandler />
           <div className="app-shell">
-            {!fullCanvasAdmin && <Sidebar />}
-            {!fullCanvasAdmin && isSidebarCollapsed && (
+            {!fullCanvasAdmin && !fullCanvasHub && <Sidebar />}
+            {!fullCanvasAdmin && !fullCanvasHub && isSidebarCollapsed && (
               <button
                 className="sidebar-restore-button hidden md:inline-flex"
                 onClick={expandSidebar}
@@ -69,7 +70,7 @@ export function AppShell() {
                   <button type="button" onClick={disableSafeMode}>Exit Safe Mode</button>
                 </div>
               )}
-              {!fullCanvasAdmin && <Header />}
+              {!fullCanvasAdmin && !fullCanvasHub && <Header />}
               <div className="route-transition-stage" key={`${location.pathname}${location.search}`}>
                 <Outlet />
               </div>

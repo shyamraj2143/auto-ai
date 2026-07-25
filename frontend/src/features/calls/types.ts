@@ -75,6 +75,7 @@ export type CallFeatureConfig = {
   ring_timeout_seconds: number;
   reconnect_grace_seconds: number;
   diagnostic?: string | null;
+  limitations?: string[];
 };
 export type TurnCredentials = {
   configured?: boolean;

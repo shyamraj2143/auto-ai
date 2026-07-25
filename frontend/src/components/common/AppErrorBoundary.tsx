@@ -56,14 +56,13 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
     window.setTimeout(() => window.location.reload(), 100);
   }
 
-  returnToChat = () => {
-    window.location.hash = "#/chat";
+  returnToHub = () => {
+    window.location.assign("/hub");
   };
 
   restartInSafeMode = () => {
     enableSafeMode("render-error");
-    window.location.hash = "#/chat";
-    window.location.reload();
+    window.location.assign("/hub");
   };
 
   render() {
@@ -84,8 +83,8 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
             <button className="btn-primary" type="button" onClick={() => this.setState({ error: null })}>
               Retry
             </button>
-            <button className="btn-secondary" type="button" onClick={this.returnToChat}>
-              Return to chat
+            <button className="btn-secondary" type="button" onClick={this.returnToHub}>
+              Return to Action Hub
             </button>
             <button className="btn-secondary" type="button" onClick={this.restartInSafeMode}>
               Restart in Safe Mode

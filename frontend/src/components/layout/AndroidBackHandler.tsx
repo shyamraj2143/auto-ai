@@ -36,7 +36,7 @@ const AUTH_OR_EXTERNAL_ROUTES = [
   "/home",
   "/"
 ];
-const ROOT_ROUTES = new Set(["/chat", "/admin"]);
+const ROOT_ROUTES = new Set(["/hub", "/admin"]);
 const TERMINAL_CALL_STATES = new Set(["idle", "ended", "rejected", "cancelled", "missed", "busy", "failed"]);
 
 function getCapacitor() {
@@ -63,7 +63,7 @@ function routePath(route: string) {
 function isSafeAuthenticatedRoute(route: string) {
   const path = routePath(route);
   if (AUTH_OR_EXTERNAL_ROUTES.includes(path)) return false;
-  return path === "/chat" || path === "/settings" || path === "/messages" || path.startsWith("/messages/") || path === "/calls" || path === "/admin";
+  return path === "/hub" || path === "/activity" || path === "/chat" || path.startsWith("/chat/") || path === "/settings" || path === "/messages" || path.startsWith("/messages/") || path === "/calls" || path === "/admin";
 }
 
 function isEditableFocused() {
@@ -177,7 +177,7 @@ export function AndroidBackHandler() {
     if (callActive) {
       window.dispatchEvent(new CustomEvent(MINIMIZE_CALL_EVENT));
       if (state.callType === "audio" && !navigatePreviousSafeRoute(currentRoute) && !ROOT_ROUTES.has(routePath(currentRoute))) {
-        navigate(isAdminPanelRole(state.userRole) ? "/admin" : "/chat", { replace: true });
+        navigate(isAdminPanelRole(state.userRole) ? "/admin" : "/hub", { replace: true });
       }
       return;
     }
@@ -186,7 +186,7 @@ export function AndroidBackHandler() {
 
     const path = routePath(currentRoute);
     if (!ROOT_ROUTES.has(path)) {
-      navigate(isAdminPanelRole(state.userRole) ? "/admin" : "/chat", { replace: true });
+      navigate(isAdminPanelRole(state.userRole) ? "/admin" : "/hub", { replace: true });
       return;
     }
 

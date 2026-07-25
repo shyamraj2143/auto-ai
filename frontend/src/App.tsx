@@ -33,17 +33,18 @@ const SettingsPage = lazy(() => import("./components/settings/SettingsPage").the
 const CallsPage = lazy(() => import("./features/calls/CallsPage").then((module) => ({ default: module.CallsPage })));
 const UserMessagesPage = lazy(() => import("./features/userMessages/UserMessagesPage").then((module) => ({ default: module.UserMessagesPage })));
 const ScreenShareJoinPage = lazy(() => import("./features/screenShare/ScreenShareJoinPage").then((module) => ({ default: module.ScreenShareJoinPage })));
+const ActionHubPage = lazy(() => import("./features/actionHub/ActionHubPage").then((module) => ({ default: module.ActionHubPage })));
 
-/** Shows LandingPage for guests, redirects logged-in users to /chat */
+/** Shows LandingPage for guests, redirects logged-in users to the Action Hub. */
 function RootRedirect() {
   const { user, loading } = useAuth();
   if (loading) {
     return <div className="app-loading">Loading Auto-AI...</div>;
   }
   if (isMobileAppRuntime()) {
-    return <Navigate to={user ? "/chat" : "/login"} replace />;
+    return <Navigate to={user ? "/hub" : "/login"} replace />;
   }
-  return user ? <Navigate to="/chat" replace /> : <LandingPage />;
+  return user ? <Navigate to="/hub" replace /> : <LandingPage />;
 }
 
 function MobileBlockedRoute({ children }: { children: ReactNode }) {
@@ -92,6 +93,8 @@ function AppRoutes() {
           <Route path="/terms-and-conditions" element={<MobileBlockedRoute><PublicCmsPage /></MobileBlockedRoute>} />
           <Route element={<ProtectedRoute />}>
             <Route element={<AppShell />}>
+              <Route path="/hub" element={<ActionHubPage />} />
+              <Route path="/activity" element={<ActionHubPage />} />
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/chat/:chatId" element={<ChatPage />} />
               <Route path="/messages" element={<UserMessagesPage />} />
@@ -126,7 +129,7 @@ function StartupRecoveryMarker() {
   useEffect(() => {
     if (!safeRootRef.current || loading) return;
     safeRootRef.current = false;
-    navigate(user ? "/chat" : "/login", { replace: true });
+    navigate(user ? "/hub" : "/login", { replace: true });
   }, [loading, navigate, user]);
 
   return null;

@@ -15,6 +15,7 @@ from app.models.human import ConversationTurnAnalysis, UserInteractionProfile, U
 from app.models.live import FaceMemory, LiveMessage, LiveSession, VisionFrame
 from app.models.message import Message
 from app.models.push import PushDeviceToken
+from app.models.promo import PromoCode, PromoRedemption
 from app.models.search import SearchCache, SearchRun
 from app.models.screen_share import ScreenShareSession
 from app.models.social import SocialFollow, SocialNotification
@@ -56,6 +57,8 @@ __all__ = [
     "PasswordResetToken",
     "PlanLimit",
     "PushDeviceToken",
+    "PromoCode",
+    "PromoRedemption",
     "RefreshToken",
     "SearchCache",
     "SearchRun",

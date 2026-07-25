@@ -271,9 +271,21 @@ class AdminPaymentRecordRead(BaseModel):
     razorpay_payment_id: str | None = None
     paid_at: datetime | None = None
     subscription_status: str | None = None
-    invoice_url: str | None = None
+    receipt_number: str | None = None
+    receipt_url: str | None = None
+    original_amount_paise: int
+    discount_amount_paise: int = 0
+    promo_code: str | None = None
     created_at: datetime
     updated_at: datetime | None = None
+
+
+class AdminPaymentPage(BaseModel):
+    items: list[AdminPaymentRecordRead]
+    page: int
+    page_size: int
+    total: int
+    total_pages: int
 
 
 class AdminAnalyticsResponse(BaseModel):

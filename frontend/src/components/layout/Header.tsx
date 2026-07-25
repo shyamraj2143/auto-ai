@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Bot, Brain, LogOut, Moon, PhoneCall, ScreenShare, Settings, Shield, Sun, Zap } from "lucide-react";
+import { Bot, Brain, Home, LogOut, Moon, PhoneCall, ScreenShare, Settings, Shield, Sun, Zap } from "lucide-react";
 import clsx from "clsx";
 import { useAuth } from "../../contexts/AuthContext";
 import { useTheme } from "../../contexts/ThemeContext";
@@ -59,6 +59,9 @@ export function Header() {
         <p className="truncate text-xs text-slate-400">{user?.email}</p>
       </div>
       <div className="flex items-center gap-2">
+        <button className="icon-button-dark" onClick={() => navigate("/hub")} title="Action Hub" aria-label="Open Action Hub" type="button">
+          <Home size={18} />
+        </button>
         <button
           className="icon-button-dark"
           onClick={() => openContextPanel("documents")}

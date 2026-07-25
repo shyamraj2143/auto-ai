@@ -7,6 +7,8 @@ import {
   Loader2,
   RefreshCw,
   RotateCcw,
+  Search,
+  Share2,
   ShieldCheck,
   Sparkles,
   Tag,
@@ -14,11 +16,12 @@ import {
 } from "lucide-react";
 import { API_BASE_URL, api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
-import type { BillingCenter, BillingPlan, PaidPricingPlanName, PaymentConfig, PaymentHistoryItem, PromoCodeResponse } from "../../types";
+import type { BillingCenter, BillingPlan, PaidPricingPlanName, PaymentConfig, PaymentHistoryItem, PaymentHistoryPage, PromoCodeResponse } from "../../types";
 import { createRazorpayCheckoutOptions, loadRazorpayCheckout } from "../../utils/razorpay";
 import { normalizeUpiId } from "../../utils/upi";
 import { UpiPaymentBox } from "../payments/UpiPaymentBox";
 import { CrystalBadge, CrystalLoader, CrystalSurface } from "../crystal/Crystal";
+import { downloadAuthenticatedReceipt } from "../../utils/receipt";
 
 const paidPlans = new Set(["pro", "premium", "ultra"]);
 
@@ -48,6 +51,12 @@ export function SubscriptionBillingCenter() {
   const [promoCode, setPromoCode] = useState("");
   const [promoPlan, setPromoPlan] = useState<PaidPricingPlanName>("pro");
   const [promo, setPromo] = useState<PromoCodeResponse | null>(null);
+  const [history, setHistory] = useState<PaymentHistoryPage>({ items: [], page: 1, page_size: 20, total: 0, total_pages: 1 });
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [historyQueryDraft, setHistoryQueryDraft] = useState("");
+  const [historyStatus, setHistoryStatus] = useState<"all" | "success" | "failed">("all");
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
   const [paymentConfig, setPaymentConfig] = useState<PaymentConfig | null>(null);
   const razorpayKeyId = paymentConfig?.key_id || "";
   const razorpayReady = paymentConfig?.razorpay_ready ?? false;
@@ -79,13 +88,36 @@ export function SubscriptionBillingCenter() {
     }
   }
 
+  async function loadPaymentHistory(options: { query?: string; status?: "all" | "success" | "failed"; page?: number } = {}) {
+    if (!token) return;
+    const nextQuery = options.query ?? historyQuery;
+    const nextStatus = options.status ?? historyStatus;
+    const nextPage = options.page ?? history.page;
+    setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      const result = await api.paymentHistory(token, { query: nextQuery, status: nextStatus, page: nextPage, pageSize: 20 });
+      setHistory(result);
+      setHistoryQuery(nextQuery);
+      setHistoryStatus(nextStatus);
+    } catch {
+      setHistoryError("Unable to load payment history. Please retry.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
   useEffect(() => {
     void loadBilling();
+    void loadPaymentHistory({ query: "", status: "all", page: 1 });
   }, [token]);
 
   useEffect(() => {
     const refreshOnResume = () => {
-      if (!document.hidden) void loadBilling();
+      if (!document.hidden) {
+        void loadBilling();
+        void loadPaymentHistory();
+      }
     };
     window.addEventListener("focus", refreshOnResume);
     document.addEventListener("visibilitychange", refreshOnResume);
@@ -120,14 +152,12 @@ export function SubscriptionBillingCenter() {
       return;
     }
     const paidPlan = plan.id as PaidPricingPlanName;
-    const amount = planAmount(plan, promo);
     setBusy(`pay-${plan.id}`);
     setError("");
     setSuccess("");
     try {
       const session = await api.createPaymentSession(token, {
         plan_id: paidPlan,
-        amount,
         currency: "INR",
         receipt: `auto-ai-${paidPlan}-${Date.now()}`.slice(0, 40),
         promo_code: promo?.plan === paidPlan ? promo.code : null
@@ -143,6 +173,7 @@ export function SubscriptionBillingCenter() {
         orderId: session.razorpay_order_id,
         prefill: { name: user.name, email: user.email, contact: user.mobile || "" },
         onDismiss: () => {
+          void api.cancelPaymentSession(token, session.session_id).catch(() => undefined);
           setBusy("");
           setError("Payment cancelled.");
         },
@@ -157,12 +188,14 @@ export function SubscriptionBillingCenter() {
               setPromo(null);
               setPromoCode("");
               void loadBilling();
+              void loadPaymentHistory({ page: 1 });
             })
             .catch((err) => setError(err instanceof Error ? err.message : "Payment verification failed."))
             .finally(() => setBusy(""));
         }
       }));
       checkout.on("payment.failed", (response) => {
+        void api.cancelPaymentSession(token, session.session_id).catch(() => undefined);
         setBusy("");
         const description = response.error?.description || response.error?.reason || "Payment failed.";
         setError(description.toLowerCase().includes("api key") && description.toLowerCase().includes("expired")
@@ -184,7 +217,7 @@ export function SubscriptionBillingCenter() {
     try {
       const result = await api.applyPromoCode(token, { code: promoCode, plan: promoPlan });
       setPromo(result);
-      setSuccess(`${result.code} applied: ${result.discount_percent}% off ${result.plan}.`);
+      setSuccess(`${result.code} applied successfully.`);
     } catch (err) {
       setPromo(null);
       setError(err instanceof Error ? err.message : "Invalid promo code.");
@@ -223,27 +256,20 @@ export function SubscriptionBillingCenter() {
     }
   }
 
-  async function downloadInvoice(payment: PaymentHistoryItem) {
-    if (!token) return;
-    setBusy(`invoice-${payment.id}`);
+  async function downloadReceipt(payment: PaymentHistoryItem, share = false) {
+    if (!token || !payment.receipt_url) return;
+    setBusy(`receipt-${payment.id}`);
     setError("");
     try {
       const apiOrigin = API_BASE_URL.replace(/\/api\/v1\/?$/, "");
-      const response = await fetch(`${apiOrigin}${payment.invoice_url}`, {
-        headers: { Authorization: `Bearer ${token}` }
+      await downloadAuthenticatedReceipt({
+        url: `${apiOrigin}${payment.receipt_url}`,
+        token,
+        fallbackFilename: `AutoAI-Receipt-${payment.receipt_number || payment.id}.pdf`,
+        share
       });
-      if (!response.ok) throw new Error("Unable to download invoice.");
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `auto-ai-invoice-${payment.id}.pdf`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to download invoice.");
+      setError(err instanceof Error ? err.message : "Unable to download receipt.");
     } finally {
       setBusy("");
     }
@@ -364,20 +390,24 @@ export function SubscriptionBillingCenter() {
 
       <div className="billing-tools-grid">
         <div className="billing-tool-card">
-          <div className="billing-side-title"><CreditCard size={16} /> Payment Methods</div>
-          <div className="billing-chip-list">
-            {billing.payment_methods.map((method) => <span key={method}>{method}</span>)}
-          </div>
-        </div>
-        <div className="billing-tool-card">
           <div className="billing-side-title"><Tag size={16} /> Promo Code</div>
           <div className="billing-promo-row">
-            <input className="input-dark h-10" value={promoCode} onChange={(event) => setPromoCode(event.target.value)} placeholder="Code" />
+            <input className="input-dark h-10 uppercase" value={promoCode} onChange={(event) => setPromoCode(event.target.value.toUpperCase())} placeholder="Code" maxLength={40} />
             <select className="model-select-dark h-10" value={promoPlan} onChange={(event) => setPromoPlan(event.target.value as PaidPricingPlanName)}>
               {paidPlanOptions.map((plan) => <option key={plan.id} value={plan.id}>{plan.label}</option>)}
             </select>
             <button className="btn-secondary h-10" onClick={applyPromo} disabled={busy === "promo"} type="button">Apply</button>
           </div>
+          {promo && (
+            <div className="billing-promo-summary">
+              <span>Plan subtotal<strong>{money(promo.original_amount_paise)}</strong></span>
+              <span>Promo code<strong>{promo.code}</strong></span>
+              <span>Discount<strong>-{money(promo.discount_amount_paise)}</strong></span>
+              <span>Payable total<strong>{money(promo.discounted_amount_paise)}</strong></span>
+              {promo.expires_at && <small>Valid until {formatDate(promo.expires_at)}</small>}
+              <button className="chip-dark" onClick={() => { setPromo(null); setPromoCode(""); setSuccess(""); }} type="button">Remove promo</button>
+            </div>
+          )}
         </div>
         <div className="billing-tool-card billing-actions-card">
           <button className="btn-secondary" onClick={restorePurchase} disabled={busy === "restore"} type="button">
@@ -394,39 +424,77 @@ export function SubscriptionBillingCenter() {
       <div className="billing-history-card">
         <div className="billing-section-head billing-section-head-compact">
           <div className="billing-side-title"><ShieldCheck size={16} /> Payment History</div>
+          <form className="billing-history-toolbar" onSubmit={(event) => { event.preventDefault(); void loadPaymentHistory({ query: historyQueryDraft, page: 1 }); }}>
+            <label>
+              <Search size={15} />
+              <input value={historyQueryDraft} onChange={(event) => setHistoryQueryDraft(event.target.value)} placeholder="Receipt, payment, plan, amount or date" aria-label="Search payment history" />
+            </label>
+            <select
+              value={historyStatus}
+              onChange={(event) => void loadPaymentHistory({ status: event.target.value as "all" | "success" | "failed", page: 1 })}
+              aria-label="Payment status"
+            >
+              <option value="all">All</option>
+              <option value="success">Success</option>
+              <option value="failed">Failed</option>
+            </select>
+            <button className="chip-dark" disabled={historyLoading} type="submit">Search</button>
+            {(historyQuery || historyStatus !== "all") && (
+              <button className="chip-dark" onClick={() => { setHistoryQueryDraft(""); void loadPaymentHistory({ query: "", status: "all", page: 1 }); }} type="button">Clear</button>
+            )}
+          </form>
         </div>
+        {historyError && <div className="billing-history-error">{historyError} <button onClick={() => void loadPaymentHistory()} type="button">Retry</button></div>}
         <div className="billing-history-table">
           <table>
             <thead>
               <tr>
                 <th>Date</th>
+                <th>Receipt ID</th>
                 <th>Amount</th>
                 <th>Plan</th>
                 <th>Status</th>
-                <th>Invoice</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
-              {billing.payment_history.map((payment) => (
+              {history.items.map((payment) => (
                 <tr key={payment.id}>
                   <td data-label="Date">{formatDate(payment.date)}</td>
+                  <td data-label="Receipt ID">{payment.receipt_number || payment.payment_id || payment.id}</td>
                   <td data-label="Amount">{money(payment.amount_paise, payment.currency)}</td>
                   <td data-label="Plan">{payment.plan}</td>
-                  <td data-label="Status">{payment.status}</td>
-                  <td data-label="Invoice">
-                    <button className="chip-dark" onClick={() => downloadInvoice(payment)} disabled={busy === `invoice-${payment.id}`} type="button">
-                      <Download size={14} />
-                      Invoice
-                    </button>
+                  <td data-label="Status"><span className={`billing-payment-status billing-payment-status-${payment.status}`}>{payment.status}</span></td>
+                  <td data-label="Action">
+                    {payment.receipt_url && (
+                      <div className="billing-receipt-actions">
+                        <button className="chip-dark" onClick={() => downloadReceipt(payment)} disabled={busy === `receipt-${payment.id}`} type="button">
+                          <Download size={14} /> Download receipt
+                        </button>
+                        {typeof navigator.share === "function" && (
+                          <button className="chip-dark" onClick={() => downloadReceipt(payment, true)} disabled={busy === `receipt-${payment.id}`} type="button">
+                            <Share2 size={14} /> Share
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
-              {billing.payment_history.length === 0 && (
-                <tr><td data-label="Payment History" colSpan={5}>No payments yet.</td></tr>
+              {!historyLoading && history.items.length === 0 && (
+                <tr><td data-label="Payment History" colSpan={6}>{historyQuery || historyStatus !== "all" ? "No matching payments." : "No payments yet."}</td></tr>
               )}
+              {historyLoading && <tr><td data-label="Payment History" colSpan={6}><Loader2 className="spin-icon inline" size={15} /> Loading payments...</td></tr>}
             </tbody>
           </table>
         </div>
+        {history.total_pages > 1 && (
+          <div className="billing-history-pagination">
+            <button className="chip-dark" disabled={historyLoading || history.page <= 1} onClick={() => void loadPaymentHistory({ page: history.page - 1 })} type="button">Previous</button>
+            <span>Page {history.page} of {history.total_pages} · {history.total} payments</span>
+            <button className="chip-dark" disabled={historyLoading || history.page >= history.total_pages} onClick={() => void loadPaymentHistory({ page: history.page + 1 })} type="button">Next</button>
+          </div>
+        )}
       </div>
     </section>
   );
