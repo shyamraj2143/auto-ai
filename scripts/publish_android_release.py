@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib import error, request
 
 
-DEFAULT_API_URL = "https://auto-ai-production-c510.up.railway.app/api/v1"
+DEFAULT_API_URL = "auto-ai-production-a6ef.up.railway.app/api/v1"
 
 
 def api_url(base_url: str, path: str) -> str:

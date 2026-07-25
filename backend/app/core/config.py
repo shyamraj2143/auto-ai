@@ -11,7 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_FRONTEND_URL = "https://autoai.site.je"
-DEFAULT_BACKEND_URL = "https://auto-ai-production-c510.up.railway.app"
+DEFAULT_BACKEND_URL = "auto-ai-production-a6ef.up.railway.app"
 DEFAULT_RAZORPAY_CHECKOUT_CONFIG_ID = "config_T9uIbVgLBfz7ko"
 
 

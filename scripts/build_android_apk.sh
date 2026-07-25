@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-API_URL="${VITE_API_URL:-https://auto-ai-production-c510.up.railway.app/api/v1}"
+API_URL="${VITE_API_URL:-auto-ai-production-a6ef.up.railway.app/api/v1}"
 OUTPUT_PATH="${APK_OUTPUT_PATH:-public/downloads/auto-ai.apk}"
 
 case "$API_URL" in

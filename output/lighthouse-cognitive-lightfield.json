@@ -824,7 +824,7 @@
             "entity": "127.0.0.1"
           },
           {
-            "url": "https://auto-ai-production-c510.up.railway.app/api/v1/download/apk/latest",
+            "url": "auto-ai-production-a6ef.up.railway.app/api/v1/download/apk/latest",
             "sessionTargetType": "page",
             "protocol": "h2",
             "cache": "none",
@@ -842,7 +842,7 @@
             "entity": "railway.app"
           },
           {
-            "url": "https://auto-ai-production-c510.up.railway.app/api/v1/download/apk/stats",
+            "url": "auto-ai-production-a6ef.up.railway.app/api/v1/download/apk/stats",
             "sessionTargetType": "page",
             "protocol": "h2",
             "cache": "none",
@@ -860,7 +860,7 @@
             "entity": "railway.app"
           },
           {
-            "url": "https://auto-ai-production-c510.up.railway.app/api/v1/download/apk/latest",
+            "url": "auto-ai-production-a6ef.up.railway.app/api/v1/download/apk/latest",
             "sessionTargetType": "page",
             "protocol": "h2",
             "cache": "none",
@@ -877,7 +877,7 @@
             "entity": "railway.app"
           },
           {
-            "url": "https://auto-ai-production-c510.up.railway.app/api/v1/download/apk/stats",
+            "url": "auto-ai-production-a6ef.up.railway.app/api/v1/download/apk/stats",
             "sessionTargetType": "page",
             "protocol": "h2",
             "cache": "none",
@@ -924,11 +924,11 @@
             },
             {
               "type": "preflight",
-              "url": "https://auto-ai-production-c510.up.railway.app/api/v1/download/apk/latest"
+              "url": "auto-ai-production-a6ef.up.railway.app/api/v1/download/apk/latest"
             },
             {
               "type": "preflight",
-              "url": "https://auto-ai-production-c510.up.railway.app/api/v1/download/apk/stats"
+              "url": "auto-ai-production-a6ef.up.railway.app/api/v1/download/apk/stats"
             }
           ]
         }
@@ -960,7 +960,7 @@
         ],
         "items": [
           {
-            "origin": "https://auto-ai-production-c510.up.railway.app",
+            "origin": "auto-ai-production-a6ef.up.railway.app",
             "rtt": 36.396239999999985
           },
           {
@@ -999,7 +999,7 @@
         ],
         "items": [
           {
-            "origin": "https://auto-ai-production-c510.up.railway.app",
+            "origin": "auto-ai-production-a6ef.up.railway.app",
             "serverResponseTime": 602.24376
           },
           {
@@ -2694,11 +2694,11 @@
             "totalBytes": 1135
           },
           {
-            "url": "https://auto-ai-production-c510.up.railway.app/api/v1/download/apk/stats",
+            "url": "auto-ai-production-a6ef.up.railway.app/api/v1/download/apk/stats",
             "totalBytes": 736
           },
           {
-            "url": "https://auto-ai-production-c510.up.railway.app/api/v1/download/apk/latest",
+            "url": "auto-ai-production-a6ef.up.railway.app/api/v1/download/apk/latest",
             "totalBytes": 425
           },
           {
@@ -4227,14 +4227,14 @@
                       "isLongest": true,
                       "children": {
                         "19104.17": {
-                          "url": "https://auto-ai-production-c510.up.railway.app/api/v1/download/apk/latest",
+                          "url": "auto-ai-production-a6ef.up.railway.app/api/v1/download/apk/latest",
                           "navStartToEndTime": 3184,
                           "transferSize": 425,
                           "isLongest": true,
                           "children": {}
                         },
                         "19104.18": {
-                          "url": "https://auto-ai-production-c510.up.railway.app/api/v1/download/apk/stats",
+                          "url": "auto-ai-production-a6ef.up.railway.app/api/v1/download/apk/stats",
                           "navStartToEndTime": 3183,
                           "transferSize": 736,
                           "children": {}
@@ -4369,12 +4369,12 @@
               "type": "subitems",
               "items": [
                 {
-                  "url": "https://auto-ai-production-c510.up.railway.app/api/v1/download/apk/stats",
+                  "url": "auto-ai-production-a6ef.up.railway.app/api/v1/download/apk/stats",
                   "mainThreadTime": 0,
                   "transferSize": 736
                 },
                 {
-                  "url": "https://auto-ai-production-c510.up.railway.app/api/v1/download/apk/latest",
+                  "url": "auto-ai-production-a6ef.up.railway.app/api/v1/download/apk/latest",
                   "mainThreadTime": 0,
                   "transferSize": 425
                 }
@@ -5449,7 +5449,7 @@
     {
       "name": "railway.app",
       "origins": [
-        "https://auto-ai-production-c510.up.railway.app"
+        "auto-ai-production-a6ef.up.railway.app"
       ],
       "isUnrecognized": true
     }
