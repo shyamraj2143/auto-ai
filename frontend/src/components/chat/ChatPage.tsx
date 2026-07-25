@@ -647,7 +647,9 @@ export function ChatPage() {
       web_search: options.searchMode !== "off" && options.searchMode !== "auto",
       search_mode: options.searchMode,
       reasoning: options.reasoning,
-      document_ids: settings.memoryEnabled ? documentIds : []
+      document_ids: settings.memoryEnabled ? documentIds : [],
+      user_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      user_locale: navigator.language || "en"
     };
   }
 
@@ -899,9 +901,6 @@ export function ChatPage() {
         message_id: messageId,
         ...requestOptionsPayload(lastOptionsRef.current)
       });
-      const trimmedMessages = messages.slice(0, index);
-      setMessages(trimmedMessages);
-      syncActiveChatMessages(activeChat.id, trimmedMessages);
       applyGenerationSnapshot(generation);
       startGenerationPolling(generation.id);
       void refreshChats().catch(() => undefined);

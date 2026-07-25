@@ -36,6 +36,8 @@ FRESHNESS_TERMS = {
     "yesterday",
 }
 
+FRESHNESS_PHRASES = ("अभी", "आज", "ताज़ा", "ताजा", "मौसम", "खबर", "समाचार")
+
 AUTHORITY_DOMAINS = {
     "apnews.com",
     "bbc.com",
@@ -83,7 +85,7 @@ class SearchAgent:
         text = query.lower()
         words = set(re.findall(r"[a-z0-9]+", text))
         current_year = datetime.utcnow().year
-        if words & FRESHNESS_TERMS:
+        if words & FRESHNESS_TERMS or any(term in text for term in FRESHNESS_PHRASES):
             return True, "Freshness-sensitive wording detected."
         if re.search(r"\b(20[2-9]\d|19\d\d)\b", text):
             years = {int(value) for value in re.findall(r"\b(20[2-9]\d|19\d\d)\b", text)}
@@ -392,7 +394,10 @@ class WebSearchService:
                 reason=reason,
             )
 
-        cached = self._get_cache(db, query, mode)
+        dynamic_query = bool(set(re.findall(r"[a-z0-9]+", query.lower())) & FRESHNESS_TERMS) or any(
+            term in query for term in FRESHNESS_PHRASES
+        )
+        cached = None if dynamic_query else self._get_cache(db, query, mode)
         if cached:
             cached.reason = reason
             if record_history:
@@ -415,7 +420,8 @@ class WebSearchService:
             sources=sources,
             created_at=datetime.utcnow(),
         )
-        self._store_cache(db, query, mode, bundle)
+        if not dynamic_query:
+            self._store_cache(db, query, mode, bundle)
         if record_history:
             self._record_run(db, user_id, bundle, chat_id=chat_id, message_id=message_id)
         return bundle

@@ -44,6 +44,7 @@ from app.services.document_service import document_service
 from app.services.groq_service import groq_service
 from app.services.chat_storage import sync_chat_history, sync_chat_message, sync_chat_session
 from app.services.human import AUTO_AI_HUMAN_MODE_PROMPT, meta_cognition_layer
+from app.services.live_context import LiveRequestContext, is_time_query
 from app.services.web_search import SearchAgent, web_search_service
 
 
@@ -570,6 +571,7 @@ def run_chat_generation(generation_id: str) -> None:
                 web_search=False,
             )
             selected_model_payload = model_payload(selected_provider, selected_model)
+            live_context = LiveRequestContext.create(payload.user_timezone, payload.user_locale)
             model_messages = build_messages(
                 chat_row,
                 payload.message,
@@ -578,7 +580,11 @@ def run_chat_generation(generation_id: str) -> None:
                 reasoning=payload.reasoning,
                 adaptive_context=prepared_context["prompt_context"],
                 hidden_attachment_context=request_hidden_attachment_context(payload),
-                runtime_identity=runtime_identity_prompt(effective_provider, selected_model, mode=payload.mode),
+                runtime_identity=(
+                    runtime_identity_prompt(effective_provider, selected_model, mode=payload.mode)
+                    + "\n\n"
+                    + live_context.system_prompt()
+                ),
                 history_messages=history,
             )
             quota_user = db.get(User, generation.user_id)
@@ -595,6 +601,28 @@ def run_chat_generation(generation_id: str) -> None:
                 metadata=selected_model_payload,
             )
             db.commit()
+
+            if payload.mode == "normal" and is_time_query(payload.message):
+                update_generation_message(
+                    db,
+                    generation=generation,
+                    assistant_message=assistant_message,
+                    content=live_context.time_answer(),
+                    status_value="completed",
+                    metadata={**selected_model_payload, "live_context": {"request_id": live_context.request_id}},
+                    completed=True,
+                )
+                meta_cognition_layer.complete_turn(
+                    db,
+                    user_id=generation.user_id,
+                    chat_id=generation.chat_id,
+                    user_message=payload.message,
+                    prepared=prepared_context,
+                    user_message_id=generation.user_message_id or "",
+                    assistant_message_id=assistant_message.id,
+                )
+                db.commit()
+                return
 
             if payload.mode == "normal" and is_model_identity_question(payload.message):
                 complete_identity_generation(

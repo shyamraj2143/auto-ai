@@ -97,6 +97,17 @@ function responseErrorText(value?: string) {
   return "Response interrupted. Your message was saved. Retry response.";
 }
 
+function formatMessageTimestamp(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date();
+  const sameDay = date.toDateString() === now.toDateString();
+  return new Intl.DateTimeFormat(undefined, sameDay
+    ? { hour: "numeric", minute: "2-digit" }
+    : { dateStyle: "medium", timeStyle: "short" }
+  ).format(date);
+}
+
 function AttachmentList({ attachments }: { attachments: ChatAttachment[] }) {
   if (!attachments.length) return null;
   return (
@@ -237,6 +248,9 @@ function MessageBubbleComponent({
             <span>{responseModelLabel}</span>
           </div>
         )}
+        <time className="message-timestamp" dateTime={message.created_at} title={new Date(message.created_at).toString()}>
+          {formatMessageTimestamp(message.created_at)}
+        </time>
 
         {!isEmptyStreaming && !isFailedAssistant && (
           <div className="message-actions">

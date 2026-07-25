@@ -177,8 +177,10 @@ export type ChatRequest = {
   web_search?: boolean;
   search_mode?: SearchMode;
   reasoning?: boolean;
-  document_ids?: string[];
-};
+    document_ids?: string[];
+    user_timezone?: string;
+    user_locale?: string;
+  };
 
 export type StreamEvent =
   | { type: "meta"; chat_id: string; model?: ResponseModelInfo }

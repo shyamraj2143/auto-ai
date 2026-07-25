@@ -249,8 +249,21 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
     try {
       const profile = await socialApi.acceptRequest(token, request.id);
       setIncoming((items) => items.filter((item) => item.id !== request.id));
+      setHistoryRequests((items) => [{ ...request, status: "accepted", responded_at: new Date().toISOString(), user: profile }, ...items.filter((item) => item.id !== request.id)]);
       updateProfileInLists(profile);
     } catch (actionError) {
+      try {
+        const historyPage = await socialApi.requestHistory(token);
+        const accepted = historyPage.items.find((item) => item.id === request.id && item.status === "accepted");
+        if (accepted) {
+          setIncoming((items) => items.filter((item) => item.id !== request.id));
+          setHistoryRequests(historyPage.items);
+          updateProfileInLists(accepted.user);
+          return;
+        }
+      } catch {
+        // Preserve the original action error when reconciliation is unavailable.
+      }
       showToast(errorText(actionError, "Unable to accept request."));
     }
   }
@@ -260,7 +273,18 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
     try {
       await socialApi.rejectRequest(token, request.id);
       setIncoming((items) => items.filter((item) => item.id !== request.id));
+      setHistoryRequests((items) => [{ ...request, status: "rejected", responded_at: new Date().toISOString() }, ...items.filter((item) => item.id !== request.id)]);
     } catch (actionError) {
+      try {
+        const historyPage = await socialApi.requestHistory(token);
+        if (historyPage.items.some((item) => item.id === request.id && item.status === "rejected")) {
+          setIncoming((items) => items.filter((item) => item.id !== request.id));
+          setHistoryRequests(historyPage.items);
+          return;
+        }
+      } catch {
+        // Preserve the original action error when reconciliation is unavailable.
+      }
       showToast(errorText(actionError, "Unable to reject request."));
     }
   }

@@ -95,6 +95,8 @@ class ChatRequest(BaseModel):
     search_mode: SearchMode = "auto"
     reasoning: bool = False
     document_ids: list[str] = Field(default_factory=list)
+    user_timezone: str | None = Field(default=None, max_length=100)
+    user_locale: str | None = Field(default=None, max_length=35)
 
 
 class ChatResponse(BaseModel):
@@ -165,3 +167,5 @@ class ChatRegenerateRequest(BaseModel):
     search_mode: SearchMode = "auto"
     reasoning: bool = False
     document_ids: list[str] = Field(default_factory=list)
+    user_timezone: str | None = Field(default=None, max_length=100)
+    user_locale: str | None = Field(default=None, max_length=35)

@@ -29,7 +29,6 @@ from app.schemas.chat import (
     ChatUpdate,
 )
 from app.services.chat_storage import (
-    clear_chat_message_storage,
     delete_chat_storage,
     sync_chat_history,
     sync_chat_message,
@@ -201,24 +200,6 @@ def regenerate_session_message(
     if not previous_user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No user prompt found for regeneration.")
 
-    removed_ids = [message.id for message in messages[target_index:]]
-    db.execute(
-        delete(ChatGeneration).where(
-            ChatGeneration.chat_id == chat.id,
-            (
-                ChatGeneration.assistant_message_id.in_(removed_ids)
-                | ChatGeneration.user_message_id.in_(removed_ids)
-            ),
-        )
-    )
-    for message in messages[target_index:]:
-        db.delete(message)
-    clear_chat_message_storage(db, chat.id)
-    db.flush()
-    sync_chat_session(db, chat)
-    for message in messages[:target_index]:
-        sync_chat_message(db, message, user_id=current_user.id, model=chat.model)
-
     previous_metadata = previous_user.message_metadata or {}
     previous_attachments = previous_metadata.get("attachments")
     previous_internal_context = previous_metadata.get("internal_context")
@@ -246,6 +227,8 @@ def regenerate_session_message(
         search_mode=payload.search_mode,
         reasoning=payload.reasoning,
         document_ids=payload.document_ids,
+        user_timezone=payload.user_timezone,
+        user_locale=payload.user_locale,
     )
     return create_chat_generation(request_payload, current_user, db, existing_user_message=previous_user)
 
