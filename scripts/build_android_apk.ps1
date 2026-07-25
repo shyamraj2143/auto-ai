@@ -1,5 +1,5 @@
 param(
-  [string]$ApiUrl = "auto-ai-production-a6ef.up.railway.app/api/v1",
+  [string]$ApiUrl = "https://auto-ai-production-a6ef.up.railway.app/api/v1",
   [string]$OutputPath = "public/downloads/auto-ai.apk"
 )
 
