@@ -5,13 +5,13 @@ import re
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from pydantic import AliasChoices, AnyHttpUrl, EmailStr, Field, SecretStr, field_validator, model_validator
+from pydantic import AliasChoices, AnyHttpUrl, EmailStr, Field, SecretStr, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_FRONTEND_URL = "https://autoai.site.je"
-DEFAULT_BACKEND_URL = "auto-ai-production-a6ef.up.railway.app"
+DEFAULT_BACKEND_URL = "http://localhost:8000"
 DEFAULT_RAZORPAY_CHECKOUT_CONFIG_ID = "config_T9uIbVgLBfz7ko"
 
 
@@ -20,13 +20,15 @@ class Settings(BaseSettings):
         env_file=(PROJECT_ROOT / ".env", PROJECT_ROOT / ".env.local"),
         env_file_encoding="utf-8",
         extra="ignore",
+        hide_input_in_errors=True,
     )
 
     PROJECT_NAME: str = "Auto-AI"
     API_V1_STR: str = "/api/v1"
     ENVIRONMENT: str = "development"
     FRONTEND_URL: str = DEFAULT_FRONTEND_URL
-    BACKEND_URL: str = DEFAULT_BACKEND_URL
+    RAILWAY_PUBLIC_DOMAIN: str | None = None
+    BACKEND_URL: str | None = Field(default=None, validate_default=True)
     RAZORPAY_CALLBACK_URL: str | None = None
     RAZORPAY_FAILURE_URL: str | None = None
 
@@ -215,6 +217,45 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
+
+    @field_validator("BACKEND_URL", mode="before")
+    @classmethod
+    def normalize_backend_url(cls, value: Any, info: ValidationInfo) -> str:
+        candidate = cls._strip_surrounding_quotes(value)
+        if not candidate:
+            candidate = cls._strip_surrounding_quotes(info.data.get("RAILWAY_PUBLIC_DOMAIN"))
+        if not candidate:
+            return DEFAULT_BACKEND_URL
+
+        parsed = urlsplit(candidate)
+        if parsed.scheme:
+            if parsed.scheme.lower() not in {"http", "https"}:
+                raise ValueError("BACKEND_URL must use HTTP or HTTPS.")
+            if not parsed.netloc:
+                raise ValueError("BACKEND_URL must be an absolute URL or valid hostname.")
+            return candidate
+
+        if not cls._is_valid_hostname(candidate):
+            raise ValueError("BACKEND_URL must be an absolute URL or valid hostname.")
+        return f"https://{candidate}"
+
+    @staticmethod
+    def _strip_surrounding_quotes(value: Any) -> str:
+        candidate = value.strip() if isinstance(value, str) else ""
+        if len(candidate) >= 2 and candidate[0] == candidate[-1] and candidate[0] in {'"', "'"}:
+            candidate = candidate[1:-1].strip()
+        return candidate
+
+    @staticmethod
+    def _is_valid_hostname(value: str) -> bool:
+        if len(value) > 253 or "/" in value or ":" in value or " " in value:
+            return False
+        labels = value.rstrip(".").split(".")
+        return len(labels) >= 2 and all(
+            1 <= len(label) <= 63
+            and re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?", label) is not None
+            for label in labels
+        )
 
     @field_validator("GROQ_RESEARCH_MODELS", "BEDROCK_RESEARCH_MODELS", "OPENAI_RESEARCH_MODELS", "GEMINI_RESEARCH_MODELS", mode="before")
     @classmethod
@@ -443,10 +484,10 @@ class Settings(BaseSettings):
         local_host = host in {"localhost", "127.0.0.1", "0.0.0.0", "::1"} or host.endswith(".localhost")
         if not parsed.scheme or not parsed.netloc:
             raise ValueError(f"{name} must be an absolute URL.")
-        if parsed.scheme.lower() != "https":
-            raise ValueError(f"{name} must use HTTPS in production.")
         if local_host:
             raise ValueError(f"{name} cannot use localhost or loopback hosts in production.")
+        if parsed.scheme.lower() != "https":
+            raise ValueError(f"{name} must use HTTPS in production.")
 
     @staticmethod
     def _validate_production_turn_url(name: str, value: str) -> None:
