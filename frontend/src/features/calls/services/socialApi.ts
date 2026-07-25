@@ -1,5 +1,5 @@
 import { apiFetch } from "../../../api/client";
-import type { SocialNotificationPage, SocialProfile, SocialRequestPage, SocialUserPage } from "../types";
+import type { ConnectionAcceptResult, SocialNotificationPage, SocialProfile, SocialRequestPage, SocialUserPage } from "../types";
 
 export const socialApi = {
   searchUsers: (token: string, query: string, page = 1, limit = 20, signal?: AbortSignal) => {
@@ -25,7 +25,7 @@ export const socialApi = {
     return apiFetch<SocialUserPage>(`/social/connections?${params}`, { token, signal, operation: "social.connections" });
   },
   acceptRequest: (token: string, requestId: string) =>
-    apiFetch<SocialProfile>(`/social/requests/${encodeURIComponent(requestId)}/accept`, { method: "POST", token, operation: "social.requests.accept" }),
+    apiFetch<ConnectionAcceptResult>(`/social/requests/${encodeURIComponent(requestId)}/accept`, { method: "POST", token, operation: "social.requests.accept" }),
   rejectRequest: (token: string, requestId: string) =>
     apiFetch<void>(`/social/requests/${encodeURIComponent(requestId)}/reject`, { method: "POST", token, operation: "social.requests.reject" }),
   block: (token: string, userId: string) =>

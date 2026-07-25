@@ -15,6 +15,7 @@ type CallsTabProps = {
 };
 
 type View = "quick" | "chats" | "calls" | "search" | "requests" | "notifications" | "settings";
+type RequestView = "incoming" | "sent" | "connected" | "history";
 
 function errorText(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
@@ -73,6 +74,10 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
   const [incoming, setIncoming] = useState<SocialRequest[]>([]);
   const [sent, setSent] = useState<SocialRequest[]>([]);
   const [historyRequests, setHistoryRequests] = useState<SocialRequest[]>([]);
+  const [connections, setConnections] = useState<SocialProfile[]>([]);
+  const [requestView, setRequestView] = useState<RequestView>("incoming");
+  const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
+  const [failedRequestId, setFailedRequestId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<SocialNotification[]>([]);
   const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -133,11 +138,13 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
     if (!token) return;
     setLoading(true);
     try {
-      const [incomingPage, sentPage] = await Promise.all([socialApi.incomingRequests(token), socialApi.sentRequests(token)]);
-      const historyPage = await socialApi.requestHistory(token);
+      const [incomingPage, sentPage, historyPage, connectionsPage] = await Promise.all([
+        socialApi.incomingRequests(token), socialApi.sentRequests(token), socialApi.requestHistory(token), socialApi.connections(token)
+      ]);
       setIncoming(incomingPage.items);
       setSent(sentPage.items);
       setHistoryRequests(historyPage.items);
+      setConnections(connectionsPage.items);
     } catch (loadError) {
       showToast(errorText(loadError, "Unable to load follow requests."));
     } finally {
@@ -228,7 +235,7 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
     try {
       if (profile.follow_status === "pending_received" && profile.request_id) {
         const accepted = await socialApi.acceptRequest(token, profile.request_id);
-        updateProfileInLists(accepted);
+        updateProfileInLists(accepted.connection);
         void loadRequests();
         return;
       }
@@ -245,12 +252,17 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
   }
 
   async function accept(request: SocialRequest) {
-    if (!token) return;
+    if (!token || pendingRequestId) return;
+    setPendingRequestId(request.id);
+    setFailedRequestId(null);
     try {
-      const profile = await socialApi.acceptRequest(token, request.id);
+      const result = await socialApi.acceptRequest(token, request.id);
+      const profile = result.connection;
       setIncoming((items) => items.filter((item) => item.id !== request.id));
-      setHistoryRequests((items) => [{ ...request, status: "accepted", responded_at: new Date().toISOString(), user: profile }, ...items.filter((item) => item.id !== request.id)]);
+      setConnections((items) => [profile, ...items.filter((item) => item.id !== profile.id)]);
+      setHistoryRequests((items) => [result.request, ...items.filter((item) => item.id !== request.id)]);
       updateProfileInLists(profile);
+      showToast(result.already_accepted ? "Request was already accepted" : "Request accepted");
     } catch (actionError) {
       try {
         const historyPage = await socialApi.requestHistory(token);
@@ -259,21 +271,27 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
           setIncoming((items) => items.filter((item) => item.id !== request.id));
           setHistoryRequests(historyPage.items);
           updateProfileInLists(accepted.user);
+          setConnections((items) => [accepted.user, ...items.filter((item) => item.id !== accepted.user.id)]);
           return;
         }
       } catch {
         // Preserve the original action error when reconciliation is unavailable.
       }
-      showToast(errorText(actionError, "Unable to accept request."));
+      setFailedRequestId(request.id);
+      showToast(errorText(actionError, "Request could not be accepted — Retry"));
+    } finally {
+      setPendingRequestId(null);
     }
   }
 
   async function reject(request: SocialRequest) {
-    if (!token) return;
+    if (!token || pendingRequestId) return;
+    setPendingRequestId(request.id);
     try {
       await socialApi.rejectRequest(token, request.id);
       setIncoming((items) => items.filter((item) => item.id !== request.id));
       setHistoryRequests((items) => [{ ...request, status: "rejected", responded_at: new Date().toISOString() }, ...items.filter((item) => item.id !== request.id)]);
+      showToast("Request declined");
     } catch (actionError) {
       try {
         const historyPage = await socialApi.requestHistory(token);
@@ -286,6 +304,8 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
         // Preserve the original action error when reconciliation is unavailable.
       }
       showToast(errorText(actionError, "Unable to reject request."));
+    } finally {
+      setPendingRequestId(null);
     }
   }
 
@@ -452,39 +472,48 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
       )}
 
       {view === "requests" && (
-        <div className="calls-list social-panel">
-          {loading && <div className="call-settings-loading"><LoaderCircle className="animate-spin" size={16} /> Loading requests</div>}
-          <p className="calls-section-label">Incoming requests</p>
-          {incoming.map((request) => (
-            <div className="social-request-row" key={request.id}>
+        <div className="calls-list social-panel connections-panel">
+          <header className="connections-header">
+            <span><strong>Connections</strong><small>Manage requests and conversations</small></span>
+            <button type="button" onClick={() => void loadRequests()} disabled={loading} aria-label="Refresh connections"><LoaderCircle className={loading ? "animate-spin" : ""} size={17} /> Refresh</button>
+          </header>
+          <div className="connection-tabs" role="tablist" aria-label="Connection request categories">
+            <button className={requestView === "incoming" ? "active" : ""} onClick={() => setRequestView("incoming")} role="tab">Incoming <i>{incoming.length}</i></button>
+            <button className={requestView === "sent" ? "active" : ""} onClick={() => setRequestView("sent")} role="tab">Sent <i>{sent.length}</i></button>
+            <button className={requestView === "connected" ? "active" : ""} onClick={() => setRequestView("connected")} role="tab">Connected <i>{connections.length}</i></button>
+            <button className={requestView === "history" ? "active" : ""} onClick={() => setRequestView("history")} role="tab">History</button>
+          </div>
+          {loading && !incoming.length && !sent.length && <div className="connection-skeleton" aria-label="Loading connections"><i /><i /><i /></div>}
+          {requestView === "incoming" && incoming.map((request) => {
+            const processing = pendingRequestId === request.id;
+            return <div className="social-request-row" key={request.id}>
               <Avatar profile={request.user} />
-              <span><strong>{request.user.display_name}</strong><small>@{request.user.username}</small></span>
-              <button type="button" onClick={() => void accept(request)}><Check size={15} /> Accept</button>
-              <button type="button" onClick={() => void reject(request)}><X size={15} /> Reject</button>
-            </div>
-          ))}
-          {!incoming.length && !loading && <div className="calls-empty">No incoming requests</div>}
-          <p className="calls-section-label calls-section-label-spaced">Sent requests</p>
-          {sent.map((request) => (
-            <div className="social-request-row" key={request.id}>
-              <Avatar profile={request.user} />
-              <span><strong>{request.user.display_name}</strong><small>@{request.user.username}</small></span>
-              <button type="button" onClick={() => void cancel(request)}><X size={15} /> Cancel</button>
-            </div>
-          ))}
-          {!sent.length && !loading && <div className="calls-empty">No sent requests</div>}
-          <p className="calls-section-label calls-section-label-spaced">Accepted / History</p>
-          {historyRequests.map((request) => (
-            <div className="social-request-row" key={request.id}>
-              <Avatar profile={request.user} />
-              <span>
-                <strong>{request.user.display_name}</strong>
-                <small>{request.actor_label || request.status} {request.responded_at ? `- ${new Date(request.responded_at).toLocaleString()}` : ""}</small>
-              </span>
-              {request.status === "accepted" && <button type="button" onClick={() => void openMessage(request.user)} disabled={!request.user.can_message}><MessageCircle size={15} /> Message</button>}
-            </div>
-          ))}
-          {!historyRequests.length && !loading && <div className="calls-empty">No request history</div>}
+              <span><strong>{request.user.display_name}</strong><small>@{request.user.username} · {new Date(request.requested_at).toLocaleString()}</small></span>
+              <button type="button" className="primary" disabled={Boolean(pendingRequestId)} onClick={() => void accept(request)}>
+                {processing ? <LoaderCircle className="animate-spin" size={15} /> : failedRequestId === request.id ? <LoaderCircle size={15} /> : <Check size={15} />}
+                {processing ? "Accepting…" : failedRequestId === request.id ? "Retry" : "Accept"}
+              </button>
+              <button type="button" disabled={Boolean(pendingRequestId)} onClick={() => void reject(request)}><X size={15} /> Decline</button>
+            </div>;
+          })}
+          {requestView === "incoming" && !incoming.length && !loading && <div className="calls-empty">No incoming requests</div>}
+          {requestView === "sent" && sent.map((request) => <div className="social-request-row" key={request.id}>
+            <Avatar profile={request.user} /><span><strong>{request.user.display_name}</strong><small>@{request.user.username} · Sent {new Date(request.requested_at).toLocaleString()}</small></span>
+            <button type="button" disabled={Boolean(pendingRequestId)} onClick={() => void cancel(request)}><X size={15} /> Cancel Request</button>
+          </div>)}
+          {requestView === "sent" && !sent.length && !loading && <div className="calls-empty"><UserPlus size={20} /> No sent requests <button type="button" onClick={() => setView("search")}>Find People</button></div>}
+          {requestView === "connected" && connections.map((profile) => <div className="social-request-row connected-row" key={profile.id}>
+            <Avatar profile={profile} /><span><strong>{profile.display_name}</strong><small>@{profile.username}</small></span>
+            <button type="button" onClick={() => void openMessage(profile)}><MessageCircle size={15} /> Message</button>
+            <button type="button" onClick={() => placeCall(profile, "audio")} disabled={!profile.can_audio_call}><Phone size={15} aria-label="Audio call" /></button>
+            <button type="button" onClick={() => placeCall(profile, "video")} disabled={!profile.can_video_call}><Video size={15} aria-label="Video call" /></button>
+          </div>)}
+          {requestView === "connected" && !connections.length && !loading && <div className="calls-empty">No connections yet</div>}
+          {requestView === "history" && historyRequests.map((request) => <div className="social-request-row" key={request.id}>
+            <Avatar profile={request.user} /><span><strong>{request.user.display_name}</strong><small>{request.actor_label || request.status} · {request.responded_at ? new Date(request.responded_at).toLocaleString() : new Date(request.requested_at).toLocaleString()}</small></span>
+            {request.status === "accepted" && <button type="button" onClick={() => void openMessage(request.user)}><MessageCircle size={15} /> Message</button>}
+          </div>)}
+          {requestView === "history" && !historyRequests.length && !loading && <div className="calls-empty">No request history</div>}
         </div>
       )}
 

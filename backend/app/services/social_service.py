@@ -297,7 +297,7 @@ class SocialService:
             title=f"{current_user.name} accepted your follow request",
             dedupe_key=f"follow_accept:{record.id}",
         )
-        db.commit()
+        db.flush()
         requester = db.get(User, record.follower_id)
         return self.profile_for(db, requester, current_user.id)
 

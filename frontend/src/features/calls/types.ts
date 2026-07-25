@@ -116,6 +116,7 @@ export type SocialProfile = {
 export type SocialUserPage = { items: SocialProfile[]; page: number; limit: number; has_more: boolean; unread_notifications: number };
 export type SocialRequest = { id: string; status: string; requested_at: string; responded_at?: string | null; actor_label?: string | null; user: SocialProfile };
 export type SocialRequestPage = { items: SocialRequest[]; page: number; limit: number; has_more: boolean };
+export type ConnectionAcceptResult = { success: true; request: SocialRequest; connection: SocialProfile; conversation_id: string; accepted_at: string; already_accepted: boolean };
 export type SocialNotification = {
   id: string;
   notification_type: string;

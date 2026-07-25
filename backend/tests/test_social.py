@@ -105,6 +105,23 @@ def test_duplicate_and_reverse_requests_do_not_create_duplicate_relationships(db
     assert db.query(SocialFollow).count() == 1
 
 
+def test_accept_is_idempotent_and_preserves_server_timestamp(db: Session) -> None:
+    user_a = create_user(db, "accept-user-a", "User A")
+    user_b = create_user(db, "accept-user-b", "User B")
+    requested = social_service.follow_or_request(db, user_a, user_b.id)
+    assert requested.request_id
+
+    first = social_service.accept_request(db, user_b, requested.request_id)
+    record = db.get(SocialFollow, requested.request_id)
+    accepted_at = record.responded_at
+    second = social_service.accept_request(db, user_b, requested.request_id)
+
+    assert first.id == second.id == user_a.id
+    assert record.status == "accepted"
+    assert record.responded_at == accepted_at
+    assert db.query(SocialFollow).count() == 1
+
+
 def test_only_receiver_can_accept_or_reject_and_sender_can_cancel(db: Session) -> None:
     user_a = create_user(db, "public-user-a", "User A")
     user_b = create_user(db, "public-user-b", "User B")

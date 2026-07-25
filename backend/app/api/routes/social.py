@@ -8,8 +8,10 @@ from app.api.deps import get_current_user
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.call import BlockedUser
+from app.models.social import SocialFollow
 from app.models.user import User
 from app.schemas.social import (
+    ConnectionAcceptRead,
     DirectConversationRead,
     FollowRequestPage,
     ProfileUpdateRequest,
@@ -84,9 +86,30 @@ def follow_user(user_id: str, db: Session = Depends(get_db), current_user: User 
     return social_service.follow_or_request(db, current_user, user_id[:64])
 
 
-@router.post("/requests/{request_id}/accept", response_model=SocialProfile)
-def accept_request(request_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> SocialProfile:
-    return social_service.accept_request(db, current_user, request_id[:64])
+@router.post("/requests/{request_id}/accept", response_model=ConnectionAcceptRead)
+def accept_request(request_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> ConnectionAcceptRead:
+    request_key = request_id[:64]
+    record = db.scalar(select(SocialFollow).where(SocialFollow.id == request_key))
+    already_accepted = bool(record and record.status == "accepted")
+    connection = social_service.accept_request(db, current_user, request_key)
+    record = db.scalar(select(SocialFollow).where(SocialFollow.id == request_key))
+    if not record or not record.responded_at:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Accepted request state is unavailable.")
+    thread = user_chat_service.create_or_get_thread(db, current_user, connection.id)
+    return ConnectionAcceptRead(
+        request={
+            "id": record.id,
+            "status": record.status,
+            "requested_at": record.requested_at,
+            "responded_at": record.responded_at,
+            "actor_label": "Request accepted",
+            "user": connection,
+        },
+        connection=connection,
+        conversation_id=thread.id,
+        accepted_at=record.responded_at,
+        already_accepted=already_accepted,
+    )
 
 
 @router.post("/requests/{request_id}/reject", status_code=status.HTTP_204_NO_CONTENT)

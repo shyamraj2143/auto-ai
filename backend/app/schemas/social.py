@@ -60,6 +60,15 @@ class FollowRequestPage(BaseModel):
     has_more: bool
 
 
+class ConnectionAcceptRead(BaseModel):
+    success: bool = True
+    request: FollowRequestRead
+    connection: SocialProfile
+    conversation_id: str
+    accepted_at: datetime
+    already_accepted: bool = False
+
+
 class SocialNotificationRead(BaseModel):
     id: str
     notification_type: str
