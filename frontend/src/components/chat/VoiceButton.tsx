@@ -6,6 +6,7 @@ export function VoiceButton({ onOpen }: { onOpen: () => void }) {
       className="icon-button-dark mic-breathing"
       onClick={onOpen}
       title="Open live voice"
+      aria-label="Start AI voice input"
       type="button"
     >
       <Mic size={18} />

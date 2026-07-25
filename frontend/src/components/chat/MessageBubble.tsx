@@ -97,15 +97,17 @@ function responseErrorText(value?: string) {
   return "Response interrupted. Your message was saved. Retry response.";
 }
 
-function formatMessageTimestamp(value: string) {
+export function formatMessageTimestamp(value: string, now = new Date()) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  const now = new Date();
   const sameDay = date.toDateString() === now.toDateString();
-  return new Intl.DateTimeFormat(undefined, sameDay
-    ? { hour: "numeric", minute: "2-digit" }
-    : { dateStyle: "medium", timeStyle: "short" }
-  ).format(date);
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday = date.toDateString() === yesterday.toDateString();
+  const time = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
+  if (sameDay) return `Today, ${time}`;
+  if (isYesterday) return `Yesterday, ${time}`;
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
 function AttachmentList({ attachments }: { attachments: ChatAttachment[] }) {
@@ -254,15 +256,15 @@ function MessageBubbleComponent({
 
         {!isEmptyStreaming && !isFailedAssistant && (
           <div className="message-actions">
-            <button className="message-action" onClick={copyMessage} title="Copy message">
+            <button className="message-action" onClick={copyMessage} title="Copy message" aria-label="Copy message" type="button">
               {copied ? <Check size={15} /> : <Copy size={15} />}
             </button>
             {isAssistant && (
               <>
-                <button className="message-action" onClick={() => onShare(message.id)} title="Share message">
+                <button className="message-action" onClick={() => onShare(message.id)} title="Share message" aria-label="Share response" type="button">
                   <Share2 size={15} />
                 </button>
-                <button className="message-action" onClick={() => onRegenerate(message.id)} title="Regenerate response">
+                <button className="message-action" onClick={() => onRegenerate(message.id)} title="Regenerate response" aria-label="Regenerate response" type="button">
                   <RefreshCw size={15} />
                 </button>
               </>

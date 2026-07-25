@@ -33,6 +33,7 @@ export function Sidebar() {
   const [query, setQuery] = useState("");
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   const filteredChats = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -46,6 +47,12 @@ export function Sidebar() {
   const subscriptionHref = "/settings?section=subscription";
   const profileInitial = (displayName || displayEmail || "A").charAt(0).toUpperCase();
   const profileAvatar = resolveApiAssetUrl(user?.avatar || user?.picture);
+
+  useEffect(() => {
+    const focusSearch = () => searchInputRef.current?.focus();
+    window.addEventListener("focus-chat-search", focusSearch);
+    return () => window.removeEventListener("focus-chat-search", focusSearch);
+  }, []);
 
   useEffect(() => {
     if (!isAccountMenuOpen) return;
@@ -182,6 +189,8 @@ export function Sidebar() {
           <label className="compact-input flex h-10 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.055] px-3 text-sm text-slate-300 focus-within:border-cyan-200/40">
             <Search size={15} className="shrink-0 text-slate-500" />
             <input
+              ref={searchInputRef}
+              aria-label="Search conversations"
               className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-slate-500"
               value={query}
               onChange={(event) => setQuery(event.target.value)}

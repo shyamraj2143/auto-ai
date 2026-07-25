@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowDown, Brain, Menu, MessageSquarePlus, PhoneCall, ScreenShare, Settings, Sparkles, Square } from "lucide-react";
+import { ArrowDown, Brain, Menu, MessageSquarePlus, MoreHorizontal, Search, Settings, Sparkles, Square, Trash2, Pencil, Eraser } from "lucide-react";
 import { ApiClientError, api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
@@ -16,8 +16,6 @@ import { useShell } from "../../contexts/ShellContext";
 import { useSettingsNavigation } from "../../hooks/useSettingsNavigation";
 import { LiveCallMode } from "../live/LiveCallMode";
 import { mediaResourceCoordinator } from "../../features/calls/services/mediaResourceCoordinator";
-import { useCallSession } from "../../features/calls/hooks/useCallSession";
-import { useScreenShare } from "../../features/screenShare/useScreenShare";
 import { CrystalAiOrb, CrystalErrorBoundary } from "../crystal/Crystal";
 import type { CrystalOrbState } from "../../crystal/tokens";
 import { usePublishedUiText } from "../../hooks/useCmsContent";
@@ -143,11 +141,9 @@ export function ChatPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { chatId } = useParams();
-  const { config: callConfig } = useCallSession();
-  const screenShare = useScreenShare();
   const { token } = useAuth();
   const { settings } = useAppSettings();
-  const { activeChat, createChat, openChat, refreshChats, setActiveChat } = useChat();
+  const { activeChat, createChat, deleteChat, openChat, refreshChats, setActiveChat, updateChat } = useChat();
   const { openSidebar, setActiveAiConversation } = useShell();
   const openSettings = useSettingsNavigation();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -163,6 +159,7 @@ export function ChatPage() {
   const [requestState, setRequestState] = useState<ChatRequestState>("idle");
   const [isContextOpen, setIsContextOpen] = useState(false);
   const [chatNotice, setChatNotice] = useState("");
+  const [chatMenuOpen, setChatMenuOpen] = useState(false);
   const [liveModeOpen, setLiveModeOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const messagesRef = useRef<Message[]>([]);
@@ -190,7 +187,7 @@ export function ChatPage() {
       await mediaResourceCoordinator.acquire("ai-live");
       setLiveModeOpen(true);
     } catch (mediaError) {
-      setChatNotice(mediaError instanceof Error ? mediaError.message : "Camera and microphone are currently being used by a call");
+      setChatNotice(mediaError instanceof Error ? mediaError.message : "Microphone is currently in use");
     }
   }, []);
 
@@ -960,6 +957,32 @@ export function ChatPage() {
     navigate(`/chat/${encodeURIComponent(chat.id)}`);
   }
 
+  async function renameCurrentChat() {
+    if (!activeChat) return;
+    const title = window.prompt("Rename conversation", activeChat.title)?.trim();
+    if (title) await updateChat(activeChat.id, { title });
+    setChatMenuOpen(false);
+  }
+
+  async function clearCurrentChat() {
+    if (!activeChat || !window.confirm("Clear all messages in this conversation?")) return;
+    await updateChat(activeChat.id, { clear_messages: true });
+    setMessages([]);
+    setChatMenuOpen(false);
+  }
+
+  async function deleteCurrentChat() {
+    if (!activeChat || !window.confirm("Delete this conversation? This cannot be undone.")) return;
+    await deleteChat(activeChat.id);
+    setChatMenuOpen(false);
+    navigate("/chat");
+  }
+
+  function openConversationSearch() {
+    openSidebar();
+    window.setTimeout(() => window.dispatchEvent(new CustomEvent("focus-chat-search")), 50);
+  }
+
   const generationStatusLabel =
     visibleGeneration?.status === "cancel_requested"
       ? "Stopping..."
@@ -978,11 +1001,12 @@ export function ChatPage() {
   return (
     <div className="chat-workspace">
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="flex h-12 items-center justify-between border-b border-white/10 bg-slate-950/70 px-4 text-white backdrop-blur-xl md:hidden">
+        <div className="spatial-chat-header md:hidden">
           <button
             className="icon-button-dark"
             onClick={openSidebar}
-            title="Menu"
+            title="Open conversation menu"
+            aria-label="Open conversation menu"
             type="button"
           >
             <Menu size={18} />
@@ -991,25 +1015,9 @@ export function ChatPage() {
             <CrystalErrorBoundary><CrystalAiOrb state={neuralState} size="sm" className="chat-status-core" /></CrystalErrorBoundary>
             <span className="truncate text-sm font-medium">{activeTitle}</span>
           </span>
-          <div className="flex items-center gap-1.5">
-            {callConfig?.enabled !== false && <button
-              className="icon-button-dark"
-              onClick={() => navigate("/calls")}
-              title="Calls"
-              aria-label="Open calls"
-              type="button"
-            >
-              <PhoneCall size={18} className="text-cyan-200" />
-            </button>}
-            <button
-              className="icon-button-dark"
-              onClick={screenShare.requestInviteShare}
-              title="Share screen"
-              aria-label="Share screen"
-              type="button"
-            >
-              <ScreenShare size={18} className="text-cyan-200" />
-            </button>
+          <div className="flex items-center gap-1">
+            <button className="icon-button-dark" onClick={openConversationSearch} title="Search conversations" aria-label="Search conversations" type="button"><Search size={17} /></button>
+            <button className="icon-button-dark" onClick={handleNewChat} title="New chat" aria-label="Start a new chat" type="button"><MessageSquarePlus size={17} /></button>
             <button
               className="icon-button-dark"
               onClick={() => {
@@ -1019,17 +1027,9 @@ export function ChatPage() {
               aria-label="Open context and memory"
               type="button"
             >
-              <Brain size={18} className="text-cyan-200" />
+              <Brain size={17} className="text-cyan-200" />
             </button>
-            <button
-              className="icon-button-dark"
-              onClick={openSettings}
-              title="Settings"
-              aria-label="Open settings"
-              type="button"
-            >
-              <Settings size={18} className="text-cyan-200" />
-            </button>
+            <button className="icon-button-dark" onClick={() => setChatMenuOpen((value) => !value)} title="Chat actions" aria-label="Open chat actions" aria-expanded={chatMenuOpen} type="button"><MoreHorizontal size={17} /></button>
           </div>
         </div>
 
@@ -1043,23 +1043,30 @@ export function ChatPage() {
               {(activeChat?.mode || lastOptionsRef.current.chatMode).replace("_", " ")} / {activeChat?.model || lastOptionsRef.current.model}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="relative flex items-center gap-2">
             {visibleGenerationRunning && (
               <button className="generation-action" onClick={handleStopGeneration} type="button">
                 <Square size={14} />
                 Stop
               </button>
             )}
-            <button className="chat-topbar-action" onClick={screenShare.requestInviteShare} type="button">
-              <ScreenShare size={15} />
-              Share Screen
-            </button>
+            <button className="chat-topbar-action" onClick={openConversationSearch} type="button" title="Search conversations" aria-label="Search conversations"><Search size={15} />Search</button>
             <button className="chat-topbar-action" onClick={handleNewChat} type="button">
               <MessageSquarePlus size={15} />
               New chat
             </button>
+            <button className="chat-topbar-action" onClick={() => setChatMenuOpen((value) => !value)} type="button" aria-label="Open chat actions" aria-expanded={chatMenuOpen}><MoreHorizontal size={16} />More</button>
           </div>
         </div>
+
+        {chatMenuOpen && (
+          <div className="chat-actions-menu" role="menu">
+            <button role="menuitem" type="button" onClick={renameCurrentChat} disabled={!activeChat}><Pencil size={15} />Rename conversation</button>
+            <button role="menuitem" type="button" onClick={clearCurrentChat} disabled={!activeChat}><Eraser size={15} />Clear conversation</button>
+            <button role="menuitem" type="button" onClick={() => { setChatMenuOpen(false); openSettings(); }}><Settings size={15} />Chat settings</button>
+            <button className="is-danger" role="menuitem" type="button" onClick={deleteCurrentChat} disabled={!activeChat}><Trash2 size={15} />Delete conversation</button>
+          </div>
+        )}
 
         <div ref={scrollRef} className="chat-scroll">
           {messages.length > visibleMessages.length && (
