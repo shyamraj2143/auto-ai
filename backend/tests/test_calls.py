@@ -543,3 +543,19 @@ async def test_late_reject_after_accept_does_not_mark_callee_rejected(db: Sessio
     assert late_reject.status == "accepted"
     assert call.status == "accepted"
     assert call.end_reason is None
+
+
+@pytest.mark.asyncio
+async def test_stale_caller_cancel_cannot_override_accepted_call(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    caller = create_user(db, "caller_cancel_race", "Caller")
+    callee = create_user(db, "callee_cancel_race", "Callee")
+    call = Call(caller_id=caller.id, callee_id=callee.id, call_type="video", status="accepted")
+    db.add(call)
+    db.commit()
+
+    with pytest.raises(Exception):
+        await CallService().cancel(db, call.id, caller.id)
+
+    db.refresh(call)
+    assert call.status == "accepted"
+    assert call.end_reason is None

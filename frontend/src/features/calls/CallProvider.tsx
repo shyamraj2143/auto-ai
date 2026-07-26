@@ -4,6 +4,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { CallContext, type CallContextValue } from "./CallContext";
 import { callApi } from "./services/callApi";
 import { callNative } from "./services/callNative";
+import { canResumeAcceptedCall, requiresAcceptRequest } from "./callAcceptance";
 import { CallSignaling } from "./services/callSignaling";
 import { mediaResourceCoordinator } from "./services/mediaResourceCoordinator";
 import { nextCallState } from "./state/callStateMachine";
@@ -762,6 +763,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
       clearCallTimer("noAnswer");
       setCallTimer("noAnswer", async () => {
         if (callRef.current?.id === created.id && ["dialing", "notifying", "ringing"].includes(sessionStateRef.current)) {
+          const authoritative = await callApi.get(token, created.id).catch(() => null);
+          if (!authoritative || !["initiated", "ringing"].includes(authoritative.status)) {
+            if (authoritative) {
+              callRef.current = authoritative;
+              setCall(authoritative);
+            }
+            clearCallTimer("noAnswer");
+            return;
+          }
           callDebug("call_cancel_source", { call_id: created.id, role: created.direction, source: "noAnswerTimer", end_reason: "no_answer" });
           await callApi.cancel(token, created.id).catch(() => undefined);
           await cleanup("missed", "No answer");
@@ -786,9 +796,17 @@ export function CallProvider({ children }: { children: ReactNode }) {
     let acceptedSent = false;
     try {
       const fresh = await callApi.get(token, currentCall.id);
-      if (!["initiated", "ringing"].includes(fresh.status)) throw new Error("This call is no longer available.");
-      if (configRef.current?.diagnostic === CALL_RELAY_UNAVAILABLE_MESSAGE) throw new Error(CALL_RELAY_UNAVAILABLE_MESSAGE);
+      if (!canResumeAcceptedCall(fresh)) throw new Error("This call is no longer available.");
       callDebug("accepting", { call_id: fresh.id, role: "incoming", state: fresh.status, signaling_connected: signaling.isConnected() });
+      const accepted = requiresAcceptRequest(fresh)
+        ? await callApi.accept(token, fresh.id, deviceIdRef.current)
+        : fresh;
+      acceptedCallIdsRef.current.add(fresh.id);
+      acceptedSent = true;
+      callRef.current = accepted;
+      setCall(accepted);
+      clearProgressTimers();
+      if (configRef.current?.diagnostic === CALL_RELAY_UNAVAILABLE_MESSAGE) throw new Error(CALL_RELAY_UNAVAILABLE_MESSAGE);
       await signaling.connect(token);
       if (!await signaling.waitUntilConnected()) throw new Error("Call signaling is not connected.");
       await requestLocalMedia(fresh.call_type, audioOnly);
@@ -798,13 +816,6 @@ export function CallProvider({ children }: { children: ReactNode }) {
         video_tracks: localStreamRef.current?.getVideoTracks().length ?? 0,
       });
       await loadIceConfiguration();
-      if (acceptedCallIdsRef.current.has(fresh.id)) return;
-      acceptedCallIdsRef.current.add(fresh.id);
-      const accepted = await callApi.accept(token, fresh.id, deviceIdRef.current);
-      acceptedSent = true;
-      clearProgressTimers();
-      callRef.current = accepted;
-      setCall(accepted);
       setSessionState("connecting");
       sessionStateRef.current = "connecting";
       callDebug("accepted_sent", { call_id: accepted.id, role: "incoming", signaling_connected: signaling.isConnected() });
@@ -812,8 +823,29 @@ export function CallProvider({ children }: { children: ReactNode }) {
     } catch (acceptError) {
       acceptedCallIdsRef.current.delete(currentCall.id);
       if (acceptedSent) {
-        callDebug("call_end_source", { call_id: currentCall.id, role: currentCall.direction, source: "accept_post_accept_failure", end_reason: "network_failed" });
-        await callApi.end(token, currentCall.id, "network_failed").catch(() => undefined);
+        const detail = errorMessage(acceptError, "Call setup was interrupted.");
+        callDebug("accept_recovery_started", { call_id: currentCall.id, role: currentCall.direction, source: "accept_post_accept_failure", error_code: "SIGNALING_SETUP_INTERRUPTED" });
+        setError(detail);
+        setSessionState("reconnecting");
+        sessionStateRef.current = "reconnecting";
+        setCallTimer("pendingRetry", async () => {
+          try {
+            await signaling.retry(token);
+            if (!await signaling.waitUntilConnected(8000)) throw new Error("Signaling reconnect timed out.");
+            const authoritative = await callApi.get(token, currentCall.id);
+            if (!["accepted", "connecting", "active"].includes(authoritative.status)) throw new Error("Call is no longer active.");
+            callRef.current = authoritative;
+            setCall(authoritative);
+            await loadIceConfiguration();
+            await ensurePeerConnection(authoritative);
+            setError("");
+            transition("connecting");
+          } catch (recoveryError) {
+            callDebug("accept_recovery_failed", { call_id: currentCall.id, role: currentCall.direction, error_code: "SIGNALING_TIMEOUT" });
+            await cleanup("failed", errorMessage(recoveryError, "Unable to reconnect call signaling."));
+          }
+        }, 1500);
+        return;
       } else {
         callDebug("accept_setup_failed_no_reject", { call_id: currentCall.id, role: currentCall.direction, state: sessionStateRef.current });
       }
@@ -822,7 +854,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       startPendingRef.current = false;
       acceptInProgressRef.current = false;
     }
-  }, [cleanup, clearProgressTimers, ensurePeerConnection, loadIceConfiguration, requestLocalMedia, signaling, stopRingtone, token]);
+  }, [cleanup, clearProgressTimers, ensurePeerConnection, loadIceConfiguration, requestLocalMedia, setCallTimer, signaling, stopRingtone, token, transition]);
   acceptCallRef.current = acceptCall;
 
   const rejectCall = useCallback(async () => {
