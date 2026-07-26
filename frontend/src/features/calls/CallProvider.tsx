@@ -91,6 +91,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const intentionalPeerCloseRef = useRef(false);
   const acceptedCallIdsRef = useRef(new Set<string>());
   const connectedCallIdsRef = useRef(new Set<string>());
+  const nativeServiceCallIdsRef = useRef(new Set<string>());
   const terminalCallIdsRef = useRef(new Set<string>());
   const nativeAcceptIdsRef = useRef(new Set<string>());
   const processedNativeActionIdsRef = useRef(new Set<string>());
@@ -167,6 +168,23 @@ export function CallProvider({ children }: { children: ReactNode }) {
     ringtoneContextRef.current = null;
     navigator.vibrate?.(0);
     document.title = originalTitleRef.current;
+  }, []);
+
+  const ensureNativeCallService = useCallback(async (currentCall: CallRecord) => {
+    if (nativeServiceCallIdsRef.current.has(currentCall.id)) return;
+    nativeServiceCallIdsRef.current.add(currentCall.id);
+    try {
+      await callNative.startActiveCall({
+        callId: currentCall.id,
+        displayName: currentCall.peer.display_name,
+        startedAt: Date.now(),
+        video: currentCall.call_type === "video",
+      });
+      callDebug("native_call_service_started", { call_id: currentCall.id, role: currentCall.direction, state: currentCall.status });
+    } catch (nativeError) {
+      nativeServiceCallIdsRef.current.delete(currentCall.id);
+      throw nativeError;
+    }
   }, []);
 
   const clearRingTimer = useCallback(() => {
@@ -431,7 +449,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
           connectedCallIdsRef.current.add(currentCall.id);
           signaling.send("call.connected", currentCall.id);
           beginStats();
-          void callNative.startActiveCall({ callId: currentCall.id, displayName: currentCall.peer.display_name, startedAt: Date.now(), video: currentCall.call_type === "video" });
+          void ensureNativeCallService(currentCall).catch((nativeError) => {
+            callDebug("native_call_service_failed", { call_id: currentCall.id, reason: errorMessage(nativeError, "native start failed") });
+          });
         }
       } else if (peer.connectionState === "disconnected") {
         transition("reconnecting");
@@ -455,7 +475,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
           connectedCallIdsRef.current.add(currentCall.id);
           signaling.send("call.connected", currentCall.id);
           beginStats();
-          void callNative.startActiveCall({ callId: currentCall.id, displayName: currentCall.peer.display_name, startedAt: Date.now(), video: currentCall.call_type === "video" });
+          void ensureNativeCallService(currentCall).catch((nativeError) => {
+            callDebug("native_call_service_failed", { call_id: currentCall.id, reason: errorMessage(nativeError, "native start failed") });
+          });
         }
       } else if (peer.iceConnectionState === "disconnected") {
         transition("reconnecting");
@@ -475,7 +497,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       callDebug("ice_candidate_error", { call_id: currentCall.id, role: currentCall.direction, error_code: event.errorCode });
     };
     return peer;
-  }, [attemptReconnect, beginStats, clearCallTimer, clearProgressTimers, loadIceConfiguration, setCallTimer, signaling, transition]);
+  }, [attemptReconnect, beginStats, clearCallTimer, clearProgressTimers, ensureNativeCallService, loadIceConfiguration, setCallTimer, signaling, transition]);
 
   const applyDescription = useCallback(async (event: SignalEnvelope) => {
     const currentCall = callRef.current;
@@ -546,7 +568,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
     setNetworkQuality("unknown");
     reconnectAttemptsRef.current = 0;
     mediaResourceCoordinator.release("person-call");
-    await callNative.stopActiveCall(callRef.current?.id).catch(() => undefined);
+    const cleanedCallId = callRef.current?.id;
+    await callNative.stopActiveCall(cleanedCallId).catch(() => undefined);
+    if (cleanedCallId) nativeServiceCallIdsRef.current.delete(cleanedCallId);
     if (detail) setError(detail);
     setCallTimer("terminal", () => {
       setSessionState("idle");
@@ -743,12 +767,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       setCall(created);
       setSessionState("notifying");
       sessionStateRef.current = "notifying";
-      void callNative.startActiveCall({
-        callId: created.id,
-        displayName: created.peer.display_name,
-        startedAt: Date.now(),
-        video: created.call_type === "video",
-      }).catch((nativeError) => {
+      void ensureNativeCallService(created).catch((nativeError) => {
         callDebug("native_outgoing_service_failed", {
           call_id: created.id,
           reason: errorMessage(nativeError, "native start failed"),
@@ -782,7 +801,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     } finally {
       startPendingRef.current = false;
     }
-  }, [cleanup, clearCallTimer, requestLocalMedia, setCallTimer, token]);
+  }, [cleanup, clearCallTimer, ensureNativeCallService, requestLocalMedia, setCallTimer, token]);
 
   const acceptCall = useCallback(async (audioOnly = false) => {
     const currentCall = callRef.current;
@@ -806,6 +825,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       callRef.current = accepted;
       setCall(accepted);
       clearProgressTimers();
+      await ensureNativeCallService(accepted);
       if (configRef.current?.diagnostic === CALL_RELAY_UNAVAILABLE_MESSAGE) throw new Error(CALL_RELAY_UNAVAILABLE_MESSAGE);
       await signaling.connect(token);
       if (!await signaling.waitUntilConnected()) throw new Error("Call signaling is not connected.");
@@ -836,6 +856,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
             if (!["accepted", "connecting", "active"].includes(authoritative.status)) throw new Error("Call is no longer active.");
             callRef.current = authoritative;
             setCall(authoritative);
+            await ensureNativeCallService(authoritative);
             await loadIceConfiguration();
             await ensurePeerConnection(authoritative);
             setError("");
@@ -854,7 +875,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       startPendingRef.current = false;
       acceptInProgressRef.current = false;
     }
-  }, [cleanup, clearProgressTimers, ensurePeerConnection, loadIceConfiguration, requestLocalMedia, setCallTimer, signaling, stopRingtone, token, transition]);
+  }, [cleanup, clearProgressTimers, ensureNativeCallService, ensurePeerConnection, loadIceConfiguration, requestLocalMedia, setCallTimer, signaling, stopRingtone, token, transition]);
   acceptCallRef.current = acceptCall;
 
   const rejectCall = useCallback(async () => {
