@@ -191,6 +191,21 @@ async def handle_signal(websocket: WebSocket, user_id: str, connection_id: str, 
                 },
             )
             return
+        if event.type in {"call.peer_ready", "call.offer_received", "call.answer_applied", "call.media_ready"}:
+            call, recipient_id = await call_service.authorize_signaling(db, event.call_id, user_id, event.type)
+            safe_payload = {
+                "call_type": str(event.payload.get("call_type") or call.call_type),
+                "audio_ready": bool(event.payload.get("audio_ready", False)),
+                "video_ready": bool(event.payload.get("video_ready", False)),
+                "audio_only": bool(event.payload.get("audio_only", False)),
+                "negotiation_id": str(event.payload.get("negotiation_id") or "")[:64],
+                "revision": call.revision,
+            }
+            await presence_service.publish(
+                recipient_id,
+                signal_event(event.type, sender_user_id=user_id, call_id=call.id, payload=safe_payload),
+            )
+            return
         if event.type == "call.busy":
             await call_service.reject(db, event.call_id, user_id)
             return

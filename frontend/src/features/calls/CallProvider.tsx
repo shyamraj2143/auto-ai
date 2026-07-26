@@ -8,6 +8,7 @@ import { canResumeAcceptedCall, requiresAcceptRequest } from "./callAcceptance";
 import { CallSetupError, failureCodeOf } from "./callFailures";
 import { CallSignaling } from "./services/callSignaling";
 import { mediaResourceCoordinator } from "./services/mediaResourceCoordinator";
+import { hasRequiredLocalSenders, syncLocalTracksToPeer } from "./mediaPeer";
 import { nextCallState } from "./state/callStateMachine";
 import type { CallRecord, CallSessionState, CallSettings, CallType, IncomingCallPayload, PublicCallUser, SignalEnvelope } from "./types";
 
@@ -97,6 +98,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const terminalCallIdsRef = useRef(new Set<string>());
   const nativeAcceptIdsRef = useRef(new Set<string>());
   const processedNativeActionIdsRef = useRef(new Set<string>());
+  const peerReadyCallIdsRef = useRef(new Set<string>());
+  const processedNegotiationIdsRef = useRef(new Set<string>());
+  const negotiationIdRef = useRef<string | null>(null);
   const acceptCallRef = useRef<(audioOnly?: boolean) => Promise<void>>(async () => undefined);
   const rejectCallRef = useRef<() => Promise<void>>(async () => undefined);
   const originalTitleRef = useRef(document.title);
@@ -219,6 +223,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   }, [stopRingtone]);
 
   const requestLocalMedia = useCallback(async (callType: CallType, audioOnly = false) => {
+    callDebug("LOCAL_MEDIA_REQUEST_STARTED", { call_id: callRef.current?.id, trace_id: callRef.current?.trace_id, role: callRef.current?.direction, call_type: callType });
     let nativeAudioOnly = audioOnly;
     if (callNative.isAndroid()) {
       const permissions = callType === "video" && !audioOnly
@@ -248,6 +253,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
       setLocalStream(stream);
       setMuted(false);
       setCameraEnabled(stream.getVideoTracks().some((track) => track.enabled));
+      for (const track of stream.getTracks()) callDebug(track.kind === "audio" ? "LOCAL_AUDIO_TRACK_READY" : "LOCAL_VIDEO_TRACK_READY", { call_id: callRef.current?.id, trace_id: callRef.current?.trace_id, role: callRef.current?.direction, kind: track.kind, enabled: track.enabled, muted: track.muted, ready_state: track.readyState });
+      if (peerConnectionRef.current && callRef.current) {
+        const synced = await syncLocalTracksToPeer(peerConnectionRef.current, stream, callRef.current.call_type);
+        for (const track of synced.added) callDebug("LOCAL_TRACK_ATTACHED_TO_PEER", { call_id: callRef.current.id, trace_id: callRef.current.trace_id, role: callRef.current.direction, kind: track.kind, enabled: track.enabled, muted: track.muted, ready_state: track.readyState });
+        for (const track of synced.replaced) callDebug("LOCAL_TRACK_REPLACED", { call_id: callRef.current.id, trace_id: callRef.current.trace_id, role: callRef.current.direction, kind: track.kind, enabled: track.enabled, muted: track.muted, ready_state: track.readyState });
+      }
       return stream;
     } catch (mediaError) {
       if (video) {
@@ -258,6 +269,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
           setCameraEnabled(false);
           setError("Camera permission was not granted. Continuing with audio only.");
           callDebug("camera_unavailable_audio_fallback", { call_id: callRef.current?.id, role: callRef.current?.direction });
+          if (peerConnectionRef.current && callRef.current) await syncLocalTracksToPeer(peerConnectionRef.current, stream, callRef.current.call_type);
           return stream;
         } catch {
           mediaResourceCoordinator.release("person-call");
@@ -363,6 +375,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     transition("reconnecting");
     callDebug("ice_restart_attempt", { call_id: currentCall.id, attempt: reconnectAttemptsRef.current, state: peer.connectionState });
     try {
+      if (localStreamRef.current) await syncLocalTracksToPeer(peer, localStreamRef.current, currentCall.call_type);
       peer.restartIce();
       makingOfferRef.current = true;
       await peer.setLocalDescription(await peer.createOffer({ iceRestart: true }));
@@ -400,13 +413,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
     peerCallIdRef.current = currentCall.id;
     pendingIceRef.current = [];
     terminalCallIdsRef.current.delete(currentCall.id);
-    localStreamRef.current?.getTracks().forEach((track) => peer.addTrack(track, localStreamRef.current!));
+    if (localStreamRef.current) await syncLocalTracksToPeer(peer, localStreamRef.current, currentCall.call_type);
     peer.ontrack = (event) => {
       const stream = event.streams[0] ?? new MediaStream(remoteStreamRef.current?.getTracks() ?? []);
       if (!stream.getTracks().some((track) => track.id === event.track.id)) stream.addTrack(event.track);
       const nextRemoteStream = new MediaStream(stream.getTracks());
       remoteStreamRef.current = nextRemoteStream;
       setRemoteStream(nextRemoteStream);
+      callDebug(event.track.kind === "audio" ? "REMOTE_AUDIO_TRACK_RECEIVED" : "REMOTE_VIDEO_TRACK_RECEIVED", { call_id: currentCall.id, trace_id: currentCall.trace_id, role: currentCall.direction, kind: event.track.kind, enabled: event.track.enabled, muted: event.track.muted, ready_state: event.track.readyState, receiver_present: true });
       if (event.track.kind === "video") {
         setRemoteCameraEnabled(true);
         event.track.onmute = () => callDebug("remote_video_track_muted", { call_id: currentCall.id, role: currentCall.direction });
@@ -429,7 +443,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
         callDebug("receiver_waiting_for_offer", { call_id: currentCall.id, role: currentCall.direction });
         return;
       }
+      if (currentCall.direction === "outgoing" && !peerReadyCallIdsRef.current.has(currentCall.id)) {
+        callDebug("OFFER_WAITING_FOR_PEER_READY", { call_id: currentCall.id, trace_id: currentCall.trace_id, role: currentCall.direction });
+        return;
+      }
       try {
+        if (localStreamRef.current) await syncLocalTracksToPeer(peer, localStreamRef.current, currentCall.call_type);
+        if (!localStreamRef.current || !hasRequiredLocalSenders(peer, currentCall.call_type, currentCall.call_type === "video" && !localStreamRef.current.getVideoTracks().length)) {
+          callDebug("OFFER_WAITING_FOR_PEER_READY", { call_id: currentCall.id, trace_id: currentCall.trace_id, role: currentCall.direction, safe_error_code: "LOCAL_AUDIO_SENDER_MISSING" });
+          return;
+        }
         makingOfferRef.current = true;
         await peer.setLocalDescription();
         if (peer.localDescription) signaling.send(`webrtc.${peer.localDescription.type}`, currentCall.id, { ...peer.localDescription.toJSON() });
@@ -521,10 +544,17 @@ export function CallProvider({ children }: { children: ReactNode }) {
       for (const candidate of queued) await peer.addIceCandidate(candidate).catch(() => undefined);
       if (queued.length) callDebug("queued_ice_applied", { call_id: currentCall.id, count: queued.length });
       if (description.type === "offer") {
+        if (!localStreamRef.current) throw new CallSetupError("INTERNAL_CALL_ERROR", "Local media is not ready.");
+        await syncLocalTracksToPeer(peer, localStreamRef.current, currentCall.call_type);
+        if (!hasRequiredLocalSenders(peer, currentCall.call_type, currentCall.call_type === "video" && !localStreamRef.current.getVideoTracks().length)) {
+          throw new CallSetupError("INTERNAL_CALL_ERROR", "Required local media sender is missing.");
+        }
+        signaling.send("call.offer_received", currentCall.id, { negotiation_id: negotiationIdRef.current || "", audio_ready: true, video_ready: currentCall.call_type === "audio" || Boolean(localStreamRef.current.getVideoTracks().length) });
         await peer.setLocalDescription(await peer.createAnswer());
         if (peer.localDescription) signaling.send("webrtc.answer", currentCall.id, { ...peer.localDescription.toJSON() });
         callDebug("answer_sent", { call_id: currentCall.id, role: currentCall.direction });
       }
+      if (description.type === "answer") signaling.send("call.answer_applied", currentCall.id, { negotiation_id: negotiationIdRef.current || "", audio_ready: true, video_ready: currentCall.call_type === "audio" || Boolean(localStreamRef.current?.getVideoTracks().length) });
     } catch (descriptionError) {
       settingRemoteAnswerRef.current = false;
       setError(errorMessage(descriptionError, "WebRTC negotiation failed."));
@@ -678,6 +708,29 @@ export function CallProvider({ children }: { children: ReactNode }) {
     } else if (event.type === "webrtc.offer" || event.type === "webrtc.answer") void applyDescription(event);
     else if (event.type === "webrtc.ice_candidate") void applyIceCandidate(event);
     else if (event.type === "webrtc.restart_required") void attemptReconnect();
+    else if (event.type === "call.peer_ready" && callRef.current?.direction === "outgoing") {
+      const negotiationId = String(event.payload.negotiation_id || "");
+      if (!negotiationId || processedNegotiationIdsRef.current.has(negotiationId)) return;
+      processedNegotiationIdsRef.current.add(negotiationId);
+      peerReadyCallIdsRef.current.add(event.call_id);
+      negotiationIdRef.current = negotiationId;
+      callDebug("PEER_READY_RECEIVED", { call_id: event.call_id, trace_id: callRef.current.trace_id, role: "outgoing", negotiation_id: negotiationId });
+      void (async () => {
+        const current = callRef.current;
+        if (!current) return;
+        const peer = await ensurePeerConnection(current);
+        if (localStreamRef.current) await syncLocalTracksToPeer(peer, localStreamRef.current, current.call_type);
+        if (makingOfferRef.current || peer.signalingState !== "stable") return;
+        makingOfferRef.current = true;
+        try {
+          await peer.setLocalDescription(await peer.createOffer());
+          if (peer.localDescription) signaling.send("webrtc.offer", current.id, { ...peer.localDescription.toJSON() });
+          callDebug("OFFER_SENT", { call_id: current.id, trace_id: current.trace_id, role: "outgoing", negotiation_id: negotiationId });
+        } finally {
+          makingOfferRef.current = false;
+        }
+      })();
+    }
     else if (event.type === "call.active") transition("active");
     else if (event.type === "call.media_state") setRemoteCameraEnabled(event.payload.camera_enabled !== false);
     else if (TERMINAL_EVENT_STATES[event.type]) {
@@ -852,6 +905,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
       sessionStateRef.current = "connecting";
       callDebug("accepted_sent", { call_id: accepted.id, role: "incoming", signaling_connected: signaling.isConnected() });
       await ensurePeerConnection(accepted);
+      const negotiationId = crypto.randomUUID();
+      negotiationIdRef.current = negotiationId;
+      signaling.send("call.peer_ready", accepted.id, {
+        call_type: accepted.call_type,
+        audio_ready: Boolean(localStreamRef.current?.getAudioTracks().some((track) => track.readyState === "live")),
+        video_ready: accepted.call_type === "audio" || Boolean(localStreamRef.current?.getVideoTracks().some((track) => track.readyState === "live")),
+        audio_only: accepted.call_type === "video" && !localStreamRef.current?.getVideoTracks().length,
+        negotiation_id: negotiationId,
+        revision: accepted.revision,
+      });
     } catch (acceptError) {
       acceptedCallIdsRef.current.delete(currentCall.id);
       if (acceptedSent) {
@@ -946,7 +1009,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       const cameraStream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" }, audio: false });
       track = cameraStream.getVideoTracks()[0];
       localStreamRef.current?.addTrack(track);
-      await peerConnectionRef.current?.getSenders().find((sender) => sender.track?.kind === "video")?.replaceTrack(track);
+      if (peerConnectionRef.current && localStreamRef.current) await syncLocalTracksToPeer(peerConnectionRef.current, localStreamRef.current, currentCall.call_type);
       setLocalStream(localStreamRef.current ? new MediaStream(localStreamRef.current.getTracks()) : cameraStream);
       setCameraEnabled(true);
     } else {
@@ -962,10 +1025,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
     const currentFacing = oldTrack.getSettings().facingMode;
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: currentFacing === "environment" ? "user" : { exact: "environment" } }, audio: false });
     const newTrack = stream.getVideoTracks()[0];
-    await peerConnectionRef.current?.getSenders().find((sender) => sender.track?.kind === "video")?.replaceTrack(newTrack);
     localStreamRef.current?.removeTrack(oldTrack);
     oldTrack.stop();
     localStreamRef.current?.addTrack(newTrack);
+    if (peerConnectionRef.current && localStreamRef.current && callRef.current) await syncLocalTracksToPeer(peerConnectionRef.current, localStreamRef.current, callRef.current.call_type);
     setLocalStream(localStreamRef.current ? new MediaStream(localStreamRef.current.getTracks()) : stream);
   }, []);
 

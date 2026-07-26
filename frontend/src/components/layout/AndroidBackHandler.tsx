@@ -1,28 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { App } from "@capacitor/app";
+import { Capacitor } from "@capacitor/core";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useShell } from "../../contexts/ShellContext";
 import { useCallSession } from "../../features/calls/hooks/useCallSession";
 import { isAdminPanelRole } from "../../utils/roles";
 
-type BackButtonHandle = { remove?: () => Promise<void> | void };
-type CapacitorAppPlugin = {
-  addListener?: (
-    eventName: "backButton",
-    listener: (event?: { canGoBack?: boolean }) => void
-  ) => Promise<BackButtonHandle> | BackButtonHandle;
-  exitApp?: () => Promise<void> | void;
-};
-
-type CapacitorBridge = {
-  getPlatform?: () => string;
-  Plugins?: { App?: CapacitorAppPlugin };
-};
-
 const BACK_EVENT = "auto-ai-android-back";
 const MINIMIZE_CALL_EVENT = "auto-ai-minimize-call-overlay";
 const EXIT_CONFIRM_MS = 2000;
 const MAX_STACK = 32;
+const STACK_KEY = "auto-ai-android-route-stack";
 const AUTH_OR_EXTERNAL_ROUTES = [
   "/login",
   "/register",
@@ -39,17 +28,9 @@ const AUTH_OR_EXTERNAL_ROUTES = [
 const ROOT_ROUTES = new Set(["/hub", "/admin"]);
 const TERMINAL_CALL_STATES = new Set(["idle", "ended", "rejected", "cancelled", "missed", "busy", "failed"]);
 
-function getCapacitor() {
-  return (window as Window & { Capacitor?: CapacitorBridge }).Capacitor;
-}
-
-function getAppPlugin() {
-  return getCapacitor()?.Plugins?.App;
-}
-
 function isAndroidCapacitor() {
   if (typeof window === "undefined") return false;
-  return getCapacitor()?.getPlatform?.() === "android";
+  return Capacitor.getPlatform() === "android";
 }
 
 function routeFromLocation(location: ReturnType<typeof useLocation>) {
@@ -87,7 +68,14 @@ export function AndroidBackHandler() {
   const { isSidebarOpen, closeSidebar } = useShell();
   const callSession = useCallSession();
   const [toastVisible, setToastVisible] = useState(false);
-  const stackRef = useRef<string[]>([]);
+  const stackRef = useRef<string[]>((() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(STACK_KEY) || "[]");
+      return Array.isArray(saved) ? saved.filter((route): route is string => typeof route === "string").slice(-MAX_STACK) : [];
+    } catch {
+      return [];
+    }
+  })());
   const stateRef = useRef({
     route: routeFromLocation(location),
     isSidebarOpen,
@@ -111,6 +99,7 @@ export function AndroidBackHandler() {
   useEffect(() => {
     if (!user) {
       stackRef.current = [];
+      sessionStorage.removeItem(STACK_KEY);
       return;
     }
     const route = routeFromLocation(location);
@@ -118,6 +107,7 @@ export function AndroidBackHandler() {
     const stack = stackRef.current;
     if (stack[stack.length - 1] !== route) stack.push(route);
     if (stack.length > MAX_STACK) stack.splice(0, stack.length - MAX_STACK);
+    sessionStorage.setItem(STACK_KEY, JSON.stringify(stack));
   }, [location, user]);
 
   const showExitToast = useCallback(() => {
@@ -143,7 +133,7 @@ export function AndroidBackHandler() {
     const now = Date.now();
     if (now - lastExitPressRef.current <= EXIT_CONFIRM_MS) {
       setToastVisible(false);
-      void getAppPlugin()?.exitApp?.();
+      void App.exitApp();
       return;
     }
     lastExitPressRef.current = now;
@@ -195,11 +185,9 @@ export function AndroidBackHandler() {
 
   useEffect(() => {
     if (!isAndroidCapacitor()) return;
-    const app = getAppPlugin();
-    if (!app?.addListener) return;
-    let handle: BackButtonHandle | undefined;
+    let handle: Awaited<ReturnType<typeof App.addListener>> | undefined;
     let disposed = false;
-    void Promise.resolve(app.addListener("backButton", handleBack)).then((result) => {
+    void App.addListener("backButton", handleBack).then((result) => {
       if (disposed) {
         void result?.remove?.();
         return;

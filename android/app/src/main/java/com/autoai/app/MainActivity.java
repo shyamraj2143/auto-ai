@@ -103,6 +103,7 @@ public class MainActivity extends BridgeActivity {
         settings.setDatabaseEnabled(true);
         settings.setJavaScriptCanOpenWindowsAutomatically(true);
         settings.setSupportMultipleWindows(true);
+        settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setUserAgentString(browserLikeUserAgent(settings.getUserAgentString()));
         getBridge().setWebViewClient(new AutoAiWebViewClient(getBridge()));
         webView.setWebChromeClient(new AutoAiWebChromeClient(getBridge()));

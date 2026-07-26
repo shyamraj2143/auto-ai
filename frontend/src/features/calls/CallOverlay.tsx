@@ -28,6 +28,34 @@ function VideoSurface({ stream, muted, className }: { stream: MediaStream | null
   );
 }
 
+export function RemoteAudioSurface({ stream, callId, traceId, role, active }: { stream: MediaStream | null; callId?: string; traceId?: string; role?: string; active: boolean }) {
+  const ref = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => {
+    const audio = ref.current;
+    if (!audio) return;
+    if (audio.srcObject !== stream) audio.srcObject = stream;
+    const play = () => {
+      if (!stream?.getAudioTracks().some((track) => track.readyState === "live")) return;
+      void audio.play().then(
+        () => console.debug("[AutoAI Call] REMOTE_AUDIO_PLAY_STARTED", { call_id: callId, trace_id: traceId, role }),
+        () => console.warn("[AutoAI Call] REMOTE_AUDIO_PLAY_FAILED", { call_id: callId, trace_id: traceId, role, safe_error_code: "REMOTE_AUDIO_AUTOPLAY_BLOCKED" }),
+      );
+    };
+    const onVisibility = () => { if (document.visibilityState === "visible") play(); };
+    const tracks = stream?.getAudioTracks() ?? [];
+    tracks.forEach((track) => track.addEventListener("unmute", play));
+    stream?.addEventListener("addtrack", play);
+    document.addEventListener("visibilitychange", onVisibility);
+    if (active) play();
+    return () => {
+      tracks.forEach((track) => track.removeEventListener("unmute", play));
+      stream?.removeEventListener("addtrack", play);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [active, callId, role, stream, traceId]);
+  return <audio ref={ref} autoPlay playsInline muted={false} className="remote-call-audio" aria-label="Remote call audio" />;
+}
+
 function Avatar({ name, url, ringState }: { name: string; url?: string | null; ringState: CrystalCallState }) {
   const avatarUrl = resolveApiAssetUrl(url);
   return (
@@ -102,11 +130,14 @@ export function CallOverlay() {
 
   if (minimized) {
     return (
-      <button type="button" className="ongoing-call-chip" onClick={() => setMinimized(false)} aria-label={`Return to call with ${peer.display_name}`}>
-        <span>{call?.call_type === "video" ? <VideoSurface stream={remoteStream && remoteCameraEnabled && hasRemoteVideo ? remoteStream : localStream} muted className="ongoing-call-video" /> : <Phone size={16} />}</span>
-        <strong>{peer.display_name}</strong>
-        <small>{sessionState === "active" ? time : status.label}</small>
-      </button>
+      <>
+        <RemoteAudioSurface stream={remoteStream} callId={call?.id} traceId={call?.trace_id} role={call?.direction} active={sessionState === "active"} />
+        <button type="button" className="ongoing-call-chip" onClick={() => setMinimized(false)} aria-label={`Return to call with ${peer.display_name}`}>
+          <span>{call?.call_type === "video" ? <VideoSurface stream={remoteStream && remoteCameraEnabled && hasRemoteVideo ? remoteStream : localStream} muted className="ongoing-call-video" /> : <Phone size={16} />}</span>
+          <strong>{peer.display_name}</strong>
+          <small>{sessionState === "active" ? time : status.label}</small>
+        </button>
+      </>
     );
   }
 
@@ -172,7 +203,8 @@ export function CallOverlay() {
 
   return (
     <div className="active-call-screen neural-call-screen" data-call-semantic={status.semantic} role="dialog" aria-modal="true" aria-label={`Call with ${peer.display_name}`}>
-      {remoteStream && remoteCameraEnabled && hasRemoteVideo ? <VideoSurface stream={remoteStream} className="remote-call-video" /> : <div className="remote-call-placeholder"><Avatar name={peer.display_name} url={peer.avatar_url} ringState={avatarRingState} /></div>}
+      <RemoteAudioSurface stream={remoteStream} callId={call?.id} traceId={call?.trace_id} role={call?.direction} active={sessionState === "active"} />
+      {remoteStream && remoteCameraEnabled && hasRemoteVideo ? <VideoSurface stream={remoteStream} muted className="remote-call-video" /> : <div className="remote-call-placeholder"><Avatar name={peer.display_name} url={peer.avatar_url} ringState={avatarRingState} /></div>}
       <div className="call-screen-shade" />
       <header className="active-call-header">
         <span><strong>{peer.display_name}</strong><small className="call-state-label">{sessionState === "active" ? time : status.label}</small></span>

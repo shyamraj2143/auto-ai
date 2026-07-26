@@ -10,6 +10,8 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.media.AudioManager;
+import android.media.AudioAttributes;
+import android.media.AudioFocusRequest;
 import android.os.Build;
 import android.os.IBinder;
 import android.util.Log;
@@ -24,6 +26,7 @@ public class CallForegroundService extends Service {
     private int previousAudioMode = AudioManager.MODE_NORMAL;
     private boolean previousSpeakerState;
     private String activeCallId;
+    private AudioFocusRequest audioFocusRequest;
 
     @Override
     public void onCreate() {
@@ -64,7 +67,7 @@ public class CallForegroundService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
-        initializeAudio();
+        initializeAudio(callType);
         AutoAiTelecomBridge.markActive(this, activeCallId);
         Log.i(TAG, "Foreground call service running callId=" + activeCallId + " type=" + callType);
         return START_STICKY;
@@ -79,7 +82,11 @@ public class CallForegroundService extends Service {
     @Override
     public void onDestroy() {
         if (audioManager != null) {
-            audioManager.abandonAudioFocus(null);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && audioFocusRequest != null) {
+                audioManager.abandonAudioFocusRequest(audioFocusRequest);
+            } else {
+                audioManager.abandonAudioFocus(null);
+            }
             audioManager.setSpeakerphoneOn(previousSpeakerState);
             audioManager.setMode(previousAudioMode);
         }
@@ -119,13 +126,27 @@ public class CallForegroundService extends Service {
             || checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
     }
 
-    private void initializeAudio() {
+    private void initializeAudio(String callType) {
         audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         if (audioManager == null) return;
         previousAudioMode = audioManager.getMode();
         previousSpeakerState = audioManager.isSpeakerphoneOn();
         audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-        audioManager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+        audioManager.setSpeakerphoneOn("video".equals(callType));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            AudioAttributes attributes = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build();
+            audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                .setAudioAttributes(attributes)
+                .setAcceptsDelayedFocusGain(false)
+                .setOnAudioFocusChangeListener(focusChange -> Log.d(TAG, "Audio focus changed=" + focusChange))
+                .build();
+            audioManager.requestAudioFocus(audioFocusRequest);
+        } else {
+            audioManager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+        }
     }
 
     private String clean(String value) {

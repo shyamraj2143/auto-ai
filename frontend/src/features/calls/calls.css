@@ -135,3 +135,4 @@ html[data-auto-ai-visible="false"] .neural-call-screen * {
   animation-play-state: paused!important;
 }
 .neural-call-screen[data-call-semantic="success"]{--call-state-color:#22C55E}.neural-call-screen[data-call-semantic="processing"]{--call-state-color:#22D3EE}.neural-call-screen[data-call-semantic="recovery"]{--call-state-color:#F59E0B}.neural-call-screen[data-call-semantic="error"]{--call-state-color:#EF4444}.neural-call-screen[data-call-semantic="neutral"]{--call-state-color:#94A3B8}.call-state-label{color:var(--call-state-color)!important}
+.remote-call-audio{position:absolute;width:1px;height:1px;overflow:hidden;opacity:.001;pointer-events:none}
