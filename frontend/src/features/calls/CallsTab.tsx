@@ -1,24 +1,35 @@
-import { Bell, Check, Clock3, LoaderCircle, MessageCircle, Phone, Search, Settings, ShieldAlert, UserPlus, Video, X } from "lucide-react";
+import { Bell, Check, Clock3, LoaderCircle, MessageCircle, Phone, Search, ShieldAlert, Trash2, UserPlus, Video, X } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { resolveApiAssetUrl } from "../../api/client";
+import { ApiClientError, resolveApiAssetUrl } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
-import { CallSettings } from "./CallSettings";
 import { useCallSession } from "./hooks/useCallSession";
 import { callApi } from "./services/callApi";
 import { socialApi } from "./services/socialApi";
-import type { CallRecord, CallType, PublicCallUser, SocialNotification, SocialProfile, SocialRequest } from "./types";
+import type { CallRecord, CallType, PublicCallUser, SearchHistoryItem, SocialNotification, SocialProfile, SocialRequest } from "./types";
 
 type CallsTabProps = {
   refreshRequestId: number;
   onRefreshingChange: (refreshing: boolean) => void;
+  routeSection?: string;
 };
 
-type View = "quick" | "chats" | "calls" | "search" | "requests" | "notifications" | "settings";
+type View = "search" | "requests" | "chats" | "calls" | "alerts";
 type RequestView = "incoming" | "sent" | "connected" | "history";
+type CallFilter = "all" | "missed" | "audio" | "video";
+export const CALL_HUB_SECTIONS = ["search", "requests", "chats", "calls", "alerts"] as const;
 
 function errorText(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
+}
+
+function socialActionError(error: unknown, action: "follow" | "accept") {
+  if (error instanceof ApiClientError && error.kind !== "http_error") {
+    return action === "follow"
+      ? "Follow request could not reach the server. Check your connection and retry."
+      : "Accept request could not reach the server. Check your connection and retry.";
+  }
+  return errorText(error, action === "follow" ? "Unable to update follow status." : "Unable to accept request.");
 }
 
 function asCallUser(profile: SocialProfile): PublicCallUser {
@@ -57,7 +68,7 @@ function followButtonLabel(profile: SocialProfile) {
   return "Follow";
 }
 
-export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps) {
+export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }: CallsTabProps) {
   const { token, user: currentUser } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -65,11 +76,12 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
   const requestedView = searchParams.get("view");
   const requestedCallType = searchParams.get("type") === "video" ? "video" : searchParams.get("type") === "audio" ? "audio" : null;
   const requestedQuery = (searchParams.get("q") || "").slice(0, 80);
-  const [view, setView] = useState<View>(() => requestedView === "quick" || requestedView === "chats" || requestedView === "calls" || requestedView === "search" || requestedView === "requests" || requestedView === "notifications" || requestedView === "settings" ? requestedView : "quick");
+  const initialView = (routeSection === "alerts" || routeSection === "chats" || routeSection === "calls" || routeSection === "search" || routeSection === "requests") ? routeSection : (requestedView === "chats" || requestedView === "calls" || requestedView === "search" || requestedView === "requests" || requestedView === "notifications" ? (requestedView === "notifications" ? "alerts" : requestedView) : "search");
+  const [view, setView] = useState<View>(initialView);
   const [query, setQuery] = useState(requestedQuery);
   const [results, setResults] = useState<SocialProfile[]>([]);
   const [history, setHistory] = useState<CallRecord[]>([]);
-  const [activeUsers, setActiveUsers] = useState<PublicCallUser[]>([]);
+  const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>([]);
   const [selected, setSelected] = useState<SocialProfile | null>(null);
   const [incoming, setIncoming] = useState<SocialRequest[]>([]);
   const [sent, setSent] = useState<SocialRequest[]>([]);
@@ -77,9 +89,11 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
   const [connections, setConnections] = useState<SocialProfile[]>([]);
   const [requestView, setRequestView] = useState<RequestView>("incoming");
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
+  const [pendingSocialUserId, setPendingSocialUserId] = useState<string | null>(null);
   const [failedRequestId, setFailedRequestId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<SocialNotification[]>([]);
   const [unread, setUnread] = useState(0);
+  const [callFilter, setCallFilter] = useState<CallFilter>("all");
   const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
   const [message, setMessage] = useState("");
@@ -93,9 +107,15 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
   }, []);
 
   useEffect(() => {
-    if (requestedView === "quick" || requestedView === "chats" || requestedView === "calls" || requestedView === "search" || requestedView === "requests" || requestedView === "notifications" || requestedView === "settings") setView(requestedView);
+    if (routeSection === "alerts" || routeSection === "chats" || routeSection === "calls" || routeSection === "search" || routeSection === "requests") setView(routeSection);
+    else if (requestedView === "chats" || requestedView === "calls" || requestedView === "search" || requestedView === "requests" || requestedView === "notifications") setView(requestedView === "notifications" ? "alerts" : requestedView);
     if (requestedQuery) setQuery(requestedQuery);
-  }, [requestedQuery, requestedView]);
+  }, [requestedQuery, requestedView, routeSection]);
+
+  const changeView = useCallback((next: View) => {
+    setView(next);
+    navigate(`/call-hub/${next}`);
+  }, [navigate]);
 
   useEffect(() => {
     if (!error) return;
@@ -126,6 +146,7 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
       if (!controller.signal.aborted) {
         setResults(page.items.filter((item) => item.id !== currentUser?.id));
         setUnread(page.unread_notifications);
+        void socialApi.addSearchHistory(token, normalized).then((item) => setSearchHistory((items) => [item, ...items.filter((entry) => entry.id !== item.id)].slice(0, 20))).catch(() => undefined);
       }
     } catch (searchError) {
       if (!controller.signal.aborted) setMessage(errorText(searchError, "Search failed."));
@@ -133,6 +154,12 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
       if (!controller.signal.aborted) setSearching(false);
     }
   }, [currentUser?.id, token]);
+
+  const loadSearchHistory = useCallback(async () => {
+    if (!token) return;
+    try { setSearchHistory(await socialApi.searchHistory(token)); }
+    catch (loadError) { showToast(errorText(loadError, "Unable to load recent searches.")); }
+  }, [showToast, token]);
 
   const loadRequests = useCallback(async () => {
     if (!token) return;
@@ -177,13 +204,11 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
         refreshRealtime(),
         normalized.length >= 2 ? socialApi.searchUsers(token, normalized, 1, 20) : Promise.resolve(null),
         socialApi.notifications(token, 1, 1),
-        callApi.onlineUsers(token, 1, 12),
       ] as const;
-      const [historyResult, realtimeResult, searchResult, notificationResult, activeResult] = await Promise.allSettled(requests);
+      const [historyResult, realtimeResult, searchResult, notificationResult] = await Promise.allSettled(requests);
       if (historyResult.status === "fulfilled") setHistory(historyResult.value.items);
       if (searchResult.status === "fulfilled" && searchResult.value) setResults(searchResult.value.items.filter((item) => item.id !== currentUser?.id));
       if (notificationResult.status === "fulfilled") setUnread(notificationResult.value.unread_count);
-      if (activeResult.status === "fulfilled") setActiveUsers(activeResult.value.items);
       if (realtimeResult.status === "rejected" && notifyOnError) showToast("Realtime calling is temporarily unavailable.");
     } finally {
       onRefreshingChange(false);
@@ -214,9 +239,10 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
   }, [query, runSearch]);
 
   useEffect(() => {
-    if (view === "requests") void loadRequests();
-    if (view === "notifications") void loadNotifications();
-  }, [loadNotifications, loadRequests, view]);
+    if (view === "requests" || view === "chats") void loadRequests();
+    if (view === "alerts") void loadNotifications();
+    if (view === "search" && query.trim().length < 2) void loadSearchHistory();
+  }, [loadNotifications, loadRequests, loadSearchHistory, query, view]);
 
   useEffect(() => () => searchAbortRef.current?.abort(), []);
 
@@ -231,12 +257,14 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
   }
 
   async function applyFollowAction(profile: SocialProfile) {
-    if (!token) return;
+    if (!token || pendingSocialUserId) return;
+    setPendingSocialUserId(profile.id);
     try {
       if (profile.follow_status === "pending_received" && profile.request_id) {
         const accepted = await socialApi.acceptRequest(token, profile.request_id);
         updateProfileInLists(accepted.connection);
         void loadRequests();
+        showToast(accepted.already_accepted ? "Already connected" : "Request accepted");
         return;
       }
       const next = profile.follow_status === "following" || profile.follow_status === "accepted"
@@ -246,8 +274,12 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
           : await socialApi.follow(token, profile.id);
       updateProfileInLists(next);
       if (next.follow_status === "pending" || next.follow_status === "pending_sent" || next.follow_status === "pending_received") void loadRequests();
+      if (next.follow_status === "pending" || next.follow_status === "pending_sent") showToast("Follow request sent");
+      if (next.follow_status === "following" || next.follow_status === "accepted") showToast("Connected");
     } catch (actionError) {
-      showToast(errorText(actionError, "Unable to update follow state."));
+      showToast(socialActionError(actionError, "follow"));
+    } finally {
+      setPendingSocialUserId(null);
     }
   }
 
@@ -264,6 +296,11 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
       updateProfileInLists(profile);
       showToast(result.already_accepted ? "Request was already accepted" : "Request accepted");
     } catch (actionError) {
+      if (actionError instanceof ApiClientError && actionError.kind !== "http_error") {
+        setFailedRequestId(request.id);
+        showToast(socialActionError(actionError, "accept"));
+        return;
+      }
       try {
         const historyPage = await socialApi.requestHistory(token);
         const accepted = historyPage.items.find((item) => item.id === request.id && item.status === "accepted");
@@ -363,12 +400,49 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
         setUnread((count) => Math.max(0, count - 1));
       }
       if (item.target_type === "thread" && item.target_id) navigate(`/messages/${item.target_id}`);
-      if (item.target_type === "follow_requests") setView("requests");
-      if (item.target_type === "call") setView("calls");
+      if (item.target_type === "follow_requests") changeView("requests");
+      if (item.target_type === "call") changeView("calls");
       if (item.target_type === "profile" && item.actor) void openProfile(item.actor);
     } catch (notificationError) {
       showToast(errorText(notificationError, "Unable to open notification."));
     }
+  }
+
+  async function clearAllSearchHistory() {
+    if (!token || !searchHistory.length || !window.confirm("Clear all recent searches?")) return;
+    const previous = searchHistory;
+    setSearchHistory([]);
+    try { await socialApi.clearSearchHistory(token); }
+    catch (clearError) { setSearchHistory(previous); showToast(errorText(clearError, "Unable to clear search history.")); }
+  }
+
+  async function removeSearchHistory(item: SearchHistoryItem) {
+    if (!token) return;
+    const previous = searchHistory;
+    setSearchHistory((items) => items.filter((entry) => entry.id !== item.id));
+    try { await socialApi.deleteSearchHistory(token, item.id); }
+    catch (removeError) { setSearchHistory(previous); showToast(errorText(removeError, "Unable to remove search history item.")); }
+  }
+
+  async function markAllAlertsRead() {
+    if (!token || unread === 0) return;
+    try { await socialApi.readAllNotifications(token); setNotifications((items) => items.map((item) => ({ ...item, read_at: item.read_at || new Date().toISOString() }))); setUnread(0); }
+    catch (readError) { showToast(errorText(readError, "Unable to mark alerts as read.")); }
+  }
+
+  async function clearAllAlerts() {
+    if (!token || !notifications.length || !window.confirm("Clear all alerts? Messages, calls and contacts will not be deleted.")) return;
+    const previous = notifications;
+    const previousUnread = unread;
+    setNotifications([]); setUnread(0);
+    try { await socialApi.clearNotifications(token); }
+    catch (clearError) { setNotifications(previous); setUnread(previousUnread); showToast(errorText(clearError, "Unable to clear alerts.")); }
+  }
+
+  async function deleteAlert(item: SocialNotification) {
+    if (!token) return;
+    try { await socialApi.deleteNotification(token, item.id); setNotifications((items) => items.filter((entry) => entry.id !== item.id)); if (!item.read_at) setUnread((count) => Math.max(0, count - 1)); }
+    catch (deleteError) { showToast(errorText(deleteError, "Unable to delete alert.")); }
   }
 
   function submitSearch(event: FormEvent) {
@@ -382,47 +456,29 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
   return (
     <div className="calls-tab">
       <div className="calls-subtabs social-tabs">
-        <button type="button" className={view === "quick" ? "active" : ""} onClick={() => setView("quick")}><Phone size={14} /> Quick</button>
-        <button type="button" className={view === "chats" ? "active" : ""} onClick={() => setView("chats")}><MessageCircle size={14} /> Chats</button>
-        <button type="button" className={view === "calls" ? "active" : ""} onClick={() => setView("calls")}><Clock3 size={14} /> Calls</button>
-        <button type="button" className={view === "search" ? "active" : ""} onClick={() => setView("search")}><Search size={14} /> Search</button>
-        <button type="button" className={view === "requests" ? "active" : ""} onClick={() => setView("requests")}><UserPlus size={14} /> Requests</button>
-        <button type="button" className={view === "notifications" ? "active" : ""} onClick={() => setView("notifications")}><Bell size={14} /> Alerts{unread > 0 && <i>{unread > 9 ? "9+" : unread}</i>}</button>
-        <button type="button" className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}><Settings size={14} /></button>
+        <button type="button" className={view === "search" ? "active" : ""} onClick={() => changeView("search")}><Search size={14} /> Search</button>
+        <button type="button" className={view === "requests" ? "active" : ""} onClick={() => changeView("requests")}><UserPlus size={14} /> Requests{incoming.length > 0 && <i>{incoming.length > 9 ? "9+" : incoming.length}</i>}</button>
+        <button type="button" className={view === "chats" ? "active" : ""} onClick={() => changeView("chats")}><MessageCircle size={14} /> Chats</button>
+        <button type="button" className={view === "calls" ? "active" : ""} onClick={() => changeView("calls")}><Clock3 size={14} /> Calls</button>
+        <button type="button" className={view === "alerts" ? "active" : ""} onClick={() => changeView("alerts")}><Bell size={14} /> Alerts{unread > 0 && <i>{unread > 9 ? "9+" : unread}</i>}</button>
       </div>
       {!featureEnabled && <div className="calls-inline-alert"><ShieldAlert size={14} /> Calls are disabled.</div>}
       {config?.diagnostic && <div className="calls-inline-alert"><ShieldAlert size={14} /> {config.diagnostic}</div>}
       {config?.limitations?.map((limitation) => <div className="calls-inline-alert" key={limitation}><ShieldAlert size={14} /> {limitation}</div>)}
       {message && <div className="calls-inline-alert"><ShieldAlert size={14} /> {message}</div>}
 
-      {view === "quick" && (
-        <div className="calls-list social-panel">
-          <p className="calls-section-label">Active friends</p>
-          {activeUsers.map((profile) => (
-            <div className="call-history-row" key={profile.id}>
-              <Avatar profile={profile} />
-              <span><strong>{profile.display_name}</strong><small>{profile.availability}</small></span>
-              <button type="button" onClick={() => void startCall(profile, "audio")} disabled={!callingAvailable || !profile.can_audio_call} aria-label={`Audio call ${profile.display_name}`}><Phone size={15} /></button>
-              <button type="button" onClick={() => void startCall(profile, "video")} disabled={!callingAvailable || !profile.can_video_call} aria-label={`Video call ${profile.display_name}`}><Video size={15} /></button>
-            </div>
-          ))}
-          {!activeUsers.length && <div className="calls-empty">No friends are available right now</div>}
-          <p className="calls-section-label calls-section-label-spaced">Recent people</p>
-          {Array.from(new Map(history.map((item) => [item.peer.id, item.peer])).values()).slice(0, 8).map((profile) => (
-            <div className="call-history-row" key={profile.id}>
-              <Avatar profile={profile} />
-              <span><strong>{profile.display_name}</strong><small>@{profile.username}</small></span>
-              <button type="button" onClick={() => void startCall(profile, "audio")} disabled={!callingAvailable || !profile.can_audio_call} aria-label={`Audio call ${profile.display_name}`}><Phone size={15} /></button>
-              <button type="button" onClick={() => void startCall(profile, "video")} disabled={!callingAvailable || !profile.can_video_call} aria-label={`Video call ${profile.display_name}`}><Video size={15} /></button>
-            </div>
-          ))}
-          {!history.length && <div className="calls-empty">No recent calls</div>}
-        </div>
-      )}
-
       {view === "chats" && (
         <div className="calls-list social-panel">
-          <button type="button" className="social-open-chat" onClick={() => navigate("/messages")}><MessageCircle size={18} /> Open Chats</button>
+          <p className="calls-section-label">Accepted contacts</p>
+          {connections.map((profile) => (
+            <div className="call-history-row call-chat-row" key={profile.id} role="button" tabIndex={0} onClick={() => void openMessage(profile)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") void openMessage(profile); }}>
+              <Avatar profile={profile} />
+              <span><strong>{profile.display_name}</strong><small>@{profile.username} · Open conversation</small></span>
+              <button type="button" onClick={(event) => { event.stopPropagation(); placeCall(profile, "audio"); }} disabled={!profile.can_audio_call} aria-label={`Voice call ${profile.display_name}`}><Phone size={15} /></button>
+              <button type="button" onClick={(event) => { event.stopPropagation(); placeCall(profile, "video"); }} disabled={!profile.can_video_call} aria-label={`Video call ${profile.display_name}`}><Video size={15} /></button>
+            </div>
+          ))}
+          {!connections.length && !loading && <div className="calls-empty">No accepted contacts or conversations yet</div>}
         </div>
       )}
 
@@ -432,9 +488,21 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
           <form className="calls-search-wrap" onSubmit={submitSearch}>
             <Search size={15} />
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name or username" aria-label="Search users" />
+            {query && <button type="button" className="calls-clear-search" onClick={() => { setQuery(""); setResults([]); setSelected(null); }} aria-label="Clear search"><X size={14} /></button>}
             {searching && <LoaderCircle className="animate-spin" size={15} />}
             <button type="submit" disabled={query.trim().length < 2 || searching}>Search</button>
           </form>
+          {query.trim().length < 2 && (
+            <section className="call-hub-history">
+              <header><strong>Recent searches</strong><button type="button" onClick={() => void clearAllSearchHistory()} disabled={!searchHistory.length}>Clear history</button></header>
+              {searchHistory.map((item) => <div className="call-history-row" key={item.id}>
+                {item.selected_user ? <Avatar profile={item.selected_user} /> : <span className="call-user-avatar"><Search size={15} /></span>}
+                <button type="button" className="call-history-query" onClick={() => { setQuery(item.query); void runSearch(item.query); }}><strong>{item.selected_user?.display_name || item.query}</strong><small>{item.selected_user ? `@${item.selected_user.username}` : new Date(item.created_at).toLocaleString()}</small></button>
+                <button type="button" onClick={() => void removeSearchHistory(item)} aria-label={`Remove ${item.query} from history`}><X size={14} /></button>
+              </div>)}
+              {!searchHistory.length && <div className="calls-empty">No recent searches</div>}
+            </section>
+          )}
           <div className="social-search-layout">
             <div className="social-result-list">
               {query.trim().length === 1 && <div className="calls-empty">Type at least 2 characters</div>}
@@ -456,8 +524,8 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
                 <p>{selected.profile_restricted ? "Follow approval is required to view this profile." : selected.bio || "No bio yet."}</p>
                 {!selected.can_message && selected.follow_status !== "blocked" && selected.follow_status !== "self" && <p className="social-help-text">Follow request accept hone ke baad message aur call kar sakte hain.</p>}
                 <div className="social-profile-actions">
-                  <button type="button" onClick={() => void applyFollowAction(selected)} disabled={selected.follow_status === "self" || selected.follow_status === "blocked"}>
-                    {followButtonLabel(selected)}
+                  <button type="button" onClick={() => void applyFollowAction(selected)} disabled={Boolean(pendingSocialUserId) || selected.follow_status === "self" || selected.follow_status === "blocked"} aria-busy={pendingSocialUserId === selected.id}>
+                    {pendingSocialUserId === selected.id && <LoaderCircle className="animate-spin" size={14} />}{followButtonLabel(selected)}
                   </button>
                   {selected.follow_status === "pending_received" && selected.request_id && <button type="button" onClick={() => void reject({ id: selected.request_id || "", status: "pending", requested_at: new Date().toISOString(), user: selected })}><X size={15} /> Reject</button>}
                   <button type="button" onClick={() => void openMessage(selected)} disabled={!selected.can_message}><MessageCircle size={15} /> Message</button>
@@ -501,7 +569,7 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
             <Avatar profile={request.user} /><span><strong>{request.user.display_name}</strong><small>@{request.user.username} · Sent {new Date(request.requested_at).toLocaleString()}</small></span>
             <button type="button" disabled={Boolean(pendingRequestId)} onClick={() => void cancel(request)}><X size={15} /> Cancel Request</button>
           </div>)}
-          {requestView === "sent" && !sent.length && !loading && <div className="calls-empty"><UserPlus size={20} /> No sent requests <button type="button" onClick={() => setView("search")}>Find People</button></div>}
+          {requestView === "sent" && !sent.length && !loading && <div className="calls-empty"><UserPlus size={20} /> No sent requests <button type="button" onClick={() => changeView("search")}>Find People</button></div>}
           {requestView === "connected" && connections.map((profile) => <div className="social-request-row connected-row" key={profile.id}>
             <Avatar profile={profile} /><span><strong>{profile.display_name}</strong><small>@{profile.username}</small></span>
             <button type="button" onClick={() => void openMessage(profile)}><MessageCircle size={15} /> Message</button>
@@ -517,22 +585,27 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
         </div>
       )}
 
-      {view === "notifications" && (
+      {view === "alerts" && (
         <div className="calls-list social-panel">
+          <header className="connections-header"><span><strong>Alerts</strong><small>{unread} unread</small></span><span className="call-alert-actions"><button type="button" onClick={() => void markAllAlertsRead()} disabled={!unread}>Mark all read</button><button type="button" onClick={() => void clearAllAlerts()} disabled={!notifications.length}>Clear</button></span></header>
           {notifications.map((item) => (
-            <button type="button" className={`social-notification-row ${item.read_at ? "" : "unread"}`} key={item.id} onClick={() => void readNotification(item)}>
+            <div className={`social-notification-row ${item.read_at ? "" : "unread"}`} key={item.id}>
+              <button type="button" className="social-notification-open" onClick={() => void readNotification(item)}>
               {item.actor ? <Avatar profile={item.actor} /> : <span className="call-user-avatar"><Bell size={16} /></span>}
               <span><strong>{item.title}</strong><small>{new Date(item.created_at).toLocaleString()}</small></span>
-            </button>
+              </button>
+              <button type="button" onClick={() => void deleteAlert(item)} aria-label={`Delete alert: ${item.title}`}><Trash2 size={14} /></button>
+            </div>
           ))}
-          {!notifications.length && !loading && <div className="calls-empty">No notifications</div>}
+          {!notifications.length && !loading && <div className="calls-empty">No alerts</div>}
         </div>
       )}
 
       {view === "calls" && (
         <div className="calls-list">
           <p className="calls-section-label">Call history</p>
-          {history.map((item) => {
+          <div className="call-log-filters" role="tablist" aria-label="Call history filters">{(["all", "missed", "audio", "video"] as CallFilter[]).map((filter) => <button type="button" role="tab" aria-selected={callFilter === filter} className={callFilter === filter ? "active" : ""} onClick={() => setCallFilter(filter)} key={filter}>{filter === "audio" ? "Voice" : filter.charAt(0).toUpperCase() + filter.slice(1)}</button>)}</div>
+          {history.filter((item) => callFilter === "all" || (callFilter === "missed" ? item.status === "missed" : item.call_type === callFilter)).map((item) => {
             const avatarUrl = resolveApiAssetUrl(item.peer.avatar_url);
             return (
               <div className="call-history-row" key={item.id}>
@@ -542,11 +615,10 @@ export function CallsTab({ refreshRequestId, onRefreshingChange }: CallsTabProps
               </div>
             );
           })}
-          {!history.length && <div className="calls-empty">No calls yet</div>}
+          {!history.filter((item) => callFilter === "all" || (callFilter === "missed" ? item.status === "missed" : item.call_type === callFilter)).length && <div className="calls-empty">No matching calls</div>}
         </div>
       )}
 
-      {view === "settings" && <div className="calls-list"><CallSettings key={refreshRequestId} /></div>}
       {toast && <div className="calls-toast" role="alert" aria-live="assertive"><ShieldAlert size={15} /> {toast}</div>}
     </div>
   );

@@ -19,7 +19,7 @@ class UserCallSettings(Base):
     show_last_seen: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     allow_audio_calls: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     allow_video_calls: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    call_permission: Mapped[str] = mapped_column(String(32), default="previous_contacts", nullable=False)
+    call_permission: Mapped[str] = mapped_column(String(32), default="everyone", server_default="everyone", nullable=False)
     silence_unknown_callers: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     call_notification_sound: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     vibration: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

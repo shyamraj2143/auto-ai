@@ -1,12 +1,15 @@
 import { ArrowLeft, PhoneCall, RefreshCw, Settings } from "lucide-react";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { CallsTab } from "./CallsTab";
 
 export function CallsPage() {
   const navigate = useNavigate();
   const [refreshRequestId, setRefreshRequestId] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const { section } = useParams();
+  const validSections = new Set(["search", "requests", "chats", "calls", "alerts"]);
+  if (section && !validSections.has(section)) return <Navigate to="/call-hub/search" replace />;
   return (
     <main className="calls-workspace-page">
       <header className="calls-workspace-header">
@@ -18,7 +21,7 @@ export function CallsPage() {
         </span>
       </header>
       <section className="calls-workspace-content">
-        <CallsTab refreshRequestId={refreshRequestId} onRefreshingChange={setRefreshing} />
+        <CallsTab refreshRequestId={refreshRequestId} onRefreshingChange={setRefreshing} routeSection={section} />
       </section>
     </main>
   );

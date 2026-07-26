@@ -129,6 +129,7 @@ export type SocialNotification = {
   actor?: SocialProfile | null;
 };
 export type SocialNotificationPage = { items: SocialNotification[]; page: number; limit: number; has_more: boolean; unread_count: number };
+export type SearchHistoryItem = { id: string; query: string; selected_user_id?: string | null; created_at: string; selected_user?: SocialProfile | null };
 
 export type SignalEventType =
   | "presence.snapshot"

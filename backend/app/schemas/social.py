@@ -93,6 +93,19 @@ class DirectConversationRead(BaseModel):
     thread_id: str
 
 
+class SearchHistoryCreate(BaseModel):
+    query: str = Field(min_length=2, max_length=80)
+    selected_user_id: str | None = Field(default=None, max_length=64)
+
+
+class SearchHistoryRead(BaseModel):
+    id: str
+    query: str
+    selected_user_id: str | None = None
+    created_at: datetime
+    selected_user: SocialProfile | None = None
+
+
 class ProfileUpdateRequest(BaseModel):
     display_name: str | None = Field(default=None, min_length=1, max_length=120)
     username: str | None = Field(default=None, min_length=3, max_length=48)

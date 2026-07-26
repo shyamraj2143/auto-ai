@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 import re
+import logging
 from datetime import datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.call import BlockedUser, UserCallSettings
-from app.models.social import SocialFollow, SocialNotification
+from app.models.social import SearchHistory, SocialFollow, SocialNotification
 from app.models.user import User
-from app.schemas.social import FollowRequestRead, SocialNotificationRead, SocialProfile
+from app.schemas.social import FollowRequestRead, SearchHistoryRead, SocialNotificationRead, SocialProfile
 from app.services.call_permission_service import call_allowed
 from app.services.social_notification_service import send_social_push_notification
 
@@ -24,6 +25,7 @@ DISCONNECTED = "disconnected"
 BLOCKED = "blocked"
 TERMINAL = {CANCELLED, REJECTED, DISCONNECTED, BLOCKED}
 ACTIVE_STATUSES = {PENDING, ACCEPTED}
+logger = logging.getLogger(__name__)
 
 
 def pair_key(first_user_id: str, second_user_id: str) -> str:
@@ -200,6 +202,7 @@ class SocialService:
         title: str,
         body: str | None = None,
         dedupe_key: str | None = None,
+        dispatch_push: bool = True,
     ) -> SocialNotification | None:
         key = dedupe_key or f"{notification_type}:{actor_id or 'system'}:{target_type}:{target_id or ''}"
         existing = db.scalar(select(SocialNotification).where(SocialNotification.user_id == user_id, SocialNotification.dedupe_key == key))
@@ -219,8 +222,11 @@ class SocialService:
         try:
             db.flush()
             actor = db.get(User, actor_id) if actor_id else None
-            if notification_type in {"follow_request", "follow_accept"}:
-                send_social_push_notification(db, record, actor)
+            if dispatch_push and notification_type in {"follow_request", "follow_accept"}:
+                try:
+                    send_social_push_notification(db, record, actor)
+                except Exception:
+                    logger.exception("social_push_delivery_failed notification_type=%s notification_id=%s", notification_type, record.id)
         except IntegrityError:
             db.rollback()
             return None
@@ -257,7 +263,8 @@ class SocialService:
             record.updated_at = now
         else:
             return self.profile_for(db, target, viewer.id)
-        self.create_notification(
+        db.commit()
+        notification = self.create_notification(
             db,
             user_id=target.id,
             actor_id=viewer.id,
@@ -266,8 +273,16 @@ class SocialService:
             target_id=record.id,
             title=f"{viewer.name} requested to follow you",
             dedupe_key=f"follow_request:{record.id}:{target.id}",
+            dispatch_push=False,
         )
         db.commit()
+        if notification:
+            try:
+                send_social_push_notification(db, notification, viewer)
+                db.commit()
+            except Exception:
+                db.rollback()
+                logger.exception("follow_request_push_failed notification_id=%s", notification.id)
         return self.profile_for(db, target, viewer.id)
 
     def accept_request(self, db: Session, current_user: User, request_id: str) -> SocialProfile:
@@ -287,7 +302,10 @@ class SocialService:
         record.responder_user_id = current_user.id
         record.updated_at = now
         record.pair_key = record.pair_key or pair_key(record.follower_id, record.following_id)
-        self.create_notification(
+        db.commit()
+        db.refresh(record)
+        requester = db.get(User, record.follower_id)
+        notification = self.create_notification(
             db,
             user_id=record.follower_id,
             actor_id=current_user.id,
@@ -296,9 +314,16 @@ class SocialService:
             target_id=current_user.id,
             title=f"{current_user.name} accepted your follow request",
             dedupe_key=f"follow_accept:{record.id}",
+            dispatch_push=False,
         )
-        db.flush()
-        requester = db.get(User, record.follower_id)
+        db.commit()
+        if notification:
+            try:
+                send_social_push_notification(db, notification, current_user)
+                db.commit()
+            except Exception:
+                db.rollback()
+                logger.exception("follow_accept_push_failed notification_id=%s", notification.id)
         return self.profile_for(db, requester, current_user.id)
 
     def reject_request(self, db: Session, current_user: User, request_id: str, reason_category: str | None = None) -> None:
@@ -495,6 +520,62 @@ class SocialService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found.")
         for record in records:
             record.read_at = record.read_at or now
+        db.commit()
+
+    def delete_notification(self, db: Session, current_user: User, notification_id: str | None = None) -> None:
+        statement = delete(SocialNotification).where(SocialNotification.user_id == current_user.id)
+        if notification_id:
+            statement = statement.where(SocialNotification.id == notification_id)
+        result = db.execute(statement)
+        if notification_id and not result.rowcount:
+            db.rollback()
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found.")
+        db.commit()
+
+    def search_history(self, db: Session, current_user: User) -> list[SearchHistoryRead]:
+        records = list(db.scalars(select(SearchHistory).where(SearchHistory.user_id == current_user.id).order_by(SearchHistory.created_at.desc()).limit(20)))
+        items: list[SearchHistoryRead] = []
+        for record in records:
+            selected = db.get(User, record.selected_user_id) if record.selected_user_id else None
+            items.append(SearchHistoryRead(
+                id=record.id,
+                query=record.query,
+                selected_user_id=record.selected_user_id,
+                created_at=record.created_at,
+                selected_user=self.profile_for(db, selected, current_user.id) if selected and not self.users_blocked(db, current_user.id, selected.id) else None,
+            ))
+        return items
+
+    def add_search_history(self, db: Session, current_user: User, query: str, selected_user_id: str | None) -> SearchHistoryRead:
+        normalized = " ".join(query.strip().split())[:80]
+        if len(normalized) < 2:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Search query must contain at least 2 characters.")
+        if selected_user_id and (selected_user_id == current_user.id or not db.get(User, selected_user_id)):
+            selected_user_id = None
+        latest = db.scalar(select(SearchHistory).where(SearchHistory.user_id == current_user.id).order_by(SearchHistory.created_at.desc()).limit(1))
+        if latest and latest.query.casefold() == normalized.casefold() and latest.selected_user_id == selected_user_id:
+            latest.created_at = datetime.utcnow()
+            record = latest
+        else:
+            record = SearchHistory(user_id=current_user.id, query=normalized, selected_user_id=selected_user_id)
+            db.add(record)
+        db.flush()
+        keep_ids = list(db.scalars(select(SearchHistory.id).where(SearchHistory.user_id == current_user.id).order_by(SearchHistory.created_at.desc()).limit(20)))
+        if keep_ids:
+            db.execute(delete(SearchHistory).where(SearchHistory.user_id == current_user.id, ~SearchHistory.id.in_(keep_ids)))
+        db.commit()
+        db.refresh(record)
+        selected = db.get(User, record.selected_user_id) if record.selected_user_id else None
+        return SearchHistoryRead(id=record.id, query=record.query, selected_user_id=record.selected_user_id, created_at=record.created_at, selected_user=self.profile_for(db, selected, current_user.id) if selected else None)
+
+    def delete_search_history(self, db: Session, current_user: User, history_id: str | None = None) -> None:
+        statement = delete(SearchHistory).where(SearchHistory.user_id == current_user.id)
+        if history_id:
+            statement = statement.where(SearchHistory.id == history_id)
+        result = db.execute(statement)
+        if history_id and not result.rowcount:
+            db.rollback()
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Search history item not found.")
         db.commit()
 
 

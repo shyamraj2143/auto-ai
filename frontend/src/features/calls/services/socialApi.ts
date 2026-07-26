@@ -1,5 +1,5 @@
 import { apiFetch } from "../../../api/client";
-import type { ConnectionAcceptResult, SocialNotificationPage, SocialProfile, SocialRequestPage, SocialUserPage } from "../types";
+import type { ConnectionAcceptResult, SearchHistoryItem, SocialNotificationPage, SocialProfile, SocialRequestPage, SocialUserPage } from "../types";
 
 export const socialApi = {
   searchUsers: (token: string, query: string, page = 1, limit = 20, signal?: AbortSignal) => {
@@ -36,6 +36,20 @@ export const socialApi = {
     apiFetch<SocialNotificationPage>(`/social/notifications?page=${page}&limit=${limit}`, { token, operation: "social.notifications" }),
   readNotification: (token: string, notificationId: string) =>
     apiFetch<void>(`/social/notifications/${encodeURIComponent(notificationId)}/read`, { method: "POST", token, operation: "social.notifications.read" }),
+  readAllNotifications: (token: string) =>
+    apiFetch<void>("/social/notifications/read-all", { method: "POST", token, operation: "social.notifications.readAll" }),
+  deleteNotification: (token: string, notificationId: string) =>
+    apiFetch<void>(`/social/notifications/${encodeURIComponent(notificationId)}`, { method: "DELETE", token, operation: "social.notifications.delete" }),
+  clearNotifications: (token: string) =>
+    apiFetch<void>("/social/notifications", { method: "DELETE", token, operation: "social.notifications.clear" }),
+  searchHistory: (token: string) =>
+    apiFetch<SearchHistoryItem[]>("/social/search-history", { token, operation: "social.searchHistory.list" }),
+  addSearchHistory: (token: string, query: string, selectedUserId?: string) =>
+    apiFetch<SearchHistoryItem>("/social/search-history", { method: "POST", token, body: JSON.stringify({ query, selected_user_id: selectedUserId }), operation: "social.searchHistory.add" }),
+  deleteSearchHistory: (token: string, historyId: string) =>
+    apiFetch<void>(`/social/search-history/${encodeURIComponent(historyId)}`, { method: "DELETE", token, operation: "social.searchHistory.delete" }),
+  clearSearchHistory: (token: string) =>
+    apiFetch<void>("/social/search-history", { method: "DELETE", token, operation: "social.searchHistory.clear" }),
   openConversation: (token: string, userId: string) =>
     apiFetch<{ thread_id: string }>(`/social/users/${encodeURIComponent(userId)}/conversation`, { method: "POST", token, operation: "social.conversation" }),
 };
