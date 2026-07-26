@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 import httpx
-from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -33,6 +33,28 @@ def newest_release(db_release: ApkRelease | None) -> ApkReleaseRead | None:
     return db_read or (github_release.read if github_release else None)
 
 
+def stream_github_apk(release):
+    def stream_apk():
+        with httpx.stream("GET", release.asset_url, follow_redirects=True, timeout=120.0) as response:
+            response.raise_for_status()
+            for chunk in response.iter_bytes():
+                if chunk:
+                    yield chunk
+
+    return StreamingResponse(
+        stream_apk(),
+        media_type="application/vnd.android.package-archive",
+        headers={
+            "Cache-Control": "private, max-age=300",
+            "Content-Disposition": f'attachment; filename="{release.read.file_name}"',
+            "X-Auto-AI-APK-Version": release.read.version_name,
+            "X-Auto-AI-APK-Version-Code": str(release.read.version_code),
+            "X-Auto-AI-APK-SHA256": release.read.sha256,
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @router.get("/apk")
 def download_apk(
     request: Request,
@@ -44,7 +66,7 @@ def download_apk(
     github_release = github_apk_release_service.latest_release()
     github_matches = github_release and (not version or github_release.read.version_name == version)
     if not release and github_matches:
-        return RedirectResponse(github_release.asset_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+        return stream_github_apk(github_release)
     if not release:
         apk_service.record_download(db, None, request, status_value="not_found")
         db.commit()
@@ -56,7 +78,7 @@ def download_apk(
         if error.status_code == status.HTTP_404_NOT_FOUND and github_matches:
             apk_service.record_download(db, release, request, optional_user(request, db))
             db.commit()
-            return RedirectResponse(github_release.asset_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+            return stream_github_apk(github_release)
         raise
     if not counted:
         apk_service.record_download(db, release, request, optional_user(request, db))
@@ -99,25 +121,7 @@ def download_latest_github_apk(version: str | None = None):
     if not release or (version and release.read.version_name != version):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No GitHub APK release is available.")
 
-    def stream_apk():
-        with httpx.stream("GET", release.asset_url, follow_redirects=True, timeout=120.0) as response:
-            response.raise_for_status()
-            for chunk in response.iter_bytes():
-                if chunk:
-                    yield chunk
-
-    return StreamingResponse(
-        stream_apk(),
-        media_type="application/vnd.android.package-archive",
-        headers={
-            "Cache-Control": "private, max-age=300",
-            "Content-Disposition": f'attachment; filename="{release.read.file_name}"',
-            "X-Auto-AI-APK-Version": release.read.version_name,
-            "X-Auto-AI-APK-Version-Code": str(release.read.version_code),
-            "X-Auto-AI-APK-SHA256": release.read.sha256,
-            "X-Content-Type-Options": "nosniff",
-        },
-    )
+    return stream_github_apk(release)
 
 
 @router.post("/apk/count", response_model=ApkReleaseRead)
