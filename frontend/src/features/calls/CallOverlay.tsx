@@ -5,6 +5,7 @@ import { useCallSession } from "./hooks/useCallSession";
 import { callNative } from "./services/callNative";
 import { CrystalAvatarRing } from "../../components/crystal/Crystal";
 import type { CrystalCallState } from "../../crystal/tokens";
+import { callStatusPresentation } from "./callStatus";
 
 function VideoSurface({ stream, muted, className }: { stream: MediaStream | null; muted?: boolean; className: string }) {
   const ref = useRef<HTMLVideoElement | null>(null);
@@ -34,23 +35,6 @@ function Avatar({ name, url, ringState }: { name: string; url?: string | null; r
       <span className="call-screen-avatar">{avatarUrl ? <img src={avatarUrl} alt="" /> : name.slice(0, 1).toUpperCase()}</span>
     </CrystalAvatarRing>
   );
-}
-
-function statusLabel(state: ReturnType<typeof useCallSession>["sessionState"]) {
-  if (state === "preparing") return "Preparing...";
-  if (state === "dialing") return "Calling...";
-  if (state === "notifying") return "Notifying...";
-  if (state === "ringing") return "Ringing...";
-  if (state === "accepting") return "Accepting...";
-  if (state === "connecting") return "Connecting...";
-  if (state === "reconnecting") return "Reconnecting...";
-  if (state === "rejected") return "Call rejected";
-  if (state === "cancelled") return "Call cancelled";
-  if (state === "missed") return "No answer";
-  if (state === "busy") return "User is on another call";
-  if (state === "failed") return "Call failed";
-  if (state === "ended") return "Call ended";
-  return "Connected";
 }
 
 export function CallOverlay() {
@@ -102,6 +86,7 @@ export function CallOverlay() {
 
   const time = `${Math.floor(seconds / 60).toString().padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
   const incoming = sessionState === "incoming";
+  const status = callStatusPresentation(sessionState);
   const activeLike = ["connecting", "active", "reconnecting", "ending"].includes(sessionState);
   const avatarUrl = resolveApiAssetUrl(peer.avatar_url);
   const hasRemoteVideo = Boolean(remoteStream?.getVideoTracks().some((track) => track.readyState === "live"));
@@ -120,7 +105,7 @@ export function CallOverlay() {
       <button type="button" className="ongoing-call-chip" onClick={() => setMinimized(false)} aria-label={`Return to call with ${peer.display_name}`}>
         <span>{call?.call_type === "video" ? <VideoSurface stream={remoteStream && remoteCameraEnabled && hasRemoteVideo ? remoteStream : localStream} muted className="ongoing-call-video" /> : <Phone size={16} />}</span>
         <strong>{peer.display_name}</strong>
-        <small>{sessionState === "active" ? time : statusLabel(sessionState)}</small>
+        <small>{sessionState === "active" ? time : status.label}</small>
       </button>
     );
   }
@@ -145,7 +130,7 @@ export function CallOverlay() {
 
   if (incoming) {
     return (
-      <div className="incoming-call-screen neural-call-screen" role="dialog" aria-modal="true" aria-label={`Incoming call from ${peer.display_name}`}>
+      <div className="incoming-call-screen neural-call-screen" data-call-semantic={status.semantic} role="dialog" aria-modal="true" aria-label={`Incoming call from ${peer.display_name}`}>
         {avatarUrl && <div className="incoming-call-backdrop" style={{ backgroundImage: `url(${avatarUrl})` }} />}
         <div className="call-orbit-bg" aria-hidden="true" />
         <div className="incoming-call-content">
@@ -167,7 +152,7 @@ export function CallOverlay() {
 
   if (!activeLike) {
     return (
-      <div className="outgoing-call-screen neural-call-screen" role="dialog" aria-modal="true" aria-label={`Calling ${peer.display_name}`}>
+      <div className="outgoing-call-screen neural-call-screen" data-call-semantic={status.semantic} role="dialog" aria-modal="true" aria-label={`Calling ${peer.display_name}`}>
         <div className="call-orbit-bg" aria-hidden="true" />
         <div className="auto-ai-watermark" aria-hidden="true">Auto-AI</div>
         <section className="outgoing-profile-card">
@@ -175,7 +160,7 @@ export function CallOverlay() {
           <h2>{peer.display_name}</h2>
           <span>@{peer.username}</span>
           <p>{call?.call_type === "audio" ? "Audio Call" : "Video Call"}</p>
-          <strong>{statusLabel(sessionState)}</strong>
+          <strong className="call-state-label">{status.label}</strong>
           <small className={`call-quality ${networkQuality}`}><Wifi size={14} /> {signalingState === "connected" ? (networkQuality === "unknown" ? "Signaling connected" : `${networkQuality} network`) : signalingState === "connecting" ? "Connecting signaling" : "Signaling unavailable"}</small>
         </section>
         {localStream && call?.call_type === "video" && <div className="outgoing-local-preview"><VideoSurface stream={localStream} muted className="local-call-video" /></div>}
@@ -186,11 +171,11 @@ export function CallOverlay() {
   }
 
   return (
-    <div className="active-call-screen neural-call-screen" role="dialog" aria-modal="true" aria-label={`Call with ${peer.display_name}`}>
+    <div className="active-call-screen neural-call-screen" data-call-semantic={status.semantic} role="dialog" aria-modal="true" aria-label={`Call with ${peer.display_name}`}>
       {remoteStream && remoteCameraEnabled && hasRemoteVideo ? <VideoSurface stream={remoteStream} className="remote-call-video" /> : <div className="remote-call-placeholder"><Avatar name={peer.display_name} url={peer.avatar_url} ringState={avatarRingState} /></div>}
       <div className="call-screen-shade" />
       <header className="active-call-header">
-        <span><strong>{peer.display_name}</strong><small>{sessionState === "active" ? time : statusLabel(sessionState)}</small></span>
+        <span><strong>{peer.display_name}</strong><small className="call-state-label">{sessionState === "active" ? time : status.label}</small></span>
         <span className={`call-quality ${networkQuality}`} title={`${networkQuality} network quality`}><Wifi size={16} /> {networkQuality === "unknown" ? "Connecting" : networkQuality}</span>
       </header>
       {localStream && cameraEnabled && (

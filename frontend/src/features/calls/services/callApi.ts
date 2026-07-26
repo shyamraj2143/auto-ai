@@ -49,6 +49,13 @@ export const callApi = {
     apiFetch<CallRecord>(`/calls/${callId}/cancel`, { method: "POST", token, operation: "calls.cancel", body: "{}" }),
   end: (token: string, callId: string, endReason?: string) =>
     apiFetch<CallRecord>(`/calls/${callId}/end`, { method: "POST", token, operation: "calls.end", body: JSON.stringify({ end_reason: endReason }) }),
+  fail: (token: string, callId: string, failureCode: string, sourceDevice?: string | null) =>
+    apiFetch<CallRecord>(`/calls/${callId}/fail`, {
+      method: "POST",
+      token,
+      operation: "calls.fail",
+      body: JSON.stringify({ failure_code: failureCode, source_device: sourceDevice }),
+    }),
   history: (token: string, page = 1, limit = 20) =>
     apiFetch<CallHistoryPage>(`/calls/history?page=${page}&limit=${limit}`, { token, operation: "calls.history" }),
   blocked: (token: string) => apiFetch<BlockedCallUser[]>("/calls/blocked", { token, operation: "calls.blocked" }),

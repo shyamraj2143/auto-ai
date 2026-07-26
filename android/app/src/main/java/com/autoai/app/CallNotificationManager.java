@@ -172,6 +172,19 @@ public final class CallNotificationManager {
         if (manager != null && callId != null) manager.cancel(notificationId(callId));
     }
 
+    public static void cancelAllForCall(Context context, String callId) {
+        cancel(context, callId);
+        NotificationManager notificationManager = manager(context);
+        if (notificationManager != null && callId != null) {
+            notificationManager.cancel(notificationId(callId) + 100000);
+        }
+        if (AutoAiCallsPlugin.isActiveCall(context, callId)) {
+            context.stopService(new Intent(context, CallForegroundService.class));
+            AutoAiCallsPlugin.clearActiveCall(context, callId);
+        }
+        Log.i(TAG, "All call notifications cancelled callId=" + callId);
+    }
+
     public static String pendingCallId(Context context) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         long expiresAt = prefs.getLong(PENDING_EXPIRES_AT, 0L);

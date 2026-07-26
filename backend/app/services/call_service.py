@@ -401,8 +401,8 @@ class CallService:
             user_id,
             "failed",
             reason,
-            "call.ended",
-            {"initiated", "ringing", "accepted", "connecting", "active"},
+            "call.failed",
+            {"accepted", "connecting", "active"},
         )
 
     async def _finish(

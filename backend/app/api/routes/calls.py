@@ -17,6 +17,7 @@ from app.schemas.call import (
     CallActionRequest,
     CallCreateRequest,
     CallFeatureConfig,
+    CallFailureRequest,
     CallHealth,
     CallHistoryPage,
     CallRead,
@@ -503,4 +504,15 @@ async def end_call(
     current_user: User = Depends(get_current_user),
 ) -> CallRead:
     call = await call_service.end(db, call_id, current_user.id, payload.end_reason)
+    return await call_service.serialize_call(db, call, current_user.id)
+
+
+@router.post("/{call_id}/fail", response_model=CallRead)
+async def fail_call(
+    call_id: str,
+    payload: CallFailureRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> CallRead:
+    call = await call_service.fail_call(db, call_id, current_user.id, payload.failure_code)
     return await call_service.serialize_call(db, call, current_user.id)

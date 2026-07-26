@@ -5,6 +5,7 @@ import { CallContext, type CallContextValue } from "./CallContext";
 import { callApi } from "./services/callApi";
 import { callNative } from "./services/callNative";
 import { canResumeAcceptedCall, requiresAcceptRequest } from "./callAcceptance";
+import { CallSetupError, failureCodeOf } from "./callFailures";
 import { CallSignaling } from "./services/callSignaling";
 import { mediaResourceCoordinator } from "./services/mediaResourceCoordinator";
 import { nextCallState } from "./state/callStateMachine";
@@ -16,6 +17,7 @@ const TERMINAL_EVENT_STATES: Record<string, CallSessionState> = {
   "call.missed": "missed",
   "call.busy": "busy",
   "call.ended": "ended",
+  "call.failed": "failed",
 };
 const CALL_RECONNECT_GRACE_MS = 15_000;
 const CALL_RELAY_UNAVAILABLE_MESSAGE = "Calling network relay is temporarily unavailable.";
@@ -183,7 +185,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       callDebug("native_call_service_started", { call_id: currentCall.id, role: currentCall.direction, state: currentCall.status });
     } catch (nativeError) {
       nativeServiceCallIdsRef.current.delete(currentCall.id);
-      throw nativeError;
+      throw new CallSetupError("FOREGROUND_SERVICE_FAILED", "Unable to start the Android call service.", nativeError);
     }
   }, []);
 
@@ -862,7 +864,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
             setError("");
             transition("connecting");
           } catch (recoveryError) {
-            callDebug("accept_recovery_failed", { call_id: currentCall.id, role: currentCall.direction, error_code: "SIGNALING_TIMEOUT" });
+            const failureCode = failureCodeOf(recoveryError, "SIGNALING_TIMEOUT");
+            callDebug("accept_recovery_failed", { call_id: currentCall.id, role: currentCall.direction, error_code: failureCode });
+            await callApi.fail(token, currentCall.id, failureCode, deviceIdRef.current).catch((failureReportError) => {
+              callDebug("call_failure_report_failed", {
+                call_id: currentCall.id,
+                role: currentCall.direction,
+                error_code: "INTERNAL_CALL_ERROR",
+                reason: errorMessage(failureReportError, "failure report failed"),
+              });
+            });
             await cleanup("failed", errorMessage(recoveryError, "Unable to reconnect call signaling."));
           }
         }, 1500);

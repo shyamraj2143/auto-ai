@@ -47,8 +47,13 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
             return;
         }
         if ("call_missed".equals(messageType)) {
-            CallNotificationManager.cancel(this, data.get("call_id"));
+            CallNotificationManager.cancelAllForCall(this, data.get("call_id"));
             if (Boolean.parseBoolean(data.get("show_missed"))) showMissedCallNotification(data);
+            return;
+        }
+        if ("call_failed".equals(messageType) || "call_ended".equals(messageType)
+            || "call_cancelled".equals(messageType) || "call_rejected".equals(messageType)) {
+            CallNotificationManager.cancelAllForCall(this, data.get("call_id"));
             return;
         }
         if (messageType != null && messageType.startsWith("call_")) {

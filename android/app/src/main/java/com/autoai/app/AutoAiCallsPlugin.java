@@ -313,6 +313,12 @@ public class AutoAiCallsPlugin extends Plugin {
         return prefs.getString(KEY_ACTIVE_CALL_ID, null) != null && "video".equals(prefs.getString(KEY_ACTIVE_CALL_TYPE, null));
     }
 
+    public static boolean isActiveCall(Context context, String callId) {
+        if (callId == null || callId.trim().isEmpty()) return false;
+        SharedPreferences prefs = context.getSharedPreferences(ACTIVE_CALL_PREFERENCES, Context.MODE_PRIVATE);
+        return callId.equals(prefs.getString(KEY_ACTIVE_CALL_ID, null));
+    }
+
     public static void clearActiveCall(Context context, String callId) {
         SharedPreferences prefs = context.getSharedPreferences(ACTIVE_CALL_PREFERENCES, Context.MODE_PRIVATE);
         String activeCallId = prefs.getString(KEY_ACTIVE_CALL_ID, null);

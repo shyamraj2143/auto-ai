@@ -143,6 +143,7 @@ export type SignalEventType =
   | "call.missed"
   | "call.active"
   | "call.ended"
+  | "call.failed"
   | "call.error"
   | "webrtc.offer"
   | "webrtc.answer"

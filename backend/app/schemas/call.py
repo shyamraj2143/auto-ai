@@ -87,6 +87,29 @@ class CallActionRequest(BaseModel):
     action_token: str | None = Field(default=None, min_length=16, max_length=2048)
 
 
+class CallFailureRequest(BaseModel):
+    failure_code: Literal[
+        "FOREGROUND_SERVICE_FAILED",
+        "SIGNALING_AUTH_FAILED",
+        "SIGNALING_TIMEOUT",
+        "OFFER_NOT_RECEIVED",
+        "REMOTE_OFFER_INVALID",
+        "ANSWER_CREATE_FAILED",
+        "ANSWER_SEND_FAILED",
+        "ICE_CONNECTION_FAILED",
+        "ICE_RESTART_FAILED",
+        "TURN_AUTH_FAILED",
+        "TURN_UNREACHABLE",
+        "REMOTE_MEDIA_TIMEOUT",
+        "MICROPHONE_PERMISSION_DENIED",
+        "CAMERA_PERMISSION_DENIED",
+        "CALL_STATE_CONFLICT",
+        "NETWORK_LOST",
+        "INTERNAL_CALL_ERROR",
+    ]
+    source_device: str | None = Field(default=None, max_length=128)
+
+
 class CallRead(BaseModel):
     id: str
     caller_id: str

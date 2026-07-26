@@ -559,3 +559,29 @@ async def test_stale_caller_cancel_cannot_override_accepted_call(db: Session, mo
     db.refresh(call)
     assert call.status == "accepted"
     assert call.end_reason is None
+
+
+@pytest.mark.asyncio
+async def test_receiver_failure_is_published_and_dismisses_both_devices(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    caller = create_user(db, "caller_failure", "Caller")
+    callee = create_user(db, "callee_failure", "Callee")
+    call = Call(caller_id=caller.id, callee_id=callee.id, call_type="video", status="accepted")
+    db.add(call)
+    db.commit()
+    publish = AsyncMock(return_value=1)
+    dismisses: list[tuple[str, str]] = []
+    monkeypatch.setattr(global_presence_service, "publish", publish)
+    monkeypatch.setattr(global_presence_service, "release_call_locks", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        "app.services.call_service.send_call_dismiss_notifications",
+        lambda _db, failed_call, event_type: dismisses.append((failed_call.id, event_type)) or 2,
+    )
+
+    failed = await CallService().fail_call(db, call.id, callee.id, "SIGNALING_TIMEOUT")
+
+    assert failed.status == "failed"
+    assert failed.end_reason == "SIGNALING_TIMEOUT"
+    assert failed.ended_at is not None
+    assert publish.await_count == 2
+    assert all(invocation.args[1]["type"] == "call.failed" for invocation in publish.await_args_list)
+    assert dismisses == [(call.id, "call_failed")]
