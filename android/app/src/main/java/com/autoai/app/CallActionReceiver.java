@@ -24,6 +24,7 @@ public class CallActionReceiver extends BroadcastReceiver {
         String callId = intent.getStringExtra(CallNotificationManager.EXTRA_CALL_ID);
         if (callId == null || callId.trim().isEmpty()) return;
         String action = intent.getAction();
+        String actionToken = intent.getStringExtra(CallNotificationManager.EXTRA_ACTION_TOKEN);
         if (!CallNotificationManager.ACTION_REJECT.equals(action) && !CallNotificationManager.ACTION_END.equals(action)) return;
         String endpoint = CallNotificationManager.ACTION_REJECT.equals(action) ? "reject" : "end";
         Log.i(TAG, "Call notification action received callId=" + callId + " action=" + endpoint);
@@ -32,12 +33,12 @@ public class CallActionReceiver extends BroadcastReceiver {
         context.stopService(new Intent(context, CallForegroundService.class));
         PendingResult pendingResult = goAsync();
         EXECUTOR.execute(() -> {
-            try { sendAction(context, callId, endpoint); }
+            try { sendAction(context, callId, endpoint, actionToken); }
             finally { pendingResult.finish(); }
         });
     }
 
-    private void sendAction(Context context, String callId, String action) {
+    private void sendAction(Context context, String callId, String action, String actionToken) {
         String accessToken = AutoAiSecureStoragePlugin.readStoredValue(context, "auto-ai-access-token");
         if (accessToken == null || accessToken.trim().isEmpty()) return;
         HttpURLConnection connection = null;
@@ -51,6 +52,7 @@ public class CallActionReceiver extends BroadcastReceiver {
             connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
             connection.setDoOutput(true);
             JSONObject body = new JSONObject();
+            if (actionToken != null && !actionToken.trim().isEmpty()) body.put("action_token", actionToken.trim());
             try (OutputStream output = connection.getOutputStream()) {
                 output.write(body.toString().getBytes(StandardCharsets.UTF_8));
             }

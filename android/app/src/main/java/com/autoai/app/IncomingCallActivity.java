@@ -19,16 +19,25 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.json.JSONObject;
 
 public class IncomingCallActivity extends Activity {
     private static final String TAG = "AutoAiIncomingCall";
     private final ExecutorService avatarExecutor = Executors.newSingleThreadExecutor();
     private String callId;
+    private String actionToken;
     private long expiresAt;
+    private Button rejectButton;
+    private Button acceptButton;
+    private final AtomicBoolean actionRunning = new AtomicBoolean(false);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -48,6 +57,7 @@ public class IncomingCallActivity extends Activity {
         }
         callId = clean(callIntent.getStringExtra(CallNotificationManager.EXTRA_CALL_ID));
         expiresAt = callIntent.getLongExtra(CallNotificationManager.EXTRA_EXPIRES_AT, 0L);
+        actionToken = clean(callIntent.getStringExtra(CallNotificationManager.EXTRA_ACTION_TOKEN));
         String callerId = clean(callIntent.getStringExtra(CallNotificationManager.EXTRA_CALLER_ID));
         String callerName = clean(callIntent.getStringExtra(CallNotificationManager.EXTRA_CALLER_NAME));
         String callerUsername = clean(callIntent.getStringExtra(CallNotificationManager.EXTRA_CALLER_USERNAME));
@@ -56,7 +66,7 @@ public class IncomingCallActivity extends Activity {
         String initialAction = clean(callIntent.getStringExtra(CallNotificationManager.EXTRA_ACTION));
         boolean invalidCallerId = callIntent.hasExtra(CallNotificationManager.EXTRA_CALLER_ID) && callerId == null;
         boolean invalidAction = initialAction != null && !"accept".equals(initialAction) && !"audio_only".equals(initialAction);
-        if (callId == null || invalidCallerId || invalidAction
+        if (callId == null || actionToken == null || invalidCallerId || invalidAction
             || (!"audio".equals(callType) && !"video".equals(callType))
             || expiresAt <= System.currentTimeMillis()) {
             Log.w(TAG, "Incoming call activity rejected invalid payload callId=" + callId);
@@ -97,15 +107,15 @@ public class IncomingCallActivity extends Activity {
         LinearLayout actions = new LinearLayout(this);
         actions.setGravity(Gravity.CENTER);
         actions.setPadding(0, dp(64), 0, 0);
-        Button reject = actionButton("Reject", Color.rgb(220, 38, 38), Color.rgb(127, 29, 29));
-        Button accept = actionButton("Accept", Color.rgb(34, 211, 238), Color.rgb(37, 99, 235));
-        actions.addView(reject, actionParams());
-        actions.addView(accept, actionParams());
+        rejectButton = actionButton("Reject", Color.rgb(220, 38, 38), Color.rgb(127, 29, 29));
+        acceptButton = actionButton("Accept", Color.rgb(34, 211, 238), Color.rgb(37, 99, 235));
+        actions.addView(rejectButton, actionParams());
+        actions.addView(acceptButton, actionParams());
         root.addView(actions, new LinearLayout.LayoutParams(-1, -2));
         setContentView(root);
 
-        reject.setOnClickListener(view -> rejectCall());
-        accept.setOnClickListener(view -> acceptCall(false));
+        rejectButton.setOnClickListener(view -> rejectCall());
+        acceptButton.setOnClickListener(view -> acceptCall(false));
         if ("accept".equals(initialAction)) acceptCall(false);
         else if ("audio_only".equals(initialAction)) acceptCall(true);
     }
@@ -126,11 +136,56 @@ public class IncomingCallActivity extends Activity {
     }
 
     private void acceptCall(boolean audioOnly) {
+        if (!actionRunning.compareAndSet(false, true)) return;
+        setActionsEnabled(false);
         String action = audioOnly ? "audio_only" : "accept";
-        CallNotificationManager.savePending(this, callId, action, expiresAt);
         CallNotificationManager.cancelNotification(this, callId);
-        AutoAiTelecomBridge.markActive(this, callId);
-        Log.i(TAG, "Incoming call accepted callId=" + callId + " action=" + action);
+        avatarExecutor.execute(() -> {
+            if (!sendAccept()) {
+                runOnUiThread(() -> {
+                    actionRunning.set(false);
+                    setActionsEnabled(true);
+                    CallNotificationManager.cancel(this, callId);
+                    finish();
+                });
+                return;
+            }
+            CallNotificationManager.savePending(this, callId, action, expiresAt);
+            AutoAiTelecomBridge.markActive(this, callId);
+            runOnUiThread(() -> openCallScreen(action));
+        });
+    }
+
+    private boolean sendAccept() {
+        String accessToken = AutoAiSecureStoragePlugin.readStoredValue(this, "auto-ai-access-token");
+        if (accessToken == null || accessToken.trim().isEmpty()) return false;
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(BuildConfig.AUTO_AI_API_BASE_URL.replaceAll("/+$", "") + "/calls/" + callId + "/accept").openConnection();
+            connection.setConnectTimeout(12000);
+            connection.setReadTimeout(15000);
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Authorization", "Bearer " + accessToken.trim());
+            connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+            connection.setDoOutput(true);
+            JSONObject body = new JSONObject();
+            body.put("action_token", actionToken);
+            body.put("device_id", PushTokenRegistrar.deviceId(this, "auto_ai_call_device", "fallback_device_id"));
+            try (OutputStream output = connection.getOutputStream()) {
+                output.write(body.toString().getBytes(StandardCharsets.UTF_8));
+            }
+            int status = connection.getResponseCode();
+            Log.i(TAG, "Native accept completed callId=" + callId + " status=" + status);
+            return status >= 200 && status < 300;
+        } catch (Exception error) {
+            Log.w(TAG, "Native accept failed callId=" + callId, error);
+            return false;
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    private void openCallScreen(String action) {
         Intent intent = new Intent(this, MainActivity.class);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
         intent.putExtra(CallNotificationManager.EXTRA_CALL_ID, callId);
@@ -139,9 +194,15 @@ public class IncomingCallActivity extends Activity {
         finish();
     }
 
+    private void setActionsEnabled(boolean enabled) {
+        if (acceptButton != null) acceptButton.setEnabled(enabled);
+        if (rejectButton != null) rejectButton.setEnabled(enabled);
+    }
+
     private void rejectCall() {
         Intent intent = new Intent(this, CallActionReceiver.class).setAction(CallNotificationManager.ACTION_REJECT);
         intent.putExtra(CallNotificationManager.EXTRA_CALL_ID, callId);
+        intent.putExtra(CallNotificationManager.EXTRA_ACTION_TOKEN, actionToken);
         Log.i(TAG, "Incoming call rejected callId=" + callId);
         sendBroadcast(intent);
         finish();

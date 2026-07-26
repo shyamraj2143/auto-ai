@@ -52,6 +52,7 @@ public class CallForegroundService extends Service {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 int serviceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+                serviceType |= ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL;
                 if ("video".equals(callType)) serviceType |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
                 startForeground(notificationId, notification, serviceType);
             } else {

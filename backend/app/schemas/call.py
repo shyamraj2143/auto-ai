@@ -84,6 +84,7 @@ class CallCreateRequest(BaseModel):
 class CallActionRequest(BaseModel):
     device_id: str | None = Field(default=None, max_length=128)
     end_reason: str | None = Field(default=None, max_length=32)
+    action_token: str | None = Field(default=None, min_length=16, max_length=2048)
 
 
 class CallRead(BaseModel):
@@ -147,6 +148,9 @@ class CallHealth(BaseModel):
     websocket_ready: bool
     firebase_configured: bool
     turn_configured: bool
+    fcm_ready: bool
+    call_signaling_ready: bool
+    redis_ready: bool
 
 
 class BlockRequest(BaseModel):

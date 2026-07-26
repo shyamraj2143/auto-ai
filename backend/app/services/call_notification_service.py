@@ -5,6 +5,7 @@ from urllib.parse import urljoin
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from jose import jwt
 
 from app.core.config import settings
 from app.models.call import Call, UserCallSettings, UserDevice
@@ -13,6 +14,20 @@ from app.services.device_token_security import decrypt_token
 from app.services.firebase_notifications import firebase_notification_service
 
 logger = logging.getLogger(__name__)
+
+
+def create_call_action_token(call: Call, expires_at: datetime) -> str:
+    return jwt.encode(
+        {
+            "sub": call.callee_id,
+            "call_id": call.id,
+            "scope": "call:action",
+            "exp": expires_at,
+            "jti": str(uuid.uuid4()),
+        },
+        settings.jwt_secret_key,
+        algorithm=settings.JWT_ALGORITHM,
+    )
 
 
 def public_avatar(user: User) -> str:
@@ -47,8 +62,10 @@ def send_incoming_call_notifications(
     ).all()
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(seconds=settings.CALL_RING_TIMEOUT_SECONDS)
+    action_token = create_call_action_token(call, expires_at)
     data = {
         "event_id": str(uuid.uuid4()),
+        "action_token": action_token,
         "type": "incoming_call",
         "call_id": call.id,
         "caller_id": caller.id,
