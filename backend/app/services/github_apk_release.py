@@ -10,7 +10,7 @@ from app.schemas.download import ApkReleaseRead
 from app.services.apk_service import ApkService
 
 
-GITHUB_REPO = os.getenv("AUTO_AI_GITHUB_APK_REPO", "robinmaker123-ai/auto-ai").strip()
+GITHUB_REPO = os.getenv("AUTO_AI_GITHUB_APK_REPO", "shyamraj2143/auto-ai").strip()
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 GITHUB_DOWNLOAD_URL = "/api/download/apk/github/latest"
 GITHUB_CACHE_TTL_SECONDS = 60

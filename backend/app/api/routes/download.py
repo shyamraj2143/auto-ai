@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 import httpx
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -41,12 +41,23 @@ def download_apk(
     db: Session = Depends(get_db),
 ):
     release = apk_service.find_release(db, version)
+    github_release = github_apk_release_service.latest_release()
+    github_matches = github_release and (not version or github_release.read.version_name == version)
+    if not release and github_matches:
+        return RedirectResponse(github_release.asset_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
     if not release:
         apk_service.record_download(db, None, request, status_value="not_found")
         db.commit()
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No APK release is available.")
 
-    path = apk_service.validate_release_file(release)
+    try:
+        path = apk_service.validate_release_file(release)
+    except HTTPException as error:
+        if error.status_code == status.HTTP_404_NOT_FOUND and github_matches:
+            apk_service.record_download(db, release, request, optional_user(request, db))
+            db.commit()
+            return RedirectResponse(github_release.asset_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+        raise
     if not counted:
         apk_service.record_download(db, release, request, optional_user(request, db))
         db.commit()
