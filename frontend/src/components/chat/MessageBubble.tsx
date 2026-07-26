@@ -4,7 +4,6 @@ import {
   Bot,
   Check,
   Copy,
-  Cpu,
   FileText,
   ImageIcon,
   RefreshCw,
@@ -100,14 +99,8 @@ function responseErrorText(value?: string) {
 export function formatMessageTimestamp(value: string, now = new Date()) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  const sameDay = date.toDateString() === now.toDateString();
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  const isYesterday = date.toDateString() === yesterday.toDateString();
-  const time = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
-  if (sameDay) return `Today, ${time}`;
-  if (isYesterday) return `Yesterday, ${time}`;
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+  void now;
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
 }
 
 function AttachmentList({ attachments }: { attachments: ChatAttachment[] }) {
@@ -172,14 +165,11 @@ function MessageBubbleComponent({
   const attachments = attachmentsOf(message);
   const isEmptyStreaming = isAssistant && isStreaming && !content && !isSearchingWeb && !isFailedAssistant;
   const search = message.message_metadata?.search;
-  const responseModel = message.message_metadata?.model ?? fallbackModel ?? undefined;
   const deepResearch = message.message_metadata?.deep_research as
     | { models_consulted?: Array<{ provider?: string; model?: string }>; confidence?: string }
     | undefined;
   const consultedModels = deepResearch?.models_consulted ?? [];
-  const responseModelLabel = responseModel
-    ? `${responseModel.provider_label || responseModel.provider} / ${responseModel.model}`
-    : "";
+  void fallbackModel;
 
   function copyMessage() {
     void navigator.clipboard.writeText(content).then(() => {
@@ -198,6 +188,7 @@ function MessageBubbleComponent({
       <div className={clsx("message-avatar", isAssistant ? "message-avatar-ai" : "message-avatar-user")}>
         {isAssistant ? <Bot size={18} /> : <User size={18} />}
       </div>
+      <div className="message-content-stack">
       <div className={clsx("message-card", isAssistant ? "message-card-ai" : "message-card-user")}>
         {isEmptyStreaming ? (
           <ThinkingIndicator {...thinkingCopy(streamingMetadata?.phase)} />
@@ -244,15 +235,10 @@ function MessageBubbleComponent({
             {deepResearch?.confidence && <span>Confidence: {deepResearch.confidence}</span>}
           </div>
         )}
-        {isAssistant && responseModelLabel && (
-          <div className="message-model-corner" title={`Responded by ${responseModelLabel}`}>
-            <Cpu size={13} />
-            <span>{responseModelLabel}</span>
-          </div>
-        )}
         <time className="message-timestamp" dateTime={message.created_at} title={new Date(message.created_at).toString()}>
           {formatMessageTimestamp(message.created_at)}
         </time>
+      </div>
 
         {!isEmptyStreaming && !isFailedAssistant && (
           <div className="message-actions">
