@@ -21,6 +21,7 @@ from app.schemas.call import CallActionRequest, DeviceRegisterRequest, PublicCal
 from app.services.call_permission_service import call_allowed, get_or_create_call_settings, users_blocked
 from app.services.call_notification_service import send_incoming_call_notifications
 from app.services.call_service import CallService
+from app.services import call_service as call_service_module
 from app.services.device_token_security import decrypt_token, encrypt_token, token_hash
 from app.services.presence_service import PresenceService, RealtimeUnavailable
 from app.services.presence_service import presence_service as global_presence_service
@@ -465,6 +466,25 @@ async def test_ringing_ack_endpoint_marks_call_ringing(db: Session, monkeypatch:
 
     assert result.status == "ringing"
     assert result.ringing_at is not None
+
+
+@pytest.mark.asyncio
+async def test_call_remains_committed_when_optional_delivery_fails(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    caller = create_user(db, "caller_delivery", "Caller")
+    callee = create_user(db, "callee_delivery", "Callee")
+    monkeypatch.setattr(call_service_module, "call_allowed", lambda *args: (True, True))
+    monkeypatch.setattr(global_presence_service, "allow_rate", AsyncMock(return_value=True))
+    monkeypatch.setattr(global_presence_service, "acquire_call_locks", AsyncMock(return_value=True))
+    monkeypatch.setattr(global_presence_service, "publish", AsyncMock(side_effect=RuntimeError("redis unavailable")))
+    monkeypatch.setattr(call_service_module, "send_incoming_call_notifications", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("fcm unavailable")))
+    monkeypatch.setattr(call_service_module.social_service, "create_notification", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("notification unavailable")))
+
+    result = await CallService().initiate(db, caller, callee.id, "video", "caller-device")
+
+    assert result.delivery == "unreachable"
+    saved = db.get(Call, result.id)
+    assert saved is not None
+    assert saved.status == "initiated"
 
 
 @pytest.mark.asyncio

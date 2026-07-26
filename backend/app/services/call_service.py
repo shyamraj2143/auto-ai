@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -39,6 +40,7 @@ VALID_END_REASONS = {
     "app_closed",
     "server_timeout",
 }
+logger = logging.getLogger(__name__)
 
 
 def utcnow() -> datetime:
@@ -185,28 +187,44 @@ class CallService:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is on another call.")
         try:
             db.add(call)
-            db.flush()
             silent = bool(callee_settings.silence_unknown_callers and not known)
-            incoming_payload = {
-                "call_type": call.call_type,
-                "caller": {
-                    "id": caller.id,
-                    "display_name": caller.name,
-                    "username": caller.username or f"user_{caller.id.replace('-', '')[:8]}",
-                    "avatar_url": public_avatar(caller) or None,
-                },
-                "expires_at": (
-                    datetime.now(timezone.utc) + timedelta(seconds=settings.CALL_RING_TIMEOUT_SECONDS)
-                ).isoformat(),
-                "silent": silent,
-            }
+            db.commit()
+            db.refresh(call)
+        except Exception:
+            db.rollback()
+            await presence_service.release_call_locks(call.id, [caller.id, callee_id])
+            raise
+        incoming_payload = {
+            "call_type": call.call_type,
+            "caller": {
+                "id": caller.id,
+                "display_name": caller.name,
+                "username": caller.username or f"user_{caller.id.replace('-', '')[:8]}",
+                "avatar_url": public_avatar(caller) or None,
+            },
+            "expires_at": (
+                datetime.now(timezone.utc) + timedelta(seconds=settings.CALL_RING_TIMEOUT_SECONDS)
+            ).isoformat(),
+            "silent": silent,
+        }
+        websocket_receivers = 0
+        push_receivers = 0
+        try:
             websocket_receivers = await presence_service.publish(
                 callee_id,
                 signal_event("call.incoming", sender_user_id=caller.id, call_id=call.id, payload=incoming_payload),
             )
+        except Exception:
+            logger.exception("call_realtime_delivery_failed call_id=%s callee_id=%s", call.id, callee_id)
+        try:
             push_receivers = send_incoming_call_notifications(
                 db, call, caller, callee_settings, silent=silent
             )
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception("call_push_delivery_failed call_id=%s callee_id=%s", call.id, callee_id)
+        try:
             social_service.create_notification(
                 db,
                 user_id=callee_id,
@@ -220,8 +238,8 @@ class CallService:
             db.commit()
         except Exception:
             db.rollback()
-            await presence_service.release_call_locks(call.id, [caller.id, callee_id])
-            raise
+            logger.exception("call_in_app_notification_failed call_id=%s callee_id=%s", call.id, callee_id)
+        db.refresh(call)
         delivery_parts = []
         if websocket_receivers:
             delivery_parts.append("websocket")

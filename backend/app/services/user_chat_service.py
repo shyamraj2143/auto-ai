@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,6 +26,7 @@ from app.services.social_service import social_service
 
 MAX_CHAT_ATTACHMENT_BYTES = 20 * 1024 * 1024
 ALLOWED_CHAT_MIME_PREFIXES = ("image/", "application/pdf", "text/", "application/zip")
+logger = logging.getLogger(__name__)
 
 
 def utcnow() -> datetime:
@@ -311,22 +313,35 @@ class UserChatService:
         db.refresh(message)
         serialized = self.serialize_message(db, message, sender.id).model_dump(mode="json")
         for item in participants:
-            await self.publish(item.user_id, chat_event("message.new", sender.id, {"message": serialized}, thread_id))
-            await self.publish(item.user_id, chat_event("thread.updated", sender.id, {"thread_id": thread_id}, thread_id))
+            try:
+                await self.publish(item.user_id, chat_event("message.new", sender.id, {"message": serialized}, thread_id))
+                await self.publish(item.user_id, chat_event("thread.updated", sender.id, {"thread_id": thread_id}, thread_id))
+            except Exception:
+                logger.exception("message_realtime_delivery_failed message_id=%s recipient_id=%s", message.id, item.user_id)
             if item.user_id != sender.id and not item.muted:
-                social_service.create_notification(
-                    db,
-                    user_id=item.user_id,
-                    actor_id=sender.id,
-                    notification_type="message",
-                    target_type="thread",
-                    target_id=thread_id,
-                    title=f"New message from {sender.name}",
-                    body=text_content,
-                    dedupe_key=f"message:{message.id}:{item.user_id}",
-                )
-                send_chat_message_notifications(db, item.user_id, sender, message)
-        db.commit()
+                try:
+                    social_service.create_notification(
+                        db,
+                        user_id=item.user_id,
+                        actor_id=sender.id,
+                        notification_type="message",
+                        target_type="thread",
+                        target_id=thread_id,
+                        title=f"New message from {sender.name}",
+                        body=text_content,
+                        dedupe_key=f"message:{message.id}:{item.user_id}",
+                    )
+                    db.commit()
+                except Exception:
+                    db.rollback()
+                    logger.exception("message_in_app_notification_failed message_id=%s recipient_id=%s", message.id, item.user_id)
+                try:
+                    send_chat_message_notifications(db, item.user_id, sender, message)
+                    db.commit()
+                except Exception:
+                    db.rollback()
+                    logger.exception("message_push_delivery_failed message_id=%s recipient_id=%s", message.id, item.user_id)
+        db.refresh(message)
         return message
 
     async def delete_message(self, db: Session, thread_id: str, message_id: str, user_id: str) -> None:

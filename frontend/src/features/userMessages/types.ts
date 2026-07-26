@@ -15,7 +15,7 @@ export type UserMessage = {
   edited_at?: string | null;
   deleted_at?: string | null;
   reply_to_message_id?: string | null;
-  status: "sent" | "delivered" | "read";
+  status: "sending" | "sent" | "delivered" | "read" | "failed";
 };
 
 export type ChatPublicUser = PublicCallUser;

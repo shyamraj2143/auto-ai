@@ -55,7 +55,7 @@ function statusLabel(state: ReturnType<typeof useCallSession>["sessionState"]) {
 
 export function CallOverlay() {
   const callSession = useCallSession();
-  const { sessionState, call, peer, localStream, remoteStream, cameraEnabled, remoteCameraEnabled, muted, speakerEnabled, networkQuality, error } = callSession;
+  const { sessionState, signalingState, call, peer, localStream, remoteStream, cameraEnabled, remoteCameraEnabled, muted, speakerEnabled, networkQuality, error } = callSession;
   const [seconds, setSeconds] = useState(0);
   const [pipPosition, setPipPosition] = useState({ x: 0, y: 0 });
   const [incomingActionPending, setIncomingActionPending] = useState(false);
@@ -176,7 +176,7 @@ export function CallOverlay() {
           <span>@{peer.username}</span>
           <p>{call?.call_type === "audio" ? "Audio Call" : "Video Call"}</p>
           <strong>{statusLabel(sessionState)}</strong>
-          <small className={`call-quality ${networkQuality}`}><Wifi size={14} /> {networkQuality === "unknown" ? "Network ready" : `${networkQuality} network`}</small>
+          <small className={`call-quality ${networkQuality}`}><Wifi size={14} /> {signalingState === "connected" ? (networkQuality === "unknown" ? "Signaling connected" : `${networkQuality} network`) : signalingState === "connecting" ? "Connecting signaling" : "Signaling unavailable"}</small>
         </section>
         {localStream && call?.call_type === "video" && <div className="outgoing-local-preview"><VideoSurface stream={localStream} muted className="local-call-video" /></div>}
         {error && <div className="call-screen-error floating"><span>{error}</span></div>}
