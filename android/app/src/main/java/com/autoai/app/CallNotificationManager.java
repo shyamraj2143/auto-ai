@@ -39,6 +39,7 @@ public final class CallNotificationManager {
     public static final String EXTRA_CALL_TYPE = "call_type";
     public static final String EXTRA_EXPIRES_AT = "expires_at_epoch_ms";
     public static final String EXTRA_ACTION = "call_action";
+    public static final String EXTRA_ACTION_TOKEN = "action_token";
     public static final String ACTION_ACCEPT = "AUTOAI_CALL_ACCEPT";
     public static final String ACTION_REJECT = "AUTOAI_CALL_REJECT";
     public static final String ACTION_AUDIO_ONLY = "AUTOAI_CALL_AUDIO_ONLY";
@@ -64,8 +65,9 @@ public final class CallNotificationManager {
         String username = value(data, "caller_username");
         String callType = value(data, "call_type");
         String eventId = value(data, "event_id");
+        String actionToken = value(data, "action_token");
         long expiresAt = parseLong(data.get("expires_at_epoch_ms"));
-        if (callId.isEmpty()) {
+        if (callId.isEmpty() || actionToken.isEmpty()) {
             Log.w(TAG, "Incoming call FCM ignored: missing call_id.");
             return;
         }
@@ -103,13 +105,15 @@ public final class CallNotificationManager {
         incomingIntent.putExtra(EXTRA_CALLER_AVATAR, value(data, "caller_avatar_url"));
         incomingIntent.putExtra(EXTRA_CALL_TYPE, callType);
         incomingIntent.putExtra(EXTRA_EXPIRES_AT, expiresAt);
+        incomingIntent.putExtra(EXTRA_ACTION_TOKEN, actionToken);
         PendingIntent fullScreen = PendingIntent.getActivity(context, notificationId(callId), incomingIntent, pendingFlags());
 
         Intent acceptIntent = new Intent(incomingIntent);
         acceptIntent.setAction(ACTION_ACCEPT);
         acceptIntent.putExtra(EXTRA_ACTION, "accept");
         PendingIntent accept = PendingIntent.getActivity(context, notificationId(callId) + 1, acceptIntent, pendingFlags());
-        Intent rejectIntent = new Intent(context, CallActionReceiver.class).setAction(ACTION_REJECT).putExtra(EXTRA_CALL_ID, callId);
+        Intent rejectIntent = new Intent(context, CallActionReceiver.class).setAction(ACTION_REJECT)
+            .putExtra(EXTRA_CALL_ID, callId).putExtra(EXTRA_ACTION_TOKEN, actionToken);
         PendingIntent reject = PendingIntent.getBroadcast(context, notificationId(callId) + 2, rejectIntent, pendingFlags());
 
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O

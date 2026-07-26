@@ -4,7 +4,6 @@ import android.content.Context;
 import android.content.pm.PackageManager;
 import android.content.SharedPreferences;
 import android.os.Build;
-import android.provider.Settings;
 import android.util.Log;
 
 import org.json.JSONObject;
@@ -54,9 +53,6 @@ public final class PushTokenRegistrar {
     }
 
     public static String deviceId(Context context, String preferencesName, String fallbackKey) {
-        String androidId = Settings.Secure.getString(context.getContentResolver(), Settings.Secure.ANDROID_ID);
-        if (androidId != null && !androidId.trim().isEmpty()) return androidId.trim();
-
         SharedPreferences preferences = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE);
         String fallbackId = preferences.getString(fallbackKey, null);
         if (fallbackId == null || fallbackId.trim().isEmpty()) {

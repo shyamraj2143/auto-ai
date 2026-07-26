@@ -15,6 +15,8 @@ from app.schemas.social import (
     DirectConversationRead,
     FollowRequestPage,
     ProfileUpdateRequest,
+    SearchHistoryCreate,
+    SearchHistoryRead,
     SocialNotificationPage,
     SocialProfile,
     SocialUserPage,
@@ -214,6 +216,40 @@ def read_notification(notification_id: str, db: Session = Depends(get_db), curre
 @router.post("/notifications/read-all", status_code=status.HTTP_204_NO_CONTENT)
 def read_all_notifications(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> Response:
     social_service.mark_notification_read(db, current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/notifications/{notification_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_notification(notification_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> Response:
+    social_service.delete_notification(db, current_user, notification_id[:64])
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/notifications", status_code=status.HTTP_204_NO_CONTENT)
+def clear_notifications(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> Response:
+    social_service.delete_notification(db, current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/search-history", response_model=list[SearchHistoryRead])
+def get_search_history(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> list[SearchHistoryRead]:
+    return social_service.search_history(db, current_user)
+
+
+@router.post("/search-history", response_model=SearchHistoryRead, status_code=status.HTTP_201_CREATED)
+def add_search_history(payload: SearchHistoryCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> SearchHistoryRead:
+    return social_service.add_search_history(db, current_user, payload.query, payload.selected_user_id)
+
+
+@router.delete("/search-history/{history_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_search_history(history_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> Response:
+    social_service.delete_search_history(db, current_user, history_id[:64])
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/search-history", status_code=status.HTTP_204_NO_CONTENT)
+def clear_search_history(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> Response:
+    social_service.delete_search_history(db, current_user)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

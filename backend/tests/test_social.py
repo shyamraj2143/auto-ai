@@ -7,10 +7,11 @@ from sqlalchemy.orm import Session
 
 from app.db.base import Base
 from app.models.call import BlockedUser, Call, UserCallSettings
-from app.models.social import SocialFollow, SocialNotification
+from app.models.social import SearchHistory, SocialFollow, SocialNotification
 from app.models.user import User
 from app.models.user_chat import ChatMessage
 from app.services import call_service as call_service_module
+from app.services import social_service as social_service_module
 from app.services import user_chat_service as chat_service_module
 from app.services.call_permission_service import call_allowed
 from app.services.call_service import call_service
@@ -91,6 +92,31 @@ def test_user_cannot_follow_self(db: Session) -> None:
         social_service.follow_or_request(db, user_a, user_a.id)
 
 
+def test_search_history_is_private_limited_and_clearable(db: Session) -> None:
+    user_a = create_user(db, "public-user-a", "User A")
+    user_b = create_user(db, "public-user-b", "User B")
+    for index in range(22):
+        social_service.add_search_history(db, user_a, f"query {index}", user_b.id if index == 21 else None)
+    social_service.add_search_history(db, user_b, "private query", None)
+    history = social_service.search_history(db, user_a)
+    assert len(history) == 20
+    assert history[0].selected_user_id == user_b.id
+    assert all(item.query != "private query" for item in history)
+    social_service.delete_search_history(db, user_a)
+    assert db.query(SearchHistory).filter_by(user_id=user_a.id).count() == 0
+    assert db.query(SearchHistory).filter_by(user_id=user_b.id).count() == 1
+
+
+def test_clear_notifications_preserves_relationship(db: Session) -> None:
+    user_a = create_user(db, "public-user-a", "User A")
+    user_b = create_user(db, "public-user-b", "User B")
+    social_service.follow_or_request(db, user_a, user_b.id)
+    assert db.query(SocialNotification).filter_by(user_id=user_b.id).count() == 1
+    social_service.delete_notification(db, user_b)
+    assert db.query(SocialNotification).filter_by(user_id=user_b.id).count() == 0
+    assert db.query(SocialFollow).filter_by(follower_id=user_a.id, following_id=user_b.id).count() == 1
+
+
 def test_duplicate_and_reverse_requests_do_not_create_duplicate_relationships(db: Session) -> None:
     user_a = create_user(db, "public-user-a", "User A")
     user_b = create_user(db, "public-user-b", "User B")
@@ -120,6 +146,32 @@ def test_accept_is_idempotent_and_preserves_server_timestamp(db: Session) -> Non
     assert record.status == "accepted"
     assert record.responded_at == accepted_at
     assert db.query(SocialFollow).count() == 1
+
+
+def test_follow_succeeds_when_push_delivery_fails(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    user_a = create_user(db, "push-follow-a", "User A")
+    user_b = create_user(db, "push-follow-b", "User B")
+    monkeypatch.setattr(social_service_module, "send_social_push_notification", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("FCM unavailable")))
+
+    profile = social_service.follow_or_request(db, user_a, user_b.id)
+
+    assert profile.follow_status == "pending_sent"
+    assert db.query(SocialFollow).filter_by(follower_id=user_a.id, following_id=user_b.id, status="pending").count() == 1
+
+
+def test_accept_succeeds_when_push_fails_and_reuses_existing_chat(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    user_a = create_user(db, "push-accept-a", "User A")
+    user_b = create_user(db, "push-accept-b", "User B")
+    request = social_service.follow_or_request(db, user_a, user_b.id)
+    monkeypatch.setattr(social_service_module, "send_social_push_notification", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("FCM unavailable")))
+
+    social_service.accept_request(db, user_b, request.request_id or "")
+    first_thread = user_chat_service.create_or_get_thread(db, user_b, user_a.id)
+    social_service.accept_request(db, user_b, request.request_id or "")
+    second_thread = user_chat_service.create_or_get_thread(db, user_b, user_a.id)
+
+    assert db.get(SocialFollow, request.request_id).status == "accepted"
+    assert first_thread.id == second_thread.id
 
 
 def test_only_receiver_can_accept_or_reject_and_sender_can_cancel(db: Session) -> None:

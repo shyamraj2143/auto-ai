@@ -100,7 +100,8 @@ function AppRoutes() {
               <Route path="/messages" element={<UserMessagesPage />} />
               <Route path="/messages/:threadId" element={<UserMessagesPage />} />
               <Route path="/settings" element={<SettingsPage />} />
-              <Route path="/calls" element={<CallsPage />} />
+              <Route path="/calls" element={<Navigate to="/call-hub/search" replace />} />
+              <Route path="/call-hub/:section" element={<CallsPage />} />
             </Route>
           </Route>
           <Route element={<AdminRoute />}>

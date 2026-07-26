@@ -33,12 +33,24 @@ from app.services.call_permission_service import call_allowed, get_or_create_cal
 from app.services.call_service import base_public_user, call_service
 from app.services.device_token_security import encrypt_token, token_hash
 from app.services.firebase_notifications import firebase_notification_service
+from jose import JWTError, jwt
 from app.services.presence_service import RealtimeUnavailable, presence_service
 from app.services.turn_credentials_service import TURN_UNAVAILABLE_MESSAGE, create_turn_credentials
 
 
 router = APIRouter(prefix="/calls", tags=["calls"])
 logger = logging.getLogger("auto_ai.calls.api")
+
+
+def validate_call_action_token(token: str | None, call_id: str, user_id: str) -> None:
+    if token is None:
+        return
+    try:
+        claims = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.JWT_ALGORITHM])
+    except JWTError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired call action token.") from exc
+    if claims.get("scope") != "call:action" or claims.get("call_id") != call_id or claims.get("sub") != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Call action token does not authorize this action.")
 
 
 def discoverable_users_query(current_user_id: str):
@@ -116,6 +128,9 @@ async def call_health() -> CallHealth:
         websocket_ready=settings.CALL_FEATURE_ENABLED and redis_reachable,
         firebase_configured=firebase_notification_service.configured,
         turn_configured=settings.turn_configured,
+        fcm_ready=firebase_notification_service.configured,
+        call_signaling_ready=settings.CALL_FEATURE_ENABLED and redis_reachable,
+        redis_ready=redis_reachable,
     )
 
 
@@ -439,6 +454,7 @@ async def accept_call(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> CallRead:
+    validate_call_action_token(payload.action_token, call_id, current_user.id)
     call = await call_service.accept(db, call_id, current_user.id, payload.device_id)
     return await call_service.serialize_call(db, call, current_user.id)
 
@@ -462,7 +478,7 @@ async def reject_call(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> CallRead:
-    del payload
+    validate_call_action_token(payload.action_token, call_id, current_user.id)
     call = await call_service.reject(db, call_id, current_user.id)
     return await call_service.serialize_call(db, call, current_user.id)
 

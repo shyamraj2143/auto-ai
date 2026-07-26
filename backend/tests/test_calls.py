@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 
 import fakeredis.aioredis
 import pytest
+from jose import jwt
 from pydantic import SecretStr, ValidationError
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -188,6 +189,12 @@ def test_incoming_call_fcm_payload_has_event_id_and_high_priority_path(
     assert sent_payloads[0]["type"] == "incoming_call"
     assert sent_payloads[0]["call_id"] == call.id
     assert sent_payloads[0]["event_id"]
+    claims = jwt.decode(
+        sent_payloads[0]["action_token"], settings.jwt_secret_key, algorithms=[settings.JWT_ALGORITHM]
+    )
+    assert claims["scope"] == "call:action"
+    assert claims["call_id"] == call.id
+    assert claims["sub"] == callee.id
 
 
 @pytest.mark.asyncio
