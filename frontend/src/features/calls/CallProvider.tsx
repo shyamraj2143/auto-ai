@@ -654,6 +654,16 @@ export function CallProvider({ children }: { children: ReactNode }) {
       return;
     }
     if (!event.call_id || event.call_id !== callRef.current?.id) return;
+    const eventRevision = Number(event.payload.revision || 0);
+    const currentRevision = callRef.current?.revision || 0;
+    if (eventRevision > 0 && currentRevision > eventRevision) {
+      callDebug("stale_revision_ignored", { call_id: event.call_id, event_type: event.type, event_revision: eventRevision, current_revision: currentRevision });
+      return;
+    }
+    if (eventRevision > currentRevision && callRef.current) {
+      callRef.current = { ...callRef.current, revision: eventRevision };
+      setCall(callRef.current);
+    }
     if (event.type === "call.ringing") transition("ringing");
     else if (event.type === "call.accepted") {
       stopRingtone();

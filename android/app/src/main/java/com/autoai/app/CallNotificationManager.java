@@ -49,6 +49,7 @@ public final class CallNotificationManager {
     private static final String PENDING_ACTION = "pending_action";
     private static final String PENDING_EXPIRES_AT = "pending_expires_at";
     private static final String SEEN_EVENT_IDS = "seen_event_ids";
+    private static final String CALL_REVISION_PREFIX = "call_revision:";
     private static final int MAX_SEEN_EVENTS = 80;
     private static final ExecutorService ACK_EXECUTOR = Executors.newSingleThreadExecutor();
 
@@ -66,6 +67,7 @@ public final class CallNotificationManager {
         String callType = value(data, "call_type");
         String eventId = value(data, "event_id");
         String actionToken = value(data, "action_token");
+        long revision = parseLong(data.get("call_revision"));
         long expiresAt = parseLong(data.get("expires_at_epoch_ms"));
         if (callId.isEmpty() || actionToken.isEmpty()) {
             Log.w(TAG, "Incoming call FCM ignored: missing call_id.");
@@ -81,6 +83,10 @@ public final class CallNotificationManager {
         }
         if (expiresAt <= System.currentTimeMillis()) {
             Log.i(TAG, "Incoming call FCM ignored callId=" + callId + " reason=expired");
+            return;
+        }
+        if (!acceptRevision(context, callId, revision)) {
+            Log.i(TAG, "Incoming call FCM stale revision ignored callId=" + callId + " revision=" + revision);
             return;
         }
         if (!canPostNotifications(context)) {
@@ -183,6 +189,16 @@ public final class CallNotificationManager {
             AutoAiCallsPlugin.clearActiveCall(context, callId);
         }
         Log.i(TAG, "All call notifications cancelled callId=" + callId);
+    }
+
+    public static boolean acceptRevision(Context context, String callId, long revision) {
+        if (callId == null || callId.trim().isEmpty() || revision <= 0) return true;
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        String key = CALL_REVISION_PREFIX + callId;
+        long current = prefs.getLong(key, 0L);
+        if (revision < current) return false;
+        prefs.edit().putLong(key, revision).apply();
+        return true;
     }
 
     public static String pendingCallId(Context context) {

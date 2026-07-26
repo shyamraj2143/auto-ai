@@ -580,8 +580,11 @@ async def test_receiver_failure_is_published_and_dismisses_both_devices(db: Sess
     failed = await CallService().fail_call(db, call.id, callee.id, "SIGNALING_TIMEOUT")
 
     assert failed.status == "failed"
+    assert failed.revision == 2
     assert failed.end_reason == "SIGNALING_TIMEOUT"
+    assert failed.failure_code == "SIGNALING_TIMEOUT"
     assert failed.ended_at is not None
     assert publish.await_count == 2
     assert all(invocation.args[1]["type"] == "call.failed" for invocation in publish.await_args_list)
+    assert all(invocation.args[1]["payload"]["revision"] == 2 for invocation in publish.await_args_list)
     assert dismisses == [(call.id, "call_failed")]

@@ -41,18 +41,22 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         super.onMessageReceived(message);
         Map<String, String> data = message.getData();
         String messageType = data.get("type");
+        String callId = data.get("call_id");
+        long callRevision = parseInt(data.get("call_revision"));
         Log.i(TAG, "FCM received type=" + messageType + " callId=" + data.get("call_id"));
         if ("incoming_call".equals(messageType)) {
             CallNotificationManager.showIncoming(this, data);
             return;
         }
         if ("call_missed".equals(messageType)) {
+            if (!CallNotificationManager.acceptRevision(this, callId, callRevision)) return;
             CallNotificationManager.cancelAllForCall(this, data.get("call_id"));
             if (Boolean.parseBoolean(data.get("show_missed"))) showMissedCallNotification(data);
             return;
         }
         if ("call_failed".equals(messageType) || "call_ended".equals(messageType)
             || "call_cancelled".equals(messageType) || "call_rejected".equals(messageType)) {
+            if (!CallNotificationManager.acceptRevision(this, callId, callRevision)) return;
             CallNotificationManager.cancelAllForCall(this, data.get("call_id"));
             return;
         }

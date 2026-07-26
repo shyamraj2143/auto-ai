@@ -198,6 +198,15 @@ def ensure_runtime_schema() -> None:
             if column_name not in device_columns:
                 add_column("user_devices", column_name, definition)
 
+    if "calls" in table_names:
+        call_columns = {column["name"] for column in inspector.get_columns("calls")}
+        if "revision" not in call_columns:
+            add_column("calls", "revision", "INTEGER NOT NULL DEFAULT 1")
+        if "trace_id" not in call_columns:
+            add_column("calls", "trace_id", "VARCHAR(36) NOT NULL DEFAULT ''")
+        if "failure_code" not in call_columns:
+            add_column("calls", "failure_code", "VARCHAR(32)")
+
     if "user_device_activities" in table_names:
         activity_columns = {column["name"] for column in inspector.get_columns("user_device_activities")}
         activity_device_columns = {
@@ -360,6 +369,13 @@ def ensure_runtime_schema() -> None:
     with engine.begin() as connection:
         for statement in statements:
             connection.execute(text(statement))
+        if "calls" in table_names and any("trace_id" in statement for statement in statements):
+            call_rows = connection.execute(text(f"SELECT {quote('id')} FROM {quote('calls')}"))
+            for row in call_rows:
+                connection.execute(
+                    text(f"UPDATE {quote('calls')} SET {quote('trace_id')} = :trace_id WHERE {quote('id')} = :call_id"),
+                    {"trace_id": str(uuid.uuid4()), "call_id": row[0]},
+                )
         if ensure_mobile_index and dialect in {"sqlite", "postgresql"}:
             connection.execute(
                 text(

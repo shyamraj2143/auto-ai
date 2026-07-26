@@ -135,6 +135,9 @@ class CallService:
             callee_id=call.callee_id,
             call_type=call.call_type,
             status=call.status,
+            revision=call.revision,
+            trace_id=call.trace_id,
+            failure_code=call.failure_code,
             created_at=call.created_at,
             ringing_at=call.ringing_at,
             accepted_at=call.accepted_at,
@@ -182,6 +185,8 @@ class CallService:
             call_type=call_type,
             caller_device_id=caller_device_id,
             status="initiated",
+            revision=1,
+            trace_id=str(uuid.uuid4()),
         )
         if not await presence_service.acquire_call_locks(call.id, caller.id, callee_id):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is on another call.")
@@ -263,7 +268,7 @@ class CallService:
         result = db.execute(
             update(Call)
             .where(Call.id == call.id, Call.status == "initiated")
-            .values(status="ringing", ringing_at=utcnow(), updated_at=utcnow())
+            .values(status="ringing", revision=Call.revision + 1, ringing_at=utcnow(), updated_at=utcnow())
         )
         if result.rowcount != 1:
             db.rollback()
@@ -293,6 +298,7 @@ class CallService:
             .where(Call.id == call.id, Call.status.in_(["initiated", "ringing"]))
             .values(
                 status="accepted",
+                revision=Call.revision + 1,
                 accepted_at=utcnow(),
                 callee_device_id=device_id or call.callee_device_id,
                 updated_at=utcnow(),
@@ -355,7 +361,7 @@ class CallService:
         result = db.execute(
             update(Call)
             .where(Call.id == call.id, Call.status.in_(["accepted", "connecting"]))
-            .values(status="active", connected_at=call.connected_at or utcnow(), updated_at=utcnow())
+            .values(status="active", revision=Call.revision + 1, connected_at=call.connected_at or utcnow(), updated_at=utcnow())
         )
         if result.rowcount != 1:
             db.rollback()
@@ -382,7 +388,7 @@ class CallService:
             result = db.execute(
                 update(Call)
                 .where(Call.id == call.id, Call.status == "accepted")
-                .values(status="connecting", updated_at=utcnow())
+                .values(status="connecting", revision=Call.revision + 1, updated_at=utcnow())
             )
             db.commit()
             if result.rowcount == 1:
@@ -423,6 +429,8 @@ class CallService:
                 .where(Call.id == call.id, Call.status.in_(allowed_statuses))
                 .values(
                     status=final_status,
+                    revision=Call.revision + 1,
+                    failure_code=reason if final_status == "failed" else call.failure_code,
                     ended_at=now,
                     ended_by=user_id,
                     end_reason=reason,
@@ -456,9 +464,8 @@ class CallService:
         sender_user_id: str,
         payload: dict[str, Any] | None = None,
     ) -> None:
-        event = signal_event(
-            event_type, sender_user_id=sender_user_id, call_id=call.id, payload=payload or {"status": call.status}
-        )
+        event_payload = {**(payload or {"status": call.status}), "revision": call.revision, "trace_id": call.trace_id}
+        event = signal_event(event_type, sender_user_id=sender_user_id, call_id=call.id, payload=event_payload)
         await asyncio.gather(
             presence_service.publish(call.caller_id, event),
             presence_service.publish(call.callee_id, event),
@@ -491,8 +498,12 @@ async def expire_stale_calls_once() -> int:
         for call in calls:
             result = db.execute(
                 update(Call)
-                .where(Call.id == call.id, Call.status.in_(["initiated", "ringing"]))
-                .values(status="missed", ended_at=utcnow(), end_reason="no_answer", updated_at=utcnow())
+                .where(
+                    Call.id == call.id,
+                    Call.status.in_(["initiated", "ringing"]),
+                    Call.revision == call.revision,
+                )
+                .values(status="missed", revision=Call.revision + 1, ended_at=utcnow(), end_reason="no_answer", updated_at=utcnow())
             )
             if result.rowcount != 1:
                 db.rollback()

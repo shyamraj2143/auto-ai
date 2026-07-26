@@ -51,6 +51,9 @@ export type CallRecord = {
   callee_id: string;
   call_type: CallType;
   status: string;
+  revision?: number;
+  trace_id?: string;
+  failure_code?: string | null;
   created_at: string;
   ringing_at?: string | null;
   accepted_at?: string | null;

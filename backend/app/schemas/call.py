@@ -116,6 +116,9 @@ class CallRead(BaseModel):
     callee_id: str
     call_type: CallType
     status: str
+    revision: int = 1
+    trace_id: str
+    failure_code: str | None = None
     created_at: datetime
     ringing_at: datetime | None = None
     accepted_at: datetime | None = None
