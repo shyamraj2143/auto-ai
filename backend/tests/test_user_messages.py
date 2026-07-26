@@ -117,6 +117,38 @@ async def test_pending_messages_are_delivered_when_recipient_reconnects(db: Sess
 
 
 @pytest.mark.asyncio
+async def test_message_remains_saved_when_realtime_publish_fails(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    sender = create_user(db, "sender-realtime", "Sender")
+    recipient = create_user(db, "recipient-realtime", "Recipient")
+    connect_users(db, sender, recipient)
+    monkeypatch.setattr(global_presence_service, "publish", AsyncMock(side_effect=RuntimeError("redis unavailable")))
+    monkeypatch.setattr(service_module, "send_chat_message_notifications", lambda *args, **kwargs: 0)
+    thread = user_chat_service.create_or_get_thread(db, sender, recipient.id)
+
+    message = await user_chat_service.send_message(db, thread.id, sender, {"text_content": "saved", "client_message_id": "realtime-failure"})
+
+    assert db.get(ChatMessage, message.id) is not None
+    assert db.query(ChatMessage).count() == 1
+
+
+@pytest.mark.asyncio
+async def test_message_remains_saved_when_push_fails(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    sender = create_user(db, "sender-push", "Sender")
+    recipient = create_user(db, "recipient-push", "Recipient")
+    connect_users(db, sender, recipient)
+    monkeypatch.setattr(global_presence_service, "publish", AsyncMock(return_value=0))
+    monkeypatch.setattr(service_module, "send_chat_message_notifications", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("fcm unavailable")))
+    thread = user_chat_service.create_or_get_thread(db, sender, recipient.id)
+
+    message = await user_chat_service.send_message(db, thread.id, sender, {"text_content": "saved", "client_message_id": "push-failure"})
+
+    assert db.get(ChatMessage, message.id) is not None
+    duplicate = await user_chat_service.send_message(db, thread.id, sender, {"text_content": "retry", "client_message_id": "push-failure"})
+    assert duplicate.id == message.id
+    assert db.query(ChatMessage).count() == 1
+
+
+@pytest.mark.asyncio
 async def test_sender_can_delete_own_message_and_thread_preview_updates(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     sender = create_user(db, "sender-user", "Sender")
     recipient = create_user(db, "recipient-user", "Recipient")

@@ -8,6 +8,7 @@ import { useCallSession } from "../calls/hooks/useCallSession";
 import { useScreenShare } from "../screenShare/useScreenShare";
 import type { ChatPublicUser, ChatRealtimeEvent, UserMessage, UserThread } from "./types";
 import { UserMessageSocket, userMessagesApi } from "./userMessagesApi";
+import { failOptimisticMessage, messageSendError, replaceOptimisticMessage } from "./messageDelivery";
 import "./userMessages.css";
 
 const filters = ["all", "unread", "favourites", "archived"] as const;
@@ -39,6 +40,8 @@ function Avatar({ user }: { user: Pick<ChatPublicUser, "display_name" | "avatar_
 }
 
 function MessageStatus({ message }: { message: UserMessage }) {
+  if (message.status === "failed") return <span aria-label="Message failed">!</span>;
+  if (message.status === "sending") return <span aria-label="Sending">…</span>;
   if (message.status === "read") return <CheckCheck size={14} className="read" />;
   if (message.status === "delivered") return <CheckCheck size={14} />;
   return <Check size={14} />;
@@ -210,7 +213,7 @@ export function UserMessagesPage() {
   }, []);
 
   const updateReceiptStatus = useCallback((threadIdValue: string, status: UserMessage["status"]) => {
-    const order: Record<UserMessage["status"], number> = { sent: 0, delivered: 1, read: 2 };
+    const order: Record<UserMessage["status"], number> = { failed: -1, sending: 0, sent: 1, delivered: 2, read: 3 };
     setMessages((current) => current.map((message) => {
       if (message.thread_id !== threadIdValue || message.sender_id !== userIdRef.current || order[message.status] >= order[status]) return message;
       return { ...message, status };
@@ -482,11 +485,14 @@ export function UserMessagesPage() {
           text_content: message.text_content || "",
           client_message_id: clientId,
         });
-        setMessages((current) => current.map((item) => item.client_message_id === clientId ? sent : item));
+        setMessages((current) => replaceOptimisticMessage(current, clientId, sent));
         setError("");
         setShowRetry(false);
         void loadThreads();
-      } catch {
+      } catch (retryError) {
+        setMessages((current) => failOptimisticMessage(current, clientId));
+        setError(messageSendError(retryError));
+        setShowRetry(true);
         return;
       } finally {
         retryingMessagesRef.current.delete(clientId);
@@ -522,7 +528,7 @@ export function UserMessagesPage() {
       attachment_size: attachment?.size,
       mime_type: attachment?.type,
       created_at: new Date().toISOString(),
-      status: "sent",
+      status: "sending",
     };
     setMessages((current) => [...current, optimistic]);
     setComposer("");
@@ -533,7 +539,7 @@ export function UserMessagesPage() {
       const sent = file
         ? await userMessagesApi.sendAttachment(token, displayedThread.id, file, optimistic.text_content || "", client_message_id)
         : await userMessagesApi.sendMessage(token, displayedThread.id, { text_content: optimistic.text_content || "", client_message_id });
-      setMessages((current) => current.map((item) => item.client_message_id === client_message_id ? sent : item));
+      setMessages((current) => replaceOptimisticMessage(current, client_message_id, sent));
       setError("");
       void loadThreads();
     } catch (sendError) {
@@ -544,7 +550,8 @@ export function UserMessagesPage() {
         setAttachment(file);
         return;
       }
-      setError("Message could not be sent. Tap to retry.");
+      setMessages((current) => failOptimisticMessage(current, client_message_id));
+      setError(messageSendError(sendError));
       setShowRetry(true);
     } finally {
       setSending(false);
