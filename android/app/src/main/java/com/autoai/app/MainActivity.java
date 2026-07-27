@@ -128,13 +128,14 @@ public class MainActivity extends BridgeActivity {
 
         CallNotificationManager.createChannels(this);
         registerFirebaseMessagingToken();
-        UpdateCheckScheduler.schedule(this);
+        UpdateCheckScheduler.cancelLegacy(this);
         appUpdateDialog = new AppUpdateDialog(this);
         appUpdateDialog.start();
         AppUpdateCoordinator.get(this).check(true);
         syncPushDeviceIfAuthenticated();
         dispatchIncomingCallIntent(getIntent());
         dispatchOpenChatIntent(getIntent());
+        dispatchUpdateIntent(getIntent());
     }
 
     private void dispatchNativeBack() {
@@ -175,6 +176,21 @@ public class MainActivity extends BridgeActivity {
         setIntent(intent);
         dispatchIncomingCallIntent(intent);
         dispatchOpenChatIntent(intent);
+        dispatchUpdateIntent(intent);
+    }
+
+    private void dispatchUpdateIntent(Intent intent) {
+        if (intent == null) return;
+        boolean start = intent.getBooleanExtra("start_app_update", false);
+        boolean open = intent.getBooleanExtra("open_app_update", false);
+        intent.removeExtra("start_app_update");
+        intent.removeExtra("open_app_update");
+        AppUpdateCoordinator coordinator = AppUpdateCoordinator.get(this);
+        if (start) coordinator.downloadOrCheck();
+        else if (open) {
+            if (AppUpdateCoordinator.hasPendingUpdate(coordinator.current().metadata)) coordinator.showAvailable();
+            else coordinator.check(true);
+        }
     }
 
     private void dispatchOpenChatIntent(Intent intent) {

@@ -10,7 +10,7 @@ public class UpdateScheduleReceiver extends BroadcastReceiver {
         if (intent == null || intent.getAction() == null) return;
         String action = intent.getAction();
         if (Intent.ACTION_BOOT_COMPLETED.equals(action) || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
-            UpdateCheckScheduler.schedule(context);
+            UpdateCheckScheduler.cancelLegacy(context);
         }
     }
 }

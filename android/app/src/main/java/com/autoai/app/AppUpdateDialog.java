@@ -18,7 +18,6 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
-import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.util.Locale;
@@ -32,9 +31,10 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
     private final Activity activity;
     private final AppUpdateCoordinator coordinator;
     private Dialog dialog;
-    private TextView eyebrow, title, version, details, status, progressText, fileSize, releaseDate, releaseTime, viewMore;
+    private TextView eyebrow, title, version, details, status, progressText, fileSize, releaseDate;
     private ProgressBar progress;
     private Button primary, secondary, close;
+    private boolean installerOpenedForReady;
 
     public AppUpdateDialog(Activity activity) {
         this.activity = activity;
@@ -73,9 +73,7 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         fileSize.setText("▣     " + formatSize(metadata.fileSize));
         Date released = parseDate(metadata.releaseDate);
         releaseDate.setText("◷     " + (released == null ? "Release date unavailable" : DateFormat.getDateInstance(DateFormat.MEDIUM).format(released)));
-        releaseTime.setText("◷     " + (released == null ? "Release time unavailable" : DateFormat.getTimeInstance(DateFormat.SHORT).format(released)));
         details.setText(releaseDetails(metadata));
-        viewMore.setVisibility(details.length() > 150 ? View.VISIBLE : View.GONE);
         status.setText(TextUtils.isEmpty(snapshot.message) ? label(snapshot.state) : snapshot.message);
         status.setTextColor(snapshot.state == AppUpdateCoordinator.State.FAILED
             ? Color.rgb(255, 104, 124)
@@ -104,6 +102,8 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         primary.setText(action(snapshot.state));
         primary.setOnClickListener(view -> primary(snapshot));
 
+        if (snapshot.state != AppUpdateCoordinator.State.READY_TO_INSTALL) installerOpenedForReady = false;
+
         boolean mandatoryFailure = metadata.mandatory && snapshot.state == AppUpdateCoordinator.State.FAILED;
         boolean optionalSecondary = !metadata.mandatory && (snapshot.state == AppUpdateCoordinator.State.AVAILABLE
             || snapshot.state == AppUpdateCoordinator.State.FAILED || downloading);
@@ -122,6 +122,11 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         if (!dialog.isShowing()) {
             dialog.show();
             sizeWindow();
+        }
+        if (snapshot.state == AppUpdateCoordinator.State.READY_TO_INSTALL
+            && coordinator.canInstallPackages() && !installerOpenedForReady) {
+            installerOpenedForReady = true;
+            activity.getWindow().getDecorView().post(this::openInstaller);
         }
     }
 
@@ -148,7 +153,7 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         card.setPadding(dp(15), dp(12), dp(15), dp(12));
         card.setBackground(gradient(new int[]{Color.rgb(25, 18, 61), Color.rgb(7, 24, 52), Color.rgb(3, 42, 51)}, 22, Color.rgb(102, 79, 255)));
 
-        // Fixed compact header: one bounded logo, one title and one version badge.
+        // Fixed compact horizontal header.
         FrameLayout header = new FrameLayout(activity);
         header.setClipChildren(true);
         FrameLayout logoFrame = new FrameLayout(activity);
@@ -160,8 +165,22 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         logo.setAdjustViewBounds(false);
         logo.setPadding(dp(4), dp(4), dp(4), dp(4));
         logoFrame.addView(logo, new FrameLayout.LayoutParams(-1, -1));
-        FrameLayout.LayoutParams logoParams = new FrameLayout.LayoutParams(dp(56), dp(56), Gravity.CENTER);
+        FrameLayout.LayoutParams logoParams = new FrameLayout.LayoutParams(dp(46), dp(46), Gravity.START | Gravity.CENTER_VERTICAL);
         header.addView(logoFrame, logoParams);
+        LinearLayout headings = column();
+        eyebrow = text("", 10, Color.rgb(104, 227, 255));
+        eyebrow.setTypeface(Typeface.DEFAULT_BOLD);
+        eyebrow.setLetterSpacing(0.08f);
+        title = text("", 19, Color.WHITE);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setMaxLines(1);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        headings.addView(eyebrow);
+        headings.addView(title);
+        FrameLayout.LayoutParams headingParams = new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER_VERTICAL);
+        headingParams.leftMargin = dp(58);
+        headingParams.rightMargin = dp(42);
+        header.addView(headings, headingParams);
         close = new Button(activity);
         close.setText("×");
         close.setTextSize(24);
@@ -171,24 +190,8 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         close.setBackground(gradient(new int[]{Color.rgb(24, 39, 82), Color.rgb(8, 23, 53)}, 25, Color.rgb(77, 105, 172)));
         FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(dp(36), dp(36), Gravity.END | Gravity.TOP);
         header.addView(close, closeParams);
-        card.addView(header, new LinearLayout.LayoutParams(-1, dp(58)));
+        card.addView(header, new LinearLayout.LayoutParams(-1, dp(52)));
 
-        eyebrow = text("", 11, Color.rgb(104, 227, 255));
-        eyebrow.setTypeface(Typeface.DEFAULT_BOLD);
-        eyebrow.setLetterSpacing(0.08f);
-        eyebrow.setGravity(Gravity.CENTER);
-        title = text("", 21, Color.WHITE);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setGravity(Gravity.CENTER);
-        title.setPadding(0, dp(5), 0, dp(2));
-        card.addView(title);
-        card.addView(eyebrow);
-
-        // Only the center region scrolls. The action footer below always remains visible.
-        ScrollView scroll = new ScrollView(activity);
-        scroll.setFillViewport(false);
-        scroll.setVerticalScrollBarEnabled(false);
-        scroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
         LinearLayout content = column();
         content.setPadding(0, dp(3), 0, dp(4));
 
@@ -202,13 +205,11 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         content.addView(dividerTop, new LinearLayout.LayoutParams(-1, dp(1)));
         fileSize = infoRow("▣", Color.rgb(59, 226, 255));
         releaseDate = infoRow("◷", Color.rgb(79, 205, 255));
-        releaseTime = infoRow("◷", Color.rgb(79, 205, 255));
         TextView verified = infoRow("✓", Color.rgb(82, 230, 127));
         verified.setText("✓     Verified secure build");
         verified.setTextColor(Color.rgb(89, 232, 126));
         content.addView(fileSize);
         content.addView(releaseDate);
-        content.addView(releaseTime);
         content.addView(verified);
         View dividerBottom = divider();
         LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(-1, dp(1));
@@ -225,19 +226,7 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         details.setMaxLines(3);
         details.setEllipsize(TextUtils.TruncateAt.END);
         content.addView(details, new LinearLayout.LayoutParams(-1, -2));
-        viewMore = text("View More", 12, Color.rgb(111, 207, 255));
-        viewMore.setTypeface(Typeface.DEFAULT_BOLD);
-        viewMore.setPadding(0, dp(1), 0, dp(3));
-        viewMore.setOnClickListener(view -> {
-            boolean collapsed = details.getMaxLines() == 3;
-            details.setMaxLines(collapsed ? Integer.MAX_VALUE : 3);
-            details.setEllipsize(collapsed ? null : TextUtils.TruncateAt.END);
-            viewMore.setText(collapsed ? "View Less" : "View More");
-        });
-        content.addView(viewMore);
-        scroll.addView(content, new ScrollView.LayoutParams(-1, -2));
-        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1f);
-        card.addView(scroll, scrollParams);
+        card.addView(content, new LinearLayout.LayoutParams(-1, -2));
 
         LinearLayout footer = column();
         footer.setPadding(0, dp(3), 0, 0);
@@ -278,10 +267,8 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         Window window = dialog.getWindow();
         if (window == null) return;
         int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
-        int screenHeight = activity.getResources().getDisplayMetrics().heightPixels;
-        int width = Math.min(screenWidth - dp(32), dp(360));
-        int height = Math.min(screenHeight - dp(48), dp(560));
-        window.setLayout(width, height);
+        int width = Math.min(screenWidth - dp(32), dp(380));
+        window.setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT);
         window.setGravity(Gravity.CENTER);
     }
 
@@ -334,7 +321,7 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
     private String action(AppUpdateCoordinator.State state) {
         switch (state) {
             case AVAILABLE: return "⇩   UPDATE NOW";
-            case READY_TO_INSTALL: return "Install Update";
+            case READY_TO_INSTALL: return coordinator.current().message.toLowerCase(Locale.US).contains("cancel") ? "Retry Install" : "Install Update";
             case INSTALL_PERMISSION_REQUIRED: return "Allow Installation";
             case FAILED: return "Retry Update";
             case CHECKING: return "Checking…";

@@ -52,6 +52,7 @@ public final class AppUpdateCoordinator {
     private final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
     private volatile Snapshot snapshot;
     private volatile boolean optionalDismissedThisLaunch;
+    private volatile boolean downloadAfterCheck;
 
     public static AppUpdateCoordinator get(Context context) {
         if (instance == null) synchronized (AppUpdateCoordinator.class) {
@@ -85,6 +86,7 @@ public final class AppUpdateCoordinator {
                 Metadata metadata = fetch();
                 prefs.edit().putLong("last_successful_check", System.currentTimeMillis()).apply();
                 if (!metadata.valid() || metadata.versionCode <= BuildConfig.VERSION_CODE) {
+                    downloadAfterCheck = false;
                     set(new Snapshot(State.IDLE, metadata, 0, 0, userInitiated ? "AutoAI is up to date." : "", ""));
                     return;
                 }
@@ -95,12 +97,38 @@ public final class AppUpdateCoordinator {
                 }
                 metadata.mandatory = mandatory;
                 set(new Snapshot(State.AVAILABLE, metadata, 0, metadata.fileSize, "Ready to download", ""));
+                if (downloadAfterCheck) {
+                    downloadAfterCheck = false;
+                    download();
+                }
             } catch (Exception error) {
+                downloadAfterCheck = false;
                 if (optionalDismissedThisLaunch && hasPendingUpdate(snapshot.metadata)) {
                     set(new Snapshot(State.IDLE, snapshot.metadata, snapshot.downloadedBytes, snapshot.totalBytes, friendly(error), ""));
                 } else set(snapshot.withFailure(friendly(error)));
             } finally { checking.set(false); }
         });
+    }
+
+    /** Starts one durable download, fetching authoritative metadata first when needed. */
+    public synchronized void downloadOrCheck() {
+        if (hasVerifiedApk()) {
+            set(snapshot.withState(State.READY_TO_INSTALL, "Secure update verified"));
+            return;
+        }
+        if (hasPendingUpdate(snapshot.metadata)) {
+            downloadAfterCheck = false;
+            download();
+            return;
+        }
+        downloadAfterCheck = true;
+        check(true);
+    }
+
+    private boolean hasVerifiedApk() {
+        String path = prefs.getString("downloaded_apk_path", "");
+        java.io.File file = path.isEmpty() ? null : new java.io.File(path);
+        return hasPendingUpdate(snapshot.metadata) && file != null && file.isFile() && file.length() > 0;
     }
 
     public void dismissOptional() {
@@ -169,8 +197,8 @@ public final class AppUpdateCoordinator {
     public void refreshInstallState() {
         if (snapshot.state == State.INSTALL_PERMISSION_REQUIRED && canInstallPackages()) {
             set(snapshot.withState(State.READY_TO_INSTALL, "Secure update verified"));
-        } else if (snapshot.state == State.OPENING_INSTALLER && BuildConfig.VERSION_CODE < snapshot.metadata.versionCode) {
-            set(snapshot.withFailure("Installation was cancelled or could not be completed."));
+        } else if (snapshot.state == State.OPENING_INSTALLER && snapshot.metadata != null && BuildConfig.VERSION_CODE < snapshot.metadata.versionCode) {
+            set(snapshot.withState(State.READY_TO_INSTALL, "Installation cancelled. Tap Retry Install."));
         }
     }
 

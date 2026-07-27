@@ -7,6 +7,8 @@ describe("native update visibility", () => {
   beforeEach(() => { vi.mocked(Capacitor.isNativePlatform).mockReturnValue(true); vi.mocked(Capacitor.getPlatform).mockReturnValue("android"); });
   it("shows only for a higher authoritative Android versionCode", () => {
     expect(shouldShowUpdate(state)).toBe(true);
+    expect(shouldShowUpdate({ ...state, state: "IDLE" })).toBe(true);
+    expect(shouldShowUpdate({ ...state, state: "FAILED" })).toBe(true);
     expect(shouldShowUpdate({ ...state, latestVersionCode: 33 })).toBe(false);
     expect(shouldShowUpdate({ ...state, updateAvailable: false })).toBe(false);
   });

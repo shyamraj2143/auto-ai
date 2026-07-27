@@ -236,8 +236,9 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             flags |= PendingIntent.FLAG_IMMUTABLE;
         }
-        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, intent, flags);
-        Intent updateIntent = new Intent(this, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("open_app_update", true);
+        intent.putExtra("open_app_update", true);
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, 1000, intent, flags);
+        Intent updateIntent = new Intent(this, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("start_app_update", true);
         PendingIntent updateNow = PendingIntent.getActivity(this, 1001, updateIntent, flags);
 
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
