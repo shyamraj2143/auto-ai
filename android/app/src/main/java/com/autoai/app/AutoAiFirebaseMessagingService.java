@@ -45,7 +45,11 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         long callRevision = parseInt(data.get("call_revision"));
         Log.i(TAG, "FCM received type=" + messageType + " callId=" + data.get("call_id"));
         if ("incoming_call".equals(messageType)) {
-            CallNotificationManager.diagnostic(this, "FCM_RECEIVED", data, "RECEIVED");
+            String priorityResult = message.getOriginalPriority() == RemoteMessage.PRIORITY_HIGH
+                ? (message.getPriority() == RemoteMessage.PRIORITY_HIGH ? "HIGH_DELIVERED_AS_HIGH" : "HIGH_DOWNGRADED_TO_NORMAL")
+                : "UNKNOWN_PRIORITY";
+            long ageMs = message.getSentTime() > 0 ? Math.max(0L, System.currentTimeMillis() - message.getSentTime()) : -1L;
+            CallNotificationManager.diagnostic(this, "FCM_RECEIVED_ON_DEVICE", data, priorityResult + ":age_ms=" + ageMs);
             CallNotificationManager.showIncoming(this, data);
             return;
         }

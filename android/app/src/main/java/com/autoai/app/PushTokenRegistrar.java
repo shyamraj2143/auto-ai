@@ -9,6 +9,9 @@ import android.util.Log;
 import org.json.JSONObject;
 
 import java.io.OutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -23,6 +26,8 @@ public final class PushTokenRegistrar {
     private static final int READ_TIMEOUT_MS = 30000;
     private static final String TOKEN_PREFERENCES = "auto_ai_push_token";
     private static final String LAST_FCM_TOKEN = "last_fcm_token";
+    private static final String INSTALLATION_ID_FILE = "auto_ai_installation_id";
+    private static final String LEGACY_INSTALLATION_ID = "legacy_installation_id";
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
 
     private PushTokenRegistrar() {
@@ -52,14 +57,21 @@ public final class PushTokenRegistrar {
         });
     }
 
-    public static String deviceId(Context context, String preferencesName, String fallbackKey) {
+    public static synchronized String deviceId(Context context, String preferencesName, String fallbackKey) {
+        File identityFile = new File(context.getNoBackupFilesDir(), INSTALLATION_ID_FILE);
+        String existing = readIdentity(identityFile);
+        if (existing != null) return existing;
         SharedPreferences preferences = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE);
-        String fallbackId = preferences.getString(fallbackKey, null);
-        if (fallbackId == null || fallbackId.trim().isEmpty()) {
-            fallbackId = UUID.randomUUID().toString();
-            preferences.edit().putString(fallbackKey, fallbackId).apply();
-        }
-        return fallbackId;
+        String legacy = clean(preferences.getString(fallbackKey, null));
+        String installationId = UUID.randomUUID().toString();
+        if (legacy != null) preferences.edit().putString(LEGACY_INSTALLATION_ID, legacy).remove(fallbackKey).apply();
+        writeIdentity(identityFile, installationId);
+        Log.i(TAG, "Installation identity created migration=" + (legacy == null ? "fresh" : "legacy_detected"));
+        return installationId;
+    }
+
+    public static String legacyDeviceId(Context context, String preferencesName) {
+        return clean(context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE).getString(LEGACY_INSTALLATION_ID, null));
     }
 
     public static String deviceName() {
@@ -129,10 +141,14 @@ public final class PushTokenRegistrar {
 
             JSONObject body = new JSONObject();
             body.put("deviceId", deviceId(context, "auto_ai_call_device", "fallback_device_id"));
+            String legacyDeviceId = legacyDeviceId(context, "auto_ai_call_device");
+            if (legacyDeviceId != null) body.put("legacyDeviceId", legacyDeviceId);
             body.put("platform", "android");
             body.put("fcmToken", token);
             body.put("appVersion", BuildConfig.VERSION_NAME);
+            body.put("appVersionCode", BuildConfig.VERSION_CODE);
             body.put("deviceName", deviceName());
+            body.put("androidSdk", Build.VERSION.SDK_INT);
             body.put("manufacturer", Build.MANUFACTURER == null ? "" : Build.MANUFACTURER);
             body.put("model", Build.MODEL == null ? "" : Build.MODEL);
             body.put("osVersion", Build.VERSION.RELEASE == null ? "Android" : "Android " + Build.VERSION.RELEASE);
@@ -155,6 +171,32 @@ public final class PushTokenRegistrar {
                 connection.disconnect();
             }
         }
+    }
+
+    private static String readIdentity(File file) {
+        if (!file.isFile()) return null;
+        try (FileInputStream input = new FileInputStream(file)) {
+            byte[] bytes = new byte[128];
+            int count = input.read(bytes);
+            return clean(count <= 0 ? null : new String(bytes, 0, count, StandardCharsets.UTF_8));
+        } catch (Exception error) {
+            Log.w(TAG, "Unable to read installation identity.", error);
+            return null;
+        }
+    }
+
+    private static void writeIdentity(File file, String value) {
+        try (FileOutputStream output = new FileOutputStream(file, false)) {
+            output.write(value.getBytes(StandardCharsets.UTF_8));
+            output.getFD().sync();
+        } catch (Exception error) {
+            throw new IllegalStateException("Unable to persist installation identity.", error);
+        }
+    }
+
+    private static String clean(String value) {
+        if (value == null || value.trim().isEmpty()) return null;
+        return value.trim();
     }
 
     private static String trimTrailingSlash(String value) {

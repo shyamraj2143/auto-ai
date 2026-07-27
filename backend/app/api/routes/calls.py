@@ -1,4 +1,5 @@
 from datetime import datetime
+import hashlib
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -41,6 +42,34 @@ from app.services.turn_credentials_service import TURN_UNAVAILABLE_MESSAGE, crea
 
 router = APIRouter(prefix="/calls", tags=["calls"])
 logger = logging.getLogger("auto_ai.calls.api")
+
+
+@router.get("/devices/readiness")
+def call_device_readiness(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[dict[str, object]]:
+    devices = db.scalars(select(UserDevice).where(UserDevice.user_id == current_user.id).order_by(UserDevice.last_registered_at.desc())).all()
+    return [
+        {
+            "installation_id": hashlib.sha256(device.device_id.encode("utf-8")).hexdigest()[:16],
+            "device_name": device.device_name,
+            "manufacturer": device.manufacturer,
+            "model": device.model,
+            "android_sdk": device.android_sdk,
+            "app_version": device.app_version,
+            "app_version_code": device.app_version_code,
+            "active": device.is_active,
+            "fcm_token_present": bool(device.fcm_token_hash),
+            "fcm_token_last_registered_at": device.last_registered_at,
+            "last_fcm_send_result": device.last_fcm_send_result,
+            "last_fcm_received_at": device.last_fcm_received_at,
+            "last_notification_displayed_at": device.last_notification_displayed_at,
+            "ready_for_background_calls": bool(device.is_active and device.fcm_token_hash and device.last_fcm_failure_code is None),
+            "failure_code": device.last_fcm_failure_code,
+        }
+        for device in devices
+    ]
 
 
 def validate_call_action_token(token: str | None, call_id: str, user_id: str) -> None:

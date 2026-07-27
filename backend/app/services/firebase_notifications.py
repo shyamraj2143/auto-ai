@@ -25,6 +25,7 @@ class FcmSendResult:
     ok: bool
     inactive: bool = False
     detail: str = ""
+    failure_code: str | None = None
 
 
 class FirebaseNotificationService:
@@ -141,14 +142,15 @@ class FirebaseNotificationService:
             )
         except httpx.HTTPError as exc:
             logger.warning("fcm_send_failed project_id=%s type=%s call_id=%s detail=%s", project_id, message_type, call_id, str(exc)[:160])
-            return FcmSendResult(ok=False, detail=str(exc))
+            return FcmSendResult(ok=False, detail=str(exc), failure_code="FCM_SEND_TIMEOUT" if isinstance(exc, httpx.TimeoutException) else "FCM_SEND_FAILED")
         if 200 <= response.status_code < 300:
             logger.info("fcm_send_ok project_id=%s type=%s call_id=%s", project_id, message_type, call_id)
             return FcmSendResult(ok=True)
         error_text = response.text
         inactive = response.status_code == 404 or "UNREGISTERED" in error_text or "not a valid FCM" in error_text
         logger.warning("fcm_send_http_error project_id=%s type=%s call_id=%s status=%d inactive=%s detail=%s", project_id, message_type, call_id, response.status_code, inactive, error_text[:160])
-        return FcmSendResult(ok=False, inactive=inactive, detail=error_text[:500])
+        failure_code = "FCM_TOKEN_UNREGISTERED" if inactive else "FCM_AUTH_FAILED" if response.status_code in {401, 403} else "FCM_TOKEN_PROJECT_MISMATCH" if "SENDER_ID_MISMATCH" in error_text else "FCM_REJECTED_BY_FIREBASE"
+        return FcmSendResult(ok=False, inactive=inactive, detail=error_text[:500], failure_code=failure_code)
 
     def _access_token_for(self, service_account: dict[str, Any]) -> str:
         now = int(time.time())

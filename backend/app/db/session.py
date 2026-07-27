@@ -181,8 +181,14 @@ def ensure_runtime_schema() -> None:
         if "os_version" not in device_columns:
             add_column("user_devices", "os_version", "VARCHAR(80)")
         extra_device_columns = {
+            "legacy_device_id": "VARCHAR(128)",
             "manufacturer": "VARCHAR(80)",
             "model": "VARCHAR(80)",
+            "android_sdk": "INTEGER",
+            "last_fcm_send_result": "VARCHAR(40)",
+            "last_fcm_failure_code": "VARCHAR(64)",
+            "last_fcm_received_at": "datetime",
+            "last_notification_displayed_at": "datetime",
             "battery_level": "INTEGER",
             "charging": "BOOLEAN",
             "network_type": "VARCHAR(80)",

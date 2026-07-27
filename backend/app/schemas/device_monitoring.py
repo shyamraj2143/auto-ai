@@ -50,6 +50,7 @@ class DeviceActivityIngestResponse(BaseModel):
 
 class DeviceRegisterRequest(BaseModel):
     deviceId: str = Field(min_length=1, max_length=128)
+    legacyDeviceId: str | None = Field(default=None, max_length=128)
     userId: str | None = Field(default=None, min_length=1, max_length=64)
     platform: str = Field(default="android", max_length=32)
     deviceName: str | None = Field(default=None, max_length=120)
@@ -57,11 +58,13 @@ class DeviceRegisterRequest(BaseModel):
     model: str | None = Field(default=None, max_length=80)
     osVersion: str | None = Field(default=None, max_length=80)
     appVersion: str | None = Field(default=None, max_length=64)
+    appVersionCode: int = Field(default=0, ge=0)
+    androidSdk: int | None = Field(default=None, ge=24, le=100)
     fcmToken: str | None = Field(default=None, max_length=512)
     permissionsStatus: dict[str, bool] | None = None
     lastSeenAt: datetime | None = None
 
-    @field_validator("deviceId", "userId", "platform", "deviceName", "manufacturer", "model", "osVersion", "appVersion", "fcmToken")
+    @field_validator("deviceId", "legacyDeviceId", "userId", "platform", "deviceName", "manufacturer", "model", "osVersion", "appVersion", "fcmToken")
     @classmethod
     def normalize_text(cls, value: str | None) -> str | None:
         if not isinstance(value, str):
@@ -76,6 +79,8 @@ class DeviceRegisterResponse(BaseModel):
     registered: bool = True
     activation_required: bool = False
     approved: bool = True
+    fcmTokenStored: bool = False
+    fcmTokenHash: str | None = None
 
 
 class DeviceHeartbeatRequest(BaseModel):

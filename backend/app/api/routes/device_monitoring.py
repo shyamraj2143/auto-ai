@@ -9,6 +9,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.device_monitoring import DeviceActivityCreate, DeviceActivityIngestResponse, DeviceCommandAckRequest, DeviceHeartbeatRequest, DeviceRegisterRequest, DeviceRegisterResponse
 from app.services.device_monitoring import upsert_registered_device
+from app.services.device_token_security import token_hash
 
 
 router = APIRouter(tags=["device-monitoring"])
@@ -28,7 +29,13 @@ def register_device(
 ) -> DeviceRegisterResponse:
     require_self_user(current_user, payload.userId)
     device = upsert_registered_device(db, current_user, payload)
-    return DeviceRegisterResponse(deviceId=device.device_id, activation_required=False, approved=True)
+    return DeviceRegisterResponse(
+        deviceId=device.device_id,
+        activation_required=False,
+        approved=True,
+        fcmTokenStored=bool(device.fcm_token_hash),
+        fcmTokenHash=token_hash(payload.fcmToken)[:16] if payload.fcmToken else None,
+    )
 
 
 @router.post("/devices/heartbeat", response_model=DeviceActivityIngestResponse)

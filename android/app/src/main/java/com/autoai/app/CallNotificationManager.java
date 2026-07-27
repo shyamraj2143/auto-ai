@@ -103,7 +103,7 @@ public final class CallNotificationManager {
         boolean silent = Boolean.parseBoolean(data.get("silent"));
         savePending(context, callId, null, expiresAt);
         createChannels(context);
-        boolean telecomReported = AutoAiTelecomBridge.reportIncomingCall(context, data);
+        boolean telecomReported = false;
 
         Intent incomingIntent = new Intent(context, IncomingCallActivity.class);
         incomingIntent.putExtra(EXTRA_CALL_ID, callId);
@@ -168,11 +168,19 @@ public final class CallNotificationManager {
         }
         NotificationManager manager = manager(context);
         if (manager != null) {
-            manager.notify(notificationId(callId), builder.build());
-            markEventSeen(context, eventId);
-            diagnostic(context, "NOTIFICATION_DISPLAYED_ACK", data, "DISPLAYED");
-            Log.i(TAG, "Incoming call notification shown callId=" + callId + " silent=" + silent + " telecom=" + telecomReported);
-            acknowledgeRinging(context, callId);
+            try {
+                diagnostic(context, "NATIVE_NOTIFICATION_CREATED", data, "CREATED");
+                manager.notify(notificationId(callId), builder.build());
+                markEventSeen(context, eventId);
+                diagnostic(context, "NATIVE_NOTIFICATION_POSTED", data, "POSTED");
+                acknowledgeRinging(context, callId);
+                try { telecomReported = AutoAiTelecomBridge.reportIncomingCall(context, data); }
+                catch (RuntimeException telecomError) { Log.w(TAG, "Telecom presentation failed after notification post callId=" + callId, telecomError); }
+                Log.i(TAG, "Incoming call notification shown callId=" + callId + " silent=" + silent + " telecom=" + telecomReported);
+            } catch (RuntimeException notificationError) {
+                diagnostic(context, "NOTIFICATION_POST_FAILED", data, "NOTIFICATION_POST_FAILED");
+                Log.e(TAG, "Incoming call notification post failed callId=" + callId, notificationError);
+            }
         } else {
             Log.w(TAG, "Incoming call notification not shown callId=" + callId + " reason=no_notification_manager");
         }

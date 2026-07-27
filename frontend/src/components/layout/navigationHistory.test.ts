@@ -29,11 +29,20 @@ describe("NavigationHistoryController", () => {
     expect(history.snapshot()).toHaveLength(40);
     expect(history.snapshot()[0].pathname).toBe("/chat/5");
   });
+
+  it("does not recreate a route popped by Back", () => {
+    const history = new NavigationHistoryController(memoryStorage(), "routes");
+    history.record("/hub", "", "a", 1);
+    history.record("/call-hub/search", "?type=video", "b", 2);
+    expect(history.previous("/call-hub/search?type=video", () => true)).toBe("/hub");
+    history.record("/hub", "", "c", 3);
+    expect(history.snapshot()).toEqual([]);
+  });
 });
 
 describe("message back navigation", () => {
-  it("returns a conversation to the list and the list to Hub", () => {
+  it("returns a conversation to the list and defers list navigation to safe history", () => {
     expect(messageBackDestination("/messages/thread-1?focus=latest")).toBe("/messages");
-    expect(messageBackDestination("/messages?filter=unread")).toBe("/hub");
+    expect(messageBackDestination("/messages?filter=unread")).toBe("");
   });
 });

@@ -92,6 +92,8 @@ def send_incoming_call_notifications(
         logger.info("FCM_SEND_REQUESTED call_id=%s trace_id=%s event_id=%s installation_hash=%s app_version=%s result=REQUESTED timestamp=%s", call.id, call.trace_id, data["event_id"], installation_hash, device.app_version or "", now.isoformat())
         token = decrypt_token(device.fcm_token_ciphertext, device.fcm_token)
         if not token:
+            device.last_fcm_send_result = "rejected"
+            device.last_fcm_failure_code = "FCM_TOKEN_MISSING"
             logger.warning("call_fcm_incoming_inactive_token call_id=%s device_id=%s reason=missing_token", call.id, device.device_id)
             device.is_active = False
             device.fcm_token = None
@@ -102,9 +104,13 @@ def send_incoming_call_notifications(
         result = firebase_notification_service.send_call_data(token, data, settings.CALL_NOTIFICATION_TTL_SECONDS)
         if result.ok:
             sent += 1
+            device.last_fcm_send_result = "accepted"
+            device.last_fcm_failure_code = None
             logger.info("FCM_QUEUED call_id=%s trace_id=%s event_id=%s installation_hash=%s app_version=%s result=QUEUED timestamp=%s", call.id, call.trace_id, data["event_id"], installation_hash, device.app_version or "", datetime.now(timezone.utc).isoformat())
             logger.info("call_fcm_incoming_sent call_id=%s device_id=%s", call.id, device.device_id)
         elif result.inactive:
+            device.last_fcm_send_result = "rejected"
+            device.last_fcm_failure_code = result.failure_code or "FCM_TOKEN_UNREGISTERED"
             logger.warning("call_fcm_incoming_inactive_token call_id=%s device_id=%s detail=%s", call.id, device.device_id, result.detail[:160])
             device.is_active = False
             device.fcm_token = None
@@ -112,6 +118,8 @@ def send_incoming_call_notifications(
             device.fcm_token_hash = None
             device.updated_at = datetime.utcnow()
         else:
+            device.last_fcm_send_result = "rejected"
+            device.last_fcm_failure_code = result.failure_code or "FCM_REJECTED_BY_FIREBASE"
             logger.warning("FCM_SEND_FAILED call_id=%s trace_id=%s event_id=%s installation_hash=%s app_version=%s result=FCM_SEND_FAILED timestamp=%s", call.id, call.trace_id, data["event_id"], installation_hash, device.app_version or "", datetime.now(timezone.utc).isoformat())
             logger.warning("call_fcm_incoming_failed call_id=%s device_id=%s detail=%s", call.id, device.device_id, result.detail[:160])
     db.flush()

@@ -10,7 +10,6 @@ import { NavigationHistoryController } from "./navigationHistory";
 
 const BACK_EVENT = "auto-ai-android-back";
 const NATIVE_BACK_EVENT = "auto-ai-native-back";
-const NATIVE_BACK_RESULT_EVENT = "auto-ai-native-back-result";
 const MINIMIZE_CALL_EVENT = "auto-ai-minimize-call-overlay";
 const EXIT_CONFIRM_MS = 2000;
 const STACK_KEY = "auto-ai-android-route-stack";
@@ -46,7 +45,7 @@ function routePath(route: string) {
 function isSafeAuthenticatedRoute(route: string) {
   const path = routePath(route);
   if (AUTH_OR_EXTERNAL_ROUTES.includes(path)) return false;
-  return path === "/hub" || path === "/activity" || path === "/chat" || path.startsWith("/chat/") || path === "/settings" || path === "/messages" || path.startsWith("/messages/") || path === "/calls" || path === "/admin";
+  return path === "/hub" || path === "/activity" || path === "/chat" || path.startsWith("/chat/") || path === "/settings" || path === "/messages" || path.startsWith("/messages/") || path === "/calls" || path.startsWith("/call-hub/") || path === "/admin";
 }
 
 function isEditableFocused() {
@@ -66,7 +65,6 @@ function settingsParentRoute(route: string) {
 export function messageBackDestination(route: string) {
   const path = routePath(route);
   if (path.startsWith("/messages/")) return "/messages";
-  if (path === "/messages") return "/hub";
   return "";
 }
 
@@ -97,6 +95,11 @@ export function AndroidBackHandler() {
       callType: callSession.call?.call_type ?? null
     };
   }, [callSession.call?.call_type, callSession.sessionState, isSidebarOpen, location, user?.role]);
+
+  useEffect(() => {
+    lastExitPressRef.current = 0;
+    setToastVisible(false);
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     if (!user) {
@@ -155,9 +158,19 @@ export function AndroidBackHandler() {
       return;
     }
 
+    if (routePath(currentRoute) === "/messages") {
+      if (!navigatePreviousSafeRoute(currentRoute)) navigate("/hub", { replace: true });
+      return;
+    }
+
     const settingsParent = settingsParentRoute(currentRoute);
     if (settingsParent) {
       navigate(settingsParent, { replace: true });
+      return;
+    }
+
+    if (routePath(currentRoute).startsWith("/call-hub/")) {
+      if (!navigatePreviousSafeRoute(currentRoute)) navigate("/hub", { replace: true });
       return;
     }
 
@@ -183,28 +196,9 @@ export function AndroidBackHandler() {
 
   useEffect(() => {
     if (!isAndroidCapacitor()) return;
-    let handle: Awaited<ReturnType<typeof App.addListener>> | undefined;
-    let disposed = false;
-    void App.addListener("backButton", handleBack).then((result) => {
-      if (disposed) {
-        void result?.remove?.();
-        return;
-      }
-      handle = result;
-    });
-    return () => {
-      disposed = true;
-      window.clearTimeout(toastTimerRef.current);
-      void handle?.remove?.();
-    };
-  }, [handleBack]);
-
-  useEffect(() => {
-    if (!isAndroidCapacitor()) return;
     const onNativeBack = (event: Event) => {
       event.preventDefault();
       handleBack();
-      window.dispatchEvent(new CustomEvent(NATIVE_BACK_RESULT_EVENT, { detail: { handled: true, atRoot: ROOT_ROUTES.has(routePath(stateRef.current.route)) } }));
     };
     window.addEventListener(NATIVE_BACK_EVENT, onNativeBack);
     return () => window.removeEventListener(NATIVE_BACK_EVENT, onNativeBack);

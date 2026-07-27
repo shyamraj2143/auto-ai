@@ -9,6 +9,7 @@ const MAX_ENTRIES = 40;
 
 export class NavigationHistoryController {
   private entries: NavigationHistoryEntry[] = [];
+  private backTarget: string | null = null;
 
   constructor(private readonly storage: Pick<Storage, "getItem" | "setItem" | "removeItem">, private readonly storageKey: string) {
     try {
@@ -25,6 +26,10 @@ export class NavigationHistoryController {
 
   record(pathname: string, search: string, key: string, timestamp = Date.now()) {
     const route = `${pathname}${search}`;
+    if (this.backTarget === route) {
+      this.backTarget = null;
+      return;
+    }
     const latest = this.entries[this.entries.length - 1];
     if (latest && `${latest.pathname}${latest.search}` === route) return;
     this.entries.push({ pathname, search, key, timestamp });
@@ -38,6 +43,7 @@ export class NavigationHistoryController {
       const entry = this.entries.pop()!;
       const route = this.routeOf(entry);
       if (isSafe(route)) {
+        this.backTarget = route;
         this.persist();
         return route;
       }
@@ -48,6 +54,7 @@ export class NavigationHistoryController {
 
   clear() {
     this.entries = [];
+    this.backTarget = null;
     this.storage.removeItem(this.storageKey);
   }
 

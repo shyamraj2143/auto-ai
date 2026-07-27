@@ -52,6 +52,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Locale;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -136,23 +137,23 @@ public class MainActivity extends BridgeActivity {
             handleUnconsumedNativeBack(null);
             return;
         }
+        String backEventId = UUID.randomUUID().toString();
         String script = "(function(){try{" +
-            "var e=new CustomEvent('auto-ai-native-back',{cancelable:true});" +
+            "var e=new CustomEvent('auto-ai-native-back',{cancelable:true,detail:{backEventId:'" + backEventId + "'}});" +
             "var handled=!window.dispatchEvent(e);" +
-            "window.dispatchEvent(new CustomEvent('auto-ai-native-back-result',{detail:{handled:handled,atRoot:false}}));" +
-            "return handled?'handled':'unhandled';" +
+            "return handled?'handled':(window.location.pathname==='/hub'?'root':'unhandled');" +
             "}catch(e){return 'unhandled';}})()";
         webView.evaluateJavascript(script, result -> {
             if (result != null && result.contains("handled") && !result.contains("unhandled")) return;
-            handleUnconsumedNativeBack(webView);
+            if (result != null && result.contains("root")) {
+                handleUnconsumedNativeBack(null);
+            } else {
+                webView.evaluateJavascript("window.location.assign('/hub')", null);
+            }
         });
     }
 
     private void handleUnconsumedNativeBack(WebView webView) {
-        if (webView != null && webView.canGoBack()) {
-            webView.goBack();
-            return;
-        }
         long now = System.currentTimeMillis();
         if (now - lastNativeRootBackAtMs <= 2000L) {
             finishAndRemoveTask();
@@ -256,7 +257,19 @@ public class MainActivity extends BridgeActivity {
         String accessToken = AutoAiSecureStoragePlugin.readStoredValue(this, "auto-ai-access-token");
         if (accessToken == null || accessToken.trim().isEmpty()) return;
         requestNotificationPermissionIfNeeded();
-        PushTokenRegistrar.registerStoredUserDeviceIfAuthenticated(this);
+        try {
+            FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
+                if (task.isSuccessful() && task.getResult() != null && !task.getResult().trim().isEmpty()) {
+                    PushTokenRegistrar.registerAsync(this, task.getResult());
+                } else {
+                    android.util.Log.w("AutoAiPushSync", "Fresh FCM token unavailable during authenticated sync.", task.getException());
+                    PushTokenRegistrar.registerStoredUserDeviceIfAuthenticated(this);
+                }
+            });
+        } catch (RuntimeException error) {
+            android.util.Log.w("AutoAiPushSync", "Fresh FCM token request failed.", error);
+            PushTokenRegistrar.registerStoredUserDeviceIfAuthenticated(this);
+        }
     }
 
     private void requestNotificationPermissionIfNeeded() {
