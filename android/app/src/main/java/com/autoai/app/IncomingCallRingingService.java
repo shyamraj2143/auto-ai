@@ -1,7 +1,6 @@
 package com.autoai.app;
 
 import android.app.Notification;
-import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
@@ -74,11 +73,20 @@ public final class IncomingCallRingingService extends Service {
         if (callId.equals(activeCallId)) return START_NOT_STICKY;
         stopPlayback();
         activeCallId = callId;
-        int id = CallNotificationManager.notificationId(callId);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(id, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL);
-        else startForeground(id, notification);
-        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        if (manager != null) manager.cancel(CallNotificationManager.notificationTag(callId), 0);
+        try {
+            int incomingNotificationId = CallNotificationManager.notificationId(callId);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(incomingNotificationId, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL);
+            } else {
+                startForeground(incomingNotificationId, notification);
+            }
+        } catch (RuntimeException error) {
+            Log.e(TAG, "INCOMING_RINGING_FOREGROUND_START_FAILED call_id=" + callId, error);
+            // The already-posted interactive CallStyle intentionally remains visible.
+            activeCallId = null;
+            stopSelf();
+            return START_NOT_STICKY;
+        }
         Log.i(TAG, "RINGING_SERVICE_STARTED call_id=" + callId);
         startPlayback();
         handler.postDelayed(this::stopSelf, Math.max(1000L, expiresAt - System.currentTimeMillis()));

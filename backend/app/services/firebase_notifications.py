@@ -68,14 +68,13 @@ class FirebaseNotificationService:
 
     def send_call_data(self, token: str, data: dict[str, str], ttl_seconds: int) -> FcmSendResult:
         analytics_label = "incoming_call_primary" if data.get("type") == "incoming_call" else "call_terminal"
-        is_primary = data.get("type") == "incoming_call"
         message = {
             "message": {
                 "token": token,
                 "data": data,
                 "android": {
                     "priority": "HIGH",
-                    "ttl": "0s" if is_primary else f"{max(1, ttl_seconds)}s",
+                    "ttl": f"{max(1, ttl_seconds)}s",
                     "direct_boot_ok": False,
                     "restricted_package_name": "com.autoai.app",
                     "collapse_key": f"call_{data.get('call_id', 'unknown')}",

@@ -167,7 +167,10 @@ public final class CallNotificationManager {
             try {
                 diagnostic(context, "NATIVE_NOTIFICATION_CREATED", data, "CREATED");
                 Notification notification = builder.build();
-                manager.notify(notificationTag(callId), 0, notification);
+                int incomingNotificationId = notificationId(callId);
+                // Remove only the degraded Google Play Services fallback identity.
+                manager.cancel(notificationTag(callId), 0);
+                manager.notify(incomingNotificationId, notification);
                 markEventSeen(context, eventId);
                 diagnostic(context, "NATIVE_NOTIFICATION_POSTED", data, "POSTED");
                 diagnostic(context, "CALLSTYLE_NOTIFICATION_POSTED", data, "PRIMARY_NATIVE_CALLSTYLE_DELIVERED");
@@ -197,8 +200,9 @@ public final class CallNotificationManager {
     public static void cancelNotification(Context context, String callId) {
         NotificationManager manager = manager(context);
         if (manager != null && callId != null) {
-            manager.cancel(notificationTag(callId), 0);
             manager.cancel(notificationId(callId));
+            manager.cancel(notificationTag(callId), 0);
+            manager.cancel(legacyNotificationId(callId));
         }
     }
 
@@ -206,7 +210,7 @@ public final class CallNotificationManager {
         cancel(context, callId);
         NotificationManager notificationManager = manager(context);
         if (notificationManager != null && callId != null) {
-            notificationManager.cancel(notificationId(callId) + 100000);
+            notificationManager.cancel(legacyNotificationId(callId));
         }
         if (AutoAiCallsPlugin.isActiveCall(context, callId)) {
             context.stopService(new Intent(context, CallForegroundService.class));
@@ -253,6 +257,10 @@ public final class CallNotificationManager {
 
     public static int notificationId(String callId) {
         return 3000 + Math.abs(callId.hashCode() % 100000);
+    }
+
+    public static int legacyNotificationId(String callId) {
+        return notificationId(callId) + 100000;
     }
 
     public static String notificationTag(String callId) {

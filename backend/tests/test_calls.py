@@ -178,7 +178,7 @@ def test_incoming_call_fcm_payload_has_event_id_and_high_priority_path(
 
         def send_call_data(self, token: str, data: dict[str, str], ttl_seconds: int):
             assert token == "callee-fcm-token"
-            assert ttl_seconds == settings.CALL_NOTIFICATION_TTL_SECONDS
+            assert 20 <= ttl_seconds <= 40
             sent_payloads.append(data)
             return type("Result", (), {"ok": True, "inactive": False, "detail": ""})()
 

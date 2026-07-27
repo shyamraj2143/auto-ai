@@ -26,4 +26,11 @@ public class CallNotificationManagerTest {
     public void primaryAndFallbackShareNotificationTag() {
         assertEquals("autoai_call_call-1", CallNotificationManager.notificationTag("call-1"));
     }
+
+    @Test
+    public void nativeAndForegroundServiceShareOneNumericIdentity() {
+        int incoming = CallNotificationManager.notificationId("call-1");
+        assertEquals(incoming + 100000, CallNotificationManager.legacyNotificationId("call-1"));
+        assertNotEquals(0, incoming);
+    }
 }

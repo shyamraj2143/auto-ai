@@ -107,7 +107,8 @@ def send_incoming_call_notifications(
             device.fcm_token_hash = None
             device.updated_at = datetime.utcnow()
             continue
-        result = firebase_notification_service.send_call_data(token, device_data, settings.CALL_NOTIFICATION_TTL_SECONDS)
+        remaining_lifetime = max(20, min(40, int((expires_at - datetime.now(timezone.utc)).total_seconds())))
+        result = firebase_notification_service.send_call_data(token, device_data, remaining_lifetime)
         if result.ok:
             sent += 1
             device.last_fcm_send_result = "accepted"
