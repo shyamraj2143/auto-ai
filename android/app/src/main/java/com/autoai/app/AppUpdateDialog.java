@@ -145,18 +145,22 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
 
     private View buildCard() {
         LinearLayout card = column();
-        card.setPadding(dp(20), dp(18), dp(20), dp(16));
-        card.setBackground(gradient(new int[]{Color.rgb(29, 18, 67), Color.rgb(10, 28, 58), Color.rgb(4, 51, 61)}, 24, Color.rgb(104, 77, 255)));
+        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        card.setBackground(gradient(new int[]{Color.rgb(25, 18, 61), Color.rgb(7, 24, 52), Color.rgb(3, 42, 51)}, 22, Color.rgb(102, 79, 255)));
 
         FrameLayout header = new FrameLayout(activity);
+        header.setClipChildren(true);
+        FrameLayout logoFrame = new FrameLayout(activity);
+        logoFrame.setClipChildren(true);
+        logoFrame.setBackground(gradient(new int[]{Color.rgb(49, 29, 103), Color.rgb(5, 69, 85)}, 18, Color.rgb(48, 231, 255)));
         ImageView logo = new ImageView(activity);
-        logo.setImageResource(R.mipmap.ic_launcher);
-        logo.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        GradientDrawable logoBackground = gradient(new int[]{Color.rgb(39, 34, 93), Color.rgb(7, 75, 93)}, 18, Color.rgb(46, 225, 255));
-        logo.setBackground(logoBackground);
-        logo.setPadding(dp(5), dp(5), dp(5), dp(5));
-        FrameLayout.LayoutParams logoParams = new FrameLayout.LayoutParams(dp(76), dp(76), Gravity.CENTER);
-        header.addView(logo, logoParams);
+        logo.setImageResource(R.mipmap.ic_launcher_foreground);
+        logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        logo.setAdjustViewBounds(false);
+        logo.setPadding(dp(4), dp(4), dp(4), dp(4));
+        logoFrame.addView(logo, new FrameLayout.LayoutParams(-1, -1));
+        FrameLayout.LayoutParams logoParams = new FrameLayout.LayoutParams(dp(66), dp(66), Gravity.CENTER);
+        header.addView(logoFrame, logoParams);
         close = new Button(activity);
         close.setText("×");
         close.setTextSize(28);
@@ -164,24 +168,24 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         close.setGravity(Gravity.CENTER);
         close.setPadding(0, 0, 0, dp(3));
         close.setBackground(gradient(new int[]{Color.rgb(24, 39, 82), Color.rgb(8, 23, 53)}, 25, Color.rgb(77, 105, 172)));
-        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.END | Gravity.TOP);
+        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(dp(40), dp(40), Gravity.END | Gravity.TOP);
         header.addView(close, closeParams);
-        card.addView(header, new LinearLayout.LayoutParams(-1, dp(82)));
+        card.addView(header, new LinearLayout.LayoutParams(-1, dp(70)));
 
         eyebrow = text("", 11, Color.rgb(104, 227, 255));
         eyebrow.setTypeface(Typeface.DEFAULT_BOLD);
         eyebrow.setLetterSpacing(0.08f);
         eyebrow.setGravity(Gravity.CENTER);
-        title = text("", 26, Color.WHITE);
+        title = text("", 22, Color.WHITE);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setGravity(Gravity.CENTER);
-        title.setPadding(0, dp(9), 0, dp(5));
+        title.setPadding(0, dp(7), 0, dp(3));
         card.addView(title);
         card.addView(eyebrow);
 
         version = text("", 14, Color.rgb(195, 210, 243));
         version.setGravity(Gravity.CENTER);
-        version.setPadding(dp(10), dp(10), dp(10), dp(11));
+        version.setPadding(dp(8), dp(7), dp(8), dp(8));
         LinearLayout.LayoutParams versionParams = new LinearLayout.LayoutParams(-1, -2);
         versionParams.topMargin = dp(5);
         card.addView(version, versionParams);
@@ -205,7 +209,7 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
 
         TextView whatsNew = text("WHAT’S NEW", 15, Color.rgb(199, 92, 255));
         whatsNew.setTypeface(Typeface.DEFAULT_BOLD);
-        whatsNew.setPadding(0, dp(13), 0, 0);
+        whatsNew.setPadding(0, dp(9), 0, 0);
         card.addView(whatsNew);
 
         ScrollView scroll = new ScrollView(activity);
@@ -249,7 +253,7 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         primary.setTypeface(Typeface.DEFAULT_BOLD);
         primary.setBackground(gradient(new int[]{Color.rgb(147, 58, 255), Color.rgb(40, 111, 247), Color.rgb(0, 203, 235)}, 15, Color.TRANSPARENT));
         LinearLayout.LayoutParams primaryParams = new LinearLayout.LayoutParams(-1, dp(52));
-        primaryParams.topMargin = dp(13);
+        primaryParams.topMargin = dp(9);
         card.addView(primary, primaryParams);
 
         secondary = new Button(activity);
@@ -257,7 +261,9 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         secondary.setAllCaps(false);
         secondary.setTextSize(14);
         secondary.setBackground(gradient(new int[]{Color.rgb(11, 25, 55), Color.rgb(9, 20, 45)}, 14, Color.rgb(97, 132, 203)));
-        card.addView(secondary, new LinearLayout.LayoutParams(-1, dp(44)));
+        LinearLayout.LayoutParams secondaryParams = new LinearLayout.LayoutParams(-1, dp(40));
+        secondaryParams.topMargin = dp(6);
+        card.addView(secondary, secondaryParams);
         return card;
     }
 
@@ -266,8 +272,8 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         if (window == null) return;
         int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
         int screenHeight = activity.getResources().getDisplayMetrics().heightPixels;
-        int width = Math.min(screenWidth - dp(32), dp(420));
-        int height = Math.min(screenHeight - dp(32), dp(720));
+        int width = Math.min(screenWidth - dp(40), dp(380));
+        int height = Math.min(screenHeight - dp(72), dp(640));
         window.setLayout(width, height);
         window.setGravity(Gravity.CENTER);
     }
