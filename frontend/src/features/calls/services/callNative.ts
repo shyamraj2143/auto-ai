@@ -38,9 +38,32 @@ type NativeCallPlugin = {
   setSpeaker(options: { enabled: boolean }): Promise<void>;
   setAudioRoute(options: { route: "earpiece" | "speaker" | "wired" | "bluetooth" }): Promise<void>;
   checkFullScreenIntentPermission(): Promise<{ required: boolean; granted: boolean }>;
+  getCallReadiness(): Promise<NativeCallReadiness>;
   openAppSettings(): Promise<void>;
   openAppNotificationSettings(): Promise<void>;
   openFullScreenIntentSettings(): Promise<void>;
+  openIncomingCallChannelSettings(): Promise<void>;
+  openBatteryOptimizationSettings(): Promise<void>;
+};
+
+export type NativeCallReadiness = {
+  status: "READY" | "LIMITED" | "BLOCKED";
+  sdkVersion: number;
+  manufacturer: string;
+  model: string;
+  appVersion: string;
+  appVersionCode: number;
+  firebaseTokenRegistered: boolean;
+  notificationsAllowed: boolean;
+  channelExists: boolean;
+  channelImportance: number;
+  channelSoundEnabled: boolean;
+  channelVibrationEnabled: boolean;
+  lockscreenVisibility: number;
+  fullScreenIntentAllowed: boolean;
+  batteryOptimizationIgnored: boolean;
+  microphoneAllowed: boolean;
+  cameraAllowed: boolean;
 };
 
 const NativeCalls = registerPlugin<NativeCallPlugin>("AutoAiCalls");
@@ -83,9 +106,12 @@ export const callNative = {
   setSpeaker: (enabled: boolean) => Capacitor.getPlatform() === "android" ? NativeCalls.setSpeaker({ enabled }) : Promise.resolve(),
   setAudioRoute: (route: "earpiece" | "speaker" | "wired" | "bluetooth") => Capacitor.getPlatform() === "android" ? NativeCalls.setAudioRoute({ route }) : Promise.resolve(),
   checkFullScreenIntentPermission: () => Capacitor.getPlatform() === "android" ? NativeCalls.checkFullScreenIntentPermission() : Promise.resolve({ required: false, granted: true }),
+  getCallReadiness: () => Capacitor.getPlatform() === "android" ? NativeCalls.getCallReadiness() : Promise.resolve(null),
   openAppSettings: () => Capacitor.getPlatform() === "android" ? NativeCalls.openAppSettings() : Promise.resolve(),
   openAppNotificationSettings: () => Capacitor.getPlatform() === "android" ? NativeCalls.openAppNotificationSettings() : Promise.resolve(),
   openFullScreenIntentSettings: () => Capacitor.getPlatform() === "android" ? NativeCalls.openFullScreenIntentSettings() : Promise.resolve(),
+  openIncomingCallChannelSettings: () => Capacitor.getPlatform() === "android" ? NativeCalls.openIncomingCallChannelSettings() : Promise.resolve(),
+  openBatteryOptimizationSettings: () => Capacitor.getPlatform() === "android" ? NativeCalls.openBatteryOptimizationSettings() : Promise.resolve(),
 };
 
 function defaultPermission(): NativePermissionState {

@@ -45,6 +45,7 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         long callRevision = parseInt(data.get("call_revision"));
         Log.i(TAG, "FCM received type=" + messageType + " callId=" + data.get("call_id"));
         if ("incoming_call".equals(messageType)) {
+            CallNotificationManager.diagnostic(this, "FCM_RECEIVED", data, "RECEIVED");
             CallNotificationManager.showIncoming(this, data);
             return;
         }

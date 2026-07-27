@@ -30,6 +30,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.core.content.FileProvider;
+import androidx.activity.OnBackPressedCallback;
 
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
@@ -80,6 +81,7 @@ public class MainActivity extends BridgeActivity {
     private boolean updateCheckRunning;
     private boolean waitingForInstallPermission;
     private long lastUpdateCheckAtMs;
+    private long lastNativeRootBackAtMs;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -91,6 +93,13 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(ScreenCapturePlugin.class);
         registerPlugin(AutoAiCallsPlugin.class);
         super.onCreate(savedInstanceState);
+
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                dispatchNativeBack();
+            }
+        });
 
         WebView webView = getBridge().getWebView();
         webView.setNestedScrollingEnabled(true);
@@ -119,6 +128,38 @@ public class MainActivity extends BridgeActivity {
         syncPushDeviceIfAuthenticated();
         dispatchIncomingCallIntent(getIntent());
         dispatchOpenChatIntent(getIntent());
+    }
+
+    private void dispatchNativeBack() {
+        WebView webView = getBridge() == null ? null : getBridge().getWebView();
+        if (webView == null) {
+            handleUnconsumedNativeBack(null);
+            return;
+        }
+        String script = "(function(){try{" +
+            "var e=new CustomEvent('auto-ai-native-back',{cancelable:true});" +
+            "var handled=!window.dispatchEvent(e);" +
+            "window.dispatchEvent(new CustomEvent('auto-ai-native-back-result',{detail:{handled:handled,atRoot:false}}));" +
+            "return handled?'handled':'unhandled';" +
+            "}catch(e){return 'unhandled';}})()";
+        webView.evaluateJavascript(script, result -> {
+            if (result != null && result.contains("handled") && !result.contains("unhandled")) return;
+            handleUnconsumedNativeBack(webView);
+        });
+    }
+
+    private void handleUnconsumedNativeBack(WebView webView) {
+        if (webView != null && webView.canGoBack()) {
+            webView.goBack();
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastNativeRootBackAtMs <= 2000L) {
+            finishAndRemoveTask();
+            return;
+        }
+        lastNativeRootBackAtMs = now;
+        Toast.makeText(this, "Press Back again to exit", Toast.LENGTH_SHORT).show();
     }
 
     @Override

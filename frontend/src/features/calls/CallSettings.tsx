@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { resolveApiAssetUrl } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { callApi } from "./services/callApi";
+import { callNative, type NativeCallReadiness } from "./services/callNative";
 import type { BlockedCallUser, CallSettings as Settings } from "./types";
 
 function SettingToggle({ label, description, checked, onChange, icon: Icon }: { label: string; description: string; checked: boolean; onChange: (checked: boolean) => void; icon: typeof Eye }) {
@@ -15,6 +16,12 @@ export function CallSettings() {
   const [blocked, setBlocked] = useState<BlockedCallUser[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [readiness, setReadiness] = useState<NativeCallReadiness | null>(null);
+
+  const refreshReadiness = useCallback(async () => {
+    if (!callNative.isAndroid()) return;
+    setReadiness(await callNative.getCallReadiness());
+  }, []);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -28,7 +35,7 @@ export function CallSettings() {
     }
   }, [token]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); void refreshReadiness(); }, [load, refreshReadiness]);
 
   const update = useCallback(async (patch: Partial<Settings>) => {
     if (!token || !settings || saving) return;
@@ -48,6 +55,18 @@ export function CallSettings() {
     <div className="call-settings-page">
       {saving && <span className="call-settings-saving"><LoaderCircle className="animate-spin" size={13} /> Saving</span>}
       {error && <p className="calls-inline-alert">{error}</p>}
+      {callNative.isAndroid() && <section className={`call-readiness call-readiness-${readiness?.status?.toLowerCase() || "loading"}`}>
+        <div className="call-settings-heading"><Smartphone size={16} /><strong>Call readiness: {readiness?.status ?? "CHECKING"}</strong></div>
+        <p>{readiness?.status === "READY" ? "Ready for background calls" : readiness?.status === "LIMITED" ? "Calls may appear as a notification instead of full screen" : readiness?.status === "BLOCKED" ? "Incoming calls are blocked by notification settings" : "Checking Android call delivery settings…"}</p>
+        {readiness && <small>Android {readiness.sdkVersion} · {readiness.manufacturer} {readiness.model} · App {readiness.appVersion}</small>}
+        <div className="call-readiness-actions">
+          <button type="button" onClick={() => void callNative.openAppNotificationSettings()}>App notifications</button>
+          <button type="button" onClick={() => void callNative.openIncomingCallChannelSettings()}>Incoming-call channel</button>
+          {readiness && !readiness.fullScreenIntentAllowed && <button type="button" onClick={() => void callNative.openFullScreenIntentSettings()}>Full-screen access</button>}
+          <button type="button" onClick={() => void callNative.openBatteryOptimizationSettings()}>Battery settings</button>
+          <button type="button" onClick={() => void refreshReadiness()}>Refresh</button>
+        </div>
+      </section>}
       <section>
         <SettingToggle icon={settings.is_discoverable ? Eye : EyeOff} label="Allow other users to find me" description="Show your public name and username in search" checked={settings.is_discoverable} onChange={(value) => void update({ is_discoverable: value })} />
         <SettingToggle icon={Eye} label="Show my online status" description="Let discoverable users see when you are active" checked={settings.show_online_status} onChange={(value) => void update({ show_online_status: value })} />

@@ -1,4 +1,5 @@
 import logging
+import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urljoin
@@ -14,6 +15,10 @@ from app.services.device_token_security import decrypt_token
 from app.services.firebase_notifications import firebase_notification_service
 
 logger = logging.getLogger(__name__)
+
+
+def _installation_hash(device_id: str) -> str:
+    return hashlib.sha256(device_id.encode("utf-8")).hexdigest()[:16]
 
 
 def create_call_action_token(call: Call, expires_at: datetime) -> str:
@@ -83,6 +88,8 @@ def send_incoming_call_notifications(
     sent = 0
     logger.info("call_fcm_incoming_attempt call_id=%s devices=%d silent=%s", call.id, len(devices), silent)
     for device in devices:
+        installation_hash = _installation_hash(device.device_id)
+        logger.info("FCM_SEND_REQUESTED call_id=%s trace_id=%s event_id=%s installation_hash=%s app_version=%s result=REQUESTED timestamp=%s", call.id, call.trace_id, data["event_id"], installation_hash, device.app_version or "", now.isoformat())
         token = decrypt_token(device.fcm_token_ciphertext, device.fcm_token)
         if not token:
             logger.warning("call_fcm_incoming_inactive_token call_id=%s device_id=%s reason=missing_token", call.id, device.device_id)
@@ -95,6 +102,7 @@ def send_incoming_call_notifications(
         result = firebase_notification_service.send_call_data(token, data, settings.CALL_NOTIFICATION_TTL_SECONDS)
         if result.ok:
             sent += 1
+            logger.info("FCM_QUEUED call_id=%s trace_id=%s event_id=%s installation_hash=%s app_version=%s result=QUEUED timestamp=%s", call.id, call.trace_id, data["event_id"], installation_hash, device.app_version or "", datetime.now(timezone.utc).isoformat())
             logger.info("call_fcm_incoming_sent call_id=%s device_id=%s", call.id, device.device_id)
         elif result.inactive:
             logger.warning("call_fcm_incoming_inactive_token call_id=%s device_id=%s detail=%s", call.id, device.device_id, result.detail[:160])
@@ -104,6 +112,7 @@ def send_incoming_call_notifications(
             device.fcm_token_hash = None
             device.updated_at = datetime.utcnow()
         else:
+            logger.warning("FCM_SEND_FAILED call_id=%s trace_id=%s event_id=%s installation_hash=%s app_version=%s result=FCM_SEND_FAILED timestamp=%s", call.id, call.trace_id, data["event_id"], installation_hash, device.app_version or "", datetime.now(timezone.utc).isoformat())
             logger.warning("call_fcm_incoming_failed call_id=%s device_id=%s detail=%s", call.id, device.device_id, result.detail[:160])
     db.flush()
     return sent

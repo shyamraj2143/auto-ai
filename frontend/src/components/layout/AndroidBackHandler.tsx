@@ -6,11 +6,13 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useShell } from "../../contexts/ShellContext";
 import { useCallSession } from "../../features/calls/hooks/useCallSession";
 import { isAdminPanelRole } from "../../utils/roles";
+import { NavigationHistoryController } from "./navigationHistory";
 
 const BACK_EVENT = "auto-ai-android-back";
+const NATIVE_BACK_EVENT = "auto-ai-native-back";
+const NATIVE_BACK_RESULT_EVENT = "auto-ai-native-back-result";
 const MINIMIZE_CALL_EVENT = "auto-ai-minimize-call-overlay";
 const EXIT_CONFIRM_MS = 2000;
-const MAX_STACK = 32;
 const STACK_KEY = "auto-ai-android-route-stack";
 const AUTH_OR_EXTERNAL_ROUTES = [
   "/login",
@@ -68,14 +70,7 @@ export function AndroidBackHandler() {
   const { isSidebarOpen, closeSidebar } = useShell();
   const callSession = useCallSession();
   const [toastVisible, setToastVisible] = useState(false);
-  const stackRef = useRef<string[]>((() => {
-    try {
-      const saved = JSON.parse(sessionStorage.getItem(STACK_KEY) || "[]");
-      return Array.isArray(saved) ? saved.filter((route): route is string => typeof route === "string").slice(-MAX_STACK) : [];
-    } catch {
-      return [];
-    }
-  })());
+  const historyRef = useRef(new NavigationHistoryController(sessionStorage, STACK_KEY));
   const stateRef = useRef({
     route: routeFromLocation(location),
     isSidebarOpen,
@@ -98,16 +93,12 @@ export function AndroidBackHandler() {
 
   useEffect(() => {
     if (!user) {
-      stackRef.current = [];
-      sessionStorage.removeItem(STACK_KEY);
+      historyRef.current.clear();
       return;
     }
     const route = routeFromLocation(location);
     if (!isSafeAuthenticatedRoute(route)) return;
-    const stack = stackRef.current;
-    if (stack[stack.length - 1] !== route) stack.push(route);
-    if (stack.length > MAX_STACK) stack.splice(0, stack.length - MAX_STACK);
-    sessionStorage.setItem(STACK_KEY, JSON.stringify(stack));
+    historyRef.current.record(location.pathname, location.search, location.key);
   }, [location, user]);
 
   const showExitToast = useCallback(() => {
@@ -117,16 +108,10 @@ export function AndroidBackHandler() {
   }, []);
 
   const navigatePreviousSafeRoute = useCallback((currentRoute: string) => {
-    const stack = stackRef.current;
-    while (stack.length && stack[stack.length - 1] === currentRoute) stack.pop();
-    while (stack.length) {
-      const previous = stack.pop();
-      if (previous && isSafeAuthenticatedRoute(previous)) {
-        navigate(previous, { replace: true });
-        return true;
-      }
-    }
-    return false;
+    const previous = historyRef.current.previous(currentRoute, isSafeAuthenticatedRoute);
+    if (!previous) return false;
+    navigate(previous, { replace: true });
+    return true;
   }, [navigate]);
 
   const handleRootExit = useCallback(() => {
@@ -199,6 +184,17 @@ export function AndroidBackHandler() {
       window.clearTimeout(toastTimerRef.current);
       void handle?.remove?.();
     };
+  }, [handleBack]);
+
+  useEffect(() => {
+    if (!isAndroidCapacitor()) return;
+    const onNativeBack = (event: Event) => {
+      event.preventDefault();
+      handleBack();
+      window.dispatchEvent(new CustomEvent(NATIVE_BACK_RESULT_EVENT, { detail: { handled: true, atRoot: ROOT_ROUTES.has(routePath(stateRef.current.route)) } }));
+    };
+    window.addEventListener(NATIVE_BACK_EVENT, onNativeBack);
+    return () => window.removeEventListener(NATIVE_BACK_EVENT, onNativeBack);
   }, [handleBack]);
 
   if (!toastVisible) return null;

@@ -136,3 +136,9 @@ html[data-auto-ai-visible="false"] .neural-call-screen * {
 }
 .neural-call-screen[data-call-semantic="success"]{--call-state-color:#22C55E}.neural-call-screen[data-call-semantic="processing"]{--call-state-color:#22D3EE}.neural-call-screen[data-call-semantic="recovery"]{--call-state-color:#F59E0B}.neural-call-screen[data-call-semantic="error"]{--call-state-color:#EF4444}.neural-call-screen[data-call-semantic="neutral"]{--call-state-color:#94A3B8}.call-state-label{color:var(--call-state-color)!important}
 .remote-call-audio{position:absolute;width:1px;height:1px;overflow:hidden;opacity:.001;pointer-events:none}
+.call-readiness { border-left: 3px solid #f59e0b; padding: 14px; }
+.call-readiness-ready { border-left-color: #10b981; }
+.call-readiness-blocked { border-left-color: #ef4444; }
+.call-readiness p, .call-readiness small { display: block; margin: 6px 0; }
+.call-readiness-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.call-readiness-actions button { border: 1px solid rgba(165,243,252,.25); border-radius: 8px; padding: 7px 10px; }

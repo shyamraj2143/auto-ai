@@ -69,6 +69,11 @@ public final class PushTokenRegistrar {
         return value.isEmpty() ? "Android device" : value.substring(0, Math.min(120, value.length()));
     }
 
+    public static boolean hasStoredToken(Context context) {
+        String token = context.getSharedPreferences(TOKEN_PREFERENCES, Context.MODE_PRIVATE).getString(LAST_FCM_TOKEN, null);
+        return token != null && !token.trim().isEmpty();
+    }
+
     private static void registerUpdateToken(Context context, String token) {
         HttpURLConnection connection = null;
         try {

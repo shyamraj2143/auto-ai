@@ -3,6 +3,7 @@ package com.autoai.app;
 import android.Manifest;
 import android.app.AlertDialog;
 import android.app.NotificationManager;
+import android.app.NotificationChannel;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -11,6 +12,7 @@ import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
+import android.os.PowerManager;
 import android.provider.Settings;
 import android.util.Log;
 
@@ -264,6 +266,60 @@ public class AutoAiCallsPlugin extends Plugin {
         result.put("required", Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE);
         result.put("granted", canUseFullScreenIntent());
         call.resolve(result);
+    }
+
+    @PluginMethod
+    public void getCallReadiness(PluginCall call) {
+        Context context = getContext();
+        CallNotificationManager.createChannels(context);
+        NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        NotificationChannel channel = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && manager != null
+            ? manager.getNotificationChannel(CallNotificationManager.CHANNEL_INCOMING) : null;
+        PowerManager power = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        boolean notificationsAllowed = manager != null && manager.areNotificationsEnabled()
+            && (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED);
+        int importance = channel == null ? (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ? NotificationManager.IMPORTANCE_HIGH : NotificationManager.IMPORTANCE_NONE) : channel.getImportance();
+        boolean channelReady = importance >= NotificationManager.IMPORTANCE_HIGH;
+        boolean fullScreen = canUseFullScreenIntent();
+        JSObject result = new JSObject();
+        result.put("status", !notificationsAllowed || !channelReady ? "BLOCKED" : fullScreen ? "READY" : "LIMITED");
+        result.put("sdkVersion", Build.VERSION.SDK_INT);
+        result.put("manufacturer", Build.MANUFACTURER);
+        result.put("model", Build.MODEL);
+        result.put("appVersion", BuildConfig.VERSION_NAME);
+        result.put("appVersionCode", BuildConfig.VERSION_CODE);
+        result.put("firebaseTokenRegistered", PushTokenRegistrar.hasStoredToken(context));
+        result.put("notificationsAllowed", notificationsAllowed);
+        result.put("channelExists", channel != null || Build.VERSION.SDK_INT < Build.VERSION_CODES.O);
+        result.put("channelImportance", importance);
+        result.put("channelSoundEnabled", channel == null || channel.getSound() != null);
+        result.put("channelVibrationEnabled", channel == null || channel.shouldVibrate());
+        result.put("lockscreenVisibility", channel == null ? NotificationManager.IMPORTANCE_UNSPECIFIED : channel.getLockscreenVisibility());
+        result.put("fullScreenIntentAllowed", fullScreen);
+        result.put("batteryOptimizationIgnored", power != null && power.isIgnoringBatteryOptimizations(context.getPackageName()));
+        result.put("microphoneAllowed", context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED);
+        result.put("cameraAllowed", context.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED);
+        call.resolve(result);
+    }
+
+    @PluginMethod
+    public void openIncomingCallChannelSettings(PluginCall call) {
+        Intent intent = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            ? new Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, getContext().getPackageName())
+                .putExtra(Settings.EXTRA_CHANNEL_ID, CallNotificationManager.CHANNEL_INCOMING)
+            : new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getContext().getPackageName()));
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(intent);
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void openBatteryOptimizationSettings(PluginCall call) {
+        Intent intent = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try { getContext().startActivity(intent); }
+        catch (RuntimeException error) { openAppSettings(call); return; }
+        call.resolve();
     }
 
     @PluginMethod
