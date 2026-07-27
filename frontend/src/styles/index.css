@@ -1971,11 +1971,23 @@ button:disabled {
   background: rgba(192, 132, 252, 0.18);
 }
 
+:root {
+  --brand-icon-xs: 24px;
+  --brand-icon-sm: 32px;
+  --brand-icon-md: 48px;
+  --brand-icon-lg: 72px;
+  --brand-icon-hero: 96px;
+  --brand-icon-hero-desktop: 160px;
+  --compact-control-height: 48px;
+}
+
 .app-logo {
   display: block;
   height: 100%;
   width: 100%;
-  object-fit: cover;
+  max-height: var(--brand-icon-hero-desktop);
+  max-width: var(--brand-icon-hero-desktop);
+  object-fit: contain;
 }
 
 .app-logo-inline {

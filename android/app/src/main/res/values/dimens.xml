@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="brand_icon_xs">24dp</dimen>
+    <dimen name="brand_icon_sm">32dp</dimen>
+    <dimen name="brand_icon_md">48dp</dimen>
+    <dimen name="brand_icon_lg">72dp</dimen>
+    <dimen name="brand_icon_max_dialog">88dp</dimen>
+</resources>
