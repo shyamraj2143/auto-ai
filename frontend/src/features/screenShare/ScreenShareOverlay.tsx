@@ -1,6 +1,7 @@
 import { Clipboard, Hash, LogIn, Monitor, Mic, MicOff, Pause, Play, ScreenShare, Square, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { resolveApiAssetUrl } from "../../api/client";
+import { AppSelect } from "../../components/common/AppSelect";
 import { ScreenShareViewer } from "./ScreenShareViewer";
 import { useScreenShare } from "./useScreenShare";
 import type { ScreenShareQualityMode } from "./types";
@@ -126,13 +127,7 @@ export function ScreenShareOverlay() {
           {share.uiState === "waiting" && <small>Waiting for viewer</small>}
           <small className={`ss-network ss-network-${share.networkQuality}`}>{share.networkQuality === "poor" ? "Poor network" : share.networkQuality === "good" ? "Network good" : share.networkQuality}</small>
           {share.sentResolution && <small>{share.sentResolution}</small>}
-          <select value={share.qualityMode} onChange={(event) => share.setQualityMode(event.target.value as ScreenShareQualityMode)} aria-label="Screen share quality">
-            <option value="auto">Auto</option>
-            <option value="data-saver">Data Saver</option>
-            <option value="sharp-text">Sharp Text</option>
-            <option value="smooth-motion">Smooth Motion</option>
-            <option value="hd">HD</option>
-          </select>
+          <AppSelect value={share.qualityMode} onChange={(value) => share.setQualityMode(value as ScreenShareQualityMode)} label="Screen share quality" options={[{value:"auto",label:"Auto"},{value:"data-saver",label:"Data Saver"},{value:"sharp-text",label:"Sharp Text"},{value:"smooth-motion",label:"Smooth Motion"},{value:"hd",label:"HD"}]} />
           {share.shareCode && <button type="button" className="ss-code-pill" onClick={() => void share.copyShareCode()} aria-label="Copy screen share code"><Hash size={15} /> {share.shareCode}</button>}
           <button type="button" onClick={() => void share.toggleMute()} aria-label={share.muted ? "Turn on mic" : "Mute mic"}>{share.muted ? <MicOff size={17} /> : <Mic size={17} />}</button>
           <button type="button" onClick={share.togglePause} aria-label={share.paused ? "Resume share" : "Pause share"}>{share.paused ? <Play size={17} /> : <Pause size={17} />}</button>

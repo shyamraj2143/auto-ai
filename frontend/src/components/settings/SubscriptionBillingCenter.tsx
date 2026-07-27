@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { API_BASE_URL, api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
+import { AppSelect } from "../common/AppSelect";
 import type { BillingCenter, BillingPlan, PaidPricingPlanName, PaymentConfig, PaymentHistoryItem, PaymentHistoryPage, PromoCodeResponse } from "../../types";
 import { createRazorpayCheckoutOptions, loadRazorpayCheckout } from "../../utils/razorpay";
 import { normalizeUpiId } from "../../utils/upi";
@@ -393,9 +394,7 @@ export function SubscriptionBillingCenter() {
           <div className="billing-side-title"><Tag size={16} /> Promo Code</div>
           <div className="billing-promo-row">
             <input className="input-dark h-10 uppercase" value={promoCode} onChange={(event) => setPromoCode(event.target.value.toUpperCase())} placeholder="Code" maxLength={40} />
-            <select className="model-select-dark h-10" value={promoPlan} onChange={(event) => setPromoPlan(event.target.value as PaidPricingPlanName)}>
-              {paidPlanOptions.map((plan) => <option key={plan.id} value={plan.id}>{plan.label}</option>)}
-            </select>
+            <AppSelect label="Promo plan" value={promoPlan} onChange={(value) => setPromoPlan(value as PaidPricingPlanName)} options={paidPlanOptions.map((plan) => ({ value: plan.id, label: plan.label }))} />
             <button className="btn-secondary h-10" onClick={applyPromo} disabled={busy === "promo"} type="button">Apply</button>
           </div>
           {promo && (
@@ -429,15 +428,7 @@ export function SubscriptionBillingCenter() {
               <Search size={15} />
               <input value={historyQueryDraft} onChange={(event) => setHistoryQueryDraft(event.target.value)} placeholder="Receipt, payment, plan, amount or date" aria-label="Search payment history" />
             </label>
-            <select
-              value={historyStatus}
-              onChange={(event) => void loadPaymentHistory({ status: event.target.value as "all" | "success" | "failed", page: 1 })}
-              aria-label="Payment status"
-            >
-              <option value="all">All</option>
-              <option value="success">Success</option>
-              <option value="failed">Failed</option>
-            </select>
+            <AppSelect label="Payment status" value={historyStatus} onChange={(value) => void loadPaymentHistory({ status: value as "all" | "success" | "failed", page: 1 })} options={[{value:"all",label:"All"},{value:"success",label:"Success"},{value:"failed",label:"Failed"}]} />
             <button className="chip-dark" disabled={historyLoading} type="submit">Search</button>
             {(historyQuery || historyStatus !== "all") && (
               <button className="chip-dark" onClick={() => { setHistoryQueryDraft(""); void loadPaymentHistory({ query: "", status: "all", page: 1 }); }} type="button">Clear</button>

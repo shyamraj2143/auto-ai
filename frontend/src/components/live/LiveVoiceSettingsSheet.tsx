@@ -1,4 +1,5 @@
 import { Volume2, X } from "lucide-react";
+import { AppSelect } from "../common/AppSelect";
 
 type VoiceOption = { voiceURI: string; name: string };
 
@@ -28,19 +29,11 @@ export function LiveVoiceSettingsSheet(props: Props) {
         </header>
         <label>
           <span>Language</span>
-          <select value={props.language} onChange={(event) => props.onLanguageChange(event.target.value)}>
-            <option value="hinglish">Hinglish</option>
-            <option value="hindi">Hindi</option>
-            <option value="english">English</option>
-          </select>
+          <AppSelect label="Language" value={props.language} onChange={props.onLanguageChange} options={[{value:"hinglish",label:"Hinglish"},{value:"hindi",label:"Hindi"},{value:"english",label:"English"}]} />
         </label>
         <label>
           <span>Voice</span>
-          <select value={props.voiceURI} onChange={(event) => props.onVoiceChange(event.target.value)}>
-            {props.voices.length
-              ? props.voices.map((voice) => <option key={voice.voiceURI} value={voice.voiceURI}>{voice.name}</option>)
-              : <option value="">System voice</option>}
-          </select>
+          <AppSelect label="Voice" value={props.voiceURI} onChange={props.onVoiceChange} options={props.voices.length ? props.voices.map((voice) => ({ value: voice.voiceURI, label: voice.name })) : [{ value: "", label: "System voice" }]} />
         </label>
         <label>
           <span>Speed <output>{props.rate.toFixed(1)}×</output></span>

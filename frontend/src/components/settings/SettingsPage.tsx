@@ -31,6 +31,7 @@ import {
   type LucideIcon
 } from "lucide-react";
 import { api } from "../../api/client";
+import { AppSelect, type AppSelectOption } from "../common/AppSelect";
 import {
   PROVIDER_MODELS,
   useAppSettings,
@@ -193,26 +194,18 @@ function Toggle({
 function Select({
   value,
   onChange,
-  children,
+  options,
   disabled,
   label
 }: {
   value: string | number;
   onChange: (value: string) => void;
-  children: React.ReactNode;
+  options: AppSelectOption[];
   disabled?: boolean;
   label: string;
 }) {
   return (
-    <select
-      aria-label={label}
-      className="settings-select h-8 w-full min-w-0 rounded-md border border-white/10 bg-slate-950/80 px-2 text-[11px] font-semibold text-cyan-50 outline-none transition focus:border-cyan-200/60 focus:ring-2 focus:ring-cyan-200/15 disabled:opacity-50 sm:w-auto sm:max-w-[220px]"
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      disabled={disabled}
-    >
-      {children}
-    </select>
+    <AppSelect label={label} value={value} options={options} onChange={onChange} disabled={disabled} />
   );
 }
 
@@ -535,13 +528,7 @@ export function SettingsPage() {
             title="Motion"
             description={safeMode ? `Safe Mode active${safeModeReason ? `: ${safeModeReason}` : ""}` : `Active: ${activeMotionMode} / ${performanceTier}`}
           >
-            <Select value={motionPreference} onChange={(value) => setMotionPreference(value as MotionPreference)} label="Motion preference">
-              {MOTION_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
+            <Select value={motionPreference} options={MOTION_OPTIONS} onChange={(value) => setMotionPreference(value as MotionPreference)} label="Motion preference" />
           </SettingsRow>
           <SettingsRow
             icon={Shield}
@@ -575,13 +562,7 @@ export function SettingsPage() {
             />
           </SettingsRow>
           <SettingsRow icon={Globe2} title="Language" description="Sets app language metadata">
-            <Select value={settings.language} onChange={(value) => setLanguage(value as AppLanguage)} label="Language">
-              {LANGUAGE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
+            <Select value={settings.language} options={LANGUAGE_OPTIONS} onChange={(value) => setLanguage(value as AppLanguage)} label="Language" />
           </SettingsRow>
         </SettingsCard>
       </div>
@@ -598,12 +579,8 @@ export function SettingsPage() {
             title="AI Model Preferences"
             description={`${PROVIDER_LABELS[settings.defaultProvider]} - ${selectedModelLabel}`}
           >
-            <Select value={settings.defaultProvider} onChange={updateProvider} label="Default AI provider">
-              {Object.entries(PROVIDER_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </Select>
-            <Select value={settings.defaultModel} onChange={setDefaultModel} label="Default AI model">
-              {providerModels.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </Select>
+            <Select value={settings.defaultProvider} options={Object.entries(PROVIDER_LABELS).map(([value, label]) => ({ value, label }))} onChange={updateProvider} label="Default AI provider" />
+            <Select value={settings.defaultModel} options={providerModels} onChange={setDefaultModel} label="Default AI model" />
           </SettingsRow>
           <SettingsRow icon={Shield} title="Memory & personalization" description="Use saved memory and selected document context">
             <Toggle checked={settings.memoryEnabled} onChange={setMemoryEnabled} />
@@ -628,12 +605,8 @@ export function SettingsPage() {
                 <button key={provider} type="button" onClick={() => toggleResearchProvider(provider)} className={clsx("h-8 rounded-md border px-2 text-[11px] font-semibold transition", settings.deepResearchProviders.includes(provider) ? "border-cyan-200/35 bg-cyan-200/12 text-cyan-50" : "border-white/10 bg-white/5 text-slate-400")}>{PROVIDER_LABELS[provider]}</button>
               ))}
             </div>
-            <Select value={settings.deepResearchMaxModels} onChange={(value) => setDeepResearchMaxModels(Number(value))} disabled={settings.deepResearchAllModels} label="Max deep research models">
-              {[1, 2, 3, 4, 5, 6].map((value) => <option key={value} value={value}>Max {value}</option>)}
-            </Select>
-            <Select value={settings.deepResearchTimeoutSeconds} onChange={(value) => setDeepResearchTimeoutSeconds(Number(value))} label="Deep research timeout">
-              {[20, 35, 45, 60, 90, 120].map((value) => <option key={value} value={value}>{value}s</option>)}
-            </Select>
+            <Select value={settings.deepResearchMaxModels} options={[1, 2, 3, 4, 5, 6].map((value) => ({ value: String(value), label: `Max ${value}` }))} onChange={(value) => setDeepResearchMaxModels(Number(value))} disabled={settings.deepResearchAllModels} label="Max deep research models" />
+            <Select value={settings.deepResearchTimeoutSeconds} options={[20, 35, 45, 60, 90, 120].map((value) => ({ value: String(value), label: `${value}s` }))} onChange={(value) => setDeepResearchTimeoutSeconds(Number(value))} label="Deep research timeout" />
           </SettingsRow>
           <SettingsRow icon={Sparkles} accent="violet" title="Use all deep research models" description="Overrides max model limit">
             <Toggle checked={settings.deepResearchAllModels} onChange={setDeepResearchAllModels} />
@@ -648,13 +621,7 @@ export function SettingsPage() {
     return (
       <SettingsCard>
         <SettingsRow icon={Monitor} accent="cyan" title="Share quality" description="Used by the existing screen-sharing sender">
-          <Select value={screenShare.qualityMode} onChange={(value) => screenShare.setQualityMode(value as ScreenShareQualityMode)} label="Screen share quality">
-            <option value="auto">Auto</option>
-            <option value="data-saver">Data Saver</option>
-            <option value="sharp-text">Sharp Text</option>
-            <option value="smooth-motion">Smooth Motion</option>
-            <option value="hd">HD</option>
-          </Select>
+          <Select value={screenShare.qualityMode} options={[{ value: "auto", label: "Auto" }, { value: "data-saver", label: "Data Saver" }, { value: "sharp-text", label: "Sharp Text" }, { value: "smooth-motion", label: "Smooth Motion" }, { value: "hd", label: "HD" }]} onChange={(value) => screenShare.setQualityMode(value as ScreenShareQualityMode)} label="Screen share quality" />
         </SettingsRow>
         <SettingsRow icon={Radio} accent={active ? "green" : "cyan"} title="Connection status" description={active ? `${screenShare.uiState} · ${screenShare.networkQuality} network` : "No active screen-sharing session"} />
         <SettingsRow icon={Mic} accent="violet" title="Shared audio and session controls" description="Microphone, pause, viewer access and copy-code controls appear only during an active session" />
@@ -689,11 +656,7 @@ export function SettingsPage() {
     return (
       <SettingsCard>
         <SettingsRow icon={MessageCircle} accent="violet" title="Message privacy" description="Who can start a user-to-user chat">
-          <Select value={current?.allow_messages_from || "everyone"} onChange={(value) => void updateChatSettings({ allow_messages_from: value as ChatSettings["allow_messages_from"] })} label="Allow messages from">
-            <option value="everyone">Everyone</option>
-            <option value="known_users">Known users</option>
-            <option value="nobody">Nobody</option>
-          </Select>
+          <Select value={current?.allow_messages_from || "everyone"} options={[{ value: "everyone", label: "Everyone" }, { value: "known_users", label: "Known users" }, { value: "nobody", label: "Nobody" }]} onChange={(value) => void updateChatSettings({ allow_messages_from: value as ChatSettings["allow_messages_from"] })} label="Allow messages from" />
         </SettingsRow>
         <SettingsRow icon={CheckCheck} accent="cyan" title="Read receipts" description="Show when you read messages">
           <Toggle checked={current?.read_receipts_enabled ?? true} onChange={(checked) => void updateChatSettings({ read_receipts_enabled: checked })} disabled={!current} />

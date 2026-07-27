@@ -2,6 +2,7 @@ import { BellRing, Eye, EyeOff, LoaderCircle, Mic, PhoneCall, ShieldAlert, Shiel
 import { useCallback, useEffect, useState } from "react";
 import { resolveApiAssetUrl } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
+import { AppSelect } from "../../components/common/AppSelect";
 import { callApi } from "./services/callApi";
 import type { BlockedCallUser, CallSettings as Settings } from "./types";
 
@@ -56,7 +57,7 @@ export function CallSettings() {
       <section>
         <SettingToggle icon={Video} label="Allow video calls" description="Receive person-to-person video calls" checked={settings.allow_video_calls} onChange={(value) => void update({ allow_video_calls: value })} />
         <SettingToggle icon={Mic} label="Allow audio calls" description="Receive person-to-person audio calls" checked={settings.allow_audio_calls} onChange={(value) => void update({ allow_audio_calls: value })} />
-        <div className="call-setting-row"><span><PhoneCall size={16} /><span><strong>Allow calls from</strong><small>Choose who can start a call</small></span></span><select value={settings.call_permission} onChange={(event) => void update({ call_permission: event.target.value as Settings["call_permission"] })} aria-label="Allow calls from"><option value="everyone">Everyone</option><option value="followers">Followers</option><option value="mutual_followers">Mutual followers</option><option value="approved_contacts">Approved contacts</option><option value="previous_contacts">Previous calls</option><option value="nobody">Nobody</option></select></div>
+        <div className="call-setting-row"><span><PhoneCall size={16} /><span><strong>Allow calls from</strong><small>Choose who can start a call</small></span></span><AppSelect value={settings.call_permission} onChange={(value) => void update({ call_permission: value as Settings["call_permission"] })} label="Allow calls from" options={[{value:"everyone",label:"Everyone"},{value:"followers",label:"Followers"},{value:"mutual_followers",label:"Mutual followers"},{value:"approved_contacts",label:"Approved contacts"},{value:"previous_contacts",label:"Previous calls"},{value:"nobody",label:"Nobody"}]} /></div>
         <SettingToggle icon={ShieldBan} label="Silence unknown callers" description="Unknown calls arrive without sound or vibration" checked={settings.silence_unknown_callers} onChange={(value) => void update({ silence_unknown_callers: value })} />
       </section>
       <section>

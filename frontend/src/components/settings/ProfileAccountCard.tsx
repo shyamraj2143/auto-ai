@@ -5,6 +5,7 @@ import { api, resolveApiAssetUrl } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import type { User } from "../../types";
 import { CrystalBadge, CrystalCard } from "../crystal/Crystal";
+import { AppSelect } from "../common/AppSelect";
 
 const USERNAME_PATTERN = /^[a-z0-9._]{3,30}$/;
 const RESERVED_USERNAMES = new Set(["admin", "administrator", "support", "autoai", "system", "api", "null"]);
@@ -254,9 +255,7 @@ export function ProfileAccountCard() {
               <label className="grid gap-1 text-[11px] font-semibold text-slate-300">
                 Mobile number
                 <div className="grid grid-cols-[92px_1fr] gap-2">
-                  <select className="settings-select h-10" value={country} onChange={(event) => setPhone((current) => ({ ...current, country: event.target.value }))}>
-                    {COUNTRY_CODES.map((code) => <option key={code} value={code}>{code}</option>)}
-                  </select>
+                  <AppSelect label="Country code" value={country} onChange={(value) => setPhone((current) => ({ ...current, country: value }))} options={COUNTRY_CODES.map((code) => ({ value: code, label: code }))} />
                   <input className="input-dark" value={number} inputMode="tel" onChange={(event) => setPhone((current) => ({ ...current, number: event.target.value.replace(/[^\d\s-]/g, "") }))} />
                 </div>
               </label>
