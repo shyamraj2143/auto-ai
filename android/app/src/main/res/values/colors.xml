@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#4B7BFF</color>
+    <color name="colorPrimaryDark">#030A17</color>
+    <color name="colorAccent">#5FE3FF</color>
+    <color name="autoai_window_background">#030A17</color>
+    <color name="autoai_navigation_bar">#020A16</color>
+</resources>

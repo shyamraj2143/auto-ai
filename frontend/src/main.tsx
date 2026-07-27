@@ -4,6 +4,7 @@ import "highlight.js/styles/github-dark.min.css";
 import "./styles/index.css";
 import "./styles/crystal.css";
 import "./styles/prism.css";
+import "./styles/actionHubTheme.css";
 import App from "./App";
 import { beginStartupRecovery } from "./reliability/safeMode";
 
