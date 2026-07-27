@@ -17,6 +17,7 @@ from app.schemas.call import (
     BlockRequest,
     CallActionRequest,
     CallCreateRequest,
+    CallDeliveryAckRequest,
     CallFeatureConfig,
     CallFailureRequest,
     CallHealth,
@@ -33,6 +34,7 @@ from app.schemas.call import (
 )
 from app.services.call_permission_service import call_allowed, get_or_create_call_settings
 from app.services.call_service import base_public_user, call_service
+from app.services.call_fallback_service import acknowledge_delivery
 from app.services.device_token_security import encrypt_token, token_hash
 from app.services.firebase_notifications import firebase_notification_service
 from jose import JWTError, jwt
@@ -534,6 +536,22 @@ async def end_call(
 ) -> CallRead:
     call = await call_service.end(db, call_id, current_user.id, payload.end_reason)
     return await call_service.serialize_call(db, call, current_user.id)
+
+
+@router.post("/{call_id}/delivery-ack", status_code=status.HTTP_204_NO_CONTENT)
+def delivery_ack(
+    call_id: str,
+    payload: CallDeliveryAckRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    call = db.get(Call, call_id)
+    if not call or call.callee_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Call not found.")
+    device = db.scalar(select(UserDevice).where(UserDevice.user_id == current_user.id, UserDevice.device_id == payload.installation_id))
+    if not device or not acknowledge_delivery(call_id, payload.installation_id, payload.stage, payload.event_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Call delivery event not found.")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{call_id}/fail", response_model=CallRead)

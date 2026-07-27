@@ -6,7 +6,7 @@ from app.models.chat import Chat
 from app.models.chat_generation import ChatGeneration
 from app.models.chat_message import ChatMessage
 from app.models.chat_session import ChatSession
-from app.models.call import BlockedUser, Call, CallReport, DeviceCommand, UserCallSettings, UserDevice
+from app.models.call import BlockedUser, Call, CallDelivery, CallReport, DeviceCommand, UserCallSettings, UserDevice
 from app.models.cms import Announcement, ContentAuditLog, ContentBlock, ContentPage, ContentRevision, FaqEntry, GlobalContent, MediaAsset, UiTextEntry
 from app.models.device_monitoring import UserDeviceActivity
 from app.models.demo_chat import DemoChatSession
@@ -35,6 +35,7 @@ __all__ = [
     "ChatThread",
     "BlockedUser",
     "Call",
+    "CallDelivery",
     "CallReport",
     "Announcement",
     "ContentAuditLog",

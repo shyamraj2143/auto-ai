@@ -44,12 +44,13 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         String callId = data.get("call_id");
         long callRevision = parseInt(data.get("call_revision"));
         Log.i(TAG, "FCM received type=" + messageType + " callId=" + data.get("call_id"));
-        if ("incoming_call".equals(messageType)) {
+        if ("incoming_call".equals(messageType) || "incoming_call_fallback".equals(messageType)) {
             String priorityResult = message.getOriginalPriority() == RemoteMessage.PRIORITY_HIGH
                 ? (message.getPriority() == RemoteMessage.PRIORITY_HIGH ? "HIGH_DELIVERED_AS_HIGH" : "HIGH_DOWNGRADED_TO_NORMAL")
                 : "UNKNOWN_PRIORITY";
             long ageMs = message.getSentTime() > 0 ? Math.max(0L, System.currentTimeMillis() - message.getSentTime()) : -1L;
             CallNotificationManager.diagnostic(this, "FCM_RECEIVED_ON_DEVICE", data, priorityResult + ":age_ms=" + ageMs);
+            CallDeliveryAckWorker.schedule(this, data, "device_received", String.valueOf(message.getOriginalPriority()), String.valueOf(message.getPriority()));
             CallNotificationManager.showIncoming(this, data);
             return;
         }
@@ -95,6 +96,13 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
                 : "Version " + versionName + " is ready to install.";
         }
         showNotification(versionCode, title, body);
+    }
+
+    @Override
+    public void onDeletedMessages() {
+        super.onDeletedMessages();
+        Log.w(TAG, "FCM_DELETED_MESSAGES");
+        PushTokenRegistrar.registerStoredUserDeviceIfAuthenticated(this);
     }
 
     private void showChatNotification(Map<String, String> data, RemoteMessage.Notification notification) {

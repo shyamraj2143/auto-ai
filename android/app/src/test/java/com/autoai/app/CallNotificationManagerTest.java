@@ -7,8 +7,9 @@ import org.junit.Test;
 
 public class CallNotificationManagerTest {
     @Test
-    public void incomingChannelUsesVersionThree() {
-        assertEquals("auto_ai_incoming_calls_v3", CallNotificationManager.CHANNEL_INCOMING);
+    public void incomingChannelUsesVersionFour() {
+        assertEquals("auto_ai_incoming_calls_v4", CallNotificationManager.CHANNEL_INCOMING);
+        assertEquals("auto_ai_incoming_calls_v3", CallNotificationManager.CHANNEL_INCOMING_V3);
     }
 
     @Test
@@ -17,5 +18,10 @@ public class CallNotificationManagerTest {
         assertNotEquals(accept, CallNotificationManager.requestCode("call-1", "decline", 4L));
         assertNotEquals(accept, CallNotificationManager.requestCode("call-1", "accept", 5L));
         assertNotEquals(accept, CallNotificationManager.requestCode("call-2", "accept", 4L));
+    }
+
+    @Test
+    public void primaryAndFallbackShareNotificationTag() {
+        assertEquals("autoai_call_call-1", CallNotificationManager.notificationTag("call-1"));
     }
 }

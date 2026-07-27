@@ -31,7 +31,8 @@ import java.util.concurrent.Executors;
 public final class CallNotificationManager {
     private static final String TAG = "AutoAiCallNotif";
     public static final String CHANNEL_INCOMING_LEGACY = "auto_ai_incoming_calls";
-    public static final String CHANNEL_INCOMING = "auto_ai_incoming_calls_v3";
+    public static final String CHANNEL_INCOMING_V3 = "auto_ai_incoming_calls_v3";
+    public static final String CHANNEL_INCOMING = "auto_ai_incoming_calls_v4";
     public static final String CHANNEL_ACTIVE = "auto_ai_active_calls";
     public static final String EXTRA_CALL_ID = "call_id";
     public static final String EXTRA_CALLER_ID = "caller_id";
@@ -170,9 +171,10 @@ public final class CallNotificationManager {
         if (manager != null) {
             try {
                 diagnostic(context, "NATIVE_NOTIFICATION_CREATED", data, "CREATED");
-                manager.notify(notificationId(callId), builder.build());
+                manager.notify(notificationTag(callId), 0, builder.build());
                 markEventSeen(context, eventId);
                 diagnostic(context, "NATIVE_NOTIFICATION_POSTED", data, "POSTED");
+                CallDeliveryAckWorker.schedule(context, data, "notification_displayed", "", "");
                 acknowledgeRinging(context, callId);
                 try { telecomReported = AutoAiTelecomBridge.reportIncomingCall(context, data); }
                 catch (RuntimeException telecomError) { Log.w(TAG, "Telecom presentation failed after notification post callId=" + callId, telecomError); }
@@ -195,7 +197,10 @@ public final class CallNotificationManager {
 
     public static void cancelNotification(Context context, String callId) {
         NotificationManager manager = manager(context);
-        if (manager != null && callId != null) manager.cancel(notificationId(callId));
+        if (manager != null && callId != null) {
+            manager.cancel(notificationTag(callId), 0);
+            manager.cancel(notificationId(callId));
+        }
     }
 
     public static void cancelAllForCall(Context context, String callId) {
@@ -249,6 +254,10 @@ public final class CallNotificationManager {
 
     public static int notificationId(String callId) {
         return 3000 + Math.abs(callId.hashCode() % 100000);
+    }
+
+    public static String notificationTag(String callId) {
+        return "autoai_call_" + callId;
     }
 
     static int requestCode(String callId, String action, long revision) {

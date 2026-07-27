@@ -52,6 +52,8 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Locale;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -189,13 +191,32 @@ public class MainActivity extends BridgeActivity {
 
     private void dispatchIncomingCallIntent(Intent intent) {
         if (intent == null) return;
+        if ("incoming_call_fallback".equals(intent.getStringExtra("type"))) {
+            Map<String, String> fallback = new HashMap<>();
+            for (String key : intent.getExtras() == null ? java.util.Collections.<String>emptySet() : intent.getExtras().keySet()) {
+                Object value = intent.getExtras().get(key);
+                if (value != null) fallback.put(key, String.valueOf(value));
+            }
+            CallNotificationManager.showIncoming(this, fallback);
+            CallDeliveryAckWorker.schedule(this, fallback, "fallback_opened", "", "");
+        }
         String callId = intent.getStringExtra(CallNotificationManager.EXTRA_CALL_ID);
         if (callId == null || callId.trim().isEmpty()) return;
         String action = intent.getStringExtra(CallNotificationManager.EXTRA_ACTION);
         if (action != null && !"accept".equals(action) && !"audio_only".equals(action)) return;
         callId = callId.trim();
         final String pendingCallId = callId;
-        CallNotificationManager.savePending(this, callId, action, System.currentTimeMillis() + 60000L);
+        long intentExpiry = intent.getLongExtra(CallNotificationManager.EXTRA_EXPIRES_AT, 0L);
+        if (intentExpiry <= 0L) {
+            try { intentExpiry = Long.parseLong(intent.getStringExtra(CallNotificationManager.EXTRA_EXPIRES_AT)); }
+            catch (Exception ignored) { intentExpiry = System.currentTimeMillis() + 60000L; }
+        }
+        if (intentExpiry <= System.currentTimeMillis()) {
+            CallNotificationManager.cancelAllForCall(this, callId);
+            Toast.makeText(this, "This call has already ended.", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        CallNotificationManager.savePending(this, callId, action, intentExpiry);
         mainHandler.postDelayed(() -> {
             try {
                 JSONObject detail = new JSONObject();

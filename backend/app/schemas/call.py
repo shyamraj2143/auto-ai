@@ -87,6 +87,16 @@ class CallActionRequest(BaseModel):
     action_token: str | None = Field(default=None, min_length=16, max_length=2048)
 
 
+class CallDeliveryAckRequest(BaseModel):
+    event_id: str = Field(min_length=8, max_length=64)
+    installation_id: str = Field(min_length=4, max_length=128)
+    stage: Literal["device_received", "notification_displayed", "fallback_opened"]
+    delivery_mode: Literal["native_primary", "system_fallback"]
+    original_priority: str | None = Field(default=None, max_length=40)
+    delivered_priority: str | None = Field(default=None, max_length=40)
+    received_at: datetime | None = None
+
+
 class CallFailureRequest(BaseModel):
     failure_code: Literal[
         "FOREGROUND_SERVICE_FAILED",

@@ -1,5 +1,6 @@
 import logging
 import hashlib
+import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urljoin
@@ -9,7 +10,8 @@ from sqlalchemy.orm import Session
 from jose import jwt
 
 from app.core.config import settings
-from app.models.call import Call, UserCallSettings, UserDevice
+from app.models.call import Call, CallDelivery, UserCallSettings, UserDevice
+from app.services.call_fallback_service import cancel_call_fallbacks, schedule_fallback
 from app.models.user import User
 from app.services.device_token_security import decrypt_token
 from app.services.firebase_notifications import firebase_notification_service
@@ -72,6 +74,7 @@ def send_incoming_call_notifications(
         "event_id": str(uuid.uuid4()),
         "action_token": action_token,
         "type": "incoming_call",
+        "delivery_mode": "native_primary",
         "call_id": call.id,
         "call_revision": str(call.revision),
         "trace_id": call.trace_id,
@@ -88,8 +91,10 @@ def send_incoming_call_notifications(
     sent = 0
     logger.info("call_fcm_incoming_attempt call_id=%s devices=%d silent=%s", call.id, len(devices), silent)
     for device in devices:
+        device_data = dict(data)
+        device_data["event_id"] = str(uuid.uuid4())
         installation_hash = _installation_hash(device.device_id)
-        logger.info("FCM_SEND_REQUESTED call_id=%s trace_id=%s event_id=%s installation_hash=%s app_version=%s result=REQUESTED timestamp=%s", call.id, call.trace_id, data["event_id"], installation_hash, device.app_version or "", now.isoformat())
+        logger.info("FCM_SEND_REQUESTED call_id=%s trace_id=%s event_id=%s installation_hash=%s app_version=%s result=REQUESTED timestamp=%s", call.id, call.trace_id, device_data["event_id"], installation_hash, device.app_version or "", now.isoformat())
         token = decrypt_token(device.fcm_token_ciphertext, device.fcm_token)
         if not token:
             device.last_fcm_send_result = "rejected"
@@ -101,12 +106,21 @@ def send_incoming_call_notifications(
             device.fcm_token_hash = None
             device.updated_at = datetime.utcnow()
             continue
-        result = firebase_notification_service.send_call_data(token, data, settings.CALL_NOTIFICATION_TTL_SECONDS)
+        result = firebase_notification_service.send_call_data(token, device_data, settings.CALL_NOTIFICATION_TTL_SECONDS)
         if result.ok:
             sent += 1
             device.last_fcm_send_result = "accepted"
             device.last_fcm_failure_code = None
-            logger.info("FCM_QUEUED call_id=%s trace_id=%s event_id=%s installation_hash=%s app_version=%s result=QUEUED timestamp=%s", call.id, call.trace_id, data["event_id"], installation_hash, device.app_version or "", datetime.now(timezone.utc).isoformat())
+            logger.info("PRIMARY_FCM_ACCEPTED call_id=%s trace_id=%s event_id=%s installation_hash=%s app_version=%s", call.id, call.trace_id, device_data["event_id"], installation_hash, device.app_version or "")
+            delivery = CallDelivery(
+                call_id=call.id, device_id=device.id, primary_event_id=device_data["event_id"],
+                primary_fcm_requested_at=datetime.utcnow(), primary_fcm_result="PRIMARY_ACCEPTED",
+                fallback_due_at=datetime.utcnow() + timedelta(seconds=3), payload_json=json.dumps(device_data, separators=(",", ":")),
+            )
+            db.add(delivery)
+            db.flush()
+            if not schedule_fallback(delivery.id, delivery.fallback_due_at):
+                delivery.last_delivery_failure_code = "FALLBACK_SCHEDULE_FAILED"
             logger.info("call_fcm_incoming_sent call_id=%s device_id=%s", call.id, device.device_id)
         elif result.inactive:
             device.last_fcm_send_result = "rejected"
@@ -127,6 +141,7 @@ def send_incoming_call_notifications(
 
 
 def send_call_dismiss_notifications(db: Session, call: Call, event_type: str) -> int:
+    cancel_call_fallbacks(call.id)
     if not firebase_notification_service.configured:
         logger.info("call_fcm_dismiss_skipped_unconfigured call_id=%s event_type=%s", call.id, event_type)
         return 0
@@ -155,6 +170,7 @@ def send_call_dismiss_notifications(db: Session, call: Call, event_type: str) ->
             {
                 "event_id": str(uuid.uuid4()),
                 "type": event_type,
+                "notification_tag": f"autoai_call_{call.id}",
                 "call_id": call.id,
                 "call_revision": str(call.revision),
                 "trace_id": call.trace_id,

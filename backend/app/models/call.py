@@ -123,6 +123,29 @@ class Call(Base):
     )
 
 
+class CallDelivery(Base):
+    __tablename__ = "call_deliveries"
+    __table_args__ = (UniqueConstraint("call_id", "device_id", name="uq_call_delivery_device"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    call_id: Mapped[str] = mapped_column(String(36), ForeignKey("calls.id", ondelete="CASCADE"), index=True, nullable=False)
+    device_id: Mapped[str] = mapped_column(String(36), ForeignKey("user_devices.id", ondelete="CASCADE"), index=True, nullable=False)
+    primary_event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    primary_fcm_requested_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    primary_fcm_result: Mapped[str] = mapped_column(String(48), nullable=False)
+    native_received_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    notification_displayed_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    fallback_due_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    fallback_sent_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    fallback_fcm_result: Mapped[str] = mapped_column(String(48), nullable=True)
+    fallback_event_id: Mapped[str] = mapped_column(String(36), nullable=True)
+    fallback_opened_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    last_delivery_failure_code: Mapped[str] = mapped_column(String(64), nullable=True)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
 class BlockedUser(Base):
     __tablename__ = "blocked_users"
     __table_args__ = (UniqueConstraint("blocker_id", "blocked_user_id", name="uq_blocked_users_pair"),)

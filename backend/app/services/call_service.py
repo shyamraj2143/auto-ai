@@ -538,6 +538,8 @@ async def call_timeout_worker(stop_event: asyncio.Event) -> None:
         try:
             if settings.CALL_FEATURE_ENABLED and await presence_service.check():
                 await expire_stale_calls_once()
+                from app.services.call_fallback_service import process_due_fallbacks
+                await asyncio.to_thread(process_due_fallbacks)
         except Exception:
             pass
         try:

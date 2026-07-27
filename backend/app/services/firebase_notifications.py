@@ -83,6 +83,7 @@ class FirebaseNotificationService:
         return self._send(message)
 
     def send_call_data(self, token: str, data: dict[str, str], ttl_seconds: int) -> FcmSendResult:
+        analytics_label = "incoming_call_primary" if data.get("type") == "incoming_call" else "call_terminal"
         message = {
             "message": {
                 "token": token,
@@ -91,10 +92,31 @@ class FirebaseNotificationService:
                     "priority": "HIGH",
                     "ttl": f"{max(1, ttl_seconds)}s",
                     "direct_boot_ok": False,
+                    "fcm_options": {"analytics_label": analytics_label},
                 },
             }
         }
         return self._send(message)
+
+    def send_call_system_fallback(self, token: str, data: dict[str, str], title: str, body: str, ttl_seconds: int, notification_tag: str) -> FcmSendResult:
+        return self._send({"message": {
+            "token": token,
+            "notification": {"title": title[:120], "body": body[:180]},
+            "data": data,
+            "android": {
+                "priority": "HIGH",
+                "ttl": f"{max(1, ttl_seconds)}s",
+                "direct_boot_ok": False,
+                "notification": {
+                    "channel_id": "auto_ai_incoming_calls_v4",
+                    "notification_priority": "PRIORITY_MAX",
+                    "default_sound": True,
+                    "visibility": "PUBLIC",
+                    "tag": notification_tag,
+                },
+                "fcm_options": {"analytics_label": "incoming_call_fallback"},
+            },
+        }})
 
     def send_chat_data(self, token: str, data: dict[str, str], title: str, body: str) -> FcmSendResult:
         message = {

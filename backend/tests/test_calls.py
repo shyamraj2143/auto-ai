@@ -14,7 +14,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.routes.calls import call_health, discoverable_users_query, register_call_device, ringing_call, search_users
 from app.core.config import settings
 from app.db.base import Base
-from app.models.call import BlockedUser, Call, UserCallSettings, UserDevice
+from app.models.call import BlockedUser, Call, CallDelivery, UserCallSettings, UserDevice
 from app.models.social import SocialFollow
 from app.models.user import User
 from app.schemas.call import CallActionRequest, DeviceRegisterRequest, PublicCallUser, SignalEvent
@@ -183,6 +183,8 @@ def test_incoming_call_fcm_payload_has_event_id_and_high_priority_path(
             return type("Result", (), {"ok": True, "inactive": False, "detail": ""})()
 
     monkeypatch.setattr("app.services.call_notification_service.firebase_notification_service", FakeFirebase())
+    scheduled: list[str] = []
+    monkeypatch.setattr("app.services.call_notification_service.schedule_fallback", lambda delivery_id, due_at: scheduled.append(delivery_id) or True)
 
     sent = send_incoming_call_notifications(db, call, caller, UserCallSettings(user_id=callee.id), silent=False)
 
@@ -190,6 +192,10 @@ def test_incoming_call_fcm_payload_has_event_id_and_high_priority_path(
     assert sent_payloads[0]["type"] == "incoming_call"
     assert sent_payloads[0]["call_id"] == call.id
     assert sent_payloads[0]["event_id"]
+    assert sent_payloads[0]["delivery_mode"] == "native_primary"
+    delivery = db.query(CallDelivery).one()
+    assert delivery.primary_fcm_result == "PRIMARY_ACCEPTED"
+    assert delivery.id == scheduled[0]
     claims = jwt.decode(
         sent_payloads[0]["action_token"], settings.jwt_secret_key, algorithms=[settings.JWT_ALGORITHM]
     )
