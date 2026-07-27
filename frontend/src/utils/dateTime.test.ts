@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   formatMessageDateLabel,
+  formatChatHistoryDateTime,
   formatMessageTime,
   dateSeparatorFlags,
   isSameLocalDay,
@@ -32,6 +33,13 @@ describe("API datetime contract", () => {
     expect(formatMessageTime("2026-07-27T09:00:00Z", "en-IN")).toMatch(/2:30\s*pm/i);
     process.env.TZ = "America/New_York";
     expect(formatMessageTime("2026-07-27T09:00:00Z", "en-US")).toMatch(/5:00\s*AM/i);
+  });
+
+  it("formats chat-history date and time in the device timezone", () => {
+    process.env.TZ = "Asia/Kolkata";
+    const label = formatChatHistoryDateTime("2026-07-27T09:00:00Z", "en-IN");
+    expect(label).toMatch(/27 Jul 2026/i);
+    expect(label).toMatch(/2:30\s*pm/i);
   });
 
   it("groups by local calendar day across a UTC midnight boundary", () => {

@@ -47,6 +47,16 @@ export function formatMessageDateTimeTitle(value?: string | null, locale?: strin
     : "";
 }
 
+export function formatChatHistoryDateTime(value?: string | null, locale?: string | string[]): string {
+  const date = parseApiTimestamp(value);
+  return date
+    ? new Intl.DateTimeFormat(locale, {
+        day: "2-digit", month: "short", year: "numeric",
+        hour: "numeric", minute: "2-digit"
+      }).format(date)
+    : "Date unavailable";
+}
+
 export function localDayKey(value?: string | null): string | null {
   const date = parseApiTimestamp(value);
   if (!date) return null;

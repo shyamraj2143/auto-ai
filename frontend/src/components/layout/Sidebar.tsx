@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Bot, CreditCard, Eraser, LogOut, MessageCircle, MessageSquarePlus, PanelLeftClose, Pencil, Search, Settings, Shield, Trash2, UserCircle2, X } from "lucide-react";
+import { Bot, CalendarClock, CreditCard, Eraser, LogOut, MessageCircle, MessageSquarePlus, PanelLeftClose, Pencil, Search, Settings, Shield, Trash2, UserCircle2, X } from "lucide-react";
 import clsx from "clsx";
 import { resolveApiAssetUrl } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
@@ -9,6 +9,7 @@ import { useShell } from "../../contexts/ShellContext";
 import { useSettingsNavigation } from "../../hooks/useSettingsNavigation";
 import { LogoIcon } from "../brand/LogoIcon";
 import { isAdminPanelRole } from "../../utils/roles";
+import { formatChatHistoryDateTime, formatMessageDateTimeTitle } from "../../utils/dateTime";
 
 const accountMenuItemClass =
   "compact-button flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm font-medium text-white transition hover:border-cyan-200/30 hover:bg-cyan-200/10";
@@ -220,6 +221,13 @@ export function Sidebar() {
               <button className="min-w-0 flex-1 px-3 py-2 text-left" onClick={() => openExistingChat(chat.id)} type="button">
                 <span className="block truncate text-sm text-slate-100">{chat.title}</span>
                 <span className="mt-0.5 block truncate text-[11px] text-slate-500">{chat.mode || "normal"} / {chat.model}</span>
+                <span
+                  className="mt-1 flex items-center gap-1 truncate text-[10px] text-cyan-200/70"
+                  title={formatMessageDateTimeTitle(chat.updated_at || chat.created_at)}
+                >
+                  <CalendarClock size={11} className="shrink-0" />
+                  <time dateTime={chat.updated_at || chat.created_at}>{formatChatHistoryDateTime(chat.updated_at || chat.created_at)}</time>
+                </span>
               </button>
               <button
                 className="mr-1 rounded p-1 text-white/50 opacity-0 hover:text-white group-hover:opacity-100"
