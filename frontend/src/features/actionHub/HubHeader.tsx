@@ -30,9 +30,29 @@ export function HubHeader({
     if (!isNativeAndroid()) return;
     let active = true;
     let listener: { remove: () => Promise<void> } | undefined;
-    void NativeUpdate.getState().then((state) => active && setUpdateState(state)).catch(() => undefined);
-    void NativeUpdate.addListener("stateChanged", (state) => active && setUpdateState(state)).then((handle) => { listener = handle; });
-    return () => { active = false; void listener?.remove(); };
+    const apply = (state: NativeUpdateState) => {
+      if (active) setUpdateState(state);
+    };
+    const refresh = () => {
+      void NativeUpdate.getState().then(apply).catch(() => undefined);
+      void NativeUpdate.checkForUpdate().then(apply).catch(() => undefined);
+    };
+    void NativeUpdate.addListener("stateChanged", apply).then((handle) => {
+      if (active) listener = handle;
+      else void handle.remove();
+    });
+    refresh();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      void listener?.remove();
+    };
   }, []);
 
   const openUpdate = async () => {

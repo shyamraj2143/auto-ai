@@ -3,6 +3,7 @@ import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor
 export type NativeUpdateState = { installedVersionCode: number; installedVersionName: string; latestVersionCode?: number; latestVersionName?: string; updateAvailable: boolean; mandatory?: boolean; state: string; message?: string };
 type NativeUpdatePlugin = {
   getState(): Promise<NativeUpdateState>;
+  checkForUpdate(): Promise<NativeUpdateState>;
   openUpdate(): Promise<NativeUpdateState>;
   addListener(event: "stateChanged", listener: (state: NativeUpdateState) => void): Promise<PluginListenerHandle>;
 };

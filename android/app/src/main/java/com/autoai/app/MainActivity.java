@@ -132,6 +132,7 @@ public class MainActivity extends BridgeActivity {
         appUpdateDialog = new AppUpdateDialog(this);
         appUpdateDialog.start();
         AppUpdateCoordinator.get(this).check(true);
+        dispatchUpdateIntent(getIntent());
         syncPushDeviceIfAuthenticated();
         dispatchIncomingCallIntent(getIntent());
         dispatchOpenChatIntent(getIntent());
@@ -175,6 +176,18 @@ public class MainActivity extends BridgeActivity {
         setIntent(intent);
         dispatchIncomingCallIntent(intent);
         dispatchOpenChatIntent(intent);
+        dispatchUpdateIntent(intent);
+    }
+
+    private void dispatchUpdateIntent(Intent intent) {
+        if (intent == null || !intent.getBooleanExtra("open_app_update", false)) return;
+        intent.removeExtra("open_app_update");
+        AppUpdateCoordinator coordinator = AppUpdateCoordinator.get(this);
+        if (AppUpdateCoordinator.hasPendingUpdate(coordinator.current().metadata)) {
+            coordinator.showAvailable();
+        } else {
+            coordinator.check(true);
+        }
     }
 
     private void dispatchOpenChatIntent(Intent intent) {
@@ -250,6 +263,7 @@ public class MainActivity extends BridgeActivity {
     public void onResume() {
         super.onResume();
         AppUpdateCoordinator.get(this).refreshInstallState();
+        AppUpdateCoordinator.get(this).check(false);
         syncPushDeviceIfAuthenticated();
     }
 
