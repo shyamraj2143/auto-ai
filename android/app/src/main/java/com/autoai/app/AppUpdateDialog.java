@@ -145,9 +145,10 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
 
     private View buildCard() {
         LinearLayout card = column();
-        card.setPadding(dp(16), dp(14), dp(16), dp(14));
+        card.setPadding(dp(15), dp(12), dp(15), dp(12));
         card.setBackground(gradient(new int[]{Color.rgb(25, 18, 61), Color.rgb(7, 24, 52), Color.rgb(3, 42, 51)}, 22, Color.rgb(102, 79, 255)));
 
+        // Fixed compact header: one bounded logo, one title and one version badge.
         FrameLayout header = new FrameLayout(activity);
         header.setClipChildren(true);
         FrameLayout logoFrame = new FrameLayout(activity);
@@ -159,111 +160,117 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         logo.setAdjustViewBounds(false);
         logo.setPadding(dp(4), dp(4), dp(4), dp(4));
         logoFrame.addView(logo, new FrameLayout.LayoutParams(-1, -1));
-        FrameLayout.LayoutParams logoParams = new FrameLayout.LayoutParams(dp(66), dp(66), Gravity.CENTER);
+        FrameLayout.LayoutParams logoParams = new FrameLayout.LayoutParams(dp(56), dp(56), Gravity.CENTER);
         header.addView(logoFrame, logoParams);
         close = new Button(activity);
         close.setText("×");
-        close.setTextSize(28);
+        close.setTextSize(24);
         close.setTextColor(Color.WHITE);
         close.setGravity(Gravity.CENTER);
         close.setPadding(0, 0, 0, dp(3));
         close.setBackground(gradient(new int[]{Color.rgb(24, 39, 82), Color.rgb(8, 23, 53)}, 25, Color.rgb(77, 105, 172)));
-        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(dp(40), dp(40), Gravity.END | Gravity.TOP);
+        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(dp(36), dp(36), Gravity.END | Gravity.TOP);
         header.addView(close, closeParams);
-        card.addView(header, new LinearLayout.LayoutParams(-1, dp(70)));
+        card.addView(header, new LinearLayout.LayoutParams(-1, dp(58)));
 
         eyebrow = text("", 11, Color.rgb(104, 227, 255));
         eyebrow.setTypeface(Typeface.DEFAULT_BOLD);
         eyebrow.setLetterSpacing(0.08f);
         eyebrow.setGravity(Gravity.CENTER);
-        title = text("", 22, Color.WHITE);
+        title = text("", 21, Color.WHITE);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setGravity(Gravity.CENTER);
-        title.setPadding(0, dp(7), 0, dp(3));
+        title.setPadding(0, dp(5), 0, dp(2));
         card.addView(title);
         card.addView(eyebrow);
 
+        // Only the center region scrolls. The action footer below always remains visible.
+        ScrollView scroll = new ScrollView(activity);
+        scroll.setFillViewport(false);
+        scroll.setVerticalScrollBarEnabled(false);
+        scroll.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+        LinearLayout content = column();
+        content.setPadding(0, dp(3), 0, dp(4));
+
         version = text("", 14, Color.rgb(195, 210, 243));
         version.setGravity(Gravity.CENTER);
-        version.setPadding(dp(8), dp(7), dp(8), dp(8));
+        version.setPadding(dp(8), dp(5), dp(8), dp(7));
         LinearLayout.LayoutParams versionParams = new LinearLayout.LayoutParams(-1, -2);
-        versionParams.topMargin = dp(5);
-        card.addView(version, versionParams);
+        content.addView(version, versionParams);
 
         View dividerTop = divider();
-        card.addView(dividerTop, new LinearLayout.LayoutParams(-1, dp(1)));
+        content.addView(dividerTop, new LinearLayout.LayoutParams(-1, dp(1)));
         fileSize = infoRow("▣", Color.rgb(59, 226, 255));
         releaseDate = infoRow("◷", Color.rgb(79, 205, 255));
         releaseTime = infoRow("◷", Color.rgb(79, 205, 255));
         TextView verified = infoRow("✓", Color.rgb(82, 230, 127));
         verified.setText("✓     Verified secure build");
         verified.setTextColor(Color.rgb(89, 232, 126));
-        card.addView(fileSize);
-        card.addView(releaseDate);
-        card.addView(releaseTime);
-        card.addView(verified);
+        content.addView(fileSize);
+        content.addView(releaseDate);
+        content.addView(releaseTime);
+        content.addView(verified);
         View dividerBottom = divider();
         LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(-1, dp(1));
         dividerParams.topMargin = dp(4);
-        card.addView(dividerBottom, dividerParams);
+        content.addView(dividerBottom, dividerParams);
 
         TextView whatsNew = text("WHAT’S NEW", 15, Color.rgb(199, 92, 255));
         whatsNew.setTypeface(Typeface.DEFAULT_BOLD);
-        whatsNew.setPadding(0, dp(9), 0, 0);
-        card.addView(whatsNew);
-
-        ScrollView scroll = new ScrollView(activity);
-        scroll.setFillViewport(false);
-        scroll.setVerticalScrollBarEnabled(false);
+        whatsNew.setPadding(0, dp(8), 0, 0);
+        content.addView(whatsNew);
         details = text("", 14, Color.rgb(224, 229, 247));
         details.setLineSpacing(dp(3), 1f);
-        details.setPadding(dp(2), dp(8), dp(2), dp(10));
+        details.setPadding(dp(2), dp(6), dp(2), dp(5));
         details.setMaxLines(3);
         details.setEllipsize(TextUtils.TruncateAt.END);
-        scroll.addView(details, new ScrollView.LayoutParams(-1, -2));
-        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1f);
-        scrollParams.weight = 1f;
-        card.addView(scroll, scrollParams);
+        content.addView(details, new LinearLayout.LayoutParams(-1, -2));
         viewMore = text("View More", 12, Color.rgb(111, 207, 255));
         viewMore.setTypeface(Typeface.DEFAULT_BOLD);
-        viewMore.setPadding(0, dp(2), 0, dp(4));
+        viewMore.setPadding(0, dp(1), 0, dp(3));
         viewMore.setOnClickListener(view -> {
             boolean collapsed = details.getMaxLines() == 3;
             details.setMaxLines(collapsed ? Integer.MAX_VALUE : 3);
             details.setEllipsize(collapsed ? null : TextUtils.TruncateAt.END);
             viewMore.setText(collapsed ? "View Less" : "View More");
         });
-        card.addView(viewMore);
+        content.addView(viewMore);
+        scroll.addView(content, new ScrollView.LayoutParams(-1, -2));
+        LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1f);
+        card.addView(scroll, scrollParams);
 
+        LinearLayout footer = column();
+        footer.setPadding(0, dp(3), 0, 0);
         status = text("", 13, Color.rgb(112, 216, 255));
         status.setTypeface(Typeface.DEFAULT_BOLD);
-        status.setPadding(0, dp(7), 0, dp(5));
-        card.addView(status);
+        status.setPadding(0, dp(3), 0, dp(4));
+        footer.addView(status);
         progress = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
         progress.setMax(100);
-        card.addView(progress, new LinearLayout.LayoutParams(-1, dp(8)));
+        footer.addView(progress, new LinearLayout.LayoutParams(-1, dp(6)));
         progressText = text("", 12, Color.rgb(159, 205, 255));
-        progressText.setPadding(0, dp(5), 0, 0);
-        card.addView(progressText);
+        progressText.setPadding(0, dp(3), 0, 0);
+        footer.addView(progressText);
 
         primary = new Button(activity);
         primary.setTextColor(Color.WHITE);
         primary.setAllCaps(false);
-        primary.setTextSize(17);
+        primary.setTextSize(16);
         primary.setTypeface(Typeface.DEFAULT_BOLD);
         primary.setBackground(gradient(new int[]{Color.rgb(147, 58, 255), Color.rgb(40, 111, 247), Color.rgb(0, 203, 235)}, 15, Color.TRANSPARENT));
-        LinearLayout.LayoutParams primaryParams = new LinearLayout.LayoutParams(-1, dp(52));
-        primaryParams.topMargin = dp(9);
-        card.addView(primary, primaryParams);
+        LinearLayout.LayoutParams primaryParams = new LinearLayout.LayoutParams(-1, dp(48));
+        primaryParams.topMargin = dp(7);
+        footer.addView(primary, primaryParams);
 
         secondary = new Button(activity);
         secondary.setTextColor(Color.rgb(203, 213, 243));
         secondary.setAllCaps(false);
         secondary.setTextSize(14);
         secondary.setBackground(gradient(new int[]{Color.rgb(11, 25, 55), Color.rgb(9, 20, 45)}, 14, Color.rgb(97, 132, 203)));
-        LinearLayout.LayoutParams secondaryParams = new LinearLayout.LayoutParams(-1, dp(40));
-        secondaryParams.topMargin = dp(6);
-        card.addView(secondary, secondaryParams);
+        LinearLayout.LayoutParams secondaryParams = new LinearLayout.LayoutParams(-1, dp(38));
+        secondaryParams.topMargin = dp(5);
+        footer.addView(secondary, secondaryParams);
+        card.addView(footer, new LinearLayout.LayoutParams(-1, -2));
         return card;
     }
 
@@ -272,8 +279,8 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         if (window == null) return;
         int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
         int screenHeight = activity.getResources().getDisplayMetrics().heightPixels;
-        int width = Math.min(screenWidth - dp(40), dp(380));
-        int height = Math.min(screenHeight - dp(72), dp(640));
+        int width = Math.min(screenWidth - dp(32), dp(360));
+        int height = Math.min(screenHeight - dp(48), dp(560));
         window.setLayout(width, height);
         window.setGravity(Gravity.CENTER);
     }
