@@ -150,54 +150,54 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
 
     private View buildCard() {
         LinearLayout card = column();
-        card.setPadding(dp(15), dp(12), dp(15), dp(12));
-        card.setBackground(gradient(new int[]{Color.rgb(25, 18, 61), Color.rgb(7, 24, 52), Color.rgb(3, 42, 51)}, 22, Color.rgb(102, 79, 255)));
+        card.setPadding(dp(12), dp(10), dp(12), dp(10));
+        card.setBackground(gradient(new int[]{Color.rgb(25, 18, 61), Color.rgb(7, 24, 52), Color.rgb(3, 42, 51)}, 18, Color.rgb(102, 79, 255)));
 
         // Fixed compact horizontal header.
         FrameLayout header = new FrameLayout(activity);
         header.setClipChildren(true);
         FrameLayout logoFrame = new FrameLayout(activity);
         logoFrame.setClipChildren(true);
-        logoFrame.setBackground(gradient(new int[]{Color.rgb(49, 29, 103), Color.rgb(5, 69, 85)}, 18, Color.rgb(48, 231, 255)));
+        logoFrame.setBackground(gradient(new int[]{Color.rgb(49, 29, 103), Color.rgb(5, 69, 85)}, 14, Color.rgb(48, 231, 255)));
         ImageView logo = new ImageView(activity);
         logo.setImageResource(R.mipmap.ic_launcher_foreground);
         logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
         logo.setAdjustViewBounds(false);
-        logo.setPadding(dp(4), dp(4), dp(4), dp(4));
+        logo.setPadding(dp(3), dp(3), dp(3), dp(3));
         logoFrame.addView(logo, new FrameLayout.LayoutParams(-1, -1));
-        FrameLayout.LayoutParams logoParams = new FrameLayout.LayoutParams(dp(46), dp(46), Gravity.START | Gravity.CENTER_VERTICAL);
+        FrameLayout.LayoutParams logoParams = new FrameLayout.LayoutParams(dp(38), dp(38), Gravity.START | Gravity.CENTER_VERTICAL);
         header.addView(logoFrame, logoParams);
         LinearLayout headings = column();
-        eyebrow = text("", 10, Color.rgb(104, 227, 255));
+        eyebrow = text("", 9, Color.rgb(104, 227, 255));
         eyebrow.setTypeface(Typeface.DEFAULT_BOLD);
         eyebrow.setLetterSpacing(0.08f);
-        title = text("", 19, Color.WHITE);
+        title = text("", 17, Color.WHITE);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setMaxLines(1);
         title.setEllipsize(TextUtils.TruncateAt.END);
         headings.addView(eyebrow);
         headings.addView(title);
         FrameLayout.LayoutParams headingParams = new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER_VERTICAL);
-        headingParams.leftMargin = dp(58);
-        headingParams.rightMargin = dp(42);
+        headingParams.leftMargin = dp(48);
+        headingParams.rightMargin = dp(36);
         header.addView(headings, headingParams);
         close = new Button(activity);
         close.setText("×");
-        close.setTextSize(24);
+        close.setTextSize(21);
         close.setTextColor(Color.WHITE);
         close.setGravity(Gravity.CENTER);
         close.setPadding(0, 0, 0, dp(3));
         close.setBackground(gradient(new int[]{Color.rgb(24, 39, 82), Color.rgb(8, 23, 53)}, 25, Color.rgb(77, 105, 172)));
-        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(dp(36), dp(36), Gravity.END | Gravity.TOP);
+        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(dp(32), dp(32), Gravity.END | Gravity.TOP);
         header.addView(close, closeParams);
-        card.addView(header, new LinearLayout.LayoutParams(-1, dp(52)));
+        card.addView(header, new LinearLayout.LayoutParams(-1, dp(42)));
 
         LinearLayout content = column();
-        content.setPadding(0, dp(3), 0, dp(4));
+        content.setPadding(0, dp(2), 0, dp(2));
 
-        version = text("", 14, Color.rgb(195, 210, 243));
+        version = text("", 13, Color.rgb(195, 210, 243));
         version.setGravity(Gravity.CENTER);
-        version.setPadding(dp(8), dp(5), dp(8), dp(7));
+        version.setPadding(dp(5), dp(4), dp(5), dp(5));
         LinearLayout.LayoutParams versionParams = new LinearLayout.LayoutParams(-1, -2);
         content.addView(version, versionParams);
 
@@ -218,21 +218,21 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
 
         TextView whatsNew = text("WHAT’S NEW", 15, Color.rgb(199, 92, 255));
         whatsNew.setTypeface(Typeface.DEFAULT_BOLD);
-        whatsNew.setPadding(0, dp(8), 0, 0);
+        whatsNew.setPadding(0, dp(6), 0, 0);
         content.addView(whatsNew);
-        details = text("", 14, Color.rgb(224, 229, 247));
-        details.setLineSpacing(dp(3), 1f);
-        details.setPadding(dp(2), dp(6), dp(2), dp(5));
+        details = text("", 13, Color.rgb(224, 229, 247));
+        details.setLineSpacing(dp(2), 1f);
+        details.setPadding(dp(2), dp(4), dp(2), dp(3));
         details.setMaxLines(3);
         details.setEllipsize(TextUtils.TruncateAt.END);
         content.addView(details, new LinearLayout.LayoutParams(-1, -2));
         card.addView(content, new LinearLayout.LayoutParams(-1, -2));
 
         LinearLayout footer = column();
-        footer.setPadding(0, dp(3), 0, 0);
-        status = text("", 13, Color.rgb(112, 216, 255));
+        footer.setPadding(0, dp(2), 0, 0);
+        status = text("", 12, Color.rgb(112, 216, 255));
         status.setTypeface(Typeface.DEFAULT_BOLD);
-        status.setPadding(0, dp(3), 0, dp(4));
+        status.setPadding(0, dp(2), 0, dp(3));
         footer.addView(status);
         progress = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
         progress.setMax(100);
@@ -244,20 +244,20 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         primary = new Button(activity);
         primary.setTextColor(Color.WHITE);
         primary.setAllCaps(false);
-        primary.setTextSize(16);
+        primary.setTextSize(15);
         primary.setTypeface(Typeface.DEFAULT_BOLD);
         primary.setBackground(gradient(new int[]{Color.rgb(147, 58, 255), Color.rgb(40, 111, 247), Color.rgb(0, 203, 235)}, 15, Color.TRANSPARENT));
-        LinearLayout.LayoutParams primaryParams = new LinearLayout.LayoutParams(-1, dp(48));
-        primaryParams.topMargin = dp(7);
+        LinearLayout.LayoutParams primaryParams = new LinearLayout.LayoutParams(-1, dp(42));
+        primaryParams.topMargin = dp(5);
         footer.addView(primary, primaryParams);
 
         secondary = new Button(activity);
         secondary.setTextColor(Color.rgb(203, 213, 243));
         secondary.setAllCaps(false);
-        secondary.setTextSize(14);
+        secondary.setTextSize(13);
         secondary.setBackground(gradient(new int[]{Color.rgb(11, 25, 55), Color.rgb(9, 20, 45)}, 14, Color.rgb(97, 132, 203)));
-        LinearLayout.LayoutParams secondaryParams = new LinearLayout.LayoutParams(-1, dp(38));
-        secondaryParams.topMargin = dp(5);
+        LinearLayout.LayoutParams secondaryParams = new LinearLayout.LayoutParams(-1, dp(34));
+        secondaryParams.topMargin = dp(4);
         footer.addView(secondary, secondaryParams);
         card.addView(footer, new LinearLayout.LayoutParams(-1, -2));
         return card;
@@ -267,7 +267,7 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         Window window = dialog.getWindow();
         if (window == null) return;
         int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
-        int width = Math.min(screenWidth - dp(32), dp(380));
+        int width = Math.min(screenWidth - dp(24), dp(340));
         window.setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT);
         window.setGravity(Gravity.CENTER);
     }
@@ -350,7 +350,7 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
     private TextView infoRow(String icon, int color) {
         TextView row = text(icon, 14, color);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(8), dp(8), dp(6), dp(3));
+        row.setPadding(dp(6), dp(5), dp(4), dp(2));
         return row;
     }
 
