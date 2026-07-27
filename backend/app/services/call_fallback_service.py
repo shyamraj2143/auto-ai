@@ -47,7 +47,14 @@ def cancel_call_fallbacks(call_id: str) -> None:
         logger.warning("fallback_cancel_redis_failed call_id=%s", call_id)
 
 
-def acknowledge_delivery(call_id: str, installation_id: str, stage: str, event_id: str) -> bool:
+def acknowledge_delivery(
+    call_id: str,
+    installation_id: str,
+    stage: str,
+    event_id: str,
+    original_priority: str | None = None,
+    delivered_priority: str | None = None,
+) -> bool:
     with SessionLocal() as db:
         delivery = db.scalar(select(CallDelivery).join(UserDevice, UserDevice.id == CallDelivery.device_id).where(
             CallDelivery.call_id == call_id, UserDevice.device_id == installation_id
@@ -55,12 +62,17 @@ def acknowledge_delivery(call_id: str, installation_id: str, stage: str, event_i
         if not delivery or event_id not in {delivery.primary_event_id, delivery.fallback_event_id}:
             return False
         now = datetime.utcnow()
-        if stage == "device_received": delivery.native_received_at = now
-        elif stage == "notification_displayed": delivery.notification_displayed_at = now
+        if stage == "firebase_service_started":
+            delivery.firebase_service_started_at = now
+            delivery.original_priority = "HIGH" if original_priority == "1" else original_priority
+            delivery.delivered_priority = "HIGH" if delivered_priority == "1" else delivered_priority
+        elif stage == "device_received": delivery.native_received_at = now
+        elif stage in {"notification_displayed", "callstyle_posted"}: delivery.notification_displayed_at = now
+        elif stage == "ringtone_started": delivery.ringtone_started_at = now
         elif stage == "fallback_opened": delivery.fallback_opened_at = now
         else: return False
         db.commit()
-        if stage == "notification_displayed":
+        if stage in {"notification_displayed", "callstyle_posted"}:
             try: _redis().zrem(QUEUE, delivery.id)
             except (RedisError, OSError): logger.warning("fallback_ack_redis_failed delivery_id=%s", delivery.id)
         return True
@@ -84,7 +96,8 @@ def process_due_fallbacks(limit: int = 100) -> int:
                 device = db.get(UserDevice, delivery.device_id)
                 now = datetime.utcnow()
                 if (not call or call.status not in {"initiated", "ringing"} or delivery.notification_displayed_at
-                        or delivery.fallback_sent_at or not delivery.fallback_due_at or now < delivery.fallback_due_at):
+                        or delivery.native_received_at or delivery.fallback_sent_at
+                        or not delivery.fallback_due_at or now < delivery.fallback_due_at):
                     client.zrem(QUEUE, delivery_id); continue
                 payload = json.loads(delivery.payload_json)
                 expires_ms = int(payload["expires_at_epoch_ms"])

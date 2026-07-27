@@ -117,7 +117,7 @@ def send_incoming_call_notifications(
             delivery = CallDelivery(
                 call_id=call.id, device_id=device.id, primary_event_id=device_data["event_id"],
                 primary_fcm_requested_at=datetime.utcnow(), primary_fcm_result="PRIMARY_ACCEPTED",
-                fallback_due_at=datetime.utcnow() + timedelta(seconds=3), payload_json=json.dumps(device_data, separators=(",", ":")),
+                fallback_due_at=datetime.utcnow() + timedelta(seconds=settings.CALL_SYSTEM_FALLBACK_DELAY_SECONDS), payload_json=json.dumps(device_data, separators=(",", ":")),
             )
             db.add(delivery)
             db.flush()

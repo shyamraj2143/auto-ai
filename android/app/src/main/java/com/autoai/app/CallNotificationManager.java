@@ -174,9 +174,9 @@ public final class CallNotificationManager {
                 markEventSeen(context, eventId);
                 diagnostic(context, "NATIVE_NOTIFICATION_POSTED", data, "POSTED");
                 diagnostic(context, "CALLSTYLE_NOTIFICATION_POSTED", data, "PRIMARY_NATIVE_CALLSTYLE_DELIVERED");
-                CallDeliveryAckWorker.schedule(context, data, "notification_displayed", "", "");
+                CallDeliveryAckWorker.schedule(context, data, "callstyle_posted", "", "");
                 acknowledgeRinging(context, callId);
-                IncomingCallRingingService.start(context, callId, expiresAt, notification);
+                IncomingCallRingingService.start(context, callId, expiresAt, notification, data);
                 try { telecomReported = AutoAiTelecomBridge.reportIncomingCall(context, data); }
                 catch (RuntimeException telecomError) { Log.w(TAG, "Telecom presentation failed after notification post callId=" + callId, telecomError); }
                 Log.i(TAG, "Incoming call notification shown callId=" + callId + " silent=" + silent + " telecom=" + telecomReported);

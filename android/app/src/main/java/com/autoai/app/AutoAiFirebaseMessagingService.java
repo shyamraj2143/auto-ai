@@ -38,6 +38,19 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
     }
 
     @Override
+    public void onRegistered(@NonNull String installationId) {
+        super.onRegistered(installationId);
+        Log.i(TAG, "FCM installation registered fid_hash=" + PushTokenRegistrar.sha256Prefix(installationId));
+        PushTokenRegistrar.registerInstallationAsync(this, installationId);
+    }
+
+    @Override
+    public void onUnregistered(@NonNull String installationId) {
+        super.onUnregistered(installationId);
+        Log.i(TAG, "FCM installation unregistered fid_hash=" + PushTokenRegistrar.sha256Prefix(installationId));
+    }
+
+    @Override
     public void onMessageReceived(@NonNull RemoteMessage message) {
         super.onMessageReceived(message);
         Map<String, String> data = message.getData();
@@ -48,7 +61,7 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         if ("incoming_call".equals(messageType) || "incoming_call_fallback".equals(messageType)) {
             String priorityResult = message.getOriginalPriority() == RemoteMessage.PRIORITY_HIGH
                 ? (message.getPriority() == RemoteMessage.PRIORITY_HIGH ? "HIGH_DELIVERED_AS_HIGH" : "HIGH_DOWNGRADED_TO_NORMAL")
-                : "UNKNOWN_PRIORITY";
+                : "ORIGINAL_PRIORITY_NOT_HIGH";
             long ageMs = message.getSentTime() > 0 ? Math.max(0L, System.currentTimeMillis() - message.getSentTime()) : -1L;
             PowerManager.WakeLock wakeLock = null;
             try {
@@ -57,11 +70,19 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
                     wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "autoai:incoming-call");
                     wakeLock.acquire(10_000L);
                 }
-                CallNotificationManager.diagnostic(this, "FIREBASE_SERVICE_STARTED", data, priorityResult + ":age_ms=" + ageMs);
-                CallNotificationManager.diagnostic(this, "PRIMARY_DATA_RECEIVED", data, priorityResult);
+                String messageDiagnostic = priorityResult + ":age_ms=" + ageMs + ":message_id_hash="
+                    + PushTokenRegistrar.sha256Prefix(message.getMessageId());
+                CallNotificationManager.diagnostic(this, "FIREBASE_SERVICE_STARTED", data, messageDiagnostic);
+                CallDeliveryAckWorker.schedule(this, data, "firebase_service_started", String.valueOf(message.getOriginalPriority()), String.valueOf(message.getPriority()));
                 CallNotificationManager.diagnostic(this,
-                    "HIGH_DOWNGRADED_TO_NORMAL".equals(priorityResult) ? "PRIMARY_PRIORITY_DOWNGRADED" : "PRIMARY_PRIORITY_HIGH",
+                    "incoming_call_fallback".equals(messageType) ? "DEGRADED_SYSTEM_FALLBACK_ONLY" : "PRIMARY_DEVICE_RECEIVED",
                     data, priorityResult);
+                if ("incoming_call".equals(messageType)) {
+                    CallNotificationManager.diagnostic(this,
+                        "HIGH_DOWNGRADED_TO_NORMAL".equals(priorityResult) ? "PRIMARY_PRIORITY_DOWNGRADED" : priorityResult,
+                        data, priorityResult);
+                    if (!"HIGH_DELIVERED_AS_HIGH".equals(priorityResult)) FcmInstallationMigrationWorker.schedule(this);
+                }
                 CallNotificationManager.showIncoming(this, data);
                 CallDeliveryAckWorker.schedule(this, data, "device_received", String.valueOf(message.getOriginalPriority()), String.valueOf(message.getPriority()));
             } finally {

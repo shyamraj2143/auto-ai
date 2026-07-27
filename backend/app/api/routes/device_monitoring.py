@@ -28,7 +28,14 @@ def register_device(
     db: Session = Depends(get_db),
 ) -> DeviceRegisterResponse:
     require_self_user(current_user, payload.userId)
-    device = upsert_registered_device(db, current_user, payload)
+    try:
+        device = upsert_registered_device(db, current_user, payload)
+    except ValueError as exc:
+        db.rollback()
+        code = str(exc)
+        if code in {"DUPLICATE_FIREBASE_INSTALLATION", "RESTORED_FIREBASE_INSTALLATION", "TOKEN_REPLACED_BY_OTHER_DEVICE"}:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": code}) from exc
+        raise
     return DeviceRegisterResponse(
         deviceId=device.device_id,
         activation_required=False,

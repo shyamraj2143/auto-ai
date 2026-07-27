@@ -22,12 +22,17 @@ import android.util.Log;
 
 import androidx.annotation.Nullable;
 
+import java.util.HashMap;
+import java.util.Map;
+
 public final class IncomingCallRingingService extends Service {
     private static final String TAG = "AutoAiRinging";
     private static final String ACTION_START = "com.autoai.app.ringing.START";
     private static final String ACTION_STOP = "com.autoai.app.ringing.STOP";
     private static final String EXTRA_NOTIFICATION = "incoming_notification";
     private static final String EXTRA_EXPIRES = "ring_expires_at";
+    private static final String EXTRA_EVENT_ID = "ring_event_id";
+    private static final String EXTRA_DELIVERY_MODE = "ring_delivery_mode";
     private static String activeCallId;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private AudioManager audioManager;
@@ -36,9 +41,10 @@ public final class IncomingCallRingingService extends Service {
     private MediaPlayer mediaPlayer;
     private Vibrator vibrator;
 
-    public static void start(Context context, String callId, long expiresAt, Notification notification) {
+    public static void start(Context context, String callId, long expiresAt, Notification notification, Map<String, String> data) {
         Intent intent = new Intent(context, IncomingCallRingingService.class).setAction(ACTION_START)
             .putExtra(CallNotificationManager.EXTRA_CALL_ID, callId).putExtra(EXTRA_EXPIRES, expiresAt)
+            .putExtra(EXTRA_EVENT_ID, data.get("event_id")).putExtra(EXTRA_DELIVERY_MODE, data.get("delivery_mode"))
             .putExtra(EXTRA_NOTIFICATION, notification);
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent); else context.startService(intent);
@@ -89,6 +95,11 @@ public final class IncomingCallRingingService extends Service {
         }
         Log.i(TAG, "RINGING_SERVICE_STARTED call_id=" + callId);
         startPlayback();
+        Map<String, String> acknowledgement = new HashMap<>();
+        acknowledgement.put("call_id", callId);
+        acknowledgement.put("event_id", intent.getStringExtra(EXTRA_EVENT_ID));
+        acknowledgement.put("delivery_mode", intent.getStringExtra(EXTRA_DELIVERY_MODE));
+        CallDeliveryAckWorker.schedule(this, acknowledgement, "ringtone_started", "", "");
         handler.postDelayed(this::stopSelf, Math.max(1000L, expiresAt - System.currentTimeMillis()));
         return START_NOT_STICKY;
     }

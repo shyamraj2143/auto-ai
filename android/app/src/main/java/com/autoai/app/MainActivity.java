@@ -314,14 +314,13 @@ public class MainActivity extends BridgeActivity {
         }
         requestNotificationPermissionIfNeeded();
         try {
-            FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
-                if (task.isSuccessful() && task.getResult() != null && !task.getResult().trim().isEmpty()) {
-                    PushTokenRegistrar.registerAsync(this, task.getResult());
-                } else {
-                    android.util.Log.w("AutoAiPushSync", "Fresh FCM token unavailable during authenticated sync.", task.getException());
+            FirebaseMessaging.getInstance().register().addOnCompleteListener(task -> {
+                if (!task.isSuccessful()) {
+                    android.util.Log.w("AutoAiPushSync", "FCM installation registration unavailable during authenticated sync.", task.getException());
                     PushTokenRegistrar.registerStoredUserDeviceIfAuthenticated(this);
                 }
             });
+            FcmInstallationMigrationWorker.schedule(this);
         } catch (RuntimeException error) {
             android.util.Log.w("AutoAiPushSync", "Fresh FCM token request failed.", error);
             PushTokenRegistrar.registerStoredUserDeviceIfAuthenticated(this);
@@ -336,11 +335,7 @@ public class MainActivity extends BridgeActivity {
 
     private void registerFirebaseMessagingToken() {
         try {
-            FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
-                if (task.isSuccessful()) {
-                    PushTokenRegistrar.registerAsync(this, task.getResult());
-                }
-            });
+            FirebaseMessaging.getInstance().register();
         } catch (Exception ignored) {
             // Firebase is optional until google-services.json is configured.
         }

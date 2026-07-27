@@ -72,11 +72,22 @@ def call_device_readiness(
             "last_fcm_received_at": device.last_fcm_received_at,
             "last_notification_displayed_at": device.last_notification_displayed_at,
             "native_incoming_call_status": (
-                "READY" if latest[device.id] and latest[device.id].notification_displayed_at
-                else "DEGRADED" if latest[device.id] and latest[device.id].fallback_sent_at
+                "READY" if latest[device.id]
+                    and latest[device.id].firebase_service_started_at
+                    and latest[device.id].notification_displayed_at
+                    and latest[device.id].ringtone_started_at
+                    and latest[device.id].delivered_priority == "HIGH"
+                else "DEGRADED_SYSTEM_FALLBACK_ONLY" if latest[device.id] and latest[device.id].fallback_sent_at
+                else "DEGRADED_PRIORITY_DOWNGRADED" if latest[device.id]
+                    and latest[device.id].original_priority == "HIGH"
+                    and latest[device.id].delivered_priority != "HIGH"
                 else "BLOCKED"
             ),
-            "ready_for_background_calls": bool(latest[device.id] and latest[device.id].notification_displayed_at),
+            "ready_for_background_calls": bool(latest[device.id]
+                and latest[device.id].firebase_service_started_at
+                and latest[device.id].notification_displayed_at
+                and latest[device.id].ringtone_started_at
+                and latest[device.id].delivered_priority == "HIGH"),
             "failure_code": device.last_fcm_failure_code,
         }
         for device in devices
@@ -558,7 +569,10 @@ def delivery_ack(
     if not call or call.callee_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Call not found.")
     device = db.scalar(select(UserDevice).where(UserDevice.user_id == current_user.id, UserDevice.device_id == payload.installation_id))
-    if not device or not acknowledge_delivery(call_id, payload.installation_id, payload.stage, payload.event_id):
+    if not device or not acknowledge_delivery(
+        call_id, payload.installation_id, payload.stage, payload.event_id,
+        payload.original_priority, payload.delivered_priority,
+    ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Call delivery event not found.")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

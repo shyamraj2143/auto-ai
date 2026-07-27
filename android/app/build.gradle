@@ -18,8 +18,8 @@ def releaseKeyPassword = signingValue('AUTO_AI_ANDROID_KEY_PASSWORD')
 def releaseSigningReady = releaseKeystorePath && releaseKeystorePassword && releaseKeyAlias && releaseKeyPassword
 def autoAiApiBaseUrl = signingValue('AUTO_AI_API_BASE_URL') ?: 'https://auto-ai-production-a6ef.up.railway.app/api/v1'
 def googleWebClientId = signingValue('AUTO_AI_GOOGLE_WEB_CLIENT_ID') ?: signingValue('GOOGLE_WEB_CLIENT_ID') ?: signingValue('VITE_GOOGLE_WEB_CLIENT_ID') ?: ''
-def autoAiVersionCode = (signingValue('AUTO_AI_ANDROID_VERSION_CODE') ?: '33') as Integer
-def autoAiVersionName = signingValue('AUTO_AI_ANDROID_VERSION_NAME') ?: '1.0.33'
+def autoAiVersionCode = (signingValue('AUTO_AI_ANDROID_VERSION_CODE') ?: '34') as Integer
+def autoAiVersionName = signingValue('AUTO_AI_ANDROID_VERSION_NAME') ?: '1.0.34'
 def firebaseServicesFile = file('google-services.json')
 def firebaseConfigured = firebaseServicesFile.isFile() && firebaseServicesFile.length() > 0
 
@@ -87,6 +87,7 @@ dependencies {
     implementation "com.google.android.gms:play-services-location:21.3.0"
     implementation platform("com.google.firebase:firebase-bom:34.15.0")
     implementation "com.google.firebase:firebase-messaging"
+    implementation "com.google.firebase:firebase-installations"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"

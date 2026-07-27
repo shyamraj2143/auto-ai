@@ -189,6 +189,10 @@ def ensure_runtime_schema() -> None:
             "last_fcm_failure_code": "VARCHAR(64)",
             "last_fcm_received_at": "datetime",
             "last_notification_displayed_at": "datetime",
+            "firebase_installation_id_ciphertext": "TEXT",
+            "firebase_installation_id_hash": "VARCHAR(64)",
+            "installation_rotation_status": "VARCHAR(48)",
+            "push_provider": "VARCHAR(32) NOT NULL DEFAULT 'fcm'",
             "battery_level": "INTEGER",
             "charging": "BOOLEAN",
             "network_type": "VARCHAR(80)",
@@ -212,6 +216,18 @@ def ensure_runtime_schema() -> None:
             add_column("calls", "trace_id", "VARCHAR(36) NOT NULL DEFAULT ''")
         if "failure_code" not in call_columns:
             add_column("calls", "failure_code", "VARCHAR(32)")
+
+    if "call_deliveries" in table_names:
+        delivery_columns = {column["name"] for column in inspector.get_columns("call_deliveries")}
+        delivery_diagnostics = {
+            "original_priority": "VARCHAR(40)",
+            "delivered_priority": "VARCHAR(40)",
+            "firebase_service_started_at": "datetime",
+            "ringtone_started_at": "datetime",
+        }
+        for column_name, definition in delivery_diagnostics.items():
+            if column_name not in delivery_columns:
+                add_column("call_deliveries", column_name, definition)
 
     if "user_device_activities" in table_names:
         activity_columns = {column["name"] for column in inspector.get_columns("user_device_activities")}

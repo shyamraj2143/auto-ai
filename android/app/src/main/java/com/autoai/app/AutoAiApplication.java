@@ -12,6 +12,7 @@ public final class AutoAiApplication extends Application {
         AppUpdateCoordinator.get(this);
         try {
             if (FirebaseApp.getApps(this).isEmpty()) FirebaseApp.initializeApp(this);
+            FcmInstallationMigrationWorker.schedule(this);
             Log.i("AutoAiApplication", "Call infrastructure initialized firebase=" + !FirebaseApp.getApps(this).isEmpty());
         } catch (RuntimeException error) {
             Log.w("AutoAiApplication", "Firebase initialization unavailable", error);
