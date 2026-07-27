@@ -9,6 +9,7 @@ import { PROVIDER_MODELS, useAppSettings } from "../../contexts/AppSettingsConte
 import { useCrystalEffects } from "../../crystal/useCrystalEffects";
 import { VoiceButton } from "./VoiceButton";
 import { usePublishedUiText } from "../../hooks/useCmsContent";
+import { AppSelect } from "../common/AppSelect";
 
 type Provider = AiProvider;
 
@@ -744,18 +745,7 @@ export function Composer({
           <div className={clsx("composer-pill composer-mode-pill", (searchMode !== "off" || researchModeActive) && "composer-pill-active")} title="Mode">
             <Sparkles size={18} />
             <span className="composer-mode-label">{selectedModeLabel}</span>
-            <select
-              aria-label="Mode"
-              className="composer-pill-select composer-pill-select-native"
-              value={selectedModeValue}
-              onChange={(event) => updateCombinedMode(event.target.value)}
-            >
-              {MODE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            <AppSelect label="Mode" value={selectedModeValue} onChange={updateCombinedMode} options={MODE_OPTIONS} />
           </div>
           <span className="composer-divider" />
           <ModelMenu provider={provider} model={model} onSelect={selectModelProvider} />
@@ -802,19 +792,7 @@ export function Composer({
                 />
                 <label className="inline-flex h-7 items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2">
                   <Box size={13} />
-                  <select
-                    className="border-0 bg-transparent text-xs font-semibold text-cyan-50 outline-none"
-                    value={maxModels}
-                    disabled={allModels}
-                    onChange={(event) => setMaxModels(Number(event.target.value))}
-                    aria-label="Max research models"
-                  >
-                    {[1, 2, 3, 4, 5, 6].map((value) => (
-                      <option key={value} value={value}>
-                        Max {value}
-                      </option>
-                    ))}
-                  </select>
+                  <AppSelect label="Max research models" value={maxModels} disabled={allModels} onChange={(value) => setMaxModels(Number(value))} options={[1,2,3,4,5,6].map((value) => ({value:String(value),label:`Max ${value}`}))} />
                 </label>
                 <label className="inline-flex h-7 items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 font-semibold">
                   <input
@@ -826,18 +804,7 @@ export function Composer({
                 </label>
                 <label className="inline-flex h-7 items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2">
                   <Timer size={13} />
-                  <select
-                    className="border-0 bg-transparent text-xs font-semibold text-cyan-50 outline-none"
-                    value={timeoutSeconds}
-                    onChange={(event) => setTimeoutSeconds(Number(event.target.value))}
-                    aria-label="Research timeout"
-                  >
-                    {[20, 35, 45, 60].map((value) => (
-                      <option key={value} value={value}>
-                        {value}s
-                      </option>
-                    ))}
-                  </select>
+                  <AppSelect label="Research timeout" value={timeoutSeconds} onChange={(value) => setTimeoutSeconds(Number(value))} options={[20,35,45,60].map((value) => ({value:String(value),label:`${value}s`}))} />
                 </label>
               </div>
             </motion.div>

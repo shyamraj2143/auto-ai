@@ -26,6 +26,7 @@ import clsx from "clsx";
 import { api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import type { DocumentItem, HumanState, UserMemory } from "../../types";
+import { AppSelect } from "../common/AppSelect";
 
 function formatBytes(bytes: number) {
   if (!bytes) return "Unknown size";
@@ -437,17 +438,7 @@ export function ContextPanel({
                   {/* Add memory form */}
                   <form className="rounded-lg border border-white/10 bg-white/[0.02] p-3 space-y-2.5" onSubmit={createMemory}>
                     <div className="flex gap-2">
-                      <select
-                        className="model-select-dark w-full text-xs"
-                        value={category}
-                        onChange={(event) => setCategory(event.target.value)}
-                        aria-label="Memory category"
-                      >
-                        <option value="preference">Preference</option>
-                        <option value="project">Project Detail</option>
-                        <option value="identity">User Identity</option>
-                        <option value="learning_goal">Learning Objective</option>
-                      </select>
+                      <AppSelect label="Memory category" value={category} onChange={setCategory} options={[{value:"preference",label:"Preference"},{value:"project",label:"Project Detail"},{value:"identity",label:"User Identity"},{value:"learning_goal",label:"Learning Objective"}]} />
                     </div>
                     <textarea
                       className="min-h-16 w-full resize-none rounded-md border border-white/15 bg-slate-950/60 p-2 text-xs text-white outline-none transition placeholder:text-slate-500 focus:border-cyan-300/40"
