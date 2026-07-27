@@ -9,7 +9,12 @@ public class UpdateScheduleReceiver extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
         if (intent == null || intent.getAction() == null) return;
         String action = intent.getAction();
-        if (Intent.ACTION_BOOT_COMPLETED.equals(action) || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
+        if (Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
+            CallingPermissionCoordinator.preferences(context).edit()
+                .putBoolean(CallingPermissionCoordinator.POST_UPDATE_CHECK, true)
+                .apply();
+            UpdateCheckScheduler.cancelLegacy(context);
+        } else if (Intent.ACTION_BOOT_COMPLETED.equals(action)) {
             UpdateCheckScheduler.cancelLegacy(context);
         }
     }

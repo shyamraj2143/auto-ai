@@ -3,7 +3,6 @@ package com.autoai.app;
 import android.Manifest;
 import android.app.AlertDialog;
 import android.app.NotificationManager;
-import android.app.NotificationChannel;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -12,7 +11,6 @@ import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
-import android.os.PowerManager;
 import android.provider.Settings;
 import android.util.Log;
 
@@ -141,6 +139,7 @@ public class AutoAiCallsPlugin extends Plugin {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
             || isGranted("notifications")
             || isPermanentlyDenied("notifications")
+            || CallingPermissionCoordinator.preferences(getContext()).getBoolean("notification_prompted", false)
             || permissions().getBoolean(KEY_NOTIFICATIONS_REQUESTED, false)) {
             call.resolve(callPermissionsResult(false));
             return;
@@ -272,36 +271,39 @@ public class AutoAiCallsPlugin extends Plugin {
 
     @PluginMethod
     public void getCallReadiness(PluginCall call) {
-        Context context = getContext();
-        CallNotificationManager.createChannels(context);
-        NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-        NotificationChannel channel = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && manager != null
-            ? manager.getNotificationChannel(CallNotificationManager.CHANNEL_INCOMING) : null;
-        PowerManager power = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
-        boolean notificationsAllowed = manager != null && manager.areNotificationsEnabled()
-            && (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED);
-        int importance = channel == null ? (Build.VERSION.SDK_INT < Build.VERSION_CODES.O ? NotificationManager.IMPORTANCE_HIGH : NotificationManager.IMPORTANCE_NONE) : channel.getImportance();
-        boolean channelReady = importance >= NotificationManager.IMPORTANCE_HIGH;
-        boolean fullScreen = canUseFullScreenIntent();
-        JSObject result = new JSObject();
-        result.put("status", !notificationsAllowed || !channelReady ? "BLOCKED" : fullScreen ? "READY" : "LIMITED");
-        result.put("sdkVersion", Build.VERSION.SDK_INT);
-        result.put("manufacturer", Build.MANUFACTURER);
-        result.put("model", Build.MODEL);
-        result.put("appVersion", BuildConfig.VERSION_NAME);
-        result.put("appVersionCode", BuildConfig.VERSION_CODE);
-        result.put("firebaseTokenRegistered", PushTokenRegistrar.hasStoredToken(context));
-        result.put("notificationsAllowed", notificationsAllowed);
-        result.put("channelExists", channel != null || Build.VERSION.SDK_INT < Build.VERSION_CODES.O);
-        result.put("channelImportance", importance);
-        result.put("channelSoundEnabled", channel == null || channel.getSound() != null);
-        result.put("channelVibrationEnabled", channel == null || channel.shouldVibrate());
-        result.put("lockscreenVisibility", channel == null ? NotificationManager.IMPORTANCE_UNSPECIFIED : channel.getLockscreenVisibility());
-        result.put("fullScreenIntentAllowed", fullScreen);
-        result.put("batteryOptimizationIgnored", power != null && power.isIgnoringBatteryOptimizations(context.getPackageName()));
-        result.put("microphoneAllowed", context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED);
-        result.put("cameraAllowed", context.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED);
-        call.resolve(result);
+        call.resolve(CallingPermissionCoordinator.inspect(getContext()).toJs(getContext()));
+    }
+
+    @PluginMethod
+    public void getCallingSetupState(PluginCall call) {
+        call.resolve(CallingPermissionCoordinator.inspect(getContext()).toJs(getContext()));
+    }
+
+    @PluginMethod
+    public void refreshCallingSetupState(PluginCall call) {
+        CallNotificationManager.createChannels(getContext());
+        try { FirebaseMessaging.getInstance().register(); } catch (RuntimeException ignored) {}
+        call.resolve(CallingPermissionCoordinator.inspect(getContext()).toJs(getContext()));
+    }
+
+    @PluginMethod
+    public void startCallingSetup(PluginCall call) {
+        Intent intent = new Intent(getContext(), CallingSetupActivity.class);
+        getActivity().runOnUiThread(() -> {
+            if (!CallingSetupActivity.isVisible() && !isAnyActiveCall(getContext())) getActivity().startActivity(intent);
+            call.resolve();
+        });
+    }
+
+    @PluginMethod
+    public void openRequiredSetting(PluginCall call) {
+        String item = call.getString("item", "app");
+        try {
+            getActivity().startActivity(CallingPermissionCoordinator.settingIntent(getContext(), item));
+            call.resolve();
+        } catch (RuntimeException error) {
+            call.reject("Unable to open the required Android setting.", error);
+        }
     }
 
     @PluginMethod
@@ -369,6 +371,11 @@ public class AutoAiCallsPlugin extends Plugin {
     public static boolean isActiveVideoCall(Context context) {
         SharedPreferences prefs = context.getSharedPreferences(ACTIVE_CALL_PREFERENCES, Context.MODE_PRIVATE);
         return prefs.getString(KEY_ACTIVE_CALL_ID, null) != null && "video".equals(prefs.getString(KEY_ACTIVE_CALL_TYPE, null));
+    }
+
+    public static boolean isAnyActiveCall(Context context) {
+        return context.getSharedPreferences(ACTIVE_CALL_PREFERENCES, Context.MODE_PRIVATE)
+            .getString(KEY_ACTIVE_CALL_ID, null) != null;
     }
 
     public static boolean isActiveCall(Context context, String callId) {

@@ -21,8 +21,14 @@ export function CallSettings() {
 
   const refreshReadiness = useCallback(async () => {
     if (!callNative.isAndroid()) return;
-    setReadiness(await callNative.getCallReadiness());
+    setReadiness(await callNative.refreshCallingSetupState());
   }, []);
+
+  useEffect(() => {
+    const refresh = () => void refreshReadiness();
+    window.addEventListener("auto-ai-calling-setup-changed", refresh);
+    return () => window.removeEventListener("auto-ai-calling-setup-changed", refresh);
+  }, [refreshReadiness]);
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -58,14 +64,12 @@ export function CallSettings() {
       {error && <p className="calls-inline-alert">{error}</p>}
       {callNative.isAndroid() && <section className={`call-readiness call-readiness-${readiness?.status?.toLowerCase() || "loading"}`}>
         <div className="call-settings-heading"><Smartphone size={16} /><strong>Call readiness: {readiness?.status ?? "CHECKING"}</strong></div>
-        <p>{readiness?.status === "READY" ? "Ready for background calls" : readiness?.status === "LIMITED" ? "Calls may appear as a notification instead of full screen" : readiness?.status === "BLOCKED" ? "Incoming calls are blocked by notification settings" : "Checking Android call delivery settings…"}</p>
+        <p>{readiness?.status === "READY" ? "Calling setup complete" : readiness?.status === "LIMITED" ? "Calls work, but full-screen display or another optional feature is limited" : readiness?.status === "BLOCKED" ? "Incoming calls are blocked by required Android settings" : "Checking Android call delivery settings…"}</p>
         {readiness && <small>Android {readiness.sdkVersion} · {readiness.manufacturer} {readiness.model} · App {readiness.appVersion}</small>}
+        {readiness && readiness.status !== "READY" && <ul>{Object.entries(readiness.items).filter(([, item]) => !["GRANTED", "NOT_REQUIRED"].includes(item.state)).map(([name, item]) => <li key={name}>{name.replace(/([A-Z])/g, " $1")}: {item.state.toLowerCase().replace(/_/g, " ")}</li>)}</ul>}
         <div className="call-readiness-actions">
-          <button type="button" onClick={() => void callNative.openAppNotificationSettings()}>App notifications</button>
-          <button type="button" onClick={() => void callNative.openIncomingCallChannelSettings()}>Incoming-call channel</button>
-          {readiness && !readiness.fullScreenIntentAllowed && <button type="button" onClick={() => void callNative.openFullScreenIntentSettings()}>Full-screen access</button>}
-          <button type="button" onClick={() => void callNative.openBatteryOptimizationSettings()}>Battery settings</button>
-          <button type="button" onClick={() => void refreshReadiness()}>Refresh</button>
+          {readiness?.status !== "READY" && <button type="button" onClick={() => void callNative.startCallingSetup()}>{readiness?.onboardingCompleted ? "Fix missing permissions" : "Complete setup"}</button>}
+          <button type="button" onClick={() => void refreshReadiness()}>Check again</button>
         </div>
       </section>}
       <section>

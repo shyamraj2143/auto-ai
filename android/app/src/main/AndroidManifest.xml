@@ -92,6 +92,13 @@
             android:turnScreenOn="true"
             android:theme="@style/AppTheme.NoActionBar" />
 
+        <activity
+            android:name=".CallingSetupActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:screenOrientation="unspecified"
+            android:theme="@style/AppTheme.NoActionBar" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

@@ -88,6 +88,7 @@ public class MainActivity extends BridgeActivity {
     private long lastUpdateCheckAtMs;
     private long lastNativeRootBackAtMs;
     private AppUpdateDialog appUpdateDialog;
+    private boolean callingSetupVisible;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -268,6 +269,40 @@ public class MainActivity extends BridgeActivity {
         AppUpdateCoordinator.get(this).refreshInstallState();
         AppUpdateCoordinator.get(this).check(false);
         syncPushDeviceIfAuthenticated();
+        mainHandler.postDelayed(this::launchCallingSetupIfRequired, 600L);
+    }
+
+    private void launchCallingSetupIfRequired() {
+        if (!hasWindowFocus() || isFinishing() || callingSetupVisible || CallingSetupActivity.isVisible() || waitingForInstallPermission || pendingInstallFile != null || updateDialogVisible) return;
+        String accessToken = AutoAiSecureStoragePlugin.readStoredValue(this, "auto-ai-access-token");
+        if (accessToken == null || accessToken.trim().isEmpty()) return;
+        if (AutoAiCallsPlugin.isAnyActiveCall(this) || CallNotificationManager.pendingCallId(this) != null) return;
+        if (!CallingPermissionCoordinator.needsOnboarding(this)) {
+            notifyCallingSetupChanged(CallingPermissionCoordinator.inspect(this));
+            return;
+        }
+        CallingPermissionCoordinator.Snapshot snapshot = CallingPermissionCoordinator.inspect(this);
+        if (snapshot.status == CallingPermissionCoordinator.Status.READY) {
+            CallingPermissionCoordinator.completeCurrentVersion(this);
+            notifyCallingSetupChanged(snapshot);
+            return;
+        }
+        CallingPermissionCoordinator.preferences(this).edit().putBoolean(CallingPermissionCoordinator.ONBOARDING_STARTED, true).apply();
+        callingSetupVisible = true;
+        startActivityForResult(new Intent(this, CallingSetupActivity.class), 7042);
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != 7042) return;
+        callingSetupVisible = false;
+        registerFirebaseMessagingToken();
+        syncPushDeviceIfAuthenticated();
+        notifyCallingSetupChanged(CallingPermissionCoordinator.inspect(this));
+    }
+
+    private void notifyCallingSetupChanged(CallingPermissionCoordinator.Snapshot snapshot) {
+        if (getBridge() != null) getBridge().triggerWindowJSEvent("auto-ai-calling-setup-changed", snapshot.toJs(this).toString());
     }
 
     @Override
@@ -312,7 +347,6 @@ public class MainActivity extends BridgeActivity {
             android.util.Log.w("AutoAiPushSync", "NON_GMS_DEVICE google_play_services_status=" + gmsStatus);
             return;
         }
-        requestNotificationPermissionIfNeeded();
         try {
             FirebaseMessaging.getInstance().register().addOnCompleteListener(task -> {
                 if (!task.isSuccessful()) {
@@ -325,12 +359,6 @@ public class MainActivity extends BridgeActivity {
             android.util.Log.w("AutoAiPushSync", "Fresh FCM token request failed.", error);
             PushTokenRegistrar.registerStoredUserDeviceIfAuthenticated(this);
         }
-    }
-
-    private void requestNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT < 33) return;
-        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return;
-        requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 4512);
     }
 
     private void registerFirebaseMessagingToken() {
