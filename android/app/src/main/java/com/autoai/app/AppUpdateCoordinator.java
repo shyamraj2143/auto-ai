@@ -43,7 +43,6 @@ public final class AppUpdateCoordinator {
     public static final String PREFS = "auto_ai_update_preferences";
     private static final String WORK_NAME = "auto_ai_apk_download";
     private static final long CHECK_COOLDOWN_MS = 5L * 60L * 1000L;
-    private static final long DISMISS_COOLDOWN_MS = 24L * 60L * 60L * 1000L;
     private static volatile AppUpdateCoordinator instance;
 
     private final Context context;
@@ -52,6 +51,7 @@ public final class AppUpdateCoordinator {
     private final AtomicBoolean checking = new AtomicBoolean(false);
     private final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
     private volatile Snapshot snapshot;
+    private volatile boolean optionalDismissedThisLaunch;
 
     public static AppUpdateCoordinator get(Context context) {
         if (instance == null) synchronized (AppUpdateCoordinator.class) {
@@ -66,6 +66,9 @@ public final class AppUpdateCoordinator {
         snapshot = Snapshot.restore(prefs);
         observeDownload();
         clearCompletedUpdate();
+        if (hasPendingUpdate(snapshot.metadata) && snapshot.state == State.IDLE) {
+            snapshot = new Snapshot(State.AVAILABLE, snapshot.metadata, 0, snapshot.metadata.fileSize, "Ready to download", "");
+        }
     }
 
     public Snapshot current() { return snapshot; }
@@ -86,16 +89,16 @@ public final class AppUpdateCoordinator {
                     return;
                 }
                 boolean mandatory = metadata.forceUpdate || BuildConfig.VERSION_CODE < metadata.minimumSupportedVersionCode;
-                long dismissedAt = prefs.getLong("dismissed_at", 0L);
-                int dismissedVersion = prefs.getInt("dismissed_version", 0);
-                if (!mandatory && dismissedVersion == metadata.versionCode && now - dismissedAt < DISMISS_COOLDOWN_MS) {
+                if (!mandatory && optionalDismissedThisLaunch) {
                     set(new Snapshot(State.IDLE, metadata, 0, metadata.fileSize, "", ""));
                     return;
                 }
                 metadata.mandatory = mandatory;
                 set(new Snapshot(State.AVAILABLE, metadata, 0, metadata.fileSize, "Ready to download", ""));
             } catch (Exception error) {
-                set(snapshot.withFailure(friendly(error)));
+                if (optionalDismissedThisLaunch && hasPendingUpdate(snapshot.metadata)) {
+                    set(new Snapshot(State.IDLE, snapshot.metadata, snapshot.downloadedBytes, snapshot.totalBytes, friendly(error), ""));
+                } else set(snapshot.withFailure(friendly(error)));
             } finally { checking.set(false); }
         });
     }
@@ -103,8 +106,22 @@ public final class AppUpdateCoordinator {
     public void dismissOptional() {
         Metadata m = snapshot.metadata;
         if (m == null || m.mandatory) return;
-        prefs.edit().putInt("dismissed_version", m.versionCode).putLong("dismissed_at", System.currentTimeMillis()).apply();
+        optionalDismissedThisLaunch = true;
         set(new Snapshot(State.IDLE, m, 0, m.fileSize, "", ""));
+    }
+
+    /** Reopens the one native update surface without starting another API check or download. */
+    public void showAvailable() {
+        Metadata m = snapshot.metadata;
+        if (!hasPendingUpdate(m)) return;
+        optionalDismissedThisLaunch = false;
+        if (snapshot.state == State.IDLE || snapshot.state == State.FAILED) {
+            set(new Snapshot(State.AVAILABLE, m, snapshot.downloadedBytes, snapshot.totalBytes, "Ready to download", ""));
+        }
+    }
+
+    public static boolean hasPendingUpdate(@Nullable Metadata metadata) {
+        return metadata != null && metadata.valid() && metadata.versionCode > BuildConfig.VERSION_CODE;
     }
 
     public void download() {

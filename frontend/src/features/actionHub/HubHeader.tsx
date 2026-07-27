@@ -1,8 +1,10 @@
-import { Bell, Home, LogOut, Search, Settings2, TimerReset } from "lucide-react";
+import { Bell, Download, Home, LogOut, Search, Settings2, TimerReset } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { resolveApiAssetUrl } from "../../api/client";
 import type { User } from "../../types";
 import { LogoIcon } from "../../components/brand/LogoIcon";
+import { isNativeAndroid, NativeUpdate, shouldShowUpdate, type NativeUpdateState } from "./nativeUpdate";
 
 function userAvatar(user: User) {
   return resolveApiAssetUrl(user.picture || user.avatar);
@@ -21,13 +23,37 @@ export function HubHeader({
 }) {
   const avatar = userAvatar(user);
   const initial = user.name.trim().slice(0, 1).toUpperCase() || "A";
+  const [updateState, setUpdateState] = useState<NativeUpdateState | null>(null);
+  const [openingUpdate, setOpeningUpdate] = useState(false);
+
+  useEffect(() => {
+    if (!isNativeAndroid()) return;
+    let active = true;
+    let listener: { remove: () => Promise<void> } | undefined;
+    void NativeUpdate.getState().then((state) => active && setUpdateState(state)).catch(() => undefined);
+    void NativeUpdate.addListener("stateChanged", (state) => active && setUpdateState(state)).then((handle) => { listener = handle; });
+    return () => { active = false; void listener?.remove(); };
+  }, []);
+
+  const openUpdate = async () => {
+    if (openingUpdate) return;
+    setOpeningUpdate(true);
+    try { setUpdateState(await NativeUpdate.openUpdate()); } finally { setOpeningUpdate(false); }
+  };
 
   return (
     <header className="hub-header">
-      <Link className="hub-brand" to="/hub" aria-label="AutoAI Action Hub">
-        <LogoIcon loading="eager" />
-        <strong>AutoAI</strong>
-      </Link>
+      <div className="hub-brand-row">
+        <Link className="hub-brand" to="/hub" aria-label="AutoAI Action Hub">
+          <LogoIcon loading="eager" />
+          <strong>AutoAI</strong>
+        </Link>
+        {shouldShowUpdate(updateState) && (
+          <button className="hub-update-button" type="button" disabled={openingUpdate} onClick={() => void openUpdate()} aria-label="Open AutoAI update">
+            <Download size={15} /><span>Update</span><i aria-hidden="true" />
+          </button>
+        )}
+      </div>
 
       <nav className="hub-desktop-nav" aria-label="Action Hub navigation">
         <NavLink to="/hub"><Home size={15} /> Home</NavLink>

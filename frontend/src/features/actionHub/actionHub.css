@@ -40,8 +40,15 @@
 }
 
 .hub-brand, .hub-profile-link, .hub-desktop-nav a { color: inherit; text-decoration: none; }
+.hub-brand-row { display: inline-flex; min-width: 0; align-items: center; gap: 8px; overflow: visible; }
 .hub-brand { display: inline-flex; align-items: center; gap: 9px; font-size: 19px; letter-spacing: -.03em; }
 .hub-brand .app-logo { width: 37px; height: 37px; object-fit: contain; }
+.hub-update-button { position: relative; display: inline-flex; min-width: 90px; min-height: 44px; flex: 0 0 auto; align-items: center; justify-content: center; gap: 6px; padding: 0 13px; color: #fff; border: 1px solid rgba(130,233,255,.72); border-radius: 999px; outline: none; background: linear-gradient(125deg,#9b31f5 0%,#3969f5 53%,#03c9df 100%); box-shadow: 0 0 18px rgba(67,126,255,.3), inset 0 1px rgba(255,255,255,.3); font-size: 12px; font-weight: 700; white-space: nowrap; transition: transform .18s ease, filter .18s ease, box-shadow .18s ease; }
+.hub-update-button:hover { filter: brightness(1.1); box-shadow: 0 0 23px rgba(46,199,247,.4), inset 0 1px rgba(255,255,255,.35); }
+.hub-update-button:focus-visible { box-shadow: 0 0 0 3px rgba(111,92,255,.42), 0 0 24px rgba(42,204,246,.4); }
+.hub-update-button:active { transform: translateY(1px) scale(.98); }
+.hub-update-button:disabled { cursor: wait; opacity: .72; }
+.hub-update-button i { width: 7px; height: 7px; flex: 0 0 7px; border: 1px solid rgba(255,255,255,.8); border-radius: 50%; background: #64f5ff; box-shadow: 0 0 8px #43eaff; animation: hub-update-pulse 1.8s ease-in-out infinite; }
 .hub-desktop-nav { display: flex; gap: 5px; }
 .hub-desktop-nav a { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 11px; border-radius: 11px; color: #91a2bd; font-size: 12px; font-weight: 700; }
 .hub-desktop-nav a.active, .hub-desktop-nav a:hover { color: #e8f4ff; background: rgba(88, 129, 255, .13); }
@@ -128,6 +135,7 @@
 .hub-activity-page { max-width: 940px; margin: 0 auto; }.hub-activity-welcome { margin: 15px 0 34px; }.hub-activity-welcome + .hub-recents { margin-top: 0; }
 
 @keyframes hub-spin { to { transform: rotate(360deg); } }
+@keyframes hub-update-pulse { 50% { opacity: .45; transform: scale(.72); } }
 
 @media (max-width: 1100px) {
   .hub-header { grid-template-columns: auto minmax(220px,1fr) auto; }.hub-desktop-nav { display: none; }.hub-profile-status { display: none; }
@@ -155,9 +163,9 @@
 }
 
 @media (max-width: 380px) {
-  .hub-header { padding-right: 11px; padding-left: 11px; }.hub-main { width: calc(100% - 22px); }.hub-feature-card { grid-template-columns: 68px minmax(0,1fr); padding: 12px; }.hub-feature-icon { width: 57px; height: 57px; }.hub-feature-icon svg { width: 27px; }.hub-feature-actions { gap: 5px; }.hub-feature-primary { min-width: 88px; }
+  .hub-header { gap: 7px; padding-right: 8px; padding-left: 8px; }.hub-brand-row { gap: 5px; }.hub-brand { gap: 5px; }.hub-brand .app-logo { width: 28px; height: 28px; }.hub-brand strong { font-size: 15px; }.hub-update-button { min-width: 82px; padding: 0 9px; }.hub-header-actions { gap: 2px; }.hub-header-icon { width: 34px; }.hub-avatar { width: 34px; height: 34px; flex-basis: 34px; }.hub-main { width: calc(100% - 22px); }.hub-feature-card { grid-template-columns: 68px minmax(0,1fr); padding: 12px; }.hub-feature-icon { width: 57px; height: 57px; }.hub-feature-icon svg { width: 27px; }.hub-feature-actions { gap: 5px; }.hub-feature-primary { min-width: 88px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hub-feature-card, .hub-recent-card { transition: none; }.hub-activity-loading span { animation-duration: 1.8s; }
+  .hub-feature-card, .hub-recent-card, .hub-update-button { transition: none; }.hub-activity-loading span { animation-duration: 1.8s; }.hub-update-button i { animation: none; }
 }

@@ -98,6 +98,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(LiveVisionPlugin.class);
         registerPlugin(ScreenCapturePlugin.class);
         registerPlugin(AutoAiCallsPlugin.class);
+        registerPlugin(AutoAiUpdatePlugin.class);
         super.onCreate(savedInstanceState);
 
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
@@ -130,7 +131,7 @@ public class MainActivity extends BridgeActivity {
         UpdateCheckScheduler.schedule(this);
         appUpdateDialog = new AppUpdateDialog(this);
         appUpdateDialog.start();
-        AppUpdateCoordinator.get(this).check(false);
+        AppUpdateCoordinator.get(this).check(true);
         syncPushDeviceIfAuthenticated();
         dispatchIncomingCallIntent(getIntent());
         dispatchOpenChatIntent(getIntent());
@@ -249,7 +250,6 @@ public class MainActivity extends BridgeActivity {
     public void onResume() {
         super.onResume();
         AppUpdateCoordinator.get(this).refreshInstallState();
-        AppUpdateCoordinator.get(this).check(false);
         syncPushDeviceIfAuthenticated();
     }
 

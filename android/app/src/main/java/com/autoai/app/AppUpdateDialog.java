@@ -22,13 +22,17 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.util.Locale;
+import java.util.Date;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.TimeZone;
 
 /** Compact native update surface. Durable state remains in AppUpdateCoordinator. */
 public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
     private final Activity activity;
     private final AppUpdateCoordinator coordinator;
     private Dialog dialog;
-    private TextView eyebrow, title, version, details, status, progressText, fileSize, releaseDate;
+    private TextView eyebrow, title, version, details, status, progressText, fileSize, releaseDate, releaseTime, viewMore;
     private ProgressBar progress;
     private Button primary, secondary, close;
 
@@ -67,8 +71,11 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         title.setText(metadata.mandatory ? "Update Required" : "New AutoAI Update");
         version.setText("Current " + BuildConfig.VERSION_NAME + "   →   New " + metadata.versionName);
         fileSize.setText("▣     " + formatSize(metadata.fileSize));
-        releaseDate.setText("◷     " + (metadata.releaseDate.isEmpty() ? "Release date available after verification" : "Updated " + readableDate(metadata.releaseDate)));
+        Date released = parseDate(metadata.releaseDate);
+        releaseDate.setText("◷     " + (released == null ? "Release date unavailable" : DateFormat.getDateInstance(DateFormat.MEDIUM).format(released)));
+        releaseTime.setText("◷     " + (released == null ? "Release time unavailable" : DateFormat.getTimeInstance(DateFormat.SHORT).format(released)));
         details.setText(releaseDetails(metadata));
+        viewMore.setVisibility(details.length() > 150 ? View.VISIBLE : View.GONE);
         status.setText(TextUtils.isEmpty(snapshot.message) ? label(snapshot.state) : snapshot.message);
         status.setTextColor(snapshot.state == AppUpdateCoordinator.State.FAILED
             ? Color.rgb(255, 104, 124)
@@ -183,11 +190,13 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         card.addView(dividerTop, new LinearLayout.LayoutParams(-1, dp(1)));
         fileSize = infoRow("▣", Color.rgb(59, 226, 255));
         releaseDate = infoRow("◷", Color.rgb(79, 205, 255));
+        releaseTime = infoRow("◷", Color.rgb(79, 205, 255));
         TextView verified = infoRow("✓", Color.rgb(82, 230, 127));
         verified.setText("✓     Verified secure build");
         verified.setTextColor(Color.rgb(89, 232, 126));
         card.addView(fileSize);
         card.addView(releaseDate);
+        card.addView(releaseTime);
         card.addView(verified);
         View dividerBottom = divider();
         LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(-1, dp(1));
@@ -205,10 +214,22 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         details = text("", 14, Color.rgb(224, 229, 247));
         details.setLineSpacing(dp(3), 1f);
         details.setPadding(dp(2), dp(8), dp(2), dp(10));
+        details.setMaxLines(3);
+        details.setEllipsize(TextUtils.TruncateAt.END);
         scroll.addView(details, new ScrollView.LayoutParams(-1, -2));
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1f);
         scrollParams.weight = 1f;
         card.addView(scroll, scrollParams);
+        viewMore = text("View More", 12, Color.rgb(111, 207, 255));
+        viewMore.setTypeface(Typeface.DEFAULT_BOLD);
+        viewMore.setPadding(0, dp(2), 0, dp(4));
+        viewMore.setOnClickListener(view -> {
+            boolean collapsed = details.getMaxLines() == 3;
+            details.setMaxLines(collapsed ? Integer.MAX_VALUE : 3);
+            details.setEllipsize(collapsed ? null : TextUtils.TruncateAt.END);
+            viewMore.setText(collapsed ? "View Less" : "View More");
+        });
+        card.addView(viewMore);
 
         status = text("", 13, Color.rgb(112, 216, 255));
         status.setTypeface(Typeface.DEFAULT_BOLD);
@@ -245,15 +266,15 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         if (window == null) return;
         int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
         int screenHeight = activity.getResources().getDisplayMetrics().heightPixels;
-        int width = Math.min(screenWidth - dp(28), dp(520));
-        int height = Math.min((int) (screenHeight * 0.86f), dp(690));
+        int width = Math.min(screenWidth - dp(32), dp(420));
+        int height = Math.min(screenHeight - dp(32), dp(720));
         window.setLayout(width, height);
         window.setGravity(Gravity.CENTER);
     }
 
     private String releaseDetails(AppUpdateCoordinator.Metadata metadata) {
         String notes = metadata.changelog == null || metadata.changelog.trim().isEmpty()
-            ? "Faster AI responses\nStable calling and screen sharing\nSecurity and performance improvements"
+            ? "Release notes unavailable"
             : metadata.changelog.trim();
         String[] lines = notes.split("[\\r\\n]+");
         StringBuilder bullets = new StringBuilder();
@@ -339,11 +360,16 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         return view;
     }
 
-    private static String readableDate(String value) {
-        String normalized = value.replace('T', ' ');
-        int dot = normalized.indexOf('.');
-        if (dot > 0) normalized = normalized.substring(0, dot);
-        return normalized.replace("+05:30", "").replace("Z", " UTC");
+    private static Date parseDate(String value) {
+        if (value == null || value.trim().isEmpty()) return null;
+        String[] patterns = {"yyyy-MM-dd'T'HH:mm:ss.SSSXXX", "yyyy-MM-dd'T'HH:mm:ssXXX", "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", "yyyy-MM-dd'T'HH:mm:ss'Z'"};
+        for (String pattern : patterns) try {
+            SimpleDateFormat format = new SimpleDateFormat(pattern, Locale.US);
+            if (pattern.endsWith("'Z'")) format.setTimeZone(TimeZone.getTimeZone("UTC"));
+            format.setLenient(false);
+            return format.parse(value);
+        } catch (Exception ignored) { }
+        return null;
     }
 
     private GradientDrawable gradient(int[] colors, int radius, int strokeColor) {
