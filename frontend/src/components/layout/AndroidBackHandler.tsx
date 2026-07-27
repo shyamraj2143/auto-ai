@@ -63,6 +63,13 @@ function settingsParentRoute(route: string) {
   return query.has("section") ? "/settings" : "";
 }
 
+export function messageBackDestination(route: string) {
+  const path = routePath(route);
+  if (path.startsWith("/messages/")) return "/messages";
+  if (path === "/messages") return "/hub";
+  return "";
+}
+
 export function AndroidBackHandler() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -139,6 +146,12 @@ export function AndroidBackHandler() {
 
     if (state.isSidebarOpen) {
       closeSidebar();
+      return;
+    }
+
+    const messageParent = messageBackDestination(currentRoute);
+    if (messageParent) {
+      navigate(messageParent, { replace: true });
       return;
     }
 
