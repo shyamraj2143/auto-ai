@@ -49,34 +49,18 @@ class FirebaseNotificationService:
         version_code: int,
         version_name: str,
         changelog: str | None = None,
+        release_id: str = "",
     ) -> FcmSendResult:
-        title = "Auto-AI update available"
-        body = f"Version {version_name} is ready to install."
-        if changelog:
-            body = f"{body} {changelog.strip()}"
-
         message = {
             "message": {
                 "token": token,
-                "notification": {
-                    "title": title,
-                    "body": body,
-                },
                 "data": {
                     "type": "apk_update",
-                    "title": title,
-                    "body": body,
                     "version_code": str(version_code),
-                    "version_name": version_name,
-                    "changelog": changelog or "",
+                    "release_id": release_id,
                 },
                 "android": {
                     "priority": "HIGH",
-                    "notification": {
-                        "channel_id": "auto_ai_updates",
-                        "default_sound": True,
-                        "notification_priority": "PRIORITY_HIGH",
-                    },
                 },
             }
         }

@@ -14,8 +14,10 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.apk import ApkDownload, ApkRelease
+from app.models.push import PushDeviceToken
 from app.models.user import User
 from app.schemas.download import ApkReleaseRead
+from app.services.firebase_notifications import firebase_notification_service
 
 
 def kolkata_timezone():
@@ -105,6 +107,10 @@ class ApkService:
             filename=release.file_name,
             sha256=release.sha256,
             min_android_version=release.min_android_version,
+            minimum_android_sdk=release.minimum_android_sdk,
+            minimum_supported_version_code=release.minimum_supported_version_code,
+            package_name=release.package_name,
+            release_id=release.id,
             release_notes=[str(item) for item in (release.release_notes or [])],
             download_url=download_url,
         )
@@ -301,6 +307,8 @@ class ApkService:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="APK version name already exists.")
         if db.scalar(select(ApkRelease).where(ApkRelease.version_code == next_version_code)):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="APK version code already exists.")
+        if highest and next_version_code <= highest.version_code:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="APK version code must be higher than every published release.")
 
         filename = self.versioned_filename(next_version, next_version_code)
         path = self.storage_dir() / filename
@@ -339,6 +347,9 @@ class ApkService:
             file_size=path.stat().st_size,
             sha256=checksum,
             min_android_version=min_android_version or settings.APK_MIN_ANDROID_VERSION,
+            minimum_android_sdk=24,
+            minimum_supported_version_code=1,
+            package_name="com.autoai.app",
             release_notes=self.parse_release_notes(release_notes),
             changelog=changelog or f"Version {next_version}",
             force_update=force_update,
@@ -375,6 +386,7 @@ class ApkService:
         release_notes: list[str] | None = None,
         is_active: bool | None = None,
         released_at: datetime | None = None,
+        minimum_supported_version_code: int | None = None,
     ) -> ApkRelease:
         release = db.get(ApkRelease, release_id)
         if not release:
@@ -401,6 +413,8 @@ class ApkService:
             release.changelog = changelog
         if force_update is not None:
             release.force_update = force_update
+        if minimum_supported_version_code is not None:
+            release.minimum_supported_version_code = minimum_supported_version_code
         if release_notes is not None:
             release.release_notes = [item.strip() for item in release_notes if item.strip()]
         if released_at is not None:
@@ -484,6 +498,17 @@ class ApkService:
         db.add(release)
         db.commit()
         db.refresh(release)
+        # Publication is durable before the routing-only update push is dispatched.
+        if firebase_notification_service.configured:
+            tokens = db.scalars(select(PushDeviceToken).where(PushDeviceToken.is_active.is_(True), PushDeviceToken.platform == "android")).all()
+            for device in tokens:
+                result = firebase_notification_service.send_update_notification(
+                    device.token, version_code=release.version_code, version_name=release.version_name, release_id=release.id
+                )
+                if result.inactive:
+                    device.is_active = False
+                    device.updated_at = datetime.utcnow()
+            db.commit()
         return release
 
 

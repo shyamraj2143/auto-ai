@@ -23,7 +23,7 @@ import java.util.Map;
 public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
     private static final String TAG = "AutoAiFcm";
     private static final int UPDATE_NOTIFICATION_ID = 1001;
-    private static final String UPDATE_NOTIFICATION_CHANNEL_ID = "auto_ai_updates";
+    private static final String UPDATE_NOTIFICATION_CHANNEL_ID = "app_updates";
     private static final String CHAT_NOTIFICATION_CHANNEL_ID = "auto_ai_messages";
     private static final String MISSED_CALL_CHANNEL_ID = "auto_ai_missed_calls";
     private static final String SOCIAL_CHANNEL_ID = "auto_ai_social";
@@ -87,6 +87,20 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         }
         if ("chat_message".equals(messageType)) {
             showChatNotification(data, message.getNotification());
+            return;
+        }
+        if ("apk_update".equals(messageType)) {
+            // Push data is routing-only. The coordinator fetches signed release metadata from the API.
+            AppUpdateCoordinator.get(this).check(true);
+            new android.os.Handler(getMainLooper()).postDelayed(() -> {
+                AppUpdateCoordinator.Snapshot update = AppUpdateCoordinator.get(this).current();
+                if (update.metadata != null && update.metadata.versionCode > BuildConfig.VERSION_CODE) {
+                    showNotification(update.metadata.versionCode, "AutoAI " + update.metadata.versionName + " update",
+                        update.metadata.changelog == null || update.metadata.changelog.trim().isEmpty()
+                            ? "A verified AutoAI update is ready."
+                            : update.metadata.changelog.trim());
+                }
+            }, 2500L);
             return;
         }
         int versionCode = parseInt(data.get("version_code"));
@@ -223,6 +237,8 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
             flags |= PendingIntent.FLAG_IMMUTABLE;
         }
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, intent, flags);
+        Intent updateIntent = new Intent(this, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("open_app_update", true);
+        PendingIntent updateNow = PendingIntent.getActivity(this, 1001, updateIntent, flags);
 
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
             ? new Notification.Builder(this, UPDATE_NOTIFICATION_CHANNEL_ID)
@@ -236,6 +252,8 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
             .setAutoCancel(true)
             .setShowWhen(true)
             .setWhen(System.currentTimeMillis());
+        builder.addAction(new Notification.Action.Builder(android.R.drawable.stat_sys_download_done, "Update Now", updateNow).build());
+        builder.addAction(new Notification.Action.Builder(android.R.drawable.ic_menu_info_details, "View Details", pendingIntent).build());
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             builder.setPriority(Notification.PRIORITY_HIGH);
         }

@@ -22,6 +22,10 @@ class ApkReleaseRead(BaseModel):
     filename: str
     sha256: str
     min_android_version: str
+    minimum_android_sdk: int = 24
+    minimum_supported_version_code: int = 1
+    package_name: str = "com.autoai.app"
+    release_id: str = ""
     release_notes: list[str] = Field(default_factory=list)
     download_url: str
 
@@ -51,6 +55,7 @@ class ApkReleaseUpdate(BaseModel):
     release_notes: list[str] | None = Field(default=None, max_length=20)
     is_active: bool | None = None
     released_at: datetime | None = None
+    minimum_supported_version_code: int | None = Field(default=None, ge=1)
 
 
 class ApkDownloadCountRequest(BaseModel):

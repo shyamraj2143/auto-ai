@@ -87,6 +87,7 @@ public class MainActivity extends BridgeActivity {
     private boolean waitingForInstallPermission;
     private long lastUpdateCheckAtMs;
     private long lastNativeRootBackAtMs;
+    private AppUpdateDialog appUpdateDialog;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -124,12 +125,12 @@ public class MainActivity extends BridgeActivity {
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
 
-        createUpdateNotificationChannel();
         CallNotificationManager.createChannels(this);
         registerFirebaseMessagingToken();
         UpdateCheckScheduler.schedule(this);
-        checkForUpdate(true);
-        startUpdatePolling();
+        appUpdateDialog = new AppUpdateDialog(this);
+        appUpdateDialog.start();
+        AppUpdateCoordinator.get(this).check(false);
         syncPushDeviceIfAuthenticated();
         dispatchIncomingCallIntent(getIntent());
         dispatchOpenChatIntent(getIntent());
@@ -247,17 +248,14 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onResume() {
         super.onResume();
-        if (waitingForInstallPermission && pendingInstallFile != null && canRequestPackageInstalls()) {
-            waitingForInstallPermission = false;
-            openPackageInstaller(pendingInstallFile);
-            return;
-        }
-        checkForUpdate(false);
+        AppUpdateCoordinator.get(this).refreshInstallState();
+        AppUpdateCoordinator.get(this).check(false);
         syncPushDeviceIfAuthenticated();
     }
 
     @Override
     public void onDestroy() {
+        if (appUpdateDialog != null) appUpdateDialog.stop();
         super.onDestroy();
         mainHandler.removeCallbacks(updatePollRunnable);
         updateExecutor.shutdownNow();

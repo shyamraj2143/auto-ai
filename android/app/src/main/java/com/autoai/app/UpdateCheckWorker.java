@@ -26,7 +26,7 @@ public class UpdateCheckWorker extends Worker {
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int READ_TIMEOUT_MS = 30000;
     private static final int UPDATE_NOTIFICATION_ID = 1001;
-    private static final String UPDATE_NOTIFICATION_CHANNEL_ID = "auto_ai_updates";
+    private static final String UPDATE_NOTIFICATION_CHANNEL_ID = "app_updates";
     private static final String UPDATE_PREFERENCES = "auto_ai_update_preferences";
     private static final String LAST_NOTIFIED_UPDATE_VERSION_CODE = "last_notified_update_version_code";
 
