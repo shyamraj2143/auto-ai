@@ -112,7 +112,7 @@ class FirebaseNotificationService:
                 "ttl": f"{max(1, ttl_seconds)}s",
                 "direct_boot_ok": False,
                 "notification": {
-                    "channel_id": "auto_ai_incoming_calls_v5",
+                    "channel_id": "auto_ai_incoming_calls_v6",
                     "notification_priority": "PRIORITY_MAX",
                     "default_sound": True,
                     "visibility": "PUBLIC",

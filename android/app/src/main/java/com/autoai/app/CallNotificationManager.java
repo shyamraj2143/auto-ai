@@ -34,7 +34,8 @@ public final class CallNotificationManager {
     public static final String CHANNEL_INCOMING_LEGACY = "auto_ai_incoming_calls";
     public static final String CHANNEL_INCOMING_V3 = "auto_ai_incoming_calls_v3";
     public static final String CHANNEL_INCOMING_V4 = "auto_ai_incoming_calls_v4";
-    public static final String CHANNEL_INCOMING = "auto_ai_incoming_calls_v5";
+    public static final String CHANNEL_INCOMING_V5 = "auto_ai_incoming_calls_v5";
+    public static final String CHANNEL_INCOMING = "auto_ai_incoming_calls_v6";
     public static final String CHANNEL_ACTIVE = "auto_ai_active_calls";
     public static final String EXTRA_CALL_ID = "call_id";
     public static final String EXTRA_CALLER_ID = "caller_id";
@@ -165,12 +166,14 @@ public final class CallNotificationManager {
         if (manager != null) {
             try {
                 diagnostic(context, "NATIVE_NOTIFICATION_CREATED", data, "CREATED");
-                manager.notify(notificationTag(callId), 0, builder.build());
+                Notification notification = builder.build();
+                manager.notify(notificationTag(callId), 0, notification);
                 markEventSeen(context, eventId);
                 diagnostic(context, "NATIVE_NOTIFICATION_POSTED", data, "POSTED");
                 diagnostic(context, "CALLSTYLE_NOTIFICATION_POSTED", data, "PRIMARY_NATIVE_CALLSTYLE_DELIVERED");
                 CallDeliveryAckWorker.schedule(context, data, "notification_displayed", "", "");
                 acknowledgeRinging(context, callId);
+                IncomingCallRingingService.start(context, callId, expiresAt, notification);
                 try { telecomReported = AutoAiTelecomBridge.reportIncomingCall(context, data); }
                 catch (RuntimeException telecomError) { Log.w(TAG, "Telecom presentation failed after notification post callId=" + callId, telecomError); }
                 Log.i(TAG, "Incoming call notification shown callId=" + callId + " silent=" + silent + " telecom=" + telecomReported);
@@ -184,6 +187,7 @@ public final class CallNotificationManager {
     }
 
     public static void cancel(Context context, String callId) {
+        IncomingCallRingingService.stop(context, callId);
         cancelNotification(context, callId);
         AutoAiTelecomBridge.disconnectLocal(context, callId);
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);

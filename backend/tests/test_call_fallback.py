@@ -13,7 +13,7 @@ def test_system_fallback_contains_notification_data_channel_tag_and_label(monkey
     assert result.ok
     assert message["notification"]["title"] == "Caller"
     assert message["data"]["call_id"] == "call-1"
-    assert message["android"]["notification"]["channel_id"] == "auto_ai_incoming_calls_v5"
+    assert message["android"]["notification"]["channel_id"] == "auto_ai_incoming_calls_v6"
     assert message["android"]["notification"]["tag"] == "autoai_call_call-1"
     assert message["android"]["notification"]["click_action"] == "com.autoai.app.INCOMING_CALL_FALLBACK"
     assert message["notification"]["body"].endswith("tap to answer")

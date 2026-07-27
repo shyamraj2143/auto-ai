@@ -8,7 +8,8 @@ import org.junit.Test;
 public class CallNotificationManagerTest {
     @Test
     public void incomingChannelUsesVersionFour() {
-        assertEquals("auto_ai_incoming_calls_v5", CallNotificationManager.CHANNEL_INCOMING);
+        assertEquals("auto_ai_incoming_calls_v6", CallNotificationManager.CHANNEL_INCOMING);
+        assertEquals("auto_ai_incoming_calls_v5", CallNotificationManager.CHANNEL_INCOMING_V5);
         assertEquals("auto_ai_incoming_calls_v4", CallNotificationManager.CHANNEL_INCOMING_V4);
         assertEquals("auto_ai_incoming_calls_v3", CallNotificationManager.CHANNEL_INCOMING_V3);
     }

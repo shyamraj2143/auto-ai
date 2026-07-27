@@ -125,6 +125,12 @@
             </intent-filter>
         </service>
 
+        <service
+            android:name=".IncomingCallRingingService"
+            android:exported="false"
+            android:foregroundServiceType="phoneCall"
+            android:stopWithTask="false" />
+
         <receiver
             android:name=".CallActionReceiver"
             android:exported="false" />

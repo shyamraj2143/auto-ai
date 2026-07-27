@@ -201,6 +201,19 @@ public class MainActivity extends BridgeActivity {
             }
             CallNotificationManager.showIncoming(this, fallback);
             CallDeliveryAckWorker.schedule(this, fallback, "fallback_opened", "", "");
+            long fallbackExpiry;
+            try { fallbackExpiry = Long.parseLong(fallback.get(CallNotificationManager.EXTRA_EXPIRES_AT)); }
+            catch (Exception ignored) { fallbackExpiry = 0L; }
+            if (fallbackExpiry <= System.currentTimeMillis()) {
+                CallNotificationManager.cancelAllForCall(this, fallback.get(CallNotificationManager.EXTRA_CALL_ID));
+                Toast.makeText(this, "This call has already ended.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            Intent incoming = new Intent(this, IncomingCallActivity.class);
+            if (intent.getExtras() != null) incoming.putExtras(intent.getExtras());
+            incoming.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            startActivity(incoming);
+            return;
         }
         String callId = intent.getStringExtra(CallNotificationManager.EXTRA_CALL_ID);
         if (callId == null || callId.trim().isEmpty()) return;
