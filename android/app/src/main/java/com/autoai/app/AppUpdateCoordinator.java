@@ -33,6 +33,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** Application-scoped single source of truth for APK update checks and handoff. */
 public final class AppUpdateCoordinator {
@@ -43,6 +45,10 @@ public final class AppUpdateCoordinator {
     public static final String PREFS = "auto_ai_update_preferences";
     private static final String WORK_NAME = "auto_ai_apk_download";
     private static final long CHECK_COOLDOWN_MS = 5L * 60L * 1000L;
+    private static final String GITHUB_RELEASE_API =
+        "https://api.github.com/repos/shyamraj2143/auto-ai/releases/latest";
+    private static final String GITHUB_RELEASE_DOWNLOAD_PREFIX =
+        "/shyamraj2143/auto-ai/releases/download/";
     private static volatile AppUpdateCoordinator instance;
 
     private final Context context;
@@ -205,14 +211,94 @@ public final class AppUpdateCoordinator {
     public void requireInstallPermission() { set(snapshot.withState(State.INSTALL_PERMISSION_REQUIRED, "Allow AutoAI to install this verified update.")); }
 
     private Metadata fetch() throws Exception {
+        Exception backendError;
+        try {
+            return fetchBackend();
+        } catch (Exception error) {
+            backendError = error;
+        }
+
+        try {
+            return fetchGitHub();
+        } catch (Exception githubError) {
+            githubError.addSuppressed(backendError);
+            throw githubError;
+        }
+    }
+
+    private Metadata fetchBackend() throws Exception {
         URL url = new URL(apiUrl("download/apk/latest"));
-        HttpURLConnection c = (HttpURLConnection) url.openConnection();
-        c.setConnectTimeout(15000); c.setReadTimeout(30000); c.setRequestProperty("Accept", "application/json");
-        if (c.getResponseCode() < 200 || c.getResponseCode() >= 300) throw new IllegalStateException("server:" + c.getResponseCode());
-        JSONObject json = new JSONObject(read(c));
+        JSONObject json = fetchJson(url, "application/json");
         Metadata m = Metadata.from(json);
         m.downloadUrl = resolveTrustedUrl(json.optString("download_url", json.optString("apk_url", "")));
         return m;
+    }
+
+    private Metadata fetchGitHub() throws Exception {
+        JSONObject json = fetchJson(new URL(GITHUB_RELEASE_API), "application/vnd.github+json");
+        return parseGitHubRelease(json);
+    }
+
+    private JSONObject fetchJson(URL url, String accept) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) url.openConnection();
+        c.setConnectTimeout(15000);
+        c.setReadTimeout(30000);
+        c.setRequestProperty("Accept", accept);
+        c.setRequestProperty("User-Agent", "AutoAI-Android-Updater/" + BuildConfig.VERSION_NAME);
+        if (c.getResponseCode() < 200 || c.getResponseCode() >= 300) throw new IllegalStateException("server:" + c.getResponseCode());
+        return new JSONObject(read(c));
+    }
+
+    static Metadata parseGitHubRelease(JSONObject json) throws Exception {
+        JSONArray assets = json.optJSONArray("assets");
+        JSONObject apk = null;
+        if (assets != null) {
+            for (int index = 0; index < assets.length(); index++) {
+                JSONObject candidate = assets.optJSONObject(index);
+                if (candidate != null && "auto-ai.apk".equalsIgnoreCase(candidate.optString("name", ""))) {
+                    apk = candidate;
+                    break;
+                }
+            }
+        }
+        if (apk == null) throw new IllegalStateException("GitHub release has no AutoAI APK.");
+
+        String body = json.optString("body", "");
+        Metadata m = new Metadata();
+        m.versionCode = requiredInt(body, "Version-Code:\\s*(\\d+)");
+        m.versionName = requiredText(body, "Version-Name:\\s*([^\\s]+)");
+        m.sha256 = requiredText(body, "SHA256:\\s*([A-Fa-f0-9]{64})").toLowerCase(Locale.US);
+        m.downloadUrl = apk.optString("browser_download_url", "");
+        if (!isTrustedDownloadUrl(m.downloadUrl)) throw new SecurityException("Untrusted GitHub APK URL.");
+        m.id = "github-" + m.versionCode;
+        m.fileSize = apk.optLong("size", 0L);
+        m.packageName = "com.autoai.app";
+        m.minimumAndroidSdk = 24;
+        m.minimumSupportedVersionCode = 1;
+        m.forceUpdate = false;
+        m.changelog = optionalText(body, "Changelog:\\s*([^\\r\\n]+)", "AutoAI update");
+        m.releaseDate = json.optString("published_at", json.optString("created_at", ""));
+        return m;
+    }
+
+    private static int requiredInt(String value, String pattern) {
+        String text = requiredText(value, pattern);
+        try {
+            return Integer.parseInt(text);
+        } catch (NumberFormatException error) {
+            throw new IllegalStateException("Invalid GitHub release version.");
+        }
+    }
+
+    private static String requiredText(String value, String pattern) {
+        Matcher matcher = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE).matcher(value == null ? "" : value);
+        if (!matcher.find()) throw new IllegalStateException("Incomplete GitHub release metadata.");
+        return matcher.group(1).trim();
+    }
+
+    private static String optionalText(String value, String pattern, String fallback) {
+        Matcher matcher = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE).matcher(value == null ? "" : value);
+        return matcher.find() ? matcher.group(1).trim() : fallback;
     }
 
     public static String apiUrl(String relative) {
@@ -223,10 +309,43 @@ public final class AppUpdateCoordinator {
 
     private String resolveTrustedUrl(String value) throws Exception {
         URI base = URI.create(apiUrl(""));
-        URI resolved = base.resolve(value.startsWith("/") ? value : "./" + value);
-        if (!"https".equalsIgnoreCase(resolved.getScheme()) || !base.getHost().equalsIgnoreCase(resolved.getHost()))
+        URI candidate = URI.create(value);
+        URI resolved = candidate.isAbsolute() ? candidate : base.resolve(value.startsWith("/") ? value : "./" + value);
+        if (!isTrustedDownloadUrl(resolved.toString()))
             throw new SecurityException("Untrusted APK download URL.");
         return resolved.toString();
+    }
+
+    static boolean isTrustedDownloadUrl(String value) {
+        try {
+            URI uri = URI.create(value);
+            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getUserInfo() != null) return false;
+            String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.US);
+            URI api = URI.create(apiUrl(""));
+            if (host.equalsIgnoreCase(api.getHost())) {
+                String path = uri.getPath() == null ? "" : uri.getPath();
+                return path.startsWith("/api/download/apk") || path.startsWith("/api/v1/download/apk");
+            }
+            String path = uri.getPath() == null ? "" : uri.getPath();
+            return "github.com".equals(host)
+                && path.startsWith(GITHUB_RELEASE_DOWNLOAD_PREFIX)
+                && path.endsWith("/auto-ai.apk");
+        } catch (RuntimeException error) {
+            return false;
+        }
+    }
+
+    static boolean isTrustedResolvedDownloadUrl(String value) {
+        if (isTrustedDownloadUrl(value)) return true;
+        try {
+            URI uri = URI.create(value);
+            if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getUserInfo() != null) return false;
+            String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.US);
+            return "release-assets.githubusercontent.com".equals(host)
+                || "objects.githubusercontent.com".equals(host);
+        } catch (RuntimeException error) {
+            return false;
+        }
     }
 
     private void observeDownload() {

@@ -30,8 +30,7 @@ public final class AppUpdateDownloadWorker extends Worker {
         try {
             AppUpdateCoordinator.Metadata metadata = AppUpdateCoordinator.Metadata.restore(new JSONObject(getInputData().getString("metadata")));
             if (!metadata.valid() || metadata.versionCode <= BuildConfig.VERSION_CODE) return failure("Invalid or outdated update metadata.");
-            URI expected = URI.create(AppUpdateCoordinator.apiUrl("")); URI source = URI.create(metadata.downloadUrl);
-            if (!"https".equalsIgnoreCase(source.getScheme()) || !expected.getHost().equalsIgnoreCase(source.getHost())) return failure("Untrusted APK download URL.");
+            if (!AppUpdateCoordinator.isTrustedDownloadUrl(metadata.downloadUrl)) return failure("Untrusted APK download URL.");
             File dir = new File(getApplicationContext().getFilesDir(), "updates");
             if (!dir.exists() && !dir.mkdirs()) return failure("Unable to prepare secure update storage.");
             partial = new File(dir, "autoai-" + metadata.versionCode + ".apk.part");
@@ -40,6 +39,7 @@ public final class AppUpdateDownloadWorker extends Worker {
             progress(AppUpdateCoordinator.State.DOWNLOADING, 0, metadata.fileSize, "Downloading update...");
             HttpURLConnection c=(HttpURLConnection)new URL(metadata.downloadUrl).openConnection(); c.setConnectTimeout(15000);c.setReadTimeout(60000);c.setRequestProperty("Accept","application/vnd.android.package-archive");
             int status=c.getResponseCode(); if(status<200||status>=300) return retryOrFail("Download failed (HTTP " + status + ").");
+            if(!AppUpdateCoordinator.isTrustedResolvedDownloadUrl(c.getURL().toString())) return failure("Download redirected to an untrusted server.");
             long total=c.getContentLengthLong(); if(total<=0) total=metadata.fileSize;
             long done=0; try(BufferedInputStream in=new BufferedInputStream(c.getInputStream());FileOutputStream out=new FileOutputStream(partial)){byte[] b=new byte[32768];int n;while((n=in.read(b))!=-1){if(isStopped())return Result.failure();out.write(b,0,n);done+=n;progress(AppUpdateCoordinator.State.DOWNLOADING,done,total,"Downloading update...");}}
             if(done<=0) return failure("Downloaded APK is empty.");

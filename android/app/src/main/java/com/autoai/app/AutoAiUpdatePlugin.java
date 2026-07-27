@@ -23,7 +23,7 @@ public final class AutoAiUpdatePlugin extends Plugin implements AppUpdateCoordin
 
     @PluginMethod public void getState(PluginCall call) { call.resolve(payload(coordinator.current())); }
     @PluginMethod public void checkForUpdate(PluginCall call) {
-        coordinator.check(true);
+        coordinator.check(false);
         call.resolve(payload(coordinator.current()));
     }
     @PluginMethod public void openUpdate(PluginCall call) {

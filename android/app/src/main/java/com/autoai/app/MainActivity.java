@@ -132,10 +132,10 @@ public class MainActivity extends BridgeActivity {
         appUpdateDialog = new AppUpdateDialog(this);
         appUpdateDialog.start();
         AppUpdateCoordinator.get(this).check(true);
+        dispatchUpdateIntent(getIntent());
         syncPushDeviceIfAuthenticated();
         dispatchIncomingCallIntent(getIntent());
         dispatchOpenChatIntent(getIntent());
-        dispatchUpdateIntent(getIntent());
     }
 
     private void dispatchNativeBack() {
@@ -266,6 +266,7 @@ public class MainActivity extends BridgeActivity {
     public void onResume() {
         super.onResume();
         AppUpdateCoordinator.get(this).refreshInstallState();
+        AppUpdateCoordinator.get(this).check(false);
         syncPushDeviceIfAuthenticated();
     }
 

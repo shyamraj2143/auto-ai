@@ -21,4 +21,12 @@ public class AppUpdateCoordinatorTest {
         metadata.packageName = "wrong.package";
         assertFalse("com.autoai.app".equals(metadata.packageName));
     }
+
+    @Test public void updaterAcceptsOnlyTheAutoAiReleasePath() {
+        assertTrue(AppUpdateCoordinator.isTrustedDownloadUrl(
+            "https://github.com/shyamraj2143/auto-ai/releases/download/android-101201/auto-ai.apk"));
+        assertFalse(AppUpdateCoordinator.isTrustedDownloadUrl(
+            "https://github.com/another-owner/auto-ai/releases/download/android-101201/auto-ai.apk"));
+        assertFalse(AppUpdateCoordinator.isTrustedDownloadUrl("http://github.com/shyamraj2143/auto-ai.apk"));
+    }
 }
