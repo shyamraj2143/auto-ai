@@ -14,6 +14,7 @@ import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -27,9 +28,9 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
     private final Activity activity;
     private final AppUpdateCoordinator coordinator;
     private Dialog dialog;
-    private TextView eyebrow, title, version, details, status, progressText;
+    private TextView eyebrow, title, version, details, status, progressText, fileSize, releaseDate;
     private ProgressBar progress;
-    private Button primary, secondary;
+    private Button primary, secondary, close;
 
     public AppUpdateDialog(Activity activity) {
         this.activity = activity;
@@ -61,11 +62,12 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         if (dialog == null) create();
 
         AppUpdateCoordinator.Metadata metadata = snapshot.metadata;
-        eyebrow.setText(metadata.mandatory ? "MANDATORY SECURITY UPDATE" : "AUTOAI RELEASE");
+        eyebrow.setText(metadata.mandatory ? "MANDATORY SECURITY UPDATE" : "VERSION " + metadata.versionName);
         eyebrow.setTextColor(metadata.mandatory ? Color.rgb(255, 181, 71) : Color.rgb(104, 227, 255));
-        title.setText(metadata.mandatory ? "Update Required" : "A smarter AutoAI is ready");
-        version.setText("v" + BuildConfig.VERSION_NAME + "  →  v" + metadata.versionName
-            + "   •   " + formatSize(metadata.fileSize));
+        title.setText(metadata.mandatory ? "Update Required" : "New AutoAI Update");
+        version.setText("Current " + BuildConfig.VERSION_NAME + "   →   New " + metadata.versionName);
+        fileSize.setText("▣     " + formatSize(metadata.fileSize));
+        releaseDate.setText("◷     " + (metadata.releaseDate.isEmpty() ? "Release date available after verification" : "Updated " + readableDate(metadata.releaseDate)));
         details.setText(releaseDetails(metadata));
         status.setText(TextUtils.isEmpty(snapshot.message) ? label(snapshot.state) : snapshot.message);
         status.setTextColor(snapshot.state == AppUpdateCoordinator.State.FAILED
@@ -99,12 +101,14 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         boolean optionalSecondary = !metadata.mandatory && (snapshot.state == AppUpdateCoordinator.State.AVAILABLE
             || snapshot.state == AppUpdateCoordinator.State.FAILED || downloading);
         secondary.setVisibility(mandatoryFailure || optionalSecondary ? View.VISIBLE : View.GONE);
-        secondary.setText(mandatoryFailure ? "Exit App" : downloading ? "Cancel Download" : "Maybe Later");
+        secondary.setText(mandatoryFailure ? "EXIT APP" : downloading ? "CANCEL DOWNLOAD" : "LATER");
         secondary.setOnClickListener(view -> {
             if (mandatoryFailure) activity.finishAndRemoveTask();
             else if (downloading) coordinator.cancelOptional();
             else coordinator.dismissOptional();
         });
+        close.setVisibility(metadata.mandatory ? View.GONE : View.VISIBLE);
+        close.setOnClickListener(view -> coordinator.dismissOptional());
 
         dialog.setCancelable(!metadata.mandatory);
         dialog.setCanceledOnTouchOutside(!metadata.mandatory);
@@ -137,44 +141,70 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         card.setPadding(dp(20), dp(18), dp(20), dp(16));
         card.setBackground(gradient(new int[]{Color.rgb(29, 18, 67), Color.rgb(10, 28, 58), Color.rgb(4, 51, 61)}, 24, Color.rgb(104, 77, 255)));
 
-        LinearLayout header = new LinearLayout(activity);
-        header.setGravity(Gravity.CENTER_VERTICAL);
+        FrameLayout header = new FrameLayout(activity);
         ImageView logo = new ImageView(activity);
         logo.setImageResource(R.mipmap.ic_launcher);
         logo.setScaleType(ImageView.ScaleType.CENTER_CROP);
         GradientDrawable logoBackground = gradient(new int[]{Color.rgb(39, 34, 93), Color.rgb(7, 75, 93)}, 18, Color.rgb(46, 225, 255));
         logo.setBackground(logoBackground);
         logo.setPadding(dp(5), dp(5), dp(5), dp(5));
-        header.addView(logo, new LinearLayout.LayoutParams(dp(58), dp(58)));
+        FrameLayout.LayoutParams logoParams = new FrameLayout.LayoutParams(dp(76), dp(76), Gravity.CENTER);
+        header.addView(logo, logoParams);
+        close = new Button(activity);
+        close.setText("×");
+        close.setTextSize(28);
+        close.setTextColor(Color.WHITE);
+        close.setGravity(Gravity.CENTER);
+        close.setPadding(0, 0, 0, dp(3));
+        close.setBackground(gradient(new int[]{Color.rgb(24, 39, 82), Color.rgb(8, 23, 53)}, 25, Color.rgb(77, 105, 172)));
+        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(dp(48), dp(48), Gravity.END | Gravity.TOP);
+        header.addView(close, closeParams);
+        card.addView(header, new LinearLayout.LayoutParams(-1, dp(82)));
 
-        LinearLayout heading = column();
-        LinearLayout.LayoutParams headingParams = new LinearLayout.LayoutParams(0, -2, 1f);
-        headingParams.leftMargin = dp(13);
         eyebrow = text("", 11, Color.rgb(104, 227, 255));
         eyebrow.setTypeface(Typeface.DEFAULT_BOLD);
         eyebrow.setLetterSpacing(0.08f);
-        title = text("", 21, Color.WHITE);
+        eyebrow.setGravity(Gravity.CENTER);
+        title = text("", 26, Color.WHITE);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setPadding(0, dp(3), 0, 0);
-        heading.addView(eyebrow);
-        heading.addView(title);
-        header.addView(heading, headingParams);
-        card.addView(header);
+        title.setGravity(Gravity.CENTER);
+        title.setPadding(0, dp(9), 0, dp(5));
+        card.addView(title);
+        card.addView(eyebrow);
 
-        version = text("", 13, Color.rgb(167, 211, 255));
+        version = text("", 14, Color.rgb(195, 210, 243));
         version.setGravity(Gravity.CENTER);
-        version.setPadding(dp(10), dp(8), dp(10), dp(8));
-        version.setBackground(gradient(new int[]{Color.rgb(37, 35, 85), Color.rgb(15, 61, 83)}, 13, Color.rgb(64, 125, 214)));
+        version.setPadding(dp(10), dp(10), dp(10), dp(11));
         LinearLayout.LayoutParams versionParams = new LinearLayout.LayoutParams(-1, -2);
-        versionParams.topMargin = dp(15);
+        versionParams.topMargin = dp(5);
         card.addView(version, versionParams);
+
+        View dividerTop = divider();
+        card.addView(dividerTop, new LinearLayout.LayoutParams(-1, dp(1)));
+        fileSize = infoRow("▣", Color.rgb(59, 226, 255));
+        releaseDate = infoRow("◷", Color.rgb(79, 205, 255));
+        TextView verified = infoRow("✓", Color.rgb(82, 230, 127));
+        verified.setText("✓     Verified secure build");
+        verified.setTextColor(Color.rgb(89, 232, 126));
+        card.addView(fileSize);
+        card.addView(releaseDate);
+        card.addView(verified);
+        View dividerBottom = divider();
+        LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(-1, dp(1));
+        dividerParams.topMargin = dp(4);
+        card.addView(dividerBottom, dividerParams);
+
+        TextView whatsNew = text("WHAT’S NEW", 15, Color.rgb(199, 92, 255));
+        whatsNew.setTypeface(Typeface.DEFAULT_BOLD);
+        whatsNew.setPadding(0, dp(13), 0, 0);
+        card.addView(whatsNew);
 
         ScrollView scroll = new ScrollView(activity);
         scroll.setFillViewport(false);
         scroll.setVerticalScrollBarEnabled(false);
         details = text("", 14, Color.rgb(224, 229, 247));
         details.setLineSpacing(dp(3), 1f);
-        details.setPadding(dp(2), dp(14), dp(2), dp(12));
+        details.setPadding(dp(2), dp(8), dp(2), dp(10));
         scroll.addView(details, new ScrollView.LayoutParams(-1, -2));
         LinearLayout.LayoutParams scrollParams = new LinearLayout.LayoutParams(-1, 0, 1f);
         scrollParams.weight = 1f;
@@ -194,7 +224,7 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         primary = new Button(activity);
         primary.setTextColor(Color.WHITE);
         primary.setAllCaps(false);
-        primary.setTextSize(16);
+        primary.setTextSize(17);
         primary.setTypeface(Typeface.DEFAULT_BOLD);
         primary.setBackground(gradient(new int[]{Color.rgb(147, 58, 255), Color.rgb(40, 111, 247), Color.rgb(0, 203, 235)}, 15, Color.TRANSPARENT));
         LinearLayout.LayoutParams primaryParams = new LinearLayout.LayoutParams(-1, dp(52));
@@ -205,7 +235,7 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         secondary.setTextColor(Color.rgb(203, 213, 243));
         secondary.setAllCaps(false);
         secondary.setTextSize(14);
-        secondary.setBackgroundColor(Color.TRANSPARENT);
+        secondary.setBackground(gradient(new int[]{Color.rgb(11, 25, 55), Color.rgb(9, 20, 45)}, 14, Color.rgb(97, 132, 203)));
         card.addView(secondary, new LinearLayout.LayoutParams(-1, dp(44)));
         return card;
     }
@@ -216,19 +246,25 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
         int screenHeight = activity.getResources().getDisplayMetrics().heightPixels;
         int width = Math.min(screenWidth - dp(28), dp(520));
-        int height = Math.min((int) (screenHeight * 0.84f), dp(650));
+        int height = Math.min((int) (screenHeight * 0.86f), dp(690));
         window.setLayout(width, height);
         window.setGravity(Gravity.CENTER);
     }
 
     private String releaseDetails(AppUpdateCoordinator.Metadata metadata) {
         String notes = metadata.changelog == null || metadata.changelog.trim().isEmpty()
-            ? "• Faster and more reliable AutoAI experience\n• Stability and security improvements"
+            ? "Faster AI responses\nStable calling and screen sharing\nSecurity and performance improvements"
             : metadata.changelog.trim();
-        return "WHAT’S NEW\n" + notes
-            + "\n\n✓ SHA-256 verified download"
-            + "\n✓ Official AutoAI package"
-            + (metadata.releaseDate.isEmpty() ? "" : "\n\nReleased " + metadata.releaseDate);
+        String[] lines = notes.split("[\\r\\n]+");
+        StringBuilder bullets = new StringBuilder();
+        for (String line : lines) {
+            String clean = line.trim().replaceFirst("^[•\\-*]+\\s*", "");
+            if (!clean.isEmpty()) {
+                if (bullets.length() > 0) bullets.append('\n');
+                bullets.append("•  ").append(clean);
+            }
+        }
+        return bullets.length() == 0 ? "•  Performance and security improvements" : bullets.toString();
     }
 
     private void primary(AppUpdateCoordinator.Snapshot snapshot) {
@@ -263,7 +299,7 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
 
     private String action(AppUpdateCoordinator.State state) {
         switch (state) {
-            case AVAILABLE: return "Download & Update";
+            case AVAILABLE: return "⇩   UPDATE NOW";
             case READY_TO_INSTALL: return "Install Update";
             case INSTALL_PERMISSION_REQUIRED: return "Allow Installation";
             case FAILED: return "Retry Update";
@@ -288,6 +324,26 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         view.setTextSize(size);
         view.setTextColor(color);
         return view;
+    }
+
+    private TextView infoRow(String icon, int color) {
+        TextView row = text(icon, 14, color);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(8), dp(8), dp(6), dp(3));
+        return row;
+    }
+
+    private View divider() {
+        View view = new View(activity);
+        view.setBackgroundColor(Color.rgb(42, 67, 108));
+        return view;
+    }
+
+    private static String readableDate(String value) {
+        String normalized = value.replace('T', ' ');
+        int dot = normalized.indexOf('.');
+        if (dot > 0) normalized = normalized.substring(0, dot);
+        return normalized.replace("+05:30", "").replace("Z", " UTC");
     }
 
     private GradientDrawable gradient(int[] colors, int radius, int strokeColor) {
