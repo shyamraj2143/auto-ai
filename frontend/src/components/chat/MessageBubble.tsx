@@ -20,6 +20,7 @@ import { SourceCards } from "./SourceCards";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import { useMotionMode } from "../../motion/MotionProvider";
 import { StreamingPulse } from "../../motion/primitives";
+import { formatMessageDateTimeTitle, formatMessageTime, normalizedApiTimestamp } from "../../utils/dateTime";
 
 const THINK_BLOCK_PATTERN = /<think\b[^>]*>[\s\S]*?<\/think>\s*/gi;
 const OPEN_THINK_BLOCK_PATTERN = /<think\b[^>]*>[\s\S]*$/i;
@@ -97,10 +98,8 @@ function responseErrorText(value?: string) {
 }
 
 export function formatMessageTimestamp(value: string, now = new Date()) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
   void now;
-  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
+  return formatMessageTime(value);
 }
 
 function AttachmentList({ attachments }: { attachments: ChatAttachment[] }) {
@@ -169,6 +168,7 @@ function MessageBubbleComponent({
     | { models_consulted?: Array<{ provider?: string; model?: string }>; confidence?: string }
     | undefined;
   const consultedModels = deepResearch?.models_consulted ?? [];
+  const normalizedTimestamp = normalizedApiTimestamp(message.created_at);
   void fallbackModel;
 
   function copyMessage() {
@@ -235,9 +235,11 @@ function MessageBubbleComponent({
             {deepResearch?.confidence && <span>Confidence: {deepResearch.confidence}</span>}
           </div>
         )}
-        <time className="message-timestamp" dateTime={message.created_at} title={new Date(message.created_at).toString()}>
-          {formatMessageTimestamp(message.created_at)}
-        </time>
+        {normalizedTimestamp && (
+          <time className="message-timestamp" dateTime={normalizedTimestamp} title={formatMessageDateTimeTitle(message.created_at)}>
+            {formatMessageTimestamp(message.created_at)}
+          </time>
+        )}
       </div>
 
         {!isEmptyStreaming && !isFailedAssistant && (

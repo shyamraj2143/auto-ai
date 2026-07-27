@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowDown, Brain, Menu, MessageSquarePlus, MoreHorizontal, Search, Settings, Sparkles, Square, Trash2, Pencil, Eraser } from "lucide-react";
@@ -8,6 +8,7 @@ import { useChat } from "../../contexts/ChatContext";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
 import type { ChatAttachment, ChatGeneration, ChatRequest, DocumentItem, Message, MessageInternalContext, ResponseModelInfo } from "../../types";
 import { coerceTextContent } from "../../utils/text";
+import { dateSeparatorFlags, formatMessageDate, formatMessageDateLabel } from "../../utils/dateTime";
 import { Composer, type ComposerOptions, type UploadTask } from "./Composer";
 import { ContextPanel } from "./ContextPanel";
 import { MessageBubble } from "./MessageBubble";
@@ -307,6 +308,10 @@ export function ChatPage() {
   const visibleMessages = useMemo(
     () => (messages.length > 160 ? messages.slice(-160) : messages),
     [messages]
+  );
+  const visibleDateSeparators = useMemo(
+    () => dateSeparatorFlags(visibleMessages.map((message) => message.created_at)),
+    [visibleMessages]
   );
   const visibleGeneration = activeGeneration?.chat_id === activeChat?.id ? activeGeneration : null;
   const visibleGenerationRunning = Boolean(visibleGeneration && isRunningGenerationStatus(visibleGeneration.status));
@@ -1076,17 +1081,28 @@ export function ChatPage() {
           )}
           <AnimatePresence initial={false}>
             {hasMessages ? (
-              visibleMessages.map((message) => (
-                <MessageBubble
-                  key={message.id}
-                  message={message}
-                  isStreaming={message.id === visibleStreamingMessageId}
-                  isSearchingWeb={message.id === searchingMessageId}
-                  fallbackModel={message.role === "assistant" ? fallbackResponseModel : null}
-                  onRegenerate={handleRegenerate}
-                  onShare={handleShare}
-                />
-              ))
+              visibleMessages.map((message, index) => {
+                const showDate = visibleDateSeparators[index];
+                const dateLabel = formatMessageDateLabel(message.created_at);
+                const fullDate = formatMessageDate(message.created_at);
+                return (
+                  <Fragment key={message.id}>
+                    {showDate && dateLabel && (
+                      <div className="chat-date-separator" role="separator" aria-label={`Conversation date: ${fullDate}`} title={fullDate}>
+                        <span>{dateLabel}</span>
+                      </div>
+                    )}
+                    <MessageBubble
+                      message={message}
+                      isStreaming={message.id === visibleStreamingMessageId}
+                      isSearchingWeb={message.id === searchingMessageId}
+                      fallbackModel={message.role === "assistant" ? fallbackResponseModel : null}
+                      onRegenerate={handleRegenerate}
+                      onShare={handleShare}
+                    />
+                  </Fragment>
+                );
+              })
             ) : (
               <motion.div
                 initial={{ opacity: 0, y: 12 }}

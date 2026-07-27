@@ -1,9 +1,10 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
 
 from app.schemas.search import SearchMode
+from app.utils.datetime import to_rfc3339_utc
 
 
 ProviderName = Literal["openai", "groq", "bedrock", "gemini"]
@@ -21,6 +22,10 @@ class MessageRead(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @field_serializer("created_at")
+    def serialize_created_at(self, value: datetime) -> str:
+        return to_rfc3339_utc(value)
 
 
 class ChatCreate(BaseModel):
@@ -47,6 +52,10 @@ class ChatListItem(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @field_serializer("created_at", "updated_at")
+    def serialize_timestamps(self, value: datetime) -> str:
+        return to_rfc3339_utc(value)
 
 
 class ChatRead(ChatListItem):
@@ -118,6 +127,10 @@ class ChatGenerationRead(BaseModel):
     completed_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+    @field_serializer("created_at", "updated_at", "completed_at")
+    def serialize_timestamps(self, value: datetime | None) -> str | None:
+        return to_rfc3339_utc(value) if value else None
 
 
 class ResearchProviderModels(BaseModel):

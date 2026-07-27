@@ -5,6 +5,7 @@ from sqlalchemy import DateTime, ForeignKey, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.utils.datetime import utc_now
 
 
 class ChatGeneration(Base):
@@ -18,6 +19,6 @@ class ChatGeneration(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
     request_payload: Mapped[dict] = mapped_column(JSON, default=dict)
     error: Mapped[str] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    completed_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)

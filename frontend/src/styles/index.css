@@ -7608,6 +7608,39 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
   font-size: 10px;
   line-height: 1;
 }
+
+.chat-date-separator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(92%, 720px);
+  margin: 14px auto 6px;
+  color: #9fb0c9;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .035em;
+  text-align: center;
+}
+.chat-date-separator::before,
+.chat-date-separator::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: linear-gradient(90deg, transparent, rgba(111, 142, 185, .32));
+}
+.chat-date-separator::after { transform: scaleX(-1); }
+.chat-date-separator > span {
+  border: 1px solid rgba(125, 153, 197, .2);
+  border-radius: 999px;
+  background: rgba(11, 25, 50, .72);
+  padding: 5px 11px;
+  white-space: nowrap;
+}
+.light .chat-date-separator { color: #53657b; }
+.light .chat-date-separator > span {
+  border-color: rgba(73, 94, 126, .18);
+  background: rgba(241, 246, 252, .92);
+}
 .message-actions {
   margin-top: 5px;
   border: 0;
