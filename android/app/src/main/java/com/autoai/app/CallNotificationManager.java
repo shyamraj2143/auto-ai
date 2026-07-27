@@ -5,17 +5,18 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
-import android.app.Person;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.SharedPreferences;
-import android.graphics.drawable.Icon;
 import android.media.AudioAttributes;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
 import android.util.Log;
+
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.Person;
 
 import java.util.HashSet;
 import java.util.Map;
@@ -32,7 +33,8 @@ public final class CallNotificationManager {
     private static final String TAG = "AutoAiCallNotif";
     public static final String CHANNEL_INCOMING_LEGACY = "auto_ai_incoming_calls";
     public static final String CHANNEL_INCOMING_V3 = "auto_ai_incoming_calls_v3";
-    public static final String CHANNEL_INCOMING = "auto_ai_incoming_calls_v4";
+    public static final String CHANNEL_INCOMING_V4 = "auto_ai_incoming_calls_v4";
+    public static final String CHANNEL_INCOMING = "auto_ai_incoming_calls_v5";
     public static final String CHANNEL_ACTIVE = "auto_ai_active_calls";
     public static final String EXTRA_CALL_ID = "call_id";
     public static final String EXTRA_CALLER_ID = "caller_id";
@@ -117,24 +119,21 @@ public final class CallNotificationManager {
         incomingIntent.putExtra(EXTRA_ACTION_TOKEN, actionToken);
         PendingIntent fullScreen = PendingIntent.getActivity(context, requestCode(callId, "open", revision), incomingIntent, pendingFlags());
 
-        Intent acceptIntent = new Intent(incomingIntent);
-        acceptIntent.setAction(ACTION_ACCEPT);
+        Intent acceptIntent = new Intent(context, CallActionReceiver.class).setAction(ACTION_ACCEPT).putExtras(incomingIntent);
         acceptIntent.putExtra(EXTRA_ACTION, "accept");
-        PendingIntent accept = PendingIntent.getActivity(context, requestCode(callId, "accept", revision), acceptIntent, pendingFlags());
-        Intent audioOnlyIntent = new Intent(incomingIntent);
-        audioOnlyIntent.setAction(ACTION_AUDIO_ONLY);
+        PendingIntent accept = PendingIntent.getBroadcast(context, requestCode(callId, "accept", revision), acceptIntent, pendingFlags());
+        Intent audioOnlyIntent = new Intent(context, CallActionReceiver.class).setAction(ACTION_AUDIO_ONLY).putExtras(incomingIntent);
         audioOnlyIntent.putExtra(EXTRA_ACTION, "audio_only");
-        PendingIntent audioOnly = PendingIntent.getActivity(context, requestCode(callId, "audio_only", revision), audioOnlyIntent, pendingFlags());
+        PendingIntent audioOnly = PendingIntent.getBroadcast(context, requestCode(callId, "audio_only", revision), audioOnlyIntent, pendingFlags());
         Intent rejectIntent = new Intent(context, CallActionReceiver.class).setAction(ACTION_REJECT)
             .putExtra(EXTRA_CALL_ID, callId).putExtra(EXTRA_ACTION_TOKEN, actionToken);
         PendingIntent reject = PendingIntent.getBroadcast(context, requestCode(callId, "decline", revision), rejectIntent, pendingFlags());
 
-        Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-            ? new Notification.Builder(context, CHANNEL_INCOMING)
-            : new Notification.Builder(context);
+        diagnostic(context, "CALLSTYLE_BUILD_STARTED", data, "STARTED");
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_INCOMING);
         String title = name.isEmpty() ? "Incoming Auto-AI call" : name;
         String text = (username.isEmpty() ? "" : "@" + username + " - ") + "Incoming " + ("audio".equals(callType) ? "audio" : "video") + " call";
-        builder.setSmallIcon(R.mipmap.ic_launcher)
+        builder.setSmallIcon(R.drawable.ic_stat_call)
             .setContentTitle(title)
             .setContentText(text)
             .setCategory(Notification.CATEGORY_CALL)
@@ -143,6 +142,7 @@ public final class CallNotificationManager {
             .setOngoing(true)
             .setAutoCancel(false)
             .setOnlyAlertOnce(false)
+            .setLocalOnly(false)
             .setContentIntent(fullScreen);
         if (canUseFullScreenIntent(context)) {
             builder.setFullScreenIntent(fullScreen, true);
@@ -152,17 +152,11 @@ public final class CallNotificationManager {
             diagnostic(context, "FULL_SCREEN_PERMISSION_DENIED", data, "HEADS_UP_REQUIRED");
             diagnostic(context, "HEADS_UP_FALLBACK_USED", data, "POSTED_WITHOUT_FULL_SCREEN");
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            builder.setTimeoutAfter(Math.max(1000, expiresAt - System.currentTimeMillis()));
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            Person person = new Person.Builder().setName(name.isEmpty() ? "Auto-AI user" : name).setIcon(Icon.createWithResource(context, R.mipmap.ic_launcher)).setImportant(true).build();
-            builder.setStyle(Notification.CallStyle.forIncomingCall(person, reject, accept));
-        } else {
-            builder.addAction(new Notification.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel, "Reject", reject).build());
-            builder.addAction(new Notification.Action.Builder(android.R.drawable.sym_action_call, "Accept", accept).build());
-            if ("video".equals(callType)) builder.addAction(new Notification.Action.Builder(android.R.drawable.sym_action_call, "Audio only", audioOnly).build());
-        }
+        builder.setTimeoutAfter(Math.max(1000, expiresAt - System.currentTimeMillis()));
+        Person person = new Person.Builder().setName(name.isEmpty() ? "Auto-AI user" : name).setImportant(true).build();
+        builder.setStyle(NotificationCompat.CallStyle.forIncomingCall(person, reject, accept));
+        if ("video".equals(callType)) builder.addAction(new NotificationCompat.Action(android.R.drawable.sym_action_call, "Audio only", audioOnly));
+        diagnostic(context, "CALLSTYLE_BUILD_COMPLETED", data, "ANSWER_REJECT_ATTACHED");
         if (silent) {
             builder.setSound(null);
             builder.setVibrate(new long[] {0L});
@@ -174,6 +168,7 @@ public final class CallNotificationManager {
                 manager.notify(notificationTag(callId), 0, builder.build());
                 markEventSeen(context, eventId);
                 diagnostic(context, "NATIVE_NOTIFICATION_POSTED", data, "POSTED");
+                diagnostic(context, "CALLSTYLE_NOTIFICATION_POSTED", data, "PRIMARY_NATIVE_CALLSTYLE_DELIVERED");
                 CallDeliveryAckWorker.schedule(context, data, "notification_displayed", "", "");
                 acknowledgeRinging(context, callId);
                 try { telecomReported = AutoAiTelecomBridge.reportIncomingCall(context, data); }

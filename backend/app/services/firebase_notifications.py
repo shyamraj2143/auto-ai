@@ -84,14 +84,17 @@ class FirebaseNotificationService:
 
     def send_call_data(self, token: str, data: dict[str, str], ttl_seconds: int) -> FcmSendResult:
         analytics_label = "incoming_call_primary" if data.get("type") == "incoming_call" else "call_terminal"
+        is_primary = data.get("type") == "incoming_call"
         message = {
             "message": {
                 "token": token,
                 "data": data,
                 "android": {
                     "priority": "HIGH",
-                    "ttl": f"{max(1, ttl_seconds)}s",
+                    "ttl": "0s" if is_primary else f"{max(1, ttl_seconds)}s",
                     "direct_boot_ok": False,
+                    "restricted_package_name": "com.autoai.app",
+                    "collapse_key": f"call_{data.get('call_id', 'unknown')}",
                     "fcm_options": {"analytics_label": analytics_label},
                 },
             }
@@ -99,20 +102,22 @@ class FirebaseNotificationService:
         return self._send(message)
 
     def send_call_system_fallback(self, token: str, data: dict[str, str], title: str, body: str, ttl_seconds: int, notification_tag: str) -> FcmSendResult:
+        fallback_body = body if body.endswith("tap to answer") else f"{body} — tap to answer"
         return self._send({"message": {
             "token": token,
-            "notification": {"title": title[:120], "body": body[:180]},
+            "notification": {"title": title[:120], "body": fallback_body[:180]},
             "data": data,
             "android": {
                 "priority": "HIGH",
                 "ttl": f"{max(1, ttl_seconds)}s",
                 "direct_boot_ok": False,
                 "notification": {
-                    "channel_id": "auto_ai_incoming_calls_v4",
+                    "channel_id": "auto_ai_incoming_calls_v5",
                     "notification_priority": "PRIORITY_MAX",
                     "default_sound": True,
                     "visibility": "PUBLIC",
                     "tag": notification_tag,
+                    "click_action": "com.autoai.app.INCOMING_CALL_FALLBACK",
                 },
                 "fcm_options": {"analytics_label": "incoming_call_fallback"},
             },

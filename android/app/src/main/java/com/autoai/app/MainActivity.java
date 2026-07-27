@@ -37,6 +37,8 @@ import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebChromeClient;
 import com.getcapacitor.BridgeWebViewClient;
 import com.google.firebase.messaging.FirebaseMessaging;
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GoogleApiAvailability;
 
 import org.json.JSONObject;
 
@@ -277,6 +279,11 @@ public class MainActivity extends BridgeActivity {
     private void syncPushDeviceIfAuthenticated() {
         String accessToken = AutoAiSecureStoragePlugin.readStoredValue(this, "auto-ai-access-token");
         if (accessToken == null || accessToken.trim().isEmpty()) return;
+        int gmsStatus = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(this);
+        if (gmsStatus != ConnectionResult.SUCCESS) {
+            android.util.Log.w("AutoAiPushSync", "NON_GMS_DEVICE google_play_services_status=" + gmsStatus);
+            return;
+        }
         requestNotificationPermissionIfNeeded();
         try {
             FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {

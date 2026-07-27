@@ -87,6 +87,7 @@ def send_incoming_call_notifications(
         "expires_at": expires_at.isoformat(),
         "expires_at_epoch_ms": str(int(expires_at.timestamp() * 1000)),
         "silent": str(silent).lower(),
+        "notification_tag": f"autoai_call_{call.id}",
     }
     sent = 0
     logger.info("call_fcm_incoming_attempt call_id=%s devices=%d silent=%s", call.id, len(devices), silent)

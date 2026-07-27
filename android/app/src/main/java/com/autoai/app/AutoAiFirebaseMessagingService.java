@@ -10,6 +10,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.os.PowerManager;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -49,9 +50,23 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
                 ? (message.getPriority() == RemoteMessage.PRIORITY_HIGH ? "HIGH_DELIVERED_AS_HIGH" : "HIGH_DOWNGRADED_TO_NORMAL")
                 : "UNKNOWN_PRIORITY";
             long ageMs = message.getSentTime() > 0 ? Math.max(0L, System.currentTimeMillis() - message.getSentTime()) : -1L;
-            CallNotificationManager.diagnostic(this, "FCM_RECEIVED_ON_DEVICE", data, priorityResult + ":age_ms=" + ageMs);
-            CallDeliveryAckWorker.schedule(this, data, "device_received", String.valueOf(message.getOriginalPriority()), String.valueOf(message.getPriority()));
-            CallNotificationManager.showIncoming(this, data);
+            PowerManager.WakeLock wakeLock = null;
+            try {
+                PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+                if (powerManager != null) {
+                    wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "autoai:incoming-call");
+                    wakeLock.acquire(10_000L);
+                }
+                CallNotificationManager.diagnostic(this, "FIREBASE_SERVICE_STARTED", data, priorityResult + ":age_ms=" + ageMs);
+                CallNotificationManager.diagnostic(this, "PRIMARY_DATA_RECEIVED", data, priorityResult);
+                CallNotificationManager.diagnostic(this,
+                    "HIGH_DOWNGRADED_TO_NORMAL".equals(priorityResult) ? "PRIMARY_PRIORITY_DOWNGRADED" : "PRIMARY_PRIORITY_HIGH",
+                    data, priorityResult);
+                CallNotificationManager.showIncoming(this, data);
+                CallDeliveryAckWorker.schedule(this, data, "device_received", String.valueOf(message.getOriginalPriority()), String.valueOf(message.getPriority()));
+            } finally {
+                if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+            }
             return;
         }
         if ("call_missed".equals(messageType)) {

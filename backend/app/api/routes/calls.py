@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.core.config import settings
 from app.db.session import get_db
-from app.models.call import BlockedUser, Call, CallReport, UserCallSettings, UserDevice
+from app.models.call import BlockedUser, Call, CallDelivery, CallReport, UserCallSettings, UserDevice
 from app.models.user import User
 from app.schemas.call import (
     BlockedUserRead,
@@ -52,6 +52,10 @@ def call_device_readiness(
     current_user: User = Depends(get_current_user),
 ) -> list[dict[str, object]]:
     devices = db.scalars(select(UserDevice).where(UserDevice.user_id == current_user.id).order_by(UserDevice.last_registered_at.desc())).all()
+    latest = {
+        device.id: db.scalar(select(CallDelivery).where(CallDelivery.device_id == device.id).order_by(CallDelivery.created_at.desc()).limit(1))
+        for device in devices
+    }
     return [
         {
             "installation_id": hashlib.sha256(device.device_id.encode("utf-8")).hexdigest()[:16],
@@ -67,7 +71,12 @@ def call_device_readiness(
             "last_fcm_send_result": device.last_fcm_send_result,
             "last_fcm_received_at": device.last_fcm_received_at,
             "last_notification_displayed_at": device.last_notification_displayed_at,
-            "ready_for_background_calls": bool(device.is_active and device.fcm_token_hash and device.last_fcm_failure_code is None),
+            "native_incoming_call_status": (
+                "READY" if latest[device.id] and latest[device.id].notification_displayed_at
+                else "DEGRADED" if latest[device.id] and latest[device.id].fallback_sent_at
+                else "BLOCKED"
+            ),
+            "ready_for_background_calls": bool(latest[device.id] and latest[device.id].notification_displayed_at),
             "failure_code": device.last_fcm_failure_code,
         }
         for device in devices
