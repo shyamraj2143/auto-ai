@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from redis import Redis
 from redis.exceptions import RedisError
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import SessionLocal
@@ -36,9 +37,12 @@ def schedule_fallback(delivery_id: str, due_at: datetime) -> bool:
         return False
 
 
-def cancel_call_fallbacks(call_id: str) -> None:
-    with SessionLocal() as db:
-        ids = db.scalars(select(CallDelivery.id).where(CallDelivery.call_id == call_id, CallDelivery.fallback_sent_at.is_(None))).all()
+def cancel_call_fallbacks(call_id: str, session: Session | None = None) -> None:
+    if session is not None:
+        ids = session.scalars(select(CallDelivery.id).where(CallDelivery.call_id == call_id, CallDelivery.fallback_sent_at.is_(None))).all()
+    else:
+        with SessionLocal() as db:
+            ids = db.scalars(select(CallDelivery.id).where(CallDelivery.call_id == call_id, CallDelivery.fallback_sent_at.is_(None))).all()
     if not ids:
         return
     try:

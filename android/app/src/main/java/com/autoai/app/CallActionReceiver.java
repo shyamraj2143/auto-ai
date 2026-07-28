@@ -28,29 +28,30 @@ public class CallActionReceiver extends BroadcastReceiver {
         if (callId == null || callId.trim().isEmpty()) return;
         String action = intent.getAction();
         String actionToken = intent.getStringExtra(CallNotificationManager.EXTRA_ACTION_TOKEN);
-        boolean accepting = CallNotificationManager.ACTION_ACCEPT.equals(action) || CallNotificationManager.ACTION_AUDIO_ONLY.equals(action);
-        if (!accepting && !CallNotificationManager.ACTION_REJECT.equals(action) && !CallNotificationManager.ACTION_END.equals(action)) return;
-        String endpoint = accepting ? "accept" : CallNotificationManager.ACTION_REJECT.equals(action) ? "reject" : "end";
+        if (CallHandoffPolicy.isAcceptAction(action)) {
+            // Accept is deliberately handed to the single-flight Activity coordinator. No
+            // Telecom disconnect, service stop, or terminal notification cleanup is allowed.
+            Intent accept = new Intent(context, IncomingCallActivity.class)
+                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtras(intent)
+                .putExtra(CallNotificationManager.EXTRA_ACTION,
+                    CallNotificationManager.ACTION_AUDIO_ONLY.equals(action) ? "audio_only" : "accept");
+            context.startActivity(accept);
+            return;
+        }
+        if (!CallHandoffPolicy.isTerminalAction(action)) return;
+        String endpoint = CallNotificationManager.ACTION_REJECT.equals(action) ? "reject" : "end";
         String flightKey = callId + ":" + endpoint;
         if (!ACTIONS_IN_FLIGHT.add(flightKey)) return;
         Log.i(TAG, "Call notification action received callId=" + callId + " action=" + endpoint);
-        CallNotificationManager.cancel(context, callId);
-        AutoAiTelecomBridge.disconnectLocal(context, callId);
-        context.stopService(new Intent(context, CallForegroundService.class));
+        CallNotificationManager.cancelAllForTerminalCall(context, callId);
+        Intent stop = new Intent(context, CallForegroundService.class).setAction(CallForegroundService.ACTION_STOP)
+            .putExtra(CallNotificationManager.EXTRA_CALL_ID, callId);
+        try { context.startService(stop); } catch (RuntimeException error) { Log.w(TAG, "Terminal service stop failed callId=" + callId, error); }
         PendingResult pendingResult = goAsync();
         EXECUTOR.execute(() -> {
-            try {
-                if (sendAction(context, callId, endpoint, actionToken) && accepting) {
-                    Intent service = new Intent(context, CallForegroundService.class).setAction(CallForegroundService.ACTION_START)
-                        .putExtra(CallNotificationManager.EXTRA_CALL_ID, callId)
-                        .putExtra(CallNotificationManager.EXTRA_CALLER_NAME, intent.getStringExtra(CallNotificationManager.EXTRA_CALLER_NAME))
-                        .putExtra(CallNotificationManager.EXTRA_CALL_TYPE, CallNotificationManager.ACTION_AUDIO_ONLY.equals(action) ? "audio" : intent.getStringExtra(CallNotificationManager.EXTRA_CALL_TYPE));
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) context.startForegroundService(service); else context.startService(service);
-                    Intent activeUi = new Intent(context, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                        .putExtra(CallNotificationManager.EXTRA_CALL_ID, callId);
-                    context.startActivity(activeUi);
-                }
-            } finally { ACTIONS_IN_FLIGHT.remove(flightKey); pendingResult.finish(); }
+            try { sendAction(context, callId, endpoint, actionToken); }
+            finally { ACTIONS_IN_FLIGHT.remove(flightKey); pendingResult.finish(); }
         });
     }
 

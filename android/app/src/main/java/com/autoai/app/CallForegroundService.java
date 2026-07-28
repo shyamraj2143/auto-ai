@@ -18,15 +18,32 @@ import android.util.Log;
 
 import androidx.annotation.Nullable;
 
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 public class CallForegroundService extends Service {
     private static final String TAG = "AutoAiCallService";
     public static final String ACTION_START = "com.autoai.app.call.service.START";
     public static final String ACTION_STOP = "com.autoai.app.call.service.STOP";
+    public static final String ACTION_SERVICE_STATUS = "com.autoai.app.call.service.STATUS";
+    public static final String EXTRA_SERVICE_STATUS = "service_status";
+    public static final String EXTRA_ERROR_CODE = "error_code";
+    public static final String SERVICE_READY = "SERVICE_READY";
+    public static final String SERVICE_FAILED = "SERVICE_FAILED";
     private AudioManager audioManager;
     private int previousAudioMode = AudioManager.MODE_NORMAL;
     private boolean previousSpeakerState;
     private String activeCallId;
     private AudioFocusRequest audioFocusRequest;
+    private boolean explicitTerminalStop;
+    private final ExecutorService recoveryExecutor = Executors.newSingleThreadExecutor();
 
     @Override
     public void onCreate() {
@@ -36,21 +53,33 @@ public class CallForegroundService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent == null || !ACTION_START.equals(intent.getAction())) {
-            Log.i(TAG, "Stopping foreground call service: missing start action.");
+        if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+            explicitTerminalStop = true;
+            activeCallId = clean(intent.getStringExtra(CallNotificationManager.EXTRA_CALL_ID));
             stopSelf();
             return START_NOT_STICKY;
         }
-        activeCallId = clean(intent.getStringExtra(CallNotificationManager.EXTRA_CALL_ID));
-        String displayName = clean(intent.getStringExtra(CallNotificationManager.EXTRA_CALLER_NAME));
-        String callType = clean(intent.getStringExtra(CallNotificationManager.EXTRA_CALL_TYPE));
-        if (activeCallId == null || (!"audio".equals(callType) && !"video".equals(callType)) || !hasCallPermissions(callType)) {
-            Log.w(TAG, "Foreground call service rejected start callId=" + activeCallId + " type=" + callType);
-            activeCallId = null;
-            stopSelf();
+        boolean recovery = intent == null || !ACTION_START.equals(intent.getAction());
+        activeCallId = recovery ? firstNonEmpty(AcceptedCallHandoffStore.callId(this), AutoAiCallsPlugin.activeCallId(this)) : clean(intent.getStringExtra(CallNotificationManager.EXTRA_CALL_ID));
+        String displayName = recovery ? AcceptedCallHandoffStore.peerName(this) : clean(intent.getStringExtra(CallNotificationManager.EXTRA_CALLER_NAME));
+        String callType = recovery ? firstNonEmpty(AcceptedCallHandoffStore.callType(this), AutoAiCallsPlugin.activeCallType(this)) : clean(intent.getStringExtra(CallNotificationManager.EXTRA_CALL_TYPE));
+        if (activeCallId == null || (!"audio".equals(callType) && !"video".equals(callType))) {
+            failStart(activeCallId, "FOREGROUND_SERVICE_INTERNAL_ERROR");
             return START_NOT_STICKY;
         }
-        Notification notification = buildNotification(displayName, callType);
+        if (!hasCallPermissions(callType)) {
+            failStart(activeCallId, "CALL_PERMISSION_REQUIRED");
+            return START_NOT_STICKY;
+        }
+        AcceptedCallHandoffStore.setState(this, activeCallId, AcceptedCallHandoffStore.State.SERVICE_STARTING);
+        Notification notification;
+        try {
+            notification = buildNotification(displayName, callType);
+        } catch (RuntimeException error) {
+            Log.e(TAG, "Unable to build foreground notification callId=" + activeCallId, error);
+            failStart(activeCallId, "FOREGROUND_SERVICE_NOTIFICATION_FAILED");
+            return START_NOT_STICKY;
+        }
         int notificationId = CallNotificationManager.notificationId(activeCallId) + 100000;
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -63,12 +92,28 @@ public class CallForegroundService extends Service {
             }
         } catch (RuntimeException error) {
             Log.e(TAG, "Foreground call service startForeground failed callId=" + activeCallId, error);
-            activeCallId = null;
-            stopSelf();
+            String code = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                ? "FOREGROUND_SERVICE_START_NOT_ALLOWED" : "FOREGROUND_SERVICE_NOTIFICATION_FAILED";
+            failStart(activeCallId, code);
             return START_NOT_STICKY;
         }
-        initializeAudio(callType);
-        AutoAiTelecomBridge.markActive(this, activeCallId);
+        if (!initializeAudio(callType)) {
+            failStart(activeCallId, "FOREGROUND_SERVICE_INTERNAL_ERROR");
+            return START_NOT_STICKY;
+        }
+        try {
+            AutoAiTelecomBridge.markActive(this, activeCallId);
+            AutoAiCallsPlugin.saveActiveCall(this, activeCallId, callType);
+        } catch (RuntimeException error) {
+            Log.e(TAG, "Unable to register active call metadata callId=" + activeCallId, error);
+            failStart(activeCallId, "FOREGROUND_SERVICE_INTERNAL_ERROR");
+            return START_NOT_STICKY;
+        }
+        AcceptedCallHandoffStore.setState(this, activeCallId, AcceptedCallHandoffStore.State.SERVICE_READY);
+        CallNotificationManager.showOngoingCall(this, activeCallId);
+        broadcastStatus(activeCallId, SERVICE_READY, null);
+        Log.i(TAG, "SERVICE_READY callId=" + activeCallId + " recovery=" + recovery);
+        if (recovery) reconcileRecoveredCall(activeCallId);
         Log.i(TAG, "Foreground call service running callId=" + activeCallId + " type=" + callType);
         return START_STICKY;
     }
@@ -90,21 +135,27 @@ public class CallForegroundService extends Service {
             audioManager.setSpeakerphoneOn(previousSpeakerState);
             audioManager.setMode(previousAudioMode);
         }
-        if (activeCallId != null) {
+        if (activeCallId != null && explicitTerminalStop) {
             Log.i(TAG, "Foreground call service destroyed callId=" + activeCallId);
             AutoAiTelecomBridge.disconnectLocal(this, activeCallId);
             AutoAiCallsPlugin.clearActiveCall(this, activeCallId);
-            NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-            if (manager != null) manager.cancel(CallNotificationManager.notificationId(activeCallId) + 100000);
+            CallNotificationManager.cancelOngoingCall(this, activeCallId);
+            AcceptedCallHandoffStore.clearTerminal(this, activeCallId);
+        } else if (activeCallId != null) {
+            Log.i(TAG, "Preserving non-terminal call across service destruction callId=" + activeCallId);
         }
+        recoveryExecutor.shutdownNow();
         super.onDestroy();
     }
 
     private Notification buildNotification(String displayName, String callType) {
-        Intent openIntent = new Intent(this, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        PendingIntent open = PendingIntent.getActivity(this, 0, openIntent, pendingFlags());
+        Intent openIntent = new Intent(this, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            .putExtra(CallNotificationManager.EXTRA_CALL_ID, activeCallId)
+            .putExtra(CallNotificationManager.EXTRA_ACTION, "resume_call")
+            .putExtra(CallNotificationManager.EXTRA_CALL_TYPE, callType);
+        PendingIntent open = PendingIntent.getActivity(this, uniqueRequestCode(activeCallId, "resume_call"), openIntent, pendingFlags());
         Intent endIntent = new Intent(this, CallActionReceiver.class).setAction(CallNotificationManager.ACTION_END).putExtra(CallNotificationManager.EXTRA_CALL_ID, activeCallId);
-        PendingIntent end = PendingIntent.getBroadcast(this, 1, endIntent, pendingFlags());
+        PendingIntent end = PendingIntent.getBroadcast(this, uniqueRequestCode(activeCallId, "end"), endIntent, pendingFlags());
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
             ? new Notification.Builder(this, CallNotificationManager.CHANNEL_ACTIVE)
             : new Notification.Builder(this);
@@ -126,9 +177,9 @@ public class CallForegroundService extends Service {
             || checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
     }
 
-    private void initializeAudio(String callType) {
+    private boolean initializeAudio(String callType) {
         audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-        if (audioManager == null) return;
+        if (audioManager == null) return false;
         previousAudioMode = audioManager.getMode();
         previousSpeakerState = audioManager.isSpeakerphoneOn();
         audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
@@ -143,15 +194,78 @@ public class CallForegroundService extends Service {
                 .setAcceptsDelayedFocusGain(false)
                 .setOnAudioFocusChangeListener(focusChange -> Log.d(TAG, "Audio focus changed=" + focusChange))
                 .build();
-            audioManager.requestAudioFocus(audioFocusRequest);
+            return audioManager.requestAudioFocus(audioFocusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
         } else {
-            audioManager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+            return audioManager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
         }
+    }
+
+    private void failStart(String callId, String errorCode) {
+        CallNotificationManager.cancelOngoingCall(this, callId);
+        broadcastStatus(callId, SERVICE_FAILED, errorCode);
+        Log.e(TAG, "SERVICE_FAILED callId=" + callId + " errorCode=" + errorCode);
+        activeCallId = null;
+        stopSelf();
+    }
+
+    private void broadcastStatus(String callId, String status, String errorCode) {
+        Intent result = new Intent(ACTION_SERVICE_STATUS).setPackage(getPackageName())
+            .putExtra(CallNotificationManager.EXTRA_CALL_ID, callId)
+            .putExtra(EXTRA_SERVICE_STATUS, status);
+        if (errorCode != null) result.putExtra(EXTRA_ERROR_CODE, errorCode);
+        sendBroadcast(result);
+    }
+
+    private void reconcileRecoveredCall(String callId) {
+        recoveryExecutor.execute(() -> {
+            String accessToken = AutoAiSecureStoragePlugin.readStoredValue(this, "auto-ai-access-token");
+            if (accessToken == null || accessToken.trim().isEmpty()) return;
+            HttpURLConnection connection = null;
+            try {
+                connection = (HttpURLConnection) new URL(BuildConfig.AUTO_AI_API_BASE_URL.replaceAll("/+$", "") + "/calls/" + callId).openConnection();
+                connection.setConnectTimeout(5000);
+                connection.setReadTimeout(5000);
+                connection.setRequestProperty("Authorization", "Bearer " + accessToken.trim());
+                int responseCode = connection.getResponseCode();
+                if (responseCode < 200 || responseCode >= 300) {
+                    Log.w(TAG, "Recovered call reconciliation deferred callId=" + callId + " status=" + responseCode);
+                    return;
+                }
+                StringBuilder body = new StringBuilder();
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) body.append(line);
+                }
+                String status = new JSONObject(body.toString()).optString("status", "");
+                if ("accepted".equals(status) || "connecting".equals(status) || "active".equals(status)) {
+                    Log.i(TAG, "Recovered active call reconciled callId=" + callId + " backendStatus=" + status);
+                    return;
+                }
+                if ("rejected".equals(status) || "cancelled".equals(status) || "missed".equals(status)
+                    || "failed".equals(status) || "ended".equals(status)) {
+                    explicitTerminalStop = true;
+                    CallNotificationManager.cancelAllForTerminalCall(this, callId);
+                    stopSelf();
+                }
+            } catch (Exception error) {
+                Log.w(TAG, "Recovered call reconciliation deferred callId=" + callId, error);
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+        });
+    }
+
+    static int uniqueRequestCode(String callId, String action) {
+        return CallHandoffPolicy.requestCode(callId, action);
     }
 
     private String clean(String value) {
         if (value == null || value.trim().isEmpty()) return null;
         return value.trim();
+    }
+
+    private String firstNonEmpty(String first, String second) {
+        return clean(first) != null ? clean(first) : clean(second);
     }
 
     private int pendingFlags() {

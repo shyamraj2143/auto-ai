@@ -46,6 +46,7 @@ public final class CallNotificationManager {
     public static final String EXTRA_EXPIRES_AT = "expires_at_epoch_ms";
     public static final String EXTRA_ACTION = "call_action";
     public static final String EXTRA_ACTION_TOKEN = "action_token";
+    public static final String EXTRA_CALL_REVISION = "call_revision";
     public static final String ACTION_ACCEPT = "AUTOAI_CALL_ACCEPT";
     public static final String ACTION_REJECT = "AUTOAI_CALL_REJECT";
     public static final String ACTION_AUDIO_ONLY = "AUTOAI_CALL_AUDIO_ONLY";
@@ -118,6 +119,7 @@ public final class CallNotificationManager {
         incomingIntent.putExtra(EXTRA_CALL_TYPE, callType);
         incomingIntent.putExtra(EXTRA_EXPIRES_AT, expiresAt);
         incomingIntent.putExtra(EXTRA_ACTION_TOKEN, actionToken);
+        incomingIntent.putExtra(EXTRA_CALL_REVISION, revision);
         PendingIntent fullScreen = PendingIntent.getActivity(context, requestCode(callId, "open", revision), incomingIntent, pendingFlags());
 
         Intent acceptIntent = new Intent(context, CallActionReceiver.class).setAction(ACTION_ACCEPT).putExtras(incomingIntent);
@@ -204,6 +206,29 @@ public final class CallNotificationManager {
             manager.cancel(notificationTag(callId), 0);
             manager.cancel(legacyNotificationId(callId));
         }
+    }
+
+    public static void cancelIncomingPresentation(Context context, String callId) {
+        cancelNotification(context, callId);
+        Log.i(TAG, "Incoming presentation cancelled callId=" + callId);
+    }
+
+    public static void showOngoingCall(Context context, String callId) {
+        // CallForegroundService owns creation of this foreground notification.
+        Log.i(TAG, "Ongoing call presentation ready callId=" + callId);
+    }
+
+    public static void cancelOngoingCall(Context context, String callId) {
+        NotificationManager notificationManager = manager(context);
+        if (notificationManager != null && callId != null) {
+            notificationManager.cancel(notificationId(callId) + 100000);
+        }
+    }
+
+    public static void cancelAllForTerminalCall(Context context, String callId) {
+        cancelAllForCall(context, callId);
+        AcceptedCallHandoffStore.setState(context, callId, AcceptedCallHandoffStore.State.TERMINAL);
+        AcceptedCallHandoffStore.clearTerminal(context, callId);
     }
 
     public static void cancelAllForCall(Context context, String callId) {

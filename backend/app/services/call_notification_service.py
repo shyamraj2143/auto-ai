@@ -143,7 +143,7 @@ def send_incoming_call_notifications(
 
 
 def send_call_dismiss_notifications(db: Session, call: Call, event_type: str) -> int:
-    cancel_call_fallbacks(call.id)
+    cancel_call_fallbacks(call.id, db)
     if not firebase_notification_service.configured:
         logger.info("call_fcm_dismiss_skipped_unconfigured call_id=%s event_type=%s", call.id, event_type)
         return 0

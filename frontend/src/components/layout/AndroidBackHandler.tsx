@@ -45,7 +45,7 @@ function routePath(route: string) {
 function isSafeAuthenticatedRoute(route: string) {
   const path = routePath(route);
   if (AUTH_OR_EXTERNAL_ROUTES.includes(path)) return false;
-  return path === "/hub" || path === "/activity" || path === "/chat" || path.startsWith("/chat/") || path === "/settings" || path === "/messages" || path.startsWith("/messages/") || path === "/calls" || path.startsWith("/call-hub/") || path === "/admin";
+  return path === "/hub" || path === "/activity" || path === "/chat" || path.startsWith("/chat/") || path === "/settings" || path === "/messages" || path.startsWith("/messages/") || path === "/calls" || path.startsWith("/call-hub/") || path.startsWith("/calls/active/") || path === "/admin";
 }
 
 function isEditableFocused() {

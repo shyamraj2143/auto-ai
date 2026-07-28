@@ -31,6 +31,7 @@ const RegisterPage = lazy(() => import("./components/auth/RegisterPage").then((m
 const ResetPasswordPage = lazy(() => import("./components/auth/ResetPasswordPage").then((module) => ({ default: module.ResetPasswordPage })));
 const SettingsPage = lazy(() => import("./components/settings/SettingsPage").then((module) => ({ default: module.SettingsPage })));
 const CallsPage = lazy(() => import("./features/calls/CallsPage").then((module) => ({ default: module.CallsPage })));
+const ActiveCallPage = lazy(() => import("./features/calls/ActiveCallPage").then((module) => ({ default: module.ActiveCallPage })));
 const UserMessagesPage = lazy(() => import("./features/userMessages/UserMessagesPage").then((module) => ({ default: module.UserMessagesPage })));
 const ScreenShareJoinPage = lazy(() => import("./features/screenShare/ScreenShareJoinPage").then((module) => ({ default: module.ScreenShareJoinPage })));
 const ActionHubPage = lazy(() => import("./features/actionHub/ActionHubPage").then((module) => ({ default: module.ActionHubPage })));
@@ -101,6 +102,7 @@ function AppRoutes() {
               <Route path="/messages/:threadId" element={<UserMessagesPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/calls" element={<Navigate to="/call-hub/search" replace />} />
+              <Route path="/calls/active/:callId" element={<ActiveCallPage />} />
               <Route path="/call-hub/:section" element={<CallsPage />} />
             </Route>
           </Route>

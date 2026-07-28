@@ -594,3 +594,20 @@ async def test_receiver_failure_is_published_and_dismisses_both_devices(db: Sess
     assert all(invocation.args[1]["type"] == "call.failed" for invocation in publish.await_args_list)
     assert all(invocation.args[1]["payload"]["revision"] == 2 for invocation in publish.await_args_list)
     assert dismisses == [(call.id, "call_failed")]
+
+
+@pytest.mark.asyncio
+async def test_native_accept_failure_can_terminally_fail_ringing_call(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    caller = create_user(db, "caller_native_failure", "Caller")
+    callee = create_user(db, "callee_native_failure", "Callee")
+    call = Call(caller_id=caller.id, callee_id=callee.id, call_type="audio", status="ringing")
+    db.add(call)
+    db.commit()
+    monkeypatch.setattr(global_presence_service, "publish", AsyncMock(return_value=1))
+    monkeypatch.setattr(global_presence_service, "release_call_locks", AsyncMock(return_value=None))
+    monkeypatch.setattr("app.services.call_service.send_call_dismiss_notifications", lambda *_args: 2)
+
+    failed = await CallService().fail_call(db, call.id, callee.id, "BACKEND_ACCEPT_FAILED")
+
+    assert failed.status == "failed"
+    assert failed.failure_code == "BACKEND_ACCEPT_FAILED"

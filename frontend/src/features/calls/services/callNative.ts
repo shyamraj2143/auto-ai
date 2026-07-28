@@ -2,7 +2,7 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 
 type NativeIncomingCall = {
   callId?: string | null;
-  action?: "accept" | "reject" | "audio_only" | null;
+  action?: "accept" | "reject" | "audio_only" | "resume_call" | null;
 };
 
 export type NativePermissionState = {
@@ -34,6 +34,7 @@ type NativeCallPlugin = {
   requestNotificationPermission(): Promise<NativeCallPermissionResult>;
   requestBluetoothConnectPermission(): Promise<NativeCallPermissionResult>;
   startActiveCall(options: { callId: string; displayName: string; startedAt: number; video: boolean }): Promise<void>;
+  acknowledgeCallHandoff(options: { callId: string }): Promise<void>;
   stopActiveCall(options?: { callId?: string | null }): Promise<void>;
   setSpeaker(options: { enabled: boolean }): Promise<void>;
   setAudioRoute(options: { route: "earpiece" | "speaker" | "wired" | "bluetooth" }): Promise<void>;
@@ -106,6 +107,7 @@ export const callNative = {
   requestBluetoothConnectPermission: () => Capacitor.getPlatform() === "android" ? NativeCalls.requestBluetoothConnectPermission() : Promise.resolve(defaultPermissions()),
   startActiveCall: (options: { callId: string; displayName: string; startedAt: number; video: boolean }) =>
     Capacitor.getPlatform() === "android" ? NativeCalls.startActiveCall(options) : Promise.resolve(),
+  acknowledgeCallHandoff: (callId: string) => Capacitor.getPlatform() === "android" ? NativeCalls.acknowledgeCallHandoff({ callId }) : Promise.resolve(),
   stopActiveCall: (callId?: string | null) => Capacitor.getPlatform() === "android" ? NativeCalls.stopActiveCall({ callId }) : Promise.resolve(),
   setSpeaker: (enabled: boolean) => Capacitor.getPlatform() === "android" ? NativeCalls.setSpeaker({ enabled }) : Promise.resolve(),
   setAudioRoute: (route: "earpiece" | "speaker" | "wired" | "bluetooth") => Capacitor.getPlatform() === "android" ? NativeCalls.setAudioRoute({ route }) : Promise.resolve(),
