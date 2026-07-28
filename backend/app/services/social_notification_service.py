@@ -12,6 +12,7 @@ from app.models.social import SocialNotification
 from app.models.user import User
 from app.services.device_token_security import decrypt_token
 from app.services.firebase_notifications import firebase_notification_service
+from app.services.notification_destination import with_notification_destination
 
 
 def _avatar_url(user: User | None) -> str:
@@ -34,7 +35,7 @@ def send_social_push_notification(db: Session, notification: SocialNotification,
             (UserDevice.fcm_token_ciphertext.is_not(None) | UserDevice.fcm_token.is_not(None)),
         )
     ).all()
-    data = {
+    data = with_notification_destination({
         "type": notification.notification_type,
         "event_id": notification.dedupe_key,
         "target_type": notification.target_type,
@@ -44,7 +45,7 @@ def send_social_push_notification(db: Session, notification: SocialNotification,
         "actor_username": (actor.username or f"user_{actor.id.replace('-', '')[:8]}")[:48] if actor else "",
         "actor_avatar_url": _avatar_url(actor),
         "created_at": datetime.now(timezone.utc).isoformat(),
-    }
+    })
     sent = 0
     for device in devices:
         token = decrypt_token(device.fcm_token_ciphertext, device.fcm_token)

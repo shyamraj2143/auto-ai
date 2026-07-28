@@ -10,6 +10,7 @@ from app.models.user import User
 from app.models.user_chat import ChatMessage
 from app.services.device_token_security import decrypt_token
 from app.services.firebase_notifications import firebase_notification_service
+from app.services.notification_destination import with_notification_destination
 
 
 def _public_avatar(user: User) -> str:
@@ -41,7 +42,7 @@ def send_chat_message_notifications(db: Session, recipient_id: str, sender: User
         )
     ).all()
     preview = message_preview(message)
-    data = {
+    data = with_notification_destination({
         "type": "chat_message",
         "event_id": f"chat:{message.id}",
         "thread_id": message.thread_id,
@@ -52,7 +53,7 @@ def send_chat_message_notifications(db: Session, recipient_id: str, sender: User
         "sender_avatar_url": _public_avatar(sender),
         "preview": preview,
         "created_at": datetime.now(timezone.utc).isoformat(),
-    }
+    })
     sent = 0
     for device in devices:
         token = decrypt_token(device.fcm_token_ciphertext, device.fcm_token)

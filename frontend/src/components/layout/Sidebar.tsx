@@ -71,6 +71,9 @@ export function Sidebar() {
     if (!isSidebarOpen) {
       setIsAccountMenuOpen(false);
     }
+    const previous = document.body.style.overflow;
+    if (isSidebarOpen && window.matchMedia("(max-width: 767px)").matches) document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previous; };
   }, [isSidebarOpen]);
 
   useEffect(() => {
@@ -136,8 +139,9 @@ export function Sidebar() {
     <>
       {isSidebarOpen && <div className="fixed inset-0 z-40 bg-slate-950/65 backdrop-blur-sm md:hidden" onClick={closeSidebar} />}
       <aside
+        data-open={isSidebarOpen ? "true" : "false"}
         className={clsx(
-          "workspace-sidebar compact-panel fixed inset-y-0 left-0 z-50 flex w-80 shrink-0 flex-col border-r border-white/10 bg-slate-950/95 text-white shadow-[18px_0_60px_rgba(0,0,0,0.35)] backdrop-blur-xl transition-transform duration-300 md:static md:z-auto md:translate-x-0",
+          "workspace-sidebar compact-panel fixed inset-y-0 left-0 z-50 flex w-[min(86vw,340px)] shrink-0 flex-col border-r border-white/10 bg-slate-950/95 text-white shadow-[18px_0_60px_rgba(0,0,0,0.35)] backdrop-blur-xl transition-transform duration-300 md:static md:z-auto md:w-80 md:translate-x-0",
           isSidebarCollapsed && "workspace-sidebar-collapsed md:hidden",
           isSidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}
@@ -250,7 +254,7 @@ export function Sidebar() {
         </nav>
         <div ref={accountMenuRef} className="relative border-t border-white/10 p-3">
           {isAccountMenuOpen && (
-            <div className="absolute bottom-[calc(100%+8px)] left-3 right-3 z-50 max-h-[calc(100vh-96px)] space-y-2 overflow-y-auto rounded-lg border border-white/10 bg-slate-950 p-2 shadow-[0_22px_65px_rgba(0,0,0,0.55)]">
+            <div className="absolute bottom-[calc(100%+8px)] left-3 right-3 z-50 max-h-[calc(100dvh-96px-var(--safe-top)-var(--safe-bottom))] space-y-2 overflow-y-auto rounded-lg border border-white/10 bg-slate-950 p-2 shadow-[0_22px_65px_rgba(0,0,0,0.55)]">
               {isAdminPanelRole(user?.role) && (
                 <Link
                   className="flex w-full items-center justify-center gap-2 rounded-lg border border-cyan-200/20 bg-cyan-200/10 px-3 py-2 text-sm font-medium text-cyan-50 transition hover:bg-cyan-200/15"

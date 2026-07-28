@@ -12,6 +12,7 @@ import httpx
 from jose import jwt
 
 from app.core.config import settings
+from app.services.notification_destination import with_notification_destination
 
 logger = logging.getLogger(__name__)
 
@@ -54,11 +55,12 @@ class FirebaseNotificationService:
         message = {
             "message": {
                 "token": token,
-                "data": {
+                "data": with_notification_destination({
                     "type": "apk_update",
+                    "event_id": f"apk_update:{release_id or version_code}",
                     "version_code": str(version_code),
                     "release_id": release_id,
-                },
+                }),
                 "android": {
                     "priority": "HIGH",
                 },

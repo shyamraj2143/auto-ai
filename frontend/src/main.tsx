@@ -7,8 +7,11 @@ import "./styles/prism.css";
 import "./styles/actionHubTheme.css";
 import App from "./App";
 import { beginStartupRecovery } from "./reliability/safeMode";
+import { installFunctionalDialogDiagnostics, installResponsiveDiagnostics } from "./reliability/responsiveDiagnostics";
 
 beginStartupRecovery();
+installResponsiveDiagnostics();
+installFunctionalDialogDiagnostics();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

@@ -185,7 +185,6 @@ export function CallOverlay() {
     return (
       <div className="outgoing-call-screen neural-call-screen" data-call-semantic={status.semantic} role="dialog" aria-modal="true" aria-label={`Calling ${peer.display_name}`}>
         <div className="call-orbit-bg" aria-hidden="true" />
-        <div className="auto-ai-watermark" aria-hidden="true">Auto-AI</div>
         <section className="outgoing-profile-card">
           <div className="outgoing-avatar-orbit"><Avatar name={peer.display_name} url={peer.avatar_url} ringState={avatarRingState} /></div>
           <h2>{peer.display_name}</h2>

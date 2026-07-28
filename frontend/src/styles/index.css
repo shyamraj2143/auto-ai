@@ -22,13 +22,25 @@
   --mint: #86efac;
   --rose: #fda4af;
   --amber: #fcd34d;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --page-padding-mobile: 12px;
+  --page-padding-tablet: 18px;
+  --page-padding-desktop: 24px;
+  --content-max-width: 1440px;
+  --card-padding-mobile: 12px;
+  --card-padding-desktop: 18px;
 }
 
 .dark {
   color-scheme: dark;
 }
 
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
@@ -38,11 +50,40 @@ html {
   overscroll-behavior: none;
 }
 
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 0;
+  min-height: 100%;
+  margin: 0;
+}
+
+img,
+video,
+canvas,
+svg {
+  max-width: 100%;
+}
+
+img,
+video {
+  height: auto;
+}
+
+:is(main, section, article, header, footer, nav, aside, form, fieldset, div, label, span) {
+  min-width: 0;
+}
+
+:is(p, a, button, label, small, strong, td, th) {
+  overflow-wrap: anywhere;
+}
+
 body {
   margin: 0;
-  min-width: 320px;
+  min-width: 0;
   height: 100%;
-  min-height: 100vh;
+  min-height: 100dvh;
   overflow-x: hidden;
   overscroll-behavior: none;
   touch-action: manipulation;
@@ -62,7 +103,7 @@ body {
 
 .app-error-page {
   display: grid;
-  min-height: 100vh;
+  min-height: 100dvh;
   place-items: center;
   padding: 24px;
   color: white;
@@ -177,7 +218,7 @@ button:disabled {
 
 .app-loading {
   display: grid;
-  min-height: 100vh;
+  min-height: 100dvh;
   place-items: center;
   background: #05070d;
   color: #dbeafe;
@@ -219,6 +260,7 @@ button:disabled {
   position: relative;
   display: flex;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   color: #f8fafc;
   background:
@@ -1851,7 +1893,7 @@ button:disabled {
 .landing-page,
 .auth-page {
   --landing-nav-height: 64px;
-  min-height: 100vh;
+  min-height: 100dvh;
   color: white;
   background:
     radial-gradient(circle at 18% 12%, rgba(34, 211, 238, 0.1), transparent 34%),
@@ -1983,10 +2025,10 @@ button:disabled {
 
 .app-logo {
   display: block;
-  height: 100%;
-  width: 100%;
-  max-height: var(--brand-icon-hero-desktop);
-  max-width: var(--brand-icon-hero-desktop);
+  width: var(--brand-icon-sm);
+  height: var(--brand-icon-sm);
+  max-height: 100%;
+  max-width: 100%;
   object-fit: contain;
 }
 
@@ -1999,7 +2041,7 @@ button:disabled {
 .landing-hero {
   position: relative;
   display: grid;
-  min-height: calc(100vh - 64px);
+  min-height: calc(100dvh - 64px);
   grid-template-columns: minmax(0, 0.95fr) minmax(340px, 1.05fr);
   align-items: center;
   gap: clamp(24px, 4vw, 64px);
@@ -2296,7 +2338,7 @@ button:disabled {
 }
 
 .pricing-page {
-  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .pricing-main {
@@ -2670,7 +2712,7 @@ button:disabled {
 }
 
 .download-page {
-  min-height: 100vh;
+  min-height: 100dvh;
   color: #ffffff;
   background:
     linear-gradient(120deg, rgba(20, 184, 166, 0.17), transparent 30%),
@@ -2689,7 +2731,7 @@ button:disabled {
 }
 
 .download-hero {
-  min-height: calc(100vh - 64px);
+  min-height: calc(100dvh - 64px);
   padding: clamp(44px, 7vw, 88px) clamp(18px, 5vw, 72px) 48px;
 }
 
@@ -2854,7 +2896,7 @@ button:disabled {
 .auth-page {
   position: relative;
   display: grid;
-  min-height: 100vh;
+  min-height: 100dvh;
   grid-template-columns: minmax(0, 1fr) minmax(360px, 460px);
   align-items: center;
   gap: clamp(24px, 5vw, 72px);
@@ -5998,7 +6040,7 @@ a.btn-secondary:active {
     left: auto;
     z-index: 220;
     max-width: calc(100vw - 20px);
-    max-height: min(360px, calc(100vh - 140px));
+    max-height: min(360px, calc(100dvh - 140px));
     overflow-y: auto;
   }
 
@@ -6160,11 +6202,59 @@ a.btn-secondary:active {
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  overflow: hidden;
+  width: 100%;
+  overflow-x: visible;
+  overflow-y: hidden;
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
   transform: none;
+}
+
+.functional-dialog .app-logo,
+.functional-dialog .brand-logo,
+.functional-dialog [data-brand-logo] {
+  display: none !important;
+}
+
+:is([role="dialog"], .modal-card, .dialog-card, .functional-dialog) {
+  width: min(calc(100vw - 24px), 440px);
+  max-width: 100%;
+  max-height: calc(100vh - var(--safe-top) - var(--safe-bottom) - 24px);
+  max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 24px);
+  margin-inline: max(12px, var(--safe-left)) max(12px, var(--safe-right));
+}
+
+:is(.settings-page, .pricing-page, .download-page, .admin-dashboard-page, .calls-workspace-content) {
+  width: 100%;
+  max-width: var(--content-max-width);
+  margin-inline: auto;
+}
+
+:is(.settings-card, .billing-current-card, .billing-side-card, .billing-plan-card, .billing-tool-card, .billing-history-card) {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  :is(.settings-row, .call-setting-row) {
+    align-items: stretch !important;
+    flex-direction: column;
+  }
+
+  .workspace-sidebar[data-open="false"] {
+    visibility: hidden;
+  }
+
+  .workspace-header.hidden {
+    display: none !important;
+  }
+
+  :is(.settings-row, .call-setting-row) > :is(input, select, textarea, button, [role="combobox"]) {
+    width: 100%;
+    max-width: 100%;
+    min-height: 44px !important;
+  }
 }
 
 .auto-neural-core {

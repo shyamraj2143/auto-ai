@@ -16,6 +16,7 @@ from app.db.session import SessionLocal
 from app.models.call import Call, CallDelivery, UserDevice
 from app.services.device_token_security import decrypt_token
 from app.services.firebase_notifications import firebase_notification_service
+from app.services.notification_destination import with_notification_destination
 
 logger = logging.getLogger(__name__)
 QUEUE = "calls:fallback:due"
@@ -115,6 +116,7 @@ def process_due_fallbacks(limit: int = 100) -> int:
                     db.commit(); client.zrem(QUEUE, delivery_id); continue
                 fallback_event_id = str(uuid.uuid4())
                 payload.update({"type": "incoming_call_fallback", "delivery_mode": "system_fallback", "event_id": fallback_event_id})
+                payload = with_notification_destination(payload)
                 result = firebase_notification_service.send_call_system_fallback(
                     token, payload, payload.get("caller_name") or "Incoming AutoAI call",
                     f"Incoming AutoAI {payload.get('call_type', 'audio')} call — tap to answer", ttl, f"autoai_call_{call.id}"

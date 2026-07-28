@@ -1,4 +1,4 @@
-import { Bell, Check, Clock3, LoaderCircle, MessageCircle, Phone, Search, ShieldAlert, Trash2, UserPlus, Video, X } from "lucide-react";
+import { Bell, Check, Clock3, LoaderCircle, MessageCircle, Phone, PhoneIncoming, PhoneOutgoing, Search, ShieldAlert, Trash2, UserPlus, Video, X } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ApiClientError, resolveApiAssetUrl } from "../../api/client";
@@ -7,6 +7,7 @@ import { useCallSession } from "./hooks/useCallSession";
 import { callApi } from "./services/callApi";
 import { socialApi } from "./services/socialApi";
 import type { CallRecord, CallType, PublicCallUser, SearchHistoryItem, SocialNotification, SocialProfile, SocialRequest } from "./types";
+import { destinationFromSocialNotification, routeForNotificationDestination } from "../../notifications/notificationDestination";
 
 type CallsTabProps = {
   refreshRequestId: number;
@@ -111,6 +112,11 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
     else if (requestedView === "chats" || requestedView === "calls" || requestedView === "search" || requestedView === "requests" || requestedView === "notifications") setView(requestedView === "notifications" ? "alerts" : requestedView);
     if (requestedQuery) setQuery(requestedQuery);
   }, [requestedQuery, requestedView, routeSection]);
+
+  useEffect(() => {
+    const requestedFilter = searchParams.get("filter");
+    if (requestedFilter === "missed" || requestedFilter === "audio" || requestedFilter === "video") setCallFilter(requestedFilter);
+  }, [searchParams]);
 
   const changeView = useCallback((next: View) => {
     setView(next);
@@ -367,6 +373,16 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
     }
   }
 
+  async function openMessageByUserId(userId: string) {
+    if (!token) return;
+    try {
+      const thread = await socialApi.openConversation(token, userId);
+      navigate(`/messages/${encodeURIComponent(thread.thread_id)}`);
+    } catch (chatError) {
+      showToast(errorText(chatError, "Messaging is unavailable for this contact."));
+    }
+  }
+
   function placeCall(profile: SocialProfile, type: CallType) {
     if (!callingAvailable) {
       showToast(config?.diagnostic || "Calling service is temporarily unavailable.");
@@ -399,10 +415,9 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
         setNotifications((items) => items.map((entry) => (entry.id === item.id ? { ...entry, read_at: new Date().toISOString() } : entry)));
         setUnread((count) => Math.max(0, count - 1));
       }
-      if (item.target_type === "thread" && item.target_id) navigate(`/messages/${item.target_id}`);
-      if (item.target_type === "follow_requests") changeView("requests");
-      if (item.target_type === "call") changeView("calls");
-      if (item.target_type === "profile" && item.actor) void openProfile(item.actor);
+      const destination = destinationFromSocialNotification(item);
+      const route = destination ? routeForNotificationDestination(destination) : null;
+      if (route) navigate(route);
     } catch (notificationError) {
       showToast(errorText(notificationError, "Unable to open notification."));
     }
@@ -456,11 +471,11 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
   return (
     <div className="calls-tab">
       <div className="calls-subtabs social-tabs">
-        <button type="button" className={view === "search" ? "active" : ""} onClick={() => changeView("search")}><Search size={14} /> Search</button>
-        <button type="button" className={view === "requests" ? "active" : ""} onClick={() => changeView("requests")}><UserPlus size={14} /> Requests{incoming.length > 0 && <i>{incoming.length > 9 ? "9+" : incoming.length}</i>}</button>
-        <button type="button" className={view === "chats" ? "active" : ""} onClick={() => changeView("chats")}><MessageCircle size={14} /> Chats</button>
-        <button type="button" className={view === "calls" ? "active" : ""} onClick={() => changeView("calls")}><Clock3 size={14} /> Calls</button>
-        <button type="button" className={view === "alerts" ? "active" : ""} onClick={() => changeView("alerts")}><Bell size={14} /> Alerts{unread > 0 && <i>{unread > 9 ? "9+" : unread}</i>}</button>
+        <button type="button" aria-current={view === "search" ? "page" : undefined} className={view === "search" ? "active" : ""} onClick={() => changeView("search")}><Search size={16} /> <span>Search</span></button>
+        <button type="button" aria-current={view === "requests" ? "page" : undefined} className={view === "requests" ? "active" : ""} onClick={() => changeView("requests")}><UserPlus size={16} /> <span>Requests</span>{incoming.length > 0 && <i>{incoming.length > 9 ? "9+" : incoming.length}</i>}</button>
+        <button type="button" aria-current={view === "chats" ? "page" : undefined} className={view === "chats" ? "active" : ""} onClick={() => changeView("chats")}><MessageCircle size={16} /> <span>Chats</span></button>
+        <button type="button" aria-current={view === "calls" ? "page" : undefined} className={view === "calls" ? "active" : ""} onClick={() => changeView("calls")}><Clock3 size={16} /> <span>Calls</span></button>
+        <button type="button" aria-current={view === "alerts" ? "page" : undefined} className={view === "alerts" ? "active" : ""} onClick={() => changeView("alerts")}><Bell size={16} /> <span>Alerts</span>{unread > 0 && <i>{unread > 9 ? "9+" : unread}</i>}</button>
       </div>
       {!featureEnabled && <div className="calls-inline-alert"><ShieldAlert size={14} /> Calls are disabled.</div>}
       {config?.diagnostic && <div className="calls-inline-alert"><ShieldAlert size={14} /> {config.diagnostic}</div>}
@@ -608,10 +623,10 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
           {history.filter((item) => callFilter === "all" || (callFilter === "missed" ? item.status === "missed" : item.call_type === callFilter)).map((item) => {
             const avatarUrl = resolveApiAssetUrl(item.peer.avatar_url);
             return (
-              <div className="call-history-row" key={item.id}>
+              <div className={`call-history-row call-history-${item.status} ${searchParams.get("callId") === item.id ? "targeted" : ""}`} data-call-id={item.id} key={item.id}>
                 <span className="call-user-avatar">{avatarUrl ? <img src={avatarUrl} alt="" /> : item.peer.display_name.slice(0, 1).toUpperCase()}</span>
-                <span><strong>{item.peer.display_name}</strong><small>{item.direction} {item.call_type} - {item.status}</small></span>
-                <button type="button" onClick={() => void startCall(item.peer, item.call_type)} disabled={!callingAvailable}><Phone size={15} /></button>
+                <span><strong>{item.peer.display_name}</strong><small className="call-history-meta">{item.direction === "incoming" ? <PhoneIncoming size={12} /> : <PhoneOutgoing size={12} />} {item.call_type} · <em>{item.status}</em></small><small>{new Date(item.created_at).toLocaleString()}{item.duration_seconds > 0 ? ` · ${Math.floor(item.duration_seconds / 60)}m ${item.duration_seconds % 60}s` : ""}</small></span>
+                <span className="call-history-actions"><button type="button" onClick={() => void openMessageByUserId(item.peer.id)} aria-label={`Message ${item.peer.display_name}`}><MessageCircle size={15} /></button><button type="button" onClick={() => void startCall(item.peer, item.call_type)} disabled={!callingAvailable} aria-label={`Call ${item.peer.display_name}`}><Phone size={15} /></button></span>
               </div>
             );
           })}
