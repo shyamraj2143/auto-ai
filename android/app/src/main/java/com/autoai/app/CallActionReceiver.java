@@ -25,12 +25,24 @@ public class CallActionReceiver extends BroadcastReceiver {
         if (callId == null || callId.trim().isEmpty()) return;
         String action = intent.getAction();
         String actionToken = intent.getStringExtra(CallNotificationManager.EXTRA_ACTION_TOKEN);
-        if (!CallNotificationManager.ACTION_REJECT.equals(action) && !CallNotificationManager.ACTION_END.equals(action)) return;
+        if (CallHandoffPolicy.isAcceptAction(action)) {
+            // Accept is deliberately handed to the single-flight Activity coordinator. No
+            // Telecom disconnect, service stop, or terminal notification cleanup is allowed.
+            Intent accept = new Intent(context, IncomingCallActivity.class)
+                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtras(intent)
+                .putExtra(CallNotificationManager.EXTRA_ACTION,
+                    CallNotificationManager.ACTION_AUDIO_ONLY.equals(action) ? "audio_only" : "accept");
+            context.startActivity(accept);
+            return;
+        }
+        if (!CallHandoffPolicy.isTerminalAction(action)) return;
         String endpoint = CallNotificationManager.ACTION_REJECT.equals(action) ? "reject" : "end";
         Log.i(TAG, "Call notification action received callId=" + callId + " action=" + endpoint);
-        CallNotificationManager.cancel(context, callId);
-        AutoAiTelecomBridge.disconnectLocal(context, callId);
-        context.stopService(new Intent(context, CallForegroundService.class));
+        CallNotificationManager.cancelAllForTerminalCall(context, callId);
+        Intent stop = new Intent(context, CallForegroundService.class).setAction(CallForegroundService.ACTION_STOP)
+            .putExtra(CallNotificationManager.EXTRA_CALL_ID, callId);
+        try { context.startService(stop); } catch (RuntimeException error) { Log.w(TAG, "Terminal service stop failed callId=" + callId, error); }
         PendingResult pendingResult = goAsync();
         EXECUTOR.execute(() -> {
             try { sendAction(context, callId, endpoint, actionToken); }

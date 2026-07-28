@@ -80,6 +80,33 @@ public class MainActivity extends BridgeActivity {
     private boolean updateCheckRunning;
     private boolean waitingForInstallPermission;
     private long lastUpdateCheckAtMs;
+    private String pendingCallIntentId;
+    private String pendingCallIntentAction;
+    private String pendingCallIntentType;
+    private final Runnable callIntentDispatch = new Runnable() {
+        @Override public void run() {
+            if (pendingCallIntentId == null) return;
+            if (CallNotificationManager.pendingAction(MainActivity.this) == null) {
+                pendingCallIntentId = null;
+                return;
+            }
+            WebView webView = getBridge() == null ? null : getBridge().getWebView();
+            if (webView == null || webView.getProgress() < 100) {
+                mainHandler.postDelayed(this, 250L);
+                return;
+            }
+            try {
+                JSONObject detail = new JSONObject();
+                detail.put("callId", pendingCallIntentId);
+                detail.put("action", pendingCallIntentAction);
+                detail.put("callType", pendingCallIntentType == null ? JSONObject.NULL : pendingCallIntentType);
+                getBridge().triggerWindowJSEvent("auto-ai-incoming-call", detail.toString());
+                mainHandler.postDelayed(this, 750L);
+            } catch (Exception error) {
+                mainHandler.postDelayed(this, 500L);
+            }
+        }
+    };
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -150,20 +177,15 @@ public class MainActivity extends BridgeActivity {
         String callId = intent.getStringExtra(CallNotificationManager.EXTRA_CALL_ID);
         if (callId == null || callId.trim().isEmpty()) return;
         String action = intent.getStringExtra(CallNotificationManager.EXTRA_ACTION);
-        if (action != null && !"accept".equals(action) && !"audio_only".equals(action)) return;
+        if (action != null && !"accept".equals(action) && !"audio_only".equals(action) && !"resume_call".equals(action)) return;
         callId = callId.trim();
-        final String pendingCallId = callId;
-        CallNotificationManager.savePending(this, callId, action, System.currentTimeMillis() + 60000L);
-        mainHandler.postDelayed(() -> {
-            try {
-                JSONObject detail = new JSONObject();
-                detail.put("callId", pendingCallId);
-                detail.put("action", action == null ? JSONObject.NULL : action);
-                if (getBridge() != null) getBridge().triggerWindowJSEvent("auto-ai-incoming-call", detail.toString());
-            } catch (Exception ignored) {
-                // The web layer also consumes the pending call after startup.
-            }
-        }, 350L);
+        pendingCallIntentId = callId;
+        pendingCallIntentAction = action == null ? "resume_call" : action;
+        pendingCallIntentType = intent.getStringExtra(CallNotificationManager.EXTRA_CALL_TYPE);
+        long expiresAt = Math.max(System.currentTimeMillis() + 24L * 60L * 60L * 1000L, AcceptedCallHandoffStore.expiresAt(this));
+        CallNotificationManager.savePending(this, callId, pendingCallIntentAction, expiresAt);
+        mainHandler.removeCallbacks(callIntentDispatch);
+        mainHandler.post(callIntentDispatch);
     }
 
     @Override
@@ -180,6 +202,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onDestroy() {
+        mainHandler.removeCallbacks(callIntentDispatch);
         super.onDestroy();
         mainHandler.removeCallbacks(updatePollRunnable);
         updateExecutor.shutdownNow();
@@ -313,6 +336,13 @@ public class MainActivity extends BridgeActivity {
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             Uri uri = request.getUrl();
             return openPaymentIntent(uri) || super.shouldOverrideUrlLoading(view, request);
+        }
+
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            super.onPageFinished(view, url);
+            mainHandler.removeCallbacks(callIntentDispatch);
+            mainHandler.post(callIntentDispatch);
         }
 
         @Override

@@ -4,13 +4,17 @@ import android.Manifest;
 import android.app.AlertDialog;
 import android.app.NotificationManager;
 import android.content.Context;
+import android.content.BroadcastReceiver;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.util.Log;
 
@@ -40,6 +44,7 @@ import java.util.List;
 )
 public class AutoAiCallsPlugin extends Plugin {
     private static final String TAG = "AutoAiCalls";
+    public static final String ACTION_UI_READY = "com.autoai.app.call.UI_READY";
     private static final String DEVICE_PREFERENCES = "auto_ai_call_device";
     private static final String FALLBACK_DEVICE_ID = "fallback_device_id";
     private static final String PERMISSION_PREFERENCES = "auto_ai_call_permissions";
@@ -95,8 +100,23 @@ public class AutoAiCallsPlugin extends Plugin {
         JSObject result = new JSObject();
         result.put("callId", callId);
         result.put("action", action);
-        CallNotificationManager.clearPendingAction(context);
         call.resolve(result);
+    }
+
+    @PluginMethod
+    public void acknowledgeCallHandoff(PluginCall call) {
+        String callId = call.getString("callId");
+        if (callId == null || (!callId.equals(AcceptedCallHandoffStore.callId(getContext())) && !isActiveCall(getContext(), callId))) {
+            call.reject("Accepted call handoff does not match.", "HANDOFF_MISMATCH");
+            return;
+        }
+        AcceptedCallHandoffStore.setState(getContext(), callId, AcceptedCallHandoffStore.State.UI_READY);
+        CallNotificationManager.clearPendingAction(getContext());
+        AcceptedCallHandoffStore.clearTerminal(getContext(), callId);
+        Log.i(TAG, "ACTIVE_CALL_UI_READY callId=" + callId);
+        getContext().sendBroadcast(new Intent(ACTION_UI_READY).setPackage(getContext().getPackageName())
+            .putExtra(CallNotificationManager.EXTRA_CALL_ID, callId));
+        call.resolve();
     }
 
     @PluginMethod
@@ -181,14 +201,44 @@ public class AutoAiCallsPlugin extends Plugin {
         intent.putExtra(CallNotificationManager.EXTRA_CALL_ID, callId);
         intent.putExtra(CallNotificationManager.EXTRA_CALLER_NAME, displayName);
         intent.putExtra(CallNotificationManager.EXTRA_CALL_TYPE, video ? "video" : "audio");
+        final String readyCallId = callId.trim();
+        final Handler handler = new Handler(Looper.getMainLooper());
+        final BroadcastReceiver receiver = new BroadcastReceiver() {
+            private boolean completed;
+            private void complete() {
+                if (completed) return;
+                completed = true;
+                handler.removeCallbacksAndMessages(this);
+                try { getContext().unregisterReceiver(this); } catch (IllegalArgumentException ignored) {}
+            }
+            @Override public void onReceive(Context context, Intent result) {
+                if (!readyCallId.equals(result.getStringExtra(CallNotificationManager.EXTRA_CALL_ID))) return;
+                String status = result.getStringExtra(CallForegroundService.EXTRA_SERVICE_STATUS);
+                if (CallForegroundService.SERVICE_READY.equals(status)) {
+                    complete();
+                    call.resolve();
+                } else if (CallForegroundService.SERVICE_FAILED.equals(status)) {
+                    String code = result.getStringExtra(CallForegroundService.EXTRA_ERROR_CODE);
+                    complete();
+                    call.reject("Unable to start the call service.", code == null ? "FOREGROUND_SERVICE_INTERNAL_ERROR" : code);
+                }
+            }
+        };
+        IntentFilter filter = new IntentFilter(CallForegroundService.ACTION_SERVICE_STATUS);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) getContext().registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        else getContext().registerReceiver(receiver, filter);
+        handler.postDelayed(() -> {
+            try { getContext().unregisterReceiver(receiver); } catch (IllegalArgumentException ignored) { return; }
+            CallNotificationManager.cancelOngoingCall(getContext(), readyCallId);
+            call.reject("Call service readiness timed out.", "FOREGROUND_SERVICE_TIMEOUT");
+        }, 9000L);
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) getContext().startForegroundService(intent);
             else getContext().startService(intent);
             AutoAiTelecomBridge.reportOutgoingCall(getContext(), callId, displayName, video ? "video" : "audio");
-            saveActiveCall(getContext(), callId, video ? "video" : "audio");
             Log.i(TAG, "Active call foreground service requested callId=" + callId);
-            call.resolve();
         } catch (RuntimeException error) {
+            try { getContext().unregisterReceiver(receiver); } catch (IllegalArgumentException ignored) {}
             Log.e(TAG, "Unable to start active call foreground service callId=" + callId, error);
             call.reject("Unable to start the call service.", error);
         }
@@ -198,7 +248,9 @@ public class AutoAiCallsPlugin extends Plugin {
     public void stopActiveCall(PluginCall call) {
         String callId = call.getString("callId");
         if (callId != null && !callId.trim().isEmpty()) AutoAiTelecomBridge.disconnectLocal(getContext(), callId);
-        getContext().stopService(new Intent(getContext(), CallForegroundService.class));
+        Intent stop = new Intent(getContext(), CallForegroundService.class).setAction(CallForegroundService.ACTION_STOP)
+            .putExtra(CallNotificationManager.EXTRA_CALL_ID, callId);
+        getContext().startService(stop);
         clearActiveCall(getContext(), callId);
         call.resolve();
     }
@@ -319,6 +371,14 @@ public class AutoAiCallsPlugin extends Plugin {
         return callId.equals(prefs.getString(KEY_ACTIVE_CALL_ID, null));
     }
 
+    public static String activeCallId(Context context) {
+        return context.getSharedPreferences(ACTIVE_CALL_PREFERENCES, Context.MODE_PRIVATE).getString(KEY_ACTIVE_CALL_ID, null);
+    }
+
+    public static String activeCallType(Context context) {
+        return context.getSharedPreferences(ACTIVE_CALL_PREFERENCES, Context.MODE_PRIVATE).getString(KEY_ACTIVE_CALL_TYPE, null);
+    }
+
     public static void clearActiveCall(Context context, String callId) {
         SharedPreferences prefs = context.getSharedPreferences(ACTIVE_CALL_PREFERENCES, Context.MODE_PRIVATE);
         String activeCallId = prefs.getString(KEY_ACTIVE_CALL_ID, null);
@@ -428,7 +488,7 @@ public class AutoAiCallsPlugin extends Plugin {
         if (audioManager != null) audioManager.clearCommunicationDevice();
     }
 
-    private void saveActiveCall(Context context, String callId, String callType) {
+    public static void saveActiveCall(Context context, String callId, String callType) {
         context.getSharedPreferences(ACTIVE_CALL_PREFERENCES, Context.MODE_PRIVATE).edit()
             .putString(KEY_ACTIVE_CALL_ID, callId)
             .putString(KEY_ACTIVE_CALL_TYPE, callType)

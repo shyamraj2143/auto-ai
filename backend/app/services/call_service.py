@@ -408,7 +408,7 @@ class CallService:
             "failed",
             reason,
             "call.failed",
-            {"accepted", "connecting", "active"},
+            {"initiated", "ringing", "accepted", "connecting", "active"},
         )
 
     async def _finish(

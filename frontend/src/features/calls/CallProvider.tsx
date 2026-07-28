@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 import { resolveApiAssetUrl } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { CallContext, type CallContextValue } from "./CallContext";
@@ -51,6 +52,7 @@ function isRelayCandidate(candidate: RTCIceCandidate) {
 }
 
 export function CallProvider({ children }: { children: ReactNode }) {
+  const navigate = useNavigate();
   const { token, user } = useAuth();
   const [config, setConfig] = useState<CallContextValue["config"]>(null);
   const [signalingState, setSignalingState] = useState<CallContextValue["signalingState"]>("disconnected");
@@ -102,6 +104,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const processedNegotiationIdsRef = useRef(new Set<string>());
   const negotiationIdRef = useRef<string | null>(null);
   const acceptCallRef = useRef<(audioOnly?: boolean) => Promise<void>>(async () => undefined);
+  const resumeAcceptedCallRef = useRef<(callId: string, knownCall?: CallRecord) => Promise<void>>(async () => undefined);
   const rejectCallRef = useRef<() => Promise<void>>(async () => undefined);
   const originalTitleRef = useRef(document.title);
 
@@ -420,6 +423,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       const nextRemoteStream = new MediaStream(stream.getTracks());
       remoteStreamRef.current = nextRemoteStream;
       setRemoteStream(nextRemoteStream);
+      callDebug("REMOTE_MEDIA_RECEIVED", { call_id: currentCall.id, kind: event.track.kind });
       callDebug(event.track.kind === "audio" ? "REMOTE_AUDIO_TRACK_RECEIVED" : "REMOTE_VIDEO_TRACK_RECEIVED", { call_id: currentCall.id, trace_id: currentCall.trace_id, role: currentCall.direction, kind: event.track.kind, enabled: event.track.enabled, muted: event.track.muted, ready_state: event.track.readyState, receiver_present: true });
       if (event.track.kind === "video") {
         setRemoteCameraEnabled(true);
@@ -467,6 +471,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       callDebug("peer_connection_state", { call_id: currentCall.id, role: currentCall.direction, state: peer.connectionState });
       if (peer.connectionState !== "disconnected") clearCallTimer("reconnect");
       if (peer.connectionState === "connected") {
+        callDebug("CALL_CONNECTED", { call_id: currentCall.id });
         reconnectAttemptsRef.current = 0;
         clearProgressTimers();
         transition("active");
@@ -493,6 +498,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       if (peer.iceConnectionState === "checking") {
         transition("connecting");
       } else if (peer.iceConnectionState === "connected" || peer.iceConnectionState === "completed") {
+        callDebug("ICE_CONNECTED", { call_id: currentCall.id, state: peer.iceConnectionState });
         reconnectAttemptsRef.current = 0;
         clearProgressTimers();
         transition("active");
@@ -626,6 +632,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
     }
     try {
       const incomingCall = await callApi.get(token, callId);
+      if (["accepted", "connecting", "active"].includes(incomingCall.status)) {
+        await resumeAcceptedCallRef.current(callId, incomingCall);
+        return;
+      }
       if (!["initiated", "ringing"].includes(incomingCall.status)) return;
       callEndedRef.current = false;
       rejectInProgressRef.current = false;
@@ -652,8 +662,103 @@ export function CallProvider({ children }: { children: ReactNode }) {
     }
   }, [cleanup, clearRingTimer, setCallTimer, signaling, startRingtone, token]);
 
+  const resumeAcceptedCall = useCallback(async (callId: string, knownCall?: CallRecord) => {
+    if (!token) return;
+    const authoritative = knownCall ?? await callApi.get(token, callId);
+    if (!["accepted", "connecting", "active"].includes(authoritative.status)) {
+      if (["initiated", "ringing"].includes(authoritative.status)) {
+        await receiveIncomingCall(callId);
+        return;
+      }
+      await cleanup("ended", "This call has already ended.");
+      return;
+    }
+    if (callRef.current && callRef.current.id !== callId && !["idle", "ended"].includes(sessionStateRef.current)) return;
+    callEndedRef.current = false;
+    stopRingtone();
+    clearRingTimer();
+    clearProgressTimers();
+    callRef.current = authoritative;
+    setCall(authoritative);
+    setPendingPeer(authoritative.peer);
+    setError("");
+    setSessionState("connecting");
+    sessionStateRef.current = "connecting";
+    navigate(`/calls/active/${encodeURIComponent(callId)}`, { replace: true });
+    callDebug("ACTIVE_CALL_UI_LAUNCHED", { call_id: callId, backend_status: authoritative.status });
+    try {
+      await ensureNativeCallService(authoritative);
+      await callNative.acknowledgeCallHandoff(callId).catch(() => undefined);
+      callDebug("ACTIVE_CALL_UI_READY", { call_id: callId });
+
+      let currentConfig = configRef.current;
+      for (let attempt = 0; (!currentConfig?.enabled || !currentConfig.realtime_configured) && attempt < 3; attempt += 1) {
+        setSessionState("reconnecting");
+        sessionStateRef.current = "reconnecting";
+        await new Promise((resolve) => window.setTimeout(resolve, 750 * 2 ** attempt));
+        const refreshed = await callApi.get(token, callId).catch(() => null);
+        if (refreshed && !["accepted", "connecting", "active"].includes(refreshed.status)) {
+          await cleanup("ended", "This call has already ended.");
+          return;
+        }
+        currentConfig = await callApi.config(token).catch(() => currentConfig);
+        if (currentConfig) { configRef.current = currentConfig; setConfig(currentConfig); }
+      }
+      if (!currentConfig?.enabled || !currentConfig.realtime_configured) {
+        setSessionState("reconnecting");
+        sessionStateRef.current = "reconnecting";
+        return;
+      }
+      let signalingConnected = false;
+      for (let attempt = 0; attempt < 3 && !signalingConnected; attempt += 1) {
+        if (attempt === 0) await signaling.connect(token); else await signaling.retry(token);
+        signalingConnected = await signaling.waitUntilConnected(3000);
+      }
+      if (!signalingConnected) throw new CallSetupError("SIGNALING_TIMEOUT", "Call signaling is not connected.");
+      callDebug("SIGNALING_CONNECTED", { call_id: callId });
+      if (!localStreamRef.current) await requestLocalMedia(authoritative.call_type);
+      await loadIceConfiguration();
+      await ensurePeerConnection(authoritative);
+      setSessionState("connecting");
+      sessionStateRef.current = "connecting";
+      if (authoritative.direction === "incoming") {
+        const negotiationId = crypto.randomUUID();
+        negotiationIdRef.current = negotiationId;
+        signaling.send("call.peer_ready", authoritative.id, {
+          call_type: authoritative.call_type,
+          audio_ready: Boolean(localStreamRef.current?.getAudioTracks().some((track) => track.readyState === "live")),
+          video_ready: authoritative.call_type === "audio" || Boolean(localStreamRef.current?.getVideoTracks().some((track) => track.readyState === "live")),
+          negotiation_id: negotiationId,
+          revision: authoritative.revision,
+        });
+      }
+    } catch (resumeError) {
+      const failureCode = failureCodeOf(resumeError, "INTERNAL_CALL_ERROR");
+      setError(errorMessage(resumeError, "Unable to restore the accepted call."));
+      setSessionState("failed");
+      sessionStateRef.current = "failed";
+      await callApi.fail(token, callId, failureCode, deviceIdRef.current).catch(() => undefined);
+      await callNative.stopActiveCall(callId).catch(() => undefined);
+    }
+  }, [cleanup, clearProgressTimers, clearRingTimer, ensureNativeCallService, ensurePeerConnection, loadIceConfiguration, navigate, receiveIncomingCall, requestLocalMedia, signaling, stopRingtone, token]);
+  resumeAcceptedCallRef.current = resumeAcceptedCall;
+
   const processNativeCallAction = useCallback(async (callId: string, action?: NativeIncomingAction | null) => {
-    const normalizedAction = action === "accept" || action === "reject" || action === "audio_only" ? action : null;
+    const normalizedAction = action === "accept" || action === "reject" || action === "audio_only" || action === "resume_call" ? action : null;
+    const authoritative = token ? await callApi.get(token, callId).catch(() => null) : null;
+    if (authoritative && ["accepted", "connecting", "active"].includes(authoritative.status)) {
+      await resumeAcceptedCall(callId, authoritative);
+      return;
+    }
+    if (normalizedAction === "resume_call") {
+      if (authoritative && ["initiated", "ringing"].includes(authoritative.status)) await receiveIncomingCall(callId);
+      else {
+        await callNative.stopActiveCall(callId).catch(() => undefined);
+        setError("This call has already ended.");
+        navigate("/call-hub/calls", { replace: true });
+      }
+      return;
+    }
     if (!normalizedAction) {
       await receiveIncomingCall(callId);
       return;
@@ -673,7 +778,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     } else {
       await rejectCallRef.current();
     }
-  }, [receiveIncomingCall]);
+  }, [navigate, receiveIncomingCall, resumeAcceptedCall, token]);
 
   const handleSignalEvent = useCallback((event: SignalEnvelope) => {
     if (event.type === "presence.user_updated" || event.type === "presence.snapshot") {
@@ -753,17 +858,18 @@ export function CallProvider({ children }: { children: ReactNode }) {
     void Promise.all([callApi.config(token), callApi.settings(token), callNative.registration()]).then(async ([nextConfig, callSettings, registration]) => {
       if (!active) return;
       setConfig(nextConfig);
+      configRef.current = nextConfig;
       callSettingsRef.current = callSettings;
       deviceIdRef.current = registration.device_id;
       await callApi.registerDevice(token, registration).catch(() => undefined);
+      await callNative.requestNotificationPermission().catch(() => undefined);
+      const nativeCall: { callId?: string | null; action?: NativeIncomingAction | null } = await callNative.consumeIncomingCall().catch(() => ({}));
+      if (nativeCall.callId) await processNativeCallAction(nativeCall.callId, nativeCall.action);
       if (!nextConfig.enabled || !nextConfig.realtime_configured) {
         signaling.close();
         return;
       }
-      await callNative.requestNotificationPermission().catch(() => undefined);
       await signaling.connect(token);
-      const nativeCall: { callId?: string | null; action?: NativeIncomingAction | null } = await callNative.consumeIncomingCall().catch(() => ({}));
-      if (nativeCall.callId) await processNativeCallAction(nativeCall.callId, nativeCall.action);
     }).catch((configError) => {
       if (active) setError(errorMessage(configError, "Calling setup is unavailable."));
     });
@@ -1067,5 +1173,5 @@ export function CallProvider({ children }: { children: ReactNode }) {
   return <CallContext.Provider value={value}>{children}</CallContext.Provider>;
 }
 
-type NativeIncomingAction = "accept" | "reject" | "audio_only";
+type NativeIncomingAction = "accept" | "reject" | "audio_only" | "resume_call";
 type NativeIncomingCallEvent = { callId?: string; action?: NativeIncomingAction | null };
