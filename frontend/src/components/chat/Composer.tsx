@@ -1,5 +1,5 @@
 import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Box, BrainCircuit, Camera, Check, ChevronDown, ChevronRight, FileImage, FileText, FileUp, Plus, SendHorizonal, Sparkles, Square, Timer, Trash2, X } from "lucide-react";
+import { Box, BrainCircuit, Camera, Check, ChevronDown, FileImage, FileText, Plus, Search, SendHorizonal, Sparkles, Square, Timer, Trash2, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import clsx from "clsx";
 import { api } from "../../api/client";
@@ -11,6 +11,7 @@ import { VoiceButton } from "./VoiceButton";
 import { usePublishedUiText } from "../../hooks/useCmsContent";
 import { AppSelect } from "../common/AppSelect";
 import { COMPOSER_MODE_OPTIONS, composerModeOption, composerModeValue } from "./composerSelection";
+import { ComposerPopover } from "./ComposerPopover";
 
 type Provider = AiProvider;
 
@@ -55,6 +56,7 @@ const PROVIDER_LABELS: Record<Provider, string> = {
 };
 
 type ModelOption = { value: string; label: string };
+type ComposerOpenMenu = "attachments" | "mode" | "model" | "research-model" | null;
 
 const INTELLIGENCE_PRESETS: Array<{ value: string; label: string; provider: Provider; model: string }> = [
   { value: "instant", label: "Instant", provider: "groq", model: "llama-3.1-8b-instant" },
@@ -91,167 +93,180 @@ function researchOptionsFor(provider: ResearchProvider, config: ResearchModelOpt
 function ModelMenu({
   provider,
   model,
+  open,
+  onToggle,
+  onClose,
   onSelect
 }: {
   provider: Provider;
   model: string;
+  open: boolean;
+  onToggle: () => void;
+  onClose: () => void;
   onSelect: (provider: Provider, model: string) => void;
 }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const [activeProvider, setActiveProvider] = useState<Provider>(provider);
+  const [query, setQuery] = useState("");
   const preset = INTELLIGENCE_PRESETS.find((item) => item.provider === provider && item.model === model);
   const triggerLabel = preset?.label ?? readableModelLabel(model);
-
-  useEffect(() => {
-    if (!open) return;
-    const close = (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("mousedown", close);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [open]);
+  const options = modelOptionsFor(activeProvider);
+  const filteredOptions = options.filter((option) => option.label.toLowerCase().includes(query.trim().toLowerCase()));
 
   useEffect(() => setActiveProvider(provider), [provider]);
+  useEffect(() => {
+    if (!open) setQuery("");
+  }, [open]);
 
   return (
-    <div ref={ref} className="model-menu">
+    <div className="model-menu">
       <button
+        ref={triggerRef}
         className={clsx("composer-pill model-menu-trigger", provider !== "groq" || preset ? "composer-pill-active" : "")}
         type="button"
         onClick={() => {
           setActiveProvider(provider);
-          setOpen((current) => !current);
+          onToggle();
         }}
         title="Choose intelligence and model"
         aria-expanded={open}
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
+        aria-controls="composer-model-popover"
       >
         <BrainCircuit size={18} />
         <span className="min-w-0 truncate">{triggerLabel}</span>
         <ChevronDown size={15} />
       </button>
-      {open && (
-        <div className="model-menu-panel" role="menu" aria-label="Choose AI model">
-          <div className="model-menu-title">Intelligence</div>
+      <ComposerPopover open={open} triggerRef={triggerRef} onClose={onClose} ariaLabel="Choose AI model" preferredWidth={420} maxWidth={420} placement="top-end" className="composer-model-popover" backdrop="model">
+        <div id="composer-model-popover" className="composer-model-panel">
+          <div className="composer-popover-header">
+            <span>AI model</span>
+            <small>{triggerLabel}</small>
+          </div>
+          <div className="model-menu-title">Intelligence presets</div>
+          <div className="composer-intelligence-presets">
           {INTELLIGENCE_PRESETS.map((item) => (
             <button
               key={item.value}
-              className="model-menu-item"
+              className={clsx("model-menu-item", provider === item.provider && model === item.model && "composer-popover-option-active")}
               type="button"
+              role="menuitemradio"
+              aria-checked={provider === item.provider && model === item.model}
               onClick={() => {
                 onSelect(item.provider, item.model);
-                setOpen(false);
+                onClose();
               }}
             >
               <span>{item.label}</span>
               {provider === item.provider && model === item.model && <Check size={14} />}
             </button>
           ))}
-          <div className="model-menu-separator" />
+          </div>
+          <div className="composer-model-provider-tabs" role="tablist" aria-label="Model providers">
           {(["groq", "bedrock", "openai", "gemini"] as Provider[]).map((item) => (
             <button
               key={item}
-              className={clsx("model-menu-item model-menu-parent", activeProvider === item && "model-menu-item-active")}
+              className={clsx(activeProvider === item && "composer-popover-option-active")}
               type="button"
+              role="tab"
+              aria-selected={activeProvider === item}
               onClick={() => setActiveProvider(item)}
               onFocus={() => setActiveProvider(item)}
             >
               <span>{PROVIDER_LABELS[item]}</span>
-              <ChevronRight size={14} />
             </button>
           ))}
-          <div className="model-menu-subpanel">
-            {modelOptionsFor(activeProvider).map((option) => (
+          </div>
+          {options.length > 8 && (
+            <label className="composer-model-search">
+              <Search size={15} />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search models" aria-label="Search models" />
+            </label>
+          )}
+          <div className="composer-popover-list composer-model-list" role="listbox" aria-label={`${PROVIDER_LABELS[activeProvider]} models`}>
+            {filteredOptions.map((option) => (
               <button
                 key={option.value}
-                className="model-menu-item"
+                className={clsx("composer-popover-option", provider === activeProvider && model === option.value && "composer-popover-option-active")}
                 type="button"
+                role="option"
+                aria-selected={provider === activeProvider && model === option.value}
                 onClick={() => {
                   onSelect(activeProvider, option.value);
-                  setOpen(false);
+                  onClose();
                 }}
               >
-                <span>{option.label}</span>
+                <span><strong>{option.label}</strong><small>{PROVIDER_LABELS[activeProvider]}</small></span>
                 {provider === activeProvider && model === option.value && <Check size={14} />}
               </button>
             ))}
           </div>
         </div>
-      )}
+      </ComposerPopover>
     </div>
   );
 }
 
 function ModeMenu({
   value,
+  open,
+  onToggle,
+  onClose,
   onSelect
 }: {
   value: string;
+  open: boolean;
+  onToggle: () => void;
+  onClose: () => void;
   onSelect: (value: string) => void;
 }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const selected = composerModeOption(value);
-
-  useEffect(() => {
-    if (!open) return;
-    const close = (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("mousedown", close);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [open]);
+  const descriptions: Record<string, string> = {
+    normal: "Fast everyday conversation",
+    deep: "Search current information in greater depth",
+    research: "Use multiple models for deeper analysis"
+  };
 
   return (
-    <div ref={ref} className="model-menu mode-menu">
+    <div className="model-menu mode-menu">
       <button
+        ref={triggerRef}
         type="button"
         className="composer-pill composer-mode-pill composer-pill-active"
-        onClick={() => setOpen((current) => !current)}
+        onClick={onToggle}
         aria-expanded={open}
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
+        aria-controls="composer-mode-popover"
         title="Choose chat mode"
       >
         <Sparkles size={18} />
         <span className="composer-mode-label">{selected.label}</span>
         <ChevronDown size={15} />
       </button>
-      {open && (
-        <div className="model-menu-panel mode-menu-panel" role="menu" aria-label="Choose chat mode">
-          <div className="model-menu-title">Chat mode</div>
+      <ComposerPopover open={open} triggerRef={triggerRef} onClose={onClose} ariaLabel="Choose chat mode" preferredWidth={300} maxWidth={320}>
+        <div id="composer-mode-popover">
+          <div className="composer-popover-header">Chat mode</div>
+          <div className="composer-popover-list" role="menu">
           {COMPOSER_MODE_OPTIONS.map((option) => (
             <button
               key={option.value}
               type="button"
               role="menuitemradio"
               aria-checked={option.value === selected.value}
-              className={clsx("model-menu-item", option.value === selected.value && "model-menu-item-active")}
+              className={clsx("composer-popover-option", option.value === selected.value && "composer-popover-option-active")}
               onClick={() => {
                 onSelect(option.value);
-                setOpen(false);
+                onClose();
               }}
             >
-              <span>{option.label}</span>
+              <span><strong>{option.label}</strong><small>{descriptions[option.value] ?? "Choose this chat mode"}</small></span>
               {option.value === selected.value && <Check size={14} />}
             </button>
           ))}
+          </div>
         </div>
-      )}
+      </ComposerPopover>
     </div>
   );
 }
@@ -262,6 +277,9 @@ function ResearchModelMenu({
   selectedBedrockModels,
   selectedOpenAiModels,
   selectedGeminiModels,
+  open,
+  onToggleMenu,
+  onClose,
   onToggle
 }: {
   config: ResearchModelOptions | null;
@@ -269,10 +287,12 @@ function ResearchModelMenu({
   selectedBedrockModels: string[];
   selectedOpenAiModels: string[];
   selectedGeminiModels: string[];
+  open: boolean;
+  onToggleMenu: () => void;
+  onClose: () => void;
   onToggle: (provider: ResearchProvider, model: string) => void;
 }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const [activeProvider, setActiveProvider] = useState<ResearchProvider>("groq");
   const providerOptions = {
     groq: researchOptionsFor("groq", config),
@@ -288,25 +308,17 @@ function ResearchModelMenu({
   };
   const selectedCount = selectedGroqModels.length + selectedBedrockModels.length + selectedOpenAiModels.length + selectedGeminiModels.length;
 
-  useEffect(() => {
-    if (!open) return;
-    const close = (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [open]);
-
   return (
-    <div ref={ref} className="model-menu model-menu-research">
-      <button className="chip-dark model-menu-compact-trigger" type="button" onClick={() => setOpen((current) => !current)}>
+    <div className="model-menu model-menu-research">
+      <button ref={triggerRef} className="chip-dark model-menu-compact-trigger" type="button" onClick={onToggleMenu} aria-expanded={open} aria-haspopup="dialog" aria-controls="composer-research-model-popover">
         <Box size={13} />
         Models {selectedCount ? `(${selectedCount})` : ""}
         <ChevronDown size={13} />
       </button>
-      {open && (
-        <div className="model-menu-panel model-menu-panel-compact">
-          <div className="model-menu-title">Research Models</div>
+      <ComposerPopover open={open} triggerRef={triggerRef} onClose={onClose} ariaLabel="Research models" preferredWidth={380} maxWidth={420} placement="top-end" className="composer-research-model-popover" backdrop="model">
+        <div id="composer-research-model-popover" className="composer-model-panel">
+          <div className="composer-popover-header">Research models</div>
+          <div className="composer-model-provider-tabs" role="tablist" aria-label="Research model providers">
           {(["groq", "bedrock", "openai", "gemini"] as ResearchProvider[]).map((item) => {
             const enabled = !config || config.providers[item]?.enabled;
             const optionCount = providerOptions[item].length;
@@ -314,11 +326,12 @@ function ResearchModelMenu({
               <button
                 key={item}
                 className={clsx(
-                  "model-menu-item model-menu-parent",
-                  activeProvider === item && "model-menu-item-active",
+                  activeProvider === item && "composer-popover-option-active",
                   (!enabled || optionCount === 0) && "model-menu-item-disabled"
                 )}
                 type="button"
+                role="tab"
+                aria-selected={activeProvider === item}
                 disabled={!enabled || optionCount === 0}
                 onClick={() => setActiveProvider(item)}
                 onFocus={() => setActiveProvider(item)}
@@ -326,29 +339,31 @@ function ResearchModelMenu({
                 <span>{PROVIDER_LABELS[item]}</span>
                 <span className="model-menu-muted">
                   {enabled ? selectedByProvider[item].length || "Auto" : "Off"}
-                  <ChevronRight size={14} />
                 </span>
               </button>
             );
           })}
-          <div className="model-menu-subpanel">
+          </div>
+          <div className="composer-popover-list composer-model-list" role="listbox" aria-label={`${PROVIDER_LABELS[activeProvider]} research models`}>
             {providerOptions[activeProvider].map((option) => {
               const checked = selectedByProvider[activeProvider].includes(option.value);
               return (
                 <button
                   key={option.value}
-                  className="model-menu-item"
+                  className={clsx("composer-popover-option", checked && "composer-popover-option-active")}
                   type="button"
+                  role="option"
+                  aria-selected={checked}
                   onClick={() => onToggle(activeProvider, option.value)}
                 >
-                  <span>{option.label}</span>
+                  <span><strong>{option.label}</strong><small>{PROVIDER_LABELS[activeProvider]}</small></span>
                   {checked && <Check size={14} />}
                 </button>
               );
             })}
           </div>
         </div>
-      )}
+      </ComposerPopover>
     </div>
   );
 }
@@ -396,13 +411,12 @@ export function Composer({
   const { token } = useAuth();
   const { settings } = useAppSettings();
   const crystalEffects = useCrystalEffects();
-  const attachmentMenuRef = useRef<HTMLDivElement | null>(null);
+  const attachmentTriggerRef = useRef<HTMLButtonElement | null>(null);
   const documentInputRef = useRef<HTMLInputElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const imageAttachmentsRef = useRef<ImageAttachment[]>([]);
-  const attachmentMenuOpenRef = useRef(false);
   const [draft, setDraft] = useState("");
   const [searchMode, setSearchMode] = useState<SearchMode>("auto");
   const [chatMode, setChatMode] = useState<ChatMode>("normal");
@@ -421,7 +435,7 @@ export function Composer({
   const [model, setModel] = useState<string>(settings.defaultModel);
   const [sending, setSending] = useState(false);
   const [dragActive, setDragActive] = useState(false);
-  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const [openMenu, setOpenMenu] = useState<ComposerOpenMenu>(null);
   const [imageAttachments, setImageAttachments] = useState<ImageAttachment[]>([]);
   const [error, setError] = useState("");
   const appliedInitialDraftRef = useRef("");
@@ -445,10 +459,6 @@ export function Composer({
   }, [imageAttachments]);
 
   useEffect(() => {
-    attachmentMenuOpenRef.current = attachmentMenuOpen;
-  }, [attachmentMenuOpen]);
-
-  useEffect(() => {
     textareaRef.current?.focus({ preventScroll: true });
   }, [focusKey]);
 
@@ -461,11 +471,6 @@ export function Composer({
 
   useEffect(() => {
     const handleAndroidBack = (event: Event) => {
-      if (attachmentMenuOpenRef.current) {
-        event.preventDefault();
-        setAttachmentMenuOpen(false);
-        return;
-      }
       if (imageAttachmentsRef.current.length) {
         event.preventDefault();
         clearImageAttachments();
@@ -476,22 +481,14 @@ export function Composer({
   }, []);
 
   useEffect(() => {
-    if (!attachmentMenuOpen) return;
-    const close = (event: MouseEvent) => {
-      if (attachmentMenuRef.current && !attachmentMenuRef.current.contains(event.target as Node)) {
-        setAttachmentMenuOpen(false);
-      }
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setAttachmentMenuOpen(false);
-    };
-    document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", closeOnEscape);
+    const close = () => setOpenMenu(null);
+    window.addEventListener("popstate", close);
+    window.addEventListener("hashchange", close);
     return () => {
-      document.removeEventListener("mousedown", close);
-      document.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("popstate", close);
+      window.removeEventListener("hashchange", close);
     };
-  }, [attachmentMenuOpen]);
+  }, []);
 
   useEffect(() => {
     setProvider(settings.defaultProvider);
@@ -575,6 +572,7 @@ export function Composer({
 
   async function submit(event?: FormEvent) {
     event?.preventDefault();
+    setOpenMenu(null);
     if (!canSend) return;
     const text = draft.trim();
     const submittedAttachments = imageAttachments;
@@ -641,17 +639,17 @@ export function Composer({
   }
 
   function openDocumentPicker() {
-    setAttachmentMenuOpen(false);
+    setOpenMenu(null);
     documentInputRef.current?.click();
   }
 
   function openImagePicker() {
-    setAttachmentMenuOpen(false);
+    setOpenMenu(null);
     imageInputRef.current?.click();
   }
 
   function openCameraPicker() {
-    setAttachmentMenuOpen(false);
+    setOpenMenu(null);
     cameraInputRef.current?.click();
   }
 
@@ -781,37 +779,43 @@ export function Composer({
         <input ref={imageInputRef} className="hidden" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif" onChange={handleFileSelection} />
         <input ref={cameraInputRef} className="hidden" type="file" accept="image/*" capture="environment" onChange={handleFileSelection} />
         <div className="composer-top-row compact-toolbar">
-          <div ref={attachmentMenuRef} className="attachment-menu">
+          <div className="attachment-menu">
             <button
-              aria-expanded={attachmentMenuOpen}
-              aria-haspopup="menu"
-              className={clsx("composer-plus-button", attachmentMenuOpen && "composer-plus-button-active")}
+              ref={attachmentTriggerRef}
+              aria-expanded={openMenu === "attachments"}
+              aria-haspopup="dialog"
+              aria-controls="composer-attachment-popover"
+              aria-label="Add to chat"
+              className={clsx("composer-plus-button", openMenu === "attachments" && "composer-plus-button-active")}
               type="button"
-              onClick={() => setAttachmentMenuOpen((current) => !current)}
+              onClick={() => setOpenMenu((current) => current === "attachments" ? null : "attachments")}
               title="Add attachment"
             >
               <Plus size={19} />
             </button>
-            {attachmentMenuOpen && (
-              <div className="attachment-menu-panel" role="menu">
-                <button className="attachment-menu-item" type="button" role="menuitem" onClick={openImagePicker}>
-                  <FileImage size={16} />
-                  <span>Image</span>
-                </button>
-                <button className="attachment-menu-item" type="button" role="menuitem" onClick={openDocumentPicker}>
-                  <FileUp size={16} />
-                  <span>File</span>
-                </button>
-                <button className="attachment-menu-item" type="button" role="menuitem" onClick={openCameraPicker}>
-                  <Camera size={16} />
-                  <span>Camera</span>
-                </button>
+            <ComposerPopover open={openMenu === "attachments"} triggerRef={attachmentTriggerRef} onClose={() => setOpenMenu(null)} ariaLabel="Add to chat" preferredWidth={240} maxWidth={320} className="composer-attachment-popover">
+              <div id="composer-attachment-popover">
+                <div className="composer-popover-header">Add to chat</div>
+                <div className="composer-popover-list" role="menu">
+                  <button className="composer-popover-option composer-attachment-option" type="button" role="menuitem" onClick={openCameraPicker}>
+                    <Camera size={20} />
+                    <span><strong>Camera</strong><small>Take a new photo</small></span>
+                  </button>
+                  <button className="composer-popover-option composer-attachment-option" type="button" role="menuitem" onClick={openImagePicker}>
+                    <FileImage size={20} />
+                    <span><strong>Photos</strong><small>Choose one or more images</small></span>
+                  </button>
+                  <button className="composer-popover-option composer-attachment-option" type="button" role="menuitem" onClick={openDocumentPicker}>
+                    <FileText size={20} />
+                    <span><strong>Documents</strong><small>PDF, DOCX or TXT</small></span>
+                  </button>
+                </div>
               </div>
-            )}
+            </ComposerPopover>
           </div>
-          <ModeMenu value={selectedModeValue} onSelect={updateCombinedMode} />
+          <ModeMenu value={selectedModeValue} open={openMenu === "mode"} onToggle={() => setOpenMenu((current) => current === "mode" ? null : "mode")} onClose={() => setOpenMenu(null)} onSelect={updateCombinedMode} />
           <span className="composer-divider" />
-          <ModelMenu provider={provider} model={model} onSelect={selectModelProvider} />
+          <ModelMenu provider={provider} model={model} open={openMenu === "model"} onToggle={() => setOpenMenu((current) => current === "model" ? null : "model")} onClose={() => setOpenMenu(null)} onSelect={selectModelProvider} />
         </div>
 
         <AnimatePresence>
@@ -851,6 +855,9 @@ export function Composer({
                   selectedBedrockModels={bedrockModels}
                   selectedOpenAiModels={openaiModels}
                   selectedGeminiModels={geminiModels}
+                  open={openMenu === "research-model"}
+                  onToggleMenu={() => setOpenMenu((current) => current === "research-model" ? null : "research-model")}
+                  onClose={() => setOpenMenu(null)}
                   onToggle={toggleResearchModel}
                 />
                 <label className="inline-flex h-7 items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2">
