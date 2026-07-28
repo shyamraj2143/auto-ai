@@ -90,6 +90,7 @@ public class MainActivity extends BridgeActivity {
     private long lastNativeRootBackAtMs;
     private final AtomicBoolean directInstallerHandoff = new AtomicBoolean(false);
     private final AppUpdateCoordinator.Listener directUpdateListener = this::handleDirectUpdateState;
+    private AppUpdateDialog fallbackUpdateDialog;
     private boolean callingSetupVisible;
 
     @Override
@@ -193,6 +194,16 @@ public class MainActivity extends BridgeActivity {
 
     private void handleDirectUpdateState(AppUpdateCoordinator.Snapshot snapshot) {
         AppUpdateCoordinator coordinator = AppUpdateCoordinator.get(this);
+        boolean mandatoryExplanation = snapshot.metadata != null && snapshot.metadata.mandatory
+            && snapshot.state == AppUpdateCoordinator.State.AVAILABLE;
+        if (((snapshot.state == AppUpdateCoordinator.State.FAILED && coordinator.isDirectUpdateActive()) || mandatoryExplanation) && fallbackUpdateDialog == null) {
+            runOnUiThread(() -> {
+                if (fallbackUpdateDialog == null && !isFinishing()) {
+                    fallbackUpdateDialog = new AppUpdateDialog(this);
+                    fallbackUpdateDialog.start();
+                }
+            });
+        }
         if (!coordinator.isDirectUpdateActive() || snapshot.state != AppUpdateCoordinator.State.READY_TO_INSTALL) return;
         runOnUiThread(() -> {
             if (!directInstallerHandoff.compareAndSet(false, true) || isFinishing()) return;
@@ -327,6 +338,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onDestroy() {
         AppUpdateCoordinator.get(this).removeListener(directUpdateListener);
+        if (fallbackUpdateDialog != null) fallbackUpdateDialog.stop();
         super.onDestroy();
         mainHandler.removeCallbacks(updatePollRunnable);
         updateExecutor.shutdownNow();

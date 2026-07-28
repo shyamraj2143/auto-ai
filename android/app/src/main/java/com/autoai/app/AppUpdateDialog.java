@@ -2,6 +2,7 @@ package com.autoai.app;
 
 import android.app.Activity;
 import android.app.Dialog;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -10,6 +11,7 @@ import android.os.Build;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.ContextThemeWrapper;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
@@ -18,7 +20,6 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
-import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.core.view.ViewCompat;
@@ -32,20 +33,27 @@ import java.util.TimeZone;
 
 /** Compact native update surface. Durable state remains in AppUpdateCoordinator. */
 public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
+    static final String UPDATE_DIALOG_LAYOUT_VERSION = "single-page-v4";
     static final int DIALOG_LOGO_DP = 44;
     static final int ACTION_HEIGHT_DP = 48;
-    static final int DIALOG_MAX_WIDTH_DP = 440;
+    static final int DIALOG_MAX_WIDTH_DP = 420;
     private final Activity activity;
+    private final Context uiContext;
     private final AppUpdateCoordinator coordinator;
     private Dialog dialog;
     private TextView eyebrow, title, version, details, status, progressText, fileSize, releaseDate;
     private ProgressBar progress;
     private Button primary, secondary, close;
     private boolean installerOpenedForReady;
+    private final Density density;
+    enum Density { COMFORTABLE, COMPACT, EXTRA_COMPACT }
 
     public AppUpdateDialog(Activity activity) {
         this.activity = activity;
+        uiContext = new ContextThemeWrapper(activity, R.style.AutoAiUpdateDialogTheme);
         coordinator = AppUpdateCoordinator.get(activity);
+        float heightDp = activity.getResources().getDisplayMetrics().heightPixels / activity.getResources().getDisplayMetrics().density;
+        density = densityForHeightDp(heightDp);
     }
 
     public void start() { coordinator.addListener(this); }
@@ -61,8 +69,9 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
 
     private void render(AppUpdateCoordinator.Snapshot snapshot) {
         if (activity.isFinishing() || (Build.VERSION.SDK_INT >= 17 && activity.isDestroyed())) return;
-        boolean visible = snapshot.metadata != null
-            && snapshot.metadata.versionCode > BuildConfig.VERSION_CODE
+        boolean directFailure = snapshot.state == AppUpdateCoordinator.State.FAILED
+            && coordinator.isDirectUpdateActive();
+        boolean visible = (AppUpdateCoordinator.hasPendingUpdate(snapshot.metadata) || directFailure)
             && snapshot.state != AppUpdateCoordinator.State.IDLE
             && snapshot.state != AppUpdateCoordinator.State.INSTALLED;
         if (!visible) {
@@ -73,14 +82,23 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         if (dialog == null) create();
 
         AppUpdateCoordinator.Metadata metadata = snapshot.metadata;
-        eyebrow.setText(metadata.mandatory ? "MANDATORY SECURITY UPDATE" : "VERSION " + metadata.versionName);
-        eyebrow.setTextColor(metadata.mandatory ? Color.rgb(255, 181, 71) : Color.rgb(104, 227, 255));
-        title.setText(metadata.mandatory ? "Update Required" : "New AutoAI Update");
-        version.setText("Current " + BuildConfig.VERSION_NAME + "   to   New " + metadata.versionName);
-        fileSize.setText("Update size: " + formatSize(metadata.fileSize));
-        Date released = parseDate(metadata.releaseDate);
-        releaseDate.setText("Released: " + (released == null ? "Date unavailable" : DateFormat.getDateInstance(DateFormat.MEDIUM).format(released)));
-        details.setText(releaseDetails(metadata));
+        boolean mandatory = metadata != null && metadata.mandatory;
+        boolean metadataAvailable = AppUpdateCoordinator.hasPendingUpdate(metadata);
+        eyebrow.setText(mandatory ? "MANDATORY SECURITY UPDATE"
+            : metadataAvailable ? "VERSION " + metadata.versionName : "UPDATE ERROR");
+        eyebrow.setTextColor(mandatory ? Color.rgb(255, 181, 71) : Color.rgb(104, 227, 255));
+        title.setText(mandatory ? "Update Required" : "AutoAI Update");
+        version.setText("Current " + BuildConfig.VERSION_NAME + "   to   New "
+            + (metadataAvailable ? metadata.versionName : "unavailable"));
+        fileSize.setText("Update size: " + (metadataAvailable ? formatSize(metadata.fileSize) : "Unavailable"));
+        Date released = parseDate(metadataAvailable ? metadata.releaseDate : null);
+        DateFormat dateFormat = density == Density.EXTRA_COMPACT
+            ? new SimpleDateFormat("dd MMM yy", Locale.US)
+            : DateFormat.getDateInstance(DateFormat.MEDIUM);
+        releaseDate.setText("Released: " + (released == null ? "Date unavailable" : dateFormat.format(released)));
+        details.setText(metadataAvailable
+            ? releaseDetails(metadata, density == Density.COMFORTABLE ? 3 : 2)
+            : "- Release details unavailable");
         status.setText(TextUtils.isEmpty(snapshot.message) ? label(snapshot.state) : snapshot.message);
         status.setTextColor(snapshot.state == AppUpdateCoordinator.State.FAILED
             ? Color.rgb(255, 104, 124)
@@ -111,26 +129,28 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
             || snapshot.state == AppUpdateCoordinator.State.FAILED;
         primary.setEnabled(primaryEnabled);
         primary.setAlpha(primaryEnabled ? 1f : 0.65f);
-        primary.setText(actionForState(snapshot.state));
+        if (snapshot.state == AppUpdateCoordinator.State.DOWNLOADING && snapshot.totalBytes > 0) {
+            primary.setText("Downloading " + Math.min(100, snapshot.downloadedBytes * 100 / snapshot.totalBytes) + "%");
+        } else primary.setText(actionForState(snapshot.state));
         primary.setOnClickListener(view -> primary(snapshot));
 
         if (snapshot.state != AppUpdateCoordinator.State.READY_TO_INSTALL) installerOpenedForReady = false;
 
-        boolean mandatoryFailure = metadata.mandatory && snapshot.state == AppUpdateCoordinator.State.FAILED;
-        boolean optionalSecondary = !metadata.mandatory && (snapshot.state == AppUpdateCoordinator.State.AVAILABLE
+        boolean mandatoryFailure = mandatory && snapshot.state == AppUpdateCoordinator.State.FAILED;
+        boolean optionalSecondary = !mandatory && (snapshot.state == AppUpdateCoordinator.State.AVAILABLE
             || snapshot.state == AppUpdateCoordinator.State.FAILED || downloading);
         secondary.setVisibility(mandatoryFailure || optionalSecondary ? View.VISIBLE : View.GONE);
         secondary.setText(mandatoryFailure ? "EXIT APP" : downloading ? "CANCEL DOWNLOAD" : "LATER");
         secondary.setOnClickListener(view -> {
             if (mandatoryFailure) activity.finishAndRemoveTask();
             else if (downloading) coordinator.cancelOptional();
-            else coordinator.dismissOptional();
+            else closeOptional(snapshot);
         });
-        close.setVisibility(metadata.mandatory ? View.GONE : View.VISIBLE);
-        close.setOnClickListener(view -> coordinator.dismissOptional());
+        close.setVisibility(mandatory ? View.GONE : View.VISIBLE);
+        close.setOnClickListener(view -> closeOptional(snapshot));
 
-        dialog.setCancelable(!metadata.mandatory);
-        dialog.setCanceledOnTouchOutside(!metadata.mandatory);
+        dialog.setCancelable(!mandatory);
+        dialog.setCanceledOnTouchOutside(!mandatory);
         if (!dialog.isShowing()) {
             dialog.show();
             sizeWindow();
@@ -143,7 +163,8 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
     }
 
     private void create() {
-        dialog = new Dialog(activity);
+        android.util.Log.i("AutoAiUpdate", "UPDATE_DIALOG_LAYOUT_VERSION " + UPDATE_DIALOG_LAYOUT_VERSION);
+        dialog = new Dialog(activity, R.style.AutoAiUpdateDialogTheme);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         dialog.setContentView(buildCard());
         dialog.setOnKeyListener((ignored, keyCode, event) -> keyCode == KeyEvent.KEYCODE_BACK
@@ -162,123 +183,121 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
 
     private View buildCard() {
         LinearLayout card = column();
-        card.setPadding(dp(12), dp(10), dp(12), dp(10));
+        int outer = density == Density.COMFORTABLE ? 14 : density == Density.COMPACT ? 10 : 8;
+        int headerHeight = density == Density.COMFORTABLE ? 48 : density == Density.COMPACT ? 44 : 40;
+        int logoSize = density == Density.COMFORTABLE ? 44 : 40;
+        int detailSize = density == Density.COMFORTABLE ? 13 : 12;
+        card.setPadding(dp(outer), dp(outer), dp(outer), dp(outer));
         card.setBackground(gradient(new int[]{Color.rgb(25, 18, 61), Color.rgb(7, 24, 52), Color.rgb(3, 42, 51)}, 18, Color.rgb(102, 79, 255)));
 
-        // Fixed compact horizontal header.
-        FrameLayout header = new FrameLayout(activity);
+        FrameLayout header = new FrameLayout(uiContext);
         header.setClipChildren(true);
-        FrameLayout logoFrame = new FrameLayout(activity);
-        logoFrame.setClipChildren(true);
-        logoFrame.setBackground(gradient(new int[]{Color.rgb(49, 29, 103), Color.rgb(5, 69, 85)}, 14, Color.rgb(48, 231, 255)));
-        ImageView logo = new ImageView(activity);
-        logo.setImageResource(R.drawable.ic_launcher_foreground);
+        FrameLayout logoFrame = new FrameLayout(uiContext);
+        logoFrame.setBackground(gradient(new int[]{Color.rgb(49, 29, 103), Color.rgb(5, 69, 85)}, 13, Color.rgb(48, 231, 255)));
+        ImageView logo = new ImageView(uiContext);
+        logo.setImageResource(R.mipmap.ic_launcher);
+        logo.setContentDescription("AutoAI logo");
         logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        logo.setAdjustViewBounds(false);
-        logo.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
-        logo.setPadding(dp(3), dp(3), dp(3), dp(3));
+        logo.setPadding(dp(4), dp(4), dp(4), dp(4));
         logoFrame.addView(logo, new FrameLayout.LayoutParams(-1, -1));
-        FrameLayout.LayoutParams logoParams = new FrameLayout.LayoutParams(dp(DIALOG_LOGO_DP), dp(DIALOG_LOGO_DP), Gravity.START | Gravity.CENTER_VERTICAL);
-        header.addView(logoFrame, logoParams);
+        header.addView(logoFrame, new FrameLayout.LayoutParams(dp(logoSize), dp(logoSize), Gravity.START | Gravity.CENTER_VERTICAL));
         LinearLayout headings = column();
-        eyebrow = text("", 9, Color.rgb(104, 227, 255));
-        eyebrow.setTypeface(Typeface.DEFAULT_BOLD);
-        eyebrow.setLetterSpacing(0.08f);
-        eyebrow.setMaxLines(1);
-        eyebrow.setEllipsize(TextUtils.TruncateAt.END);
-        title = text("", 17, Color.WHITE);
+        title = text("", density == Density.COMFORTABLE ? 17 : density == Density.COMPACT ? 16 : 15, Color.WHITE);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setMaxLines(1);
-        title.setEllipsize(TextUtils.TruncateAt.END);
-        headings.addView(eyebrow);
+        title.setSingleLine(true);
+        eyebrow = text("", 11, Color.rgb(104, 227, 255));
+        eyebrow.setTypeface(Typeface.DEFAULT_BOLD);
         headings.addView(title);
+        headings.addView(eyebrow);
         FrameLayout.LayoutParams headingParams = new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER_VERTICAL);
-        headingParams.leftMargin = dp(54);
-        headingParams.rightMargin = dp(36);
+        headingParams.leftMargin = dp(logoSize + 10);
+        headingParams.rightMargin = dp(42);
         header.addView(headings, headingParams);
-        close = new Button(activity);
+        close = new Button(uiContext);
         close.setText("X");
-        close.setTextSize(21);
+        close.setTextSize(18);
         close.setTextColor(Color.WHITE);
         close.setGravity(Gravity.CENTER);
-        close.setPadding(0, 0, 0, dp(3));
+        close.setPadding(0, 0, 0, 0);
         close.setBackground(gradient(new int[]{Color.rgb(24, 39, 82), Color.rgb(8, 23, 53)}, 25, Color.rgb(77, 105, 172)));
-        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(dp(32), dp(32), Gravity.END | Gravity.TOP);
+        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(dp(38), dp(38), Gravity.END | Gravity.CENTER_VERTICAL);
         header.addView(close, closeParams);
-        card.addView(header, new LinearLayout.LayoutParams(-1, dp(48)));
+        card.addView(header, new LinearLayout.LayoutParams(-1, dp(headerHeight)));
 
         LinearLayout content = column();
-        content.setPadding(0, dp(2), 0, dp(2));
+        content.setPadding(0, dp(density == Density.COMFORTABLE ? 8 : 4), 0, 0);
 
-        version = text("", 13, Color.rgb(195, 210, 243));
-        version.setGravity(Gravity.CENTER);
-        version.setPadding(dp(5), dp(4), dp(5), dp(5));
-        LinearLayout.LayoutParams versionParams = new LinearLayout.LayoutParams(-1, -2);
-        content.addView(version, versionParams);
+        version = text("", detailSize, Color.rgb(195, 210, 243));
+        version.setGravity(Gravity.CENTER_VERTICAL);
+        version.setSingleLine(true);
+        content.addView(version, new LinearLayout.LayoutParams(-1, dp(32)));
 
-        View dividerTop = divider();
-        content.addView(dividerTop, new LinearLayout.LayoutParams(-1, dp(1)));
         fileSize = infoRow("", Color.rgb(59, 226, 255));
         releaseDate = infoRow("", Color.rgb(79, 205, 255));
         TextView verified = infoRow("", Color.rgb(82, 230, 127));
         verified.setText("Verified secure build");
         verified.setTextColor(Color.rgb(89, 232, 126));
-        content.addView(fileSize);
-        content.addView(releaseDate);
-        content.addView(verified);
-        View dividerBottom = divider();
-        LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(-1, dp(1));
-        dividerParams.topMargin = dp(4);
-        content.addView(dividerBottom, dividerParams);
+        content.addView(fileSize, new LinearLayout.LayoutParams(-1, dp(30)));
+        content.addView(releaseDate, new LinearLayout.LayoutParams(-1, dp(30)));
+        if (density != Density.EXTRA_COMPACT) content.addView(verified, new LinearLayout.LayoutParams(-1, dp(30)));
 
-        TextView whatsNew = text("WHAT'S NEW", 15, Color.rgb(199, 92, 255));
+        TextView whatsNew = text("WHAT'S NEW", 12, Color.rgb(199, 92, 255));
         whatsNew.setTypeface(Typeface.DEFAULT_BOLD);
-        whatsNew.setPadding(0, dp(6), 0, 0);
-        content.addView(whatsNew);
-        details = text("", 13, Color.rgb(224, 229, 247));
-        details.setLineSpacing(dp(2), 1f);
-        details.setPadding(dp(2), dp(4), dp(2), dp(3));
-        details.setMaxLines(3);
+        whatsNew.setGravity(Gravity.CENTER_VERTICAL);
+        content.addView(whatsNew, new LinearLayout.LayoutParams(-1, dp(26)));
+        details = text("", detailSize, Color.rgb(224, 229, 247));
+        details.setLineSpacing(dp(1), 1f);
+        details.setMaxLines(density == Density.COMFORTABLE ? 3 : 2);
         details.setEllipsize(TextUtils.TruncateAt.END);
-        content.addView(details, new LinearLayout.LayoutParams(-1, -2));
-        BoundedScrollView scroller = new BoundedScrollView(activity);
-        scroller.setFillViewport(false);
-        scroller.setClipToPadding(false);
-        scroller.setVerticalScrollBarEnabled(true);
-        scroller.addView(content, new ScrollView.LayoutParams(-1, -2));
-        card.addView(scroller, new LinearLayout.LayoutParams(-1, -2));
+        content.addView(details, new LinearLayout.LayoutParams(-1, dp(density == Density.COMFORTABLE ? 58 : 42)));
+        card.addView(content, new LinearLayout.LayoutParams(-1, -2));
 
         LinearLayout footer = column();
-        footer.setPadding(0, dp(2), 0, 0);
-        status = text("", 12, Color.rgb(112, 216, 255));
+        footer.setPadding(0, dp(4), 0, 0);
+        status = text("", detailSize, Color.rgb(112, 216, 255));
         status.setTypeface(Typeface.DEFAULT_BOLD);
-        status.setPadding(0, dp(2), 0, dp(3));
-        footer.addView(status);
-        progress = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
+        status.setMaxLines(2);
+        status.setEllipsize(TextUtils.TruncateAt.END);
+        footer.addView(status, new LinearLayout.LayoutParams(-1, dp(34)));
+        progress = new ProgressBar(uiContext, null, android.R.attr.progressBarStyleHorizontal);
         progress.setMax(100);
         footer.addView(progress, new LinearLayout.LayoutParams(-1, dp(6)));
         progressText = text("", 12, Color.rgb(159, 205, 255));
-        progressText.setPadding(0, dp(3), 0, 0);
-        footer.addView(progressText);
+        progressText.setSingleLine(true);
+        footer.addView(progressText, new LinearLayout.LayoutParams(-1, dp(24)));
 
-        primary = new Button(activity);
+        primary = new Button(uiContext);
         primary.setTextColor(Color.WHITE);
         primary.setAllCaps(false);
-        primary.setTextSize(15);
+        primary.setTextSize(14);
         primary.setTypeface(Typeface.DEFAULT_BOLD);
         primary.setBackground(gradient(new int[]{Color.rgb(147, 58, 255), Color.rgb(40, 111, 247), Color.rgb(0, 203, 235)}, 15, Color.TRANSPARENT));
-        LinearLayout.LayoutParams primaryParams = new LinearLayout.LayoutParams(-1, dp(ACTION_HEIGHT_DP));
-        primaryParams.topMargin = dp(5);
-        footer.addView(primary, primaryParams);
 
-        secondary = new Button(activity);
+        secondary = new Button(uiContext);
         secondary.setTextColor(Color.rgb(203, 213, 243));
         secondary.setAllCaps(false);
         secondary.setTextSize(13);
         secondary.setBackground(gradient(new int[]{Color.rgb(11, 25, 55), Color.rgb(9, 20, 45)}, 14, Color.rgb(97, 132, 203)));
-        LinearLayout.LayoutParams secondaryParams = new LinearLayout.LayoutParams(-1, dp(ACTION_HEIGHT_DP));
-        secondaryParams.topMargin = dp(4);
-        footer.addView(secondary, secondaryParams);
+        if (density == Density.EXTRA_COMPACT) {
+            LinearLayout actions = new LinearLayout(uiContext);
+            actions.setOrientation(LinearLayout.HORIZONTAL);
+            actions.setBackground(null);
+            LinearLayout.LayoutParams secondaryParams = new LinearLayout.LayoutParams(0, dp(ACTION_HEIGHT_DP), 1f);
+            secondaryParams.rightMargin = dp(5);
+            actions.addView(secondary, secondaryParams);
+            LinearLayout.LayoutParams primaryParams = new LinearLayout.LayoutParams(0, dp(ACTION_HEIGHT_DP), 1f);
+            actions.addView(primary, primaryParams);
+            LinearLayout.LayoutParams actionRowParams = new LinearLayout.LayoutParams(-1, dp(ACTION_HEIGHT_DP));
+            actionRowParams.topMargin = dp(4);
+            footer.addView(actions, actionRowParams);
+        } else {
+            LinearLayout.LayoutParams primaryParams = new LinearLayout.LayoutParams(-1, dp(ACTION_HEIGHT_DP));
+            primaryParams.topMargin = dp(4);
+            footer.addView(primary, primaryParams);
+            LinearLayout.LayoutParams secondaryParams = new LinearLayout.LayoutParams(-1, dp(ACTION_HEIGHT_DP));
+            secondaryParams.topMargin = dp(3);
+            footer.addView(secondary, secondaryParams);
+        }
         card.addView(footer, new LinearLayout.LayoutParams(-1, -2));
         ViewCompat.setOnApplyWindowInsetsListener(card, (view, insets) -> {
             int navigationBottom = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom;
@@ -293,18 +312,19 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         Window window = dialog.getWindow();
         if (window == null) return;
         int screenWidth = activity.getResources().getDisplayMetrics().widthPixels;
-        int width = Math.min(screenWidth - dp(32), dp(DIALOG_MAX_WIDTH_DP));
+        int width = Math.min(screenWidth - dp(24), dp(DIALOG_MAX_WIDTH_DP));
         window.setLayout(width, WindowManager.LayoutParams.WRAP_CONTENT);
         window.setGravity(Gravity.CENTER);
     }
 
-    private String releaseDetails(AppUpdateCoordinator.Metadata metadata) {
+    private String releaseDetails(AppUpdateCoordinator.Metadata metadata, int limit) {
         String notes = metadata.changelog == null || metadata.changelog.trim().isEmpty()
             ? "Release notes unavailable"
             : metadata.changelog.trim();
         String[] lines = notes.split("[\\r\\n]+");
         StringBuilder bullets = new StringBuilder();
         for (String line : lines) {
+            if (limit-- <= 0) break;
             String clean = line.trim().replaceFirst("^[*\\-]+\\s*", "");
             if (!clean.isEmpty()) {
                 if (bullets.length() > 0) bullets.append('\n');
@@ -318,8 +338,11 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         switch (snapshot.state) {
             case AVAILABLE:
             case PAUSED_WAITING_FOR_NETWORK:
-            case FAILED:
                 coordinator.download();
+                break;
+            case FAILED:
+                if (AppUpdateCoordinator.hasPendingUpdate(snapshot.metadata)) coordinator.download();
+                else coordinator.startDirectUpdate();
                 break;
             case READY_TO_INSTALL:
                 if (!coordinator.canInstallPackages()) {
@@ -366,13 +389,24 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
     }
 
     private LinearLayout column() {
-        LinearLayout layout = new LinearLayout(activity);
+        LinearLayout layout = new LinearLayout(uiContext);
         layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setBackground(null);
         return layout;
     }
 
+    private void closeOptional(AppUpdateCoordinator.Snapshot snapshot) {
+        if (AppUpdateCoordinator.hasPendingUpdate(snapshot.metadata)) {
+            coordinator.dismissOptional();
+            return;
+        }
+        if (dialog != null) dialog.dismiss();
+        dialog = null;
+    }
+
     private TextView text(String value, int size, int color) {
-        TextView view = new TextView(activity);
+        TextView view = new TextView(uiContext);
+        view.setBackground(null);
         view.setText(value);
         view.setTextSize(size);
         view.setTextColor(color);
@@ -419,13 +453,8 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         return bytes <= 0 ? "Size calculating" : String.format(Locale.US, "%.1f MB", bytes / 1048576.0);
     }
 
-    private final class BoundedScrollView extends ScrollView {
-        BoundedScrollView(Activity context) { super(context); }
-
-        @Override protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-            int availableHeight = activity.getResources().getDisplayMetrics().heightPixels;
-            int maxContentHeight = Math.max(dp(160), Math.round(availableHeight * 0.48f));
-            super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(maxContentHeight, MeasureSpec.AT_MOST));
-        }
+    static Density densityForHeightDp(float heightDp) {
+        return heightDp >= 720 ? Density.COMFORTABLE : heightDp >= 600 ? Density.COMPACT : Density.EXTRA_COMPACT;
     }
+
 }
