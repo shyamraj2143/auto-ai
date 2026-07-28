@@ -16,6 +16,7 @@ from app.models.user import User
 from app.services.device_token_security import decrypt_token
 from app.services.firebase_notifications import firebase_notification_service
 from app.services.user_avatar import public_avatar
+from app.services.notification_destination import with_notification_destination
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,7 @@ def send_incoming_call_notifications(
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(seconds=settings.CALL_RING_TIMEOUT_SECONDS)
     action_token = create_call_action_token(call, expires_at)
-    data = {
+    data = with_notification_destination({
         "event_id": str(uuid.uuid4()),
         "action_token": action_token,
         "type": "incoming_call",
@@ -85,7 +86,7 @@ def send_incoming_call_notifications(
         "expires_at_epoch_ms": str(int(expires_at.timestamp() * 1000)),
         "silent": str(silent).lower(),
         "notification_tag": f"autoai_call_{call.id}",
-    }
+    })
     sent = 0
     logger.info("call_fcm_incoming_attempt call_id=%s devices=%d silent=%s", call.id, len(devices), silent)
     for device in devices:
@@ -166,7 +167,7 @@ def send_call_dismiss_notifications(db: Session, call: Call, event_type: str) ->
             continue
         result = firebase_notification_service.send_call_data(
             token,
-            {
+            with_notification_destination({
                 "event_id": str(uuid.uuid4()),
                 "type": event_type,
                 "notification_tag": f"autoai_call_{call.id}",
@@ -176,7 +177,7 @@ def send_call_dismiss_notifications(db: Session, call: Call, event_type: str) ->
                 "call_type": call.call_type,
                 "show_missed": str(event_type == "call_missed" and device.user_id == call.callee_id).lower(),
                 "created_at": datetime.now(timezone.utc).isoformat(),
-            },
+            }),
             30,
         )
         if result.ok:

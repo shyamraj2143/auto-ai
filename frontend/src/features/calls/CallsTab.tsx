@@ -3,6 +3,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ApiClientError } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
+import { destinationFromSocialNotification, routeForNotificationDestination } from "../../notifications/notificationDestination";
 import { useCallSession } from "./hooks/useCallSession";
 import { callApi } from "./services/callApi";
 import { socialApi } from "./services/socialApi";
@@ -172,6 +173,13 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [clearAlertsOpen]);
+
+  useEffect(() => {
+    const requestedFilter = searchParams.get("filter");
+    if (requestedFilter === "missed" || requestedFilter === "audio" || requestedFilter === "video") {
+      setCallFilter(requestedFilter);
+    }
+  }, [searchParams]);
 
   const changeView = useCallback((next: View) => {
     setView(next);
@@ -466,6 +474,16 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
     await startCall(user, type);
   }
 
+  async function openMessageByUserId(userId: string) {
+    if (!token) return;
+    try {
+      const thread = await socialApi.openConversation(token, userId);
+      navigate(`/messages/${encodeURIComponent(thread.thread_id)}`);
+    } catch (chatError) {
+      showToast(errorText(chatError, "Messaging is unavailable for this contact."));
+    }
+  }
+
   function placeCall(profile: SocialProfile, type: CallType) {
     void placeUserCall(asCallUser(profile), type);
   }
@@ -490,10 +508,9 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
         setNotifications((items) => items.map((entry) => (entry.id === item.id ? { ...entry, read_at: new Date().toISOString() } : entry)));
         setUnread((count) => Math.max(0, count - 1));
       }
-      if (item.target_type === "thread" && item.target_id) navigate(`/messages/${item.target_id}`);
-      if (item.target_type === "follow_requests") changeView("requests");
-      if (item.target_type === "call") changeView("calls");
-      if (item.target_type === "profile" && item.actor) void openProfile(item.actor);
+      const destination = destinationFromSocialNotification(item);
+      const route = destination ? routeForNotificationDestination(destination) : null;
+      if (route) navigate(route);
     } catch (notificationError) {
       showToast(errorText(notificationError, "Unable to open notification."));
     }
@@ -731,10 +748,10 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
           {(["Today", "Yesterday", "Earlier"] as const).map((group) => groupedHistory[group]?.length ? <section className="call-timeline-group" key={group}><h3>{group}</h3>{groupedHistory[group].map((item) => {
             const status = friendlyCallStatus(item.status);
             return (
-              <div className={`call-history-row call-status-${status.toLowerCase().replace(" ", "-")}`} key={item.id}>
+              <div className={`call-history-row call-status-${status.toLowerCase().replace(" ", "-")} ${searchParams.get("callId") === item.id ? "targeted" : ""}`} data-call-id={item.id} key={item.id}>
                 <CallAvatar name={item.peer.display_name} avatarUrl={item.peer.avatar_url} />
                 <span><strong>{item.peer.display_name}</strong><small className="call-direction">{item.direction === "incoming" ? <ArrowDownLeft size={13} aria-label="Incoming" /> : <ArrowUpRight size={13} aria-label="Outgoing" />}{item.call_type === "audio" ? <Phone size={12} aria-label="Voice" /> : <Video size={12} aria-label="Video" />}<em>{status}</em></small><small>{new Date(item.created_at).toLocaleString()}{item.duration_seconds > 0 ? ` · ${Math.floor(item.duration_seconds / 60)}:${String(item.duration_seconds % 60).padStart(2, "0")}` : ""}</small></span>
-                <button type="button" onClick={() => void placeUserCall(item.peer, item.call_type)} disabled={item.call_type === "video" ? !item.peer.can_video_call : !item.peer.can_audio_call} aria-label={`${item.call_type === "video" ? "Video" : "Audio"} call ${item.peer.display_name}`}>{item.call_type === "video" ? <Video size={16} /> : <Phone size={16} />}</button>
+                <span className="call-history-actions"><button type="button" onClick={() => void openMessageByUserId(item.peer.id)} aria-label={`Message ${item.peer.display_name}`}><MessageCircle size={15} /></button><button type="button" onClick={() => void placeUserCall(item.peer, item.call_type)} disabled={item.call_type === "video" ? !item.peer.can_video_call : !item.peer.can_audio_call} aria-label={`${item.call_type === "video" ? "Video" : "Audio"} call ${item.peer.display_name}`}>{item.call_type === "video" ? <Video size={16} /> : <Phone size={16} />}</button></span>
               </div>
             );
           })}</section> : null)}

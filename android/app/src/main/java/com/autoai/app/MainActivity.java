@@ -70,6 +70,7 @@ public class MainActivity extends BridgeActivity {
     private static final String UPDATE_NOTIFICATION_CHANNEL_ID = "auto_ai_updates";
     private static final String LAST_NOTIFIED_UPDATE_VERSION_CODE = "last_notified_update_version_code";
     private static final String UPDATE_PREFERENCES = "auto_ai_update_preferences";
+    private static final int NOTIFICATION_DESTINATION_MAX_ATTEMPTS = 120;
 
     private final ExecutorService updateExecutor = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -92,6 +93,23 @@ public class MainActivity extends BridgeActivity {
     private final AppUpdateCoordinator.Listener directUpdateListener = this::handleDirectUpdateState;
     private AppUpdateDialog fallbackUpdateDialog;
     private boolean callingSetupVisible;
+    private int notificationDestinationDispatchAttempts;
+    private final Runnable notificationDestinationDispatch = new Runnable() {
+        @Override public void run() {
+            if (NotificationDeepLink.dispatchPending(MainActivity.this)) {
+                notificationDestinationDispatchAttempts = 0;
+                return;
+            }
+            if (!NotificationDeepLink.hasPending(MainActivity.this)) {
+                notificationDestinationDispatchAttempts = 0;
+                return;
+            }
+            notificationDestinationDispatchAttempts++;
+            if (notificationDestinationDispatchAttempts < NOTIFICATION_DESTINATION_MAX_ATTEMPTS) {
+                mainHandler.postDelayed(this, 250L);
+            }
+        }
+    };
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -138,7 +156,7 @@ public class MainActivity extends BridgeActivity {
         dispatchUpdateIntent(getIntent());
         syncPushDeviceIfAuthenticated();
         dispatchIncomingCallIntent(getIntent());
-        dispatchOpenChatIntent(getIntent());
+        dispatchNotificationDestination(getIntent());
     }
 
     private void dispatchNativeBack() {
@@ -178,7 +196,7 @@ public class MainActivity extends BridgeActivity {
         super.onNewIntent(intent);
         setIntent(intent);
         dispatchIncomingCallIntent(intent);
-        dispatchOpenChatIntent(intent);
+        dispatchNotificationDestination(intent);
         dispatchUpdateIntent(intent);
     }
 
@@ -222,20 +240,12 @@ public class MainActivity extends BridgeActivity {
         });
     }
 
-    private void dispatchOpenChatIntent(Intent intent) {
-        if (intent == null) return;
-        String threadId = intent.getStringExtra("open_chat_thread_id");
-        if (threadId == null || threadId.trim().isEmpty()) return;
-        final String pendingThreadId = threadId.trim();
-        mainHandler.postDelayed(() -> {
-            try {
-                JSONObject detail = new JSONObject();
-                detail.put("threadId", pendingThreadId);
-                if (getBridge() != null) getBridge().triggerWindowJSEvent("auto-ai-open-chat-thread", detail.toString());
-            } catch (Exception ignored) {
-                // The web layer handles navigation after startup.
-            }
-        }, 350L);
+    private void dispatchNotificationDestination(Intent intent) {
+        if (intent != null && NotificationDeepLink.capture(this, intent)) {
+            notificationDestinationDispatchAttempts = 0;
+        }
+        mainHandler.removeCallbacks(notificationDestinationDispatch);
+        mainHandler.post(notificationDestinationDispatch);
     }
 
     private void dispatchIncomingCallIntent(Intent intent) {
@@ -277,6 +287,7 @@ public class MainActivity extends BridgeActivity {
         AppUpdateCoordinator.get(this).refreshInstallState();
         AppUpdateCoordinator.get(this).check(false);
         syncPushDeviceIfAuthenticated();
+        if (NotificationDeepLink.hasPending(this)) dispatchNotificationDestination(null);
         mainHandler.postDelayed(this::launchCallingSetupIfRequired, 600L);
     }
 
@@ -317,6 +328,7 @@ public class MainActivity extends BridgeActivity {
     public void onDestroy() {
         AppUpdateCoordinator.get(this).removeListener(directUpdateListener);
         if (fallbackUpdateDialog != null) fallbackUpdateDialog.stop();
+        mainHandler.removeCallbacks(notificationDestinationDispatch);
         super.onDestroy();
         mainHandler.removeCallbacks(updatePollRunnable);
         updateExecutor.shutdownNow();

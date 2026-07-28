@@ -9,13 +9,14 @@ import { CallProvider } from "../../features/calls/CallProvider";
 import { CallOverlay } from "../../features/calls/CallOverlay";
 import { AndroidBackHandler } from "./AndroidBackHandler";
 import { useMotionMode } from "../../motion/MotionProvider";
+import { parseNotificationDestination, routeForNotificationDestination } from "../../notifications/notificationDestination";
 import "../../features/calls/calls.css";
 
 export function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
   const { safeMode, safeModeReason, disableSafeMode } = useMotionMode();
-  const lastOpenedThreadRef = useRef("");
+  const consumedDestinationIds = useRef(new Set<string>());
   const {
     closeSidebar,
     expandSidebar,
@@ -29,23 +30,31 @@ export function AppShell() {
   }, [closeSidebar, location.pathname]);
 
   useEffect(() => {
-    const openChatThread = (event: Event) => {
-      const rawDetail = event instanceof CustomEvent ? event.detail : null;
-      try {
-        const detail = typeof rawDetail === "string" ? JSON.parse(rawDetail) : rawDetail;
-        const threadId = typeof detail?.threadId === "string" ? detail.threadId.trim() : "";
-        if (!threadId) return;
-        const encodedThreadId = encodeURIComponent(threadId);
-        if (lastOpenedThreadRef.current === threadId && location.pathname.endsWith(`/${encodedThreadId}`)) return;
-        lastOpenedThreadRef.current = threadId;
-        navigate(`/messages/${encodedThreadId}`, { replace: location.pathname.startsWith("/messages/") });
-      } catch {
-        return;
-      }
+    const openDestination = (event: Event) => {
+      const destination = parseNotificationDestination(event instanceof CustomEvent ? event.detail : null);
+      if (!destination || consumedDestinationIds.current.has(destination.eventId)) return;
+      const route = routeForNotificationDestination(destination);
+      if (!route) return;
+      consumedDestinationIds.current.add(destination.eventId);
+      if (consumedDestinationIds.current.size > 200) consumedDestinationIds.current.clear();
+      navigate(route, { replace: false });
+      window.dispatchEvent(new CustomEvent("auto-ai-destination-consumed", { detail: { eventId: destination.eventId } }));
     };
-    window.addEventListener("auto-ai-open-chat-thread", openChatThread);
-    return () => window.removeEventListener("auto-ai-open-chat-thread", openChatThread);
-  }, [location.pathname, navigate]);
+    window.addEventListener("auto-ai-open-destination", openDestination);
+    const pending = window.localStorage.getItem("auto-ai-pending-destination");
+    if (pending) openDestination(new CustomEvent("auto-ai-open-destination", { detail: pending }));
+    return () => window.removeEventListener("auto-ai-open-destination", openDestination);
+  }, [navigate]);
+
+  useEffect(() => {
+    const clearConsumedDestination = (event: Event) => {
+      const eventId = event instanceof CustomEvent && typeof event.detail?.eventId === "string" ? event.detail.eventId : "";
+      const pending = parseNotificationDestination(window.localStorage.getItem("auto-ai-pending-destination"));
+      if (pending?.eventId === eventId) window.localStorage.removeItem("auto-ai-pending-destination");
+    };
+    window.addEventListener("auto-ai-destination-consumed", clearConsumedDestination);
+    return () => window.removeEventListener("auto-ai-destination-consumed", clearConsumedDestination);
+  }, []);
 
   return (
       <CallProvider>

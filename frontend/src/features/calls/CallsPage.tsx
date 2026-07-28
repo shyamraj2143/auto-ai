@@ -10,11 +10,16 @@ export function CallsPage() {
   const { section } = useParams();
   const validSections = new Set(["search", "requests", "chats", "calls", "alerts"]);
   if (section && !validSections.has(section)) return <Navigate to="/call-hub/search" replace />;
+  const goBack = () => {
+    const sameOriginReferrer = document.referrer ? new URL(document.referrer).origin === window.location.origin : false;
+    if (sameOriginReferrer && window.history.length > 1) navigate(-1);
+    else navigate("/hub");
+  };
   return (
     <main className="calls-workspace-page">
       <header className="calls-workspace-header">
-        <button type="button" onClick={() => navigate("/hub")} title="Back to Action Hub" aria-label="Back to Action Hub"><ArrowLeft size={18} /></button>
-        <span><PhoneCall size={18} /><span><strong>Call Hub</strong><small>Private audio and video calls</small></span></span>
+        <button type="button" onClick={goBack} title="Back" aria-label="Back"><ArrowLeft size={18} /></button>
+        <span><span className="calls-header-mark"><PhoneCall size={18} /></span><span><strong>Call Hub</strong><small>Private audio and video communication</small></span></span>
         <span className="calls-header-actions">
           <button type="button" onClick={() => setRefreshRequestId((value) => value + 1)} disabled={refreshing} title="Refresh calls" aria-label="Refresh calls"><RefreshCw className={refreshing ? "animate-spin" : ""} size={16} /><span>{refreshing ? "Refreshing" : "Refresh"}</span></button>
           <button type="button" onClick={() => navigate("/settings?section=calls")} title="Call settings" aria-label="Open call settings"><Settings size={18} /></button>

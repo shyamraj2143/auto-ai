@@ -1,6 +1,7 @@
 import { readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { defineConfig, type Plugin } from "vite";
+import type { Plugin } from "vite";
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
 function sourceSignature(paths: string[]) {
@@ -83,6 +84,9 @@ function reliableWindowsLiveReload(): Plugin {
 
 export default defineConfig({
   plugins: [react(), reliableWindowsLiveReload()],
+  test: {
+    exclude: ["e2e/**", "**/node_modules/**", "**/.git/**"],
+  },
   server: {
     host: "0.0.0.0",
     port: 5173,

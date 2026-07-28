@@ -110,6 +110,10 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
             showChatNotification(data, message.getNotification());
             return;
         }
+        if ("follow_request".equals(messageType) || "follow_accept".equals(messageType)) {
+            showSocialNotification(data, message.getNotification());
+            return;
+        }
         if ("apk_update".equals(messageType)) {
             // Push data is routing-only. The coordinator fetches signed release metadata from the API.
             AppUpdateCoordinator.get(this).check(true);
@@ -168,12 +172,13 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         if (title == null || title.trim().isEmpty()) title = "Auto-AI message";
         if (body == null || body.trim().isEmpty()) body = "New message";
 
-        Intent intent = new Intent(this, MainActivity.class);
-        intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        intent.putExtra("open_chat_thread_id", threadId);
+        Intent intent = NotificationDeepLink.activityIntent(
+            this, NotificationDeepLink.Destination.MESSAGE_THREAD, threadId, null,
+            data.get("event_id"), parseLong(data.get("expires_at_epoch_ms"))
+        ).putExtra("open_chat_thread_id", threadId);
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) flags |= PendingIntent.FLAG_IMMUTABLE;
-        PendingIntent pendingIntent = PendingIntent.getActivity(this, 5000 + Math.abs(threadId.hashCode() % 100000), intent, flags);
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, NotificationDeepLink.requestCode("chat_message", threadId, "open"), intent, flags);
         PendingIntent markRead = PendingIntent.getBroadcast(
             this,
             6100 + Math.abs(threadId.hashCode() % 100000),
@@ -219,11 +224,10 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         String callId = data.get("call_id");
         if (callId == null || callId.trim().isEmpty()) return;
         String callType = "audio".equals(data.get("call_type")) ? "audio" : "video";
-        Intent intent = new Intent(this, MainActivity.class);
-        intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) flags |= PendingIntent.FLAG_IMMUTABLE;
-        PendingIntent pendingIntent = PendingIntent.getActivity(this, 7000 + Math.abs(callId.hashCode() % 100000), intent, flags);
+        PendingIntent pendingIntent = NotificationDeepLink.pendingActivity(
+            this, NotificationDeepLink.Destination.MISSED_CALL, callId, null,
+            data.get("event_id"), "open", 0L
+        );
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
             ? new Notification.Builder(this, MISSED_CALL_CHANNEL_ID)
             : new Notification.Builder(this);
@@ -251,16 +255,15 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         }
 
         createUpdateNotificationChannel();
-        Intent intent = new Intent(this, MainActivity.class)
-            .setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        Intent intent = NotificationDeepLink.activityIntent(this, NotificationDeepLink.Destination.APP_UPDATE, null, null, "apk_update:" + versionCode, 0L)
             .putExtra("start_app_update", true);
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             flags |= PendingIntent.FLAG_IMMUTABLE;
         }
-        PendingIntent pendingIntent = PendingIntent.getActivity(this, 1000, intent, flags);
-        Intent updateIntent = new Intent(this, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("start_app_update", true);
-        PendingIntent updateNow = PendingIntent.getActivity(this, 1001, updateIntent, flags);
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, NotificationDeepLink.requestCode("apk_update", String.valueOf(versionCode), "details"), intent, flags);
+        Intent updateIntent = NotificationDeepLink.activityIntent(this, NotificationDeepLink.Destination.APP_UPDATE, null, null, "apk_update:" + versionCode, 0L).putExtra("start_app_update", true);
+        PendingIntent updateNow = PendingIntent.getActivity(this, NotificationDeepLink.requestCode("apk_update", String.valueOf(versionCode), "install"), updateIntent, flags);
 
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
             ? new Notification.Builder(this, UPDATE_NOTIFICATION_CHANNEL_ID)
@@ -302,6 +305,31 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         );
         channel.setDescription("Auto-AI APK update alerts");
         manager.createNotificationChannel(channel);
+    }
+
+    private void showSocialNotification(Map<String, String> data, RemoteMessage.Notification notification) {
+        if (!canPostNotifications()) return;
+        createMissedCallNotificationChannel();
+        String type = data.get("type");
+        String entityId = data.get("entity_id");
+        NotificationDeepLink.Destination destination = "follow_request".equals(type)
+            ? NotificationDeepLink.Destination.FOLLOW_REQUEST
+            : NotificationDeepLink.Destination.FOLLOW_ACCEPTED;
+        if (entityId == null || entityId.trim().isEmpty()) return;
+        String title = data.get("title");
+        String body = data.get("body");
+        if ((title == null || title.trim().isEmpty()) && notification != null) title = notification.getTitle();
+        if ((body == null || body.trim().isEmpty()) && notification != null) body = notification.getBody();
+        if (title == null || title.trim().isEmpty()) title = "Auto-AI connection";
+        if (body == null || body.trim().isEmpty()) body = "Open to view details";
+        PendingIntent open = NotificationDeepLink.pendingActivity(this, destination, entityId, null, data.get("event_id"), "open", 0L);
+        Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            ? new Notification.Builder(this, SOCIAL_CHANNEL_ID) : new Notification.Builder(this);
+        builder.setSmallIcon(R.mipmap.ic_launcher).setContentTitle(title).setContentText(body)
+            .setStyle(new Notification.BigTextStyle().bigText(body)).setContentIntent(open)
+            .setAutoCancel(true).setVisibility(Notification.VISIBILITY_PRIVATE).setWhen(System.currentTimeMillis());
+        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager != null) manager.notify(NotificationDeepLink.requestCode(type, entityId, "notification"), builder.build());
     }
 
     private void createChatNotificationChannel() {
@@ -355,6 +383,12 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         } catch (NumberFormatException ignored) {
             return 0;
         }
+    }
+
+    private long parseLong(String value) {
+        if (value == null) return 0L;
+        try { return Long.parseLong(value.trim()); }
+        catch (NumberFormatException ignored) { return 0L; }
     }
 
 }
