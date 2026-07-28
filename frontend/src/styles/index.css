@@ -231,8 +231,8 @@ button:disabled {
   .app-shell,
   .landing-nav,
   .download-nav {
-    padding-left: max(0px, env(safe-area-inset-left));
-    padding-right: max(0px, env(safe-area-inset-right));
+    padding-left: clamp(0px, env(safe-area-inset-left), 48px);
+    padding-right: clamp(0px, env(safe-area-inset-right), 48px);
   }
 }
 
@@ -7133,10 +7133,32 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
 }
 
 @media (max-width: 768px) {
+  .app-shell {
+    width: 100%;
+    max-width: 100vw;
+    padding-right: 0 !important;
+    padding-left: 0 !important;
+  }
+
+  .workspace-sidebar {
+    position: fixed !important;
+    inset-block: 0;
+    left: 0;
+    z-index: 50;
+  }
+
   .app-shell > main,
   .route-transition-stage,
-  .chat-workspace {
+  .chat-workspace,
+  .settings-page {
     width: 100%;
+    max-width: 100%;
+    margin-inline: 0 !important;
+    transform: none;
+  }
+
+  .app-shell > main {
+    flex-basis: 100%;
   }
 
   .chat-scroll {
