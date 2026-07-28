@@ -26,13 +26,17 @@ public final class AutoAiUpdatePlugin extends Plugin implements AppUpdateCoordin
         coordinator.check(false);
         call.resolve(payload(coordinator.current()));
     }
-    @PluginMethod public void openUpdate(PluginCall call) {
-        coordinator.showAvailable();
+    @PluginMethod public void startDirectUpdate(PluginCall call) {
+        coordinator.startDirectUpdate();
         call.resolve(payload(coordinator.current()));
     }
 
+    /** Backward-compatible bridge: old callers now start the direct flow, never a dialog. */
+    @PluginMethod public void openUpdate(PluginCall call) { startDirectUpdate(call); }
+
     @Override public void onUpdateChanged(AppUpdateCoordinator.Snapshot snapshot) {
         notifyListeners("stateChanged", payload(snapshot), true);
+        notifyListeners("auto-ai-update-state", payload(snapshot), true);
     }
 
     private JSObject payload(AppUpdateCoordinator.Snapshot snapshot) {
@@ -43,6 +47,11 @@ public final class AutoAiUpdatePlugin extends Plugin implements AppUpdateCoordin
         out.put("updateAvailable", AppUpdateCoordinator.hasPendingUpdate(m));
         out.put("state", snapshot.state.name());
         out.put("message", snapshot.message);
+        int progress = snapshot.totalBytes > 0 ? (int) Math.min(100L, snapshot.downloadedBytes * 100L / snapshot.totalBytes) : 0;
+        out.put("progress", progress);
+        out.put("downloadedBytes", snapshot.downloadedBytes);
+        out.put("totalBytes", snapshot.totalBytes);
+        out.put("errorCode", snapshot.error == null || snapshot.error.isEmpty() ? null : "UPDATE_FAILED");
         if (m != null) {
             out.put("latestVersionCode", m.versionCode);
             out.put("latestVersionName", m.versionName);

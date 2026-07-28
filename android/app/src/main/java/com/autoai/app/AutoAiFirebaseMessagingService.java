@@ -253,7 +253,7 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         createUpdateNotificationChannel();
         Intent intent = new Intent(this, MainActivity.class)
             .setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            .putExtra("open_app_update", true);
+            .putExtra("start_app_update", true);
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             flags |= PendingIntent.FLAG_IMMUTABLE;

@@ -4,7 +4,7 @@ import { Link, NavLink } from "react-router-dom";
 import { resolveApiAssetUrl } from "../../api/client";
 import type { User } from "../../types";
 import { LogoIcon } from "../../components/brand/LogoIcon";
-import { isNativeAndroid, NativeUpdate, shouldShowUpdate, type NativeUpdateState } from "./nativeUpdate";
+import { isNativeAndroid, NativeUpdate, shouldShowUpdate, updateButtonBusy, updateButtonLabel, type NativeUpdateState } from "./nativeUpdate";
 
 function userAvatar(user: User) {
   return resolveApiAssetUrl(user.picture || user.avatar);
@@ -24,7 +24,6 @@ export function HubHeader({
   const avatar = userAvatar(user);
   const initial = user.name.trim().slice(0, 1).toUpperCase() || "A";
   const [updateState, setUpdateState] = useState<NativeUpdateState | null>(null);
-  const [openingUpdate, setOpeningUpdate] = useState(false);
 
   useEffect(() => {
     if (!isNativeAndroid()) return;
@@ -55,10 +54,9 @@ export function HubHeader({
     };
   }, []);
 
-  const openUpdate = async () => {
-    if (openingUpdate) return;
-    setOpeningUpdate(true);
-    try { setUpdateState(await NativeUpdate.openUpdate()); } finally { setOpeningUpdate(false); }
+  const startUpdate = async () => {
+    if (updateButtonBusy(updateState)) return;
+    setUpdateState(await NativeUpdate.startDirectUpdate());
   };
 
   return (
@@ -69,8 +67,9 @@ export function HubHeader({
           <strong>AutoAI</strong>
         </Link>
         {shouldShowUpdate(updateState) && (
-          <button className="hub-update-button" type="button" disabled={openingUpdate} onClick={() => void openUpdate()} aria-label="Open AutoAI update">
-            <Download size={15} /><span>Update</span><i aria-hidden="true" />
+          <button className={`hub-update-button hub-update-${updateState?.state.toLowerCase() ?? "available"}`} type="button" disabled={updateButtonBusy(updateState)} onClick={() => void startUpdate()} aria-label={updateState?.message || updateButtonLabel(updateState)} title={updateState?.state === "FAILED" ? updateState.message : undefined}>
+            <Download size={15} /><span>{updateButtonLabel(updateState)}</span><i aria-hidden="true" />
+            {updateState?.state === "DOWNLOADING" && <b aria-hidden="true" style={{ width: `${updateState.progress ?? 0}%` }} />}
           </button>
         )}
       </div>

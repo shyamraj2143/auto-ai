@@ -39,7 +39,7 @@ import java.util.regex.Pattern;
 /** Application-scoped single source of truth for APK update checks and handoff. */
 public final class AppUpdateCoordinator {
     public enum State { CHECKING, AVAILABLE, QUEUED, DOWNLOADING, PAUSED_WAITING_FOR_NETWORK, VERIFYING,
-        READY_TO_INSTALL, INSTALL_PERMISSION_REQUIRED, OPENING_INSTALLER, INSTALLED, FAILED, IDLE }
+        READY_TO_INSTALL, INSTALL_PERMISSION_REQUIRED, OPENING_INSTALLER, INSTALLED, UP_TO_DATE, FAILED, IDLE }
     public interface Listener { void onUpdateChanged(Snapshot snapshot); }
 
     public static final String PREFS = "auto_ai_update_preferences";
@@ -59,6 +59,7 @@ public final class AppUpdateCoordinator {
     private volatile Snapshot snapshot;
     private volatile boolean optionalDismissedThisLaunch;
     private volatile boolean downloadAfterCheck;
+    private final AtomicBoolean directStart = new AtomicBoolean(false);
 
     public static AppUpdateCoordinator get(Context context) {
         if (instance == null) synchronized (AppUpdateCoordinator.class) {
@@ -93,7 +94,9 @@ public final class AppUpdateCoordinator {
                 prefs.edit().putLong("last_successful_check", System.currentTimeMillis()).apply();
                 if (!metadata.valid() || metadata.versionCode <= BuildConfig.VERSION_CODE) {
                     downloadAfterCheck = false;
-                    set(new Snapshot(State.IDLE, metadata, 0, 0, userInitiated ? "AutoAI is up to date." : "", ""));
+                    directStart.set(false);
+                    prefs.edit().putBoolean("direct_update_active", false).apply();
+                    set(new Snapshot(State.UP_TO_DATE, metadata, 0, 0, "AutoAI is up to date.", ""));
                     return;
                 }
                 boolean mandatory = metadata.forceUpdate || BuildConfig.VERSION_CODE < metadata.minimumSupportedVersionCode;
@@ -129,6 +132,30 @@ public final class AppUpdateCoordinator {
         }
         downloadAfterCheck = true;
         check(true);
+    }
+
+    /** One-tap path used by the header and update-notification action. */
+    public synchronized void startDirectUpdate() {
+        if (!directStart.compareAndSet(false, true)
+            && (snapshot.state == State.CHECKING || snapshot.state == State.QUEUED
+                || snapshot.state == State.DOWNLOADING || snapshot.state == State.VERIFYING
+                || snapshot.state == State.OPENING_INSTALLER)) return;
+        prefs.edit().putBoolean("direct_update_active", true).apply();
+        if (snapshot.state == State.INSTALL_PERMISSION_REQUIRED || hasVerifiedApk()) {
+            set(snapshot.withState(State.READY_TO_INSTALL, "Secure update verified"));
+            return;
+        }
+        if (hasPendingUpdate(snapshot.metadata)) {
+            downloadAfterCheck = false;
+            download();
+            return;
+        }
+        downloadAfterCheck = true;
+        check(true);
+    }
+
+    public boolean isDirectUpdateActive() {
+        return directStart.get() || prefs.getBoolean("direct_update_active", false);
     }
 
     private boolean hasVerifiedApk() {
@@ -204,7 +231,8 @@ public final class AppUpdateCoordinator {
         if (snapshot.state == State.INSTALL_PERMISSION_REQUIRED && canInstallPackages()) {
             set(snapshot.withState(State.READY_TO_INSTALL, "Secure update verified"));
         } else if (snapshot.state == State.OPENING_INSTALLER && snapshot.metadata != null && BuildConfig.VERSION_CODE < snapshot.metadata.versionCode) {
-            set(snapshot.withState(State.READY_TO_INSTALL, "Installation cancelled. Tap Retry Install."));
+            directStart.set(false);
+            set(snapshot.withFailure("Installation cancelled"));
         }
     }
 

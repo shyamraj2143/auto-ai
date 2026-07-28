@@ -59,6 +59,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MainActivity extends BridgeActivity {
     private static final int CONNECT_TIMEOUT_MS = 15000;
@@ -87,7 +88,8 @@ public class MainActivity extends BridgeActivity {
     private boolean waitingForInstallPermission;
     private long lastUpdateCheckAtMs;
     private long lastNativeRootBackAtMs;
-    private AppUpdateDialog appUpdateDialog;
+    private final AtomicBoolean directInstallerHandoff = new AtomicBoolean(false);
+    private final AppUpdateCoordinator.Listener directUpdateListener = this::handleDirectUpdateState;
     private boolean callingSetupVisible;
 
     @Override
@@ -130,9 +132,8 @@ public class MainActivity extends BridgeActivity {
         CallNotificationManager.createChannels(this);
         registerFirebaseMessagingToken();
         UpdateCheckScheduler.cancelLegacy(this);
-        appUpdateDialog = new AppUpdateDialog(this);
-        appUpdateDialog.start();
-        AppUpdateCoordinator.get(this).check(true);
+        AppUpdateCoordinator.get(this).addListener(directUpdateListener);
+        AppUpdateCoordinator.get(this).check(false);
         dispatchUpdateIntent(getIntent());
         syncPushDeviceIfAuthenticated();
         dispatchIncomingCallIntent(getIntent());
@@ -187,11 +188,27 @@ public class MainActivity extends BridgeActivity {
         intent.removeExtra("start_app_update");
         intent.removeExtra("open_app_update");
         AppUpdateCoordinator coordinator = AppUpdateCoordinator.get(this);
-        if (start) coordinator.downloadOrCheck();
-        else if (open) {
-            if (AppUpdateCoordinator.hasPendingUpdate(coordinator.current().metadata)) coordinator.showAvailable();
-            else coordinator.check(true);
-        }
+        if (start || open) coordinator.startDirectUpdate();
+    }
+
+    private void handleDirectUpdateState(AppUpdateCoordinator.Snapshot snapshot) {
+        AppUpdateCoordinator coordinator = AppUpdateCoordinator.get(this);
+        if (!coordinator.isDirectUpdateActive() || snapshot.state != AppUpdateCoordinator.State.READY_TO_INSTALL) return;
+        runOnUiThread(() -> {
+            if (!directInstallerHandoff.compareAndSet(false, true) || isFinishing()) return;
+            if (!coordinator.canInstallPackages()) {
+                coordinator.requireInstallPermission();
+                startActivity(coordinator.installPermissionIntent());
+                return;
+            }
+            Intent installer = coordinator.installerIntent();
+            if (installer == null) {
+                directInstallerHandoff.set(false);
+                return;
+            }
+            try { startActivity(installer); }
+            catch (RuntimeException error) { directInstallerHandoff.set(false); }
+        });
     }
 
     private void dispatchOpenChatIntent(Intent intent) {
@@ -266,6 +283,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onResume() {
         super.onResume();
+        directInstallerHandoff.set(false);
         CallingPermissionCoordinator.invalidateCachedState();
         AppUpdateCoordinator.get(this).refreshInstallState();
         AppUpdateCoordinator.get(this).check(false);
@@ -308,7 +326,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onDestroy() {
-        if (appUpdateDialog != null) appUpdateDialog.stop();
+        AppUpdateCoordinator.get(this).removeListener(directUpdateListener);
         super.onDestroy();
         mainHandler.removeCallbacks(updatePollRunnable);
         updateExecutor.shutdownNow();
@@ -506,27 +524,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void checkForUpdate(boolean force) {
-        long now = System.currentTimeMillis();
-        if (updateCheckRunning || updateDialogVisible || downloadProgress != null) return;
-        if (!force && now - lastUpdateCheckAtMs < UPDATE_CHECK_INTERVAL_MS) return;
-        updateCheckRunning = true;
-        lastUpdateCheckAtMs = now;
-        updateExecutor.execute(() -> {
-            try {
-                ApkUpdate update = fetchLatestUpdate();
-                if (update.versionCode > BuildConfig.VERSION_CODE) {
-                    latestUpdate = update;
-                    mainHandler.post(() -> {
-                        showUpdateNotification(update);
-                        showUpdateDialog(update);
-                    });
-                }
-            } catch (Exception ignored) {
-                // Update checks must never block normal app startup.
-            } finally {
-                updateCheckRunning = false;
-            }
-        });
+        AppUpdateCoordinator.get(this).check(force);
     }
 
     private ApkUpdate fetchLatestUpdate() throws Exception {
