@@ -10,6 +10,7 @@ import { useCrystalEffects } from "../../crystal/useCrystalEffects";
 import { VoiceButton } from "./VoiceButton";
 import { usePublishedUiText } from "../../hooks/useCmsContent";
 import { AppSelect } from "../common/AppSelect";
+import { COMPOSER_MODE_OPTIONS, composerModeOption, composerModeValue } from "./composerSelection";
 
 type Provider = AiProvider;
 
@@ -46,12 +47,6 @@ type ImageAttachment = {
 
 const DOCUMENT_EXTENSIONS = new Set([".pdf", ".docx", ".txt"]);
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
-const MODE_OPTIONS: Array<{ value: string; label: string; searchMode: SearchMode; chatMode: ChatMode }> = [
-  { value: "normal", label: "Normal", searchMode: "auto", chatMode: "normal" },
-  { value: "deep", label: "Deep", searchMode: "deep", chatMode: "deep_research" },
-  { value: "research", label: "Research", searchMode: "research", chatMode: "multi_model" }
-];
-
 const PROVIDER_LABELS: Record<Provider, string> = {
   openai: "OpenAI",
   groq: "Groq",
@@ -113,9 +108,18 @@ function ModelMenu({
     const close = (event: MouseEvent) => {
       if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
     };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
     document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
   }, [open]);
+
+  useEffect(() => setActiveProvider(provider), [provider]);
 
   return (
     <div ref={ref} className="model-menu">
@@ -127,13 +131,15 @@ function ModelMenu({
           setOpen((current) => !current);
         }}
         title="Choose intelligence and model"
+        aria-expanded={open}
+        aria-haspopup="menu"
       >
         <BrainCircuit size={18} />
         <span className="min-w-0 truncate">{triggerLabel}</span>
         <ChevronDown size={15} />
       </button>
       {open && (
-        <div className="model-menu-panel">
+        <div className="model-menu-panel" role="menu" aria-label="Choose AI model">
           <div className="model-menu-title">Intelligence</div>
           {INTELLIGENCE_PRESETS.map((item) => (
             <button
@@ -157,7 +163,6 @@ function ModelMenu({
               type="button"
               onClick={() => setActiveProvider(item)}
               onFocus={() => setActiveProvider(item)}
-              onMouseEnter={() => setActiveProvider(item)}
             >
               <span>{PROVIDER_LABELS[item]}</span>
               <ChevronRight size={14} />
@@ -179,6 +184,72 @@ function ModelMenu({
               </button>
             ))}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ModeMenu({
+  value,
+  onSelect
+}: {
+  value: string;
+  onSelect: (value: string) => void;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const selected = composerModeOption(value);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} className="model-menu mode-menu">
+      <button
+        type="button"
+        className="composer-pill composer-mode-pill composer-pill-active"
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+        title="Choose chat mode"
+      >
+        <Sparkles size={18} />
+        <span className="composer-mode-label">{selected.label}</span>
+        <ChevronDown size={15} />
+      </button>
+      {open && (
+        <div className="model-menu-panel mode-menu-panel" role="menu" aria-label="Choose chat mode">
+          <div className="model-menu-title">Chat mode</div>
+          {COMPOSER_MODE_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="menuitemradio"
+              aria-checked={option.value === selected.value}
+              className={clsx("model-menu-item", option.value === selected.value && "model-menu-item-active")}
+              onClick={() => {
+                onSelect(option.value);
+                setOpen(false);
+              }}
+            >
+              <span>{option.label}</span>
+              {option.value === selected.value && <Check size={14} />}
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -251,7 +322,6 @@ function ResearchModelMenu({
                 disabled={!enabled || optionCount === 0}
                 onClick={() => setActiveProvider(item)}
                 onFocus={() => setActiveProvider(item)}
-                onMouseEnter={() => setActiveProvider(item)}
               >
                 <span>{PROVIDER_LABELS[item]}</span>
                 <span className="model-menu-muted">
@@ -619,15 +689,12 @@ export function Composer({
   }
 
   function updateCombinedMode(value: string) {
-    const option = MODE_OPTIONS.find((item) => item.value === value);
-    if (!option) return;
+    const option = composerModeOption(value);
     setSearchMode(option.searchMode);
     setChatMode(option.chatMode);
   }
 
-  const selectedModeValue =
-    MODE_OPTIONS.find((option) => option.searchMode === searchMode && option.chatMode === chatMode)?.value ?? "auto";
-  const selectedModeLabel = MODE_OPTIONS.find((option) => option.value === selectedModeValue)?.label ?? "Normal";
+  const selectedModeValue = composerModeValue(searchMode, chatMode);
 
   return (
     <form
@@ -742,11 +809,7 @@ export function Composer({
               </div>
             )}
           </div>
-          <div className={clsx("composer-pill composer-mode-pill", (searchMode !== "off" || researchModeActive) && "composer-pill-active")} title="Mode">
-            <Sparkles size={18} />
-            <span className="composer-mode-label">{selectedModeLabel}</span>
-            <AppSelect label="Mode" value={selectedModeValue} onChange={updateCombinedMode} options={MODE_OPTIONS} />
-          </div>
+          <ModeMenu value={selectedModeValue} onSelect={updateCombinedMode} />
           <span className="composer-divider" />
           <ModelMenu provider={provider} model={model} onSelect={selectModelProvider} />
         </div>

@@ -651,6 +651,14 @@ button:disabled {
   width: 174px;
 }
 
+.mode-menu-panel {
+  width: 174px;
+}
+
+.mode-menu .composer-mode-pill {
+  justify-content: space-between;
+}
+
 .model-menu-title {
   padding: 6px 8px 7px;
   color: #cbd5e1;

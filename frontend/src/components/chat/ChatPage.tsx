@@ -30,6 +30,7 @@ import {
   mergeChatMessages,
   upsertChatMessage
 } from "./chatState";
+import { selectedModelPayload } from "./composerSelection";
 
 const DEFAULT_OPTIONS: ComposerOptions = {
   searchMode: "auto",
@@ -60,14 +61,6 @@ type LocalRetryRequest = {
   documentIds: string[];
   requestId: string;
 };
-
-function modelSelectionPayload(options: ComposerOptions) {
-  const staleGroqDefault = options.provider === "groq" && options.model === "openai/gpt-oss-120b";
-  return {
-    provider: staleGroqDefault ? undefined : options.provider,
-    model: staleGroqDefault ? undefined : options.model
-  };
-}
 
 function splitDelta(delta: unknown) {
   const text = coerceTextContent(delta);
@@ -632,7 +625,7 @@ export function ChatPage() {
   }
 
   function requestOptionsPayload(options: ComposerOptions, documentIds = selectedDocumentIds) {
-    const modelSelection = modelSelectionPayload(options);
+    const modelSelection = selectedModelPayload(options.provider, options.model);
     return {
       provider: modelSelection.provider,
       model: modelSelection.model,
