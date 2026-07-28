@@ -92,33 +92,6 @@ public class MainActivity extends BridgeActivity {
     private final AppUpdateCoordinator.Listener directUpdateListener = this::handleDirectUpdateState;
     private AppUpdateDialog fallbackUpdateDialog;
     private boolean callingSetupVisible;
-    private String pendingCallIntentId;
-    private String pendingCallIntentAction;
-    private String pendingCallIntentType;
-    private final Runnable callIntentDispatch = new Runnable() {
-        @Override public void run() {
-            if (pendingCallIntentId == null) return;
-            if (CallNotificationManager.pendingAction(MainActivity.this) == null) {
-                pendingCallIntentId = null;
-                return;
-            }
-            WebView webView = getBridge() == null ? null : getBridge().getWebView();
-            if (webView == null || webView.getProgress() < 100) {
-                mainHandler.postDelayed(this, 250L);
-                return;
-            }
-            try {
-                JSONObject detail = new JSONObject();
-                detail.put("callId", pendingCallIntentId);
-                detail.put("action", pendingCallIntentAction);
-                detail.put("callType", pendingCallIntentType == null ? JSONObject.NULL : pendingCallIntentType);
-                getBridge().triggerWindowJSEvent("auto-ai-incoming-call", detail.toString());
-                mainHandler.postDelayed(this, 750L);
-            } catch (Exception error) {
-                mainHandler.postDelayed(this, 500L);
-            }
-        }
-    };
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -293,25 +266,7 @@ public class MainActivity extends BridgeActivity {
         if (callId == null || callId.trim().isEmpty()) return;
         String action = intent.getStringExtra(CallNotificationManager.EXTRA_ACTION);
         if (action != null && !"accept".equals(action) && !"audio_only".equals(action) && !"resume_call".equals(action)) return;
-        callId = callId.trim();
-        long intentExpiry = intent.getLongExtra(CallNotificationManager.EXTRA_EXPIRES_AT, 0L);
-        if (intentExpiry <= 0L) {
-            try { intentExpiry = Long.parseLong(intent.getStringExtra(CallNotificationManager.EXTRA_EXPIRES_AT)); }
-            catch (Exception ignored) {
-                intentExpiry = Math.max(System.currentTimeMillis() + 24L * 60L * 60L * 1000L, AcceptedCallHandoffStore.expiresAt(this));
-            }
-        }
-        if (intentExpiry <= System.currentTimeMillis()) {
-            CallNotificationManager.cancelAllForCall(this, callId);
-            Toast.makeText(this, "This call has already ended.", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        pendingCallIntentId = callId;
-        pendingCallIntentAction = action == null ? "resume_call" : action;
-        pendingCallIntentType = intent.getStringExtra(CallNotificationManager.EXTRA_CALL_TYPE);
-        CallNotificationManager.savePending(this, callId, pendingCallIntentAction, intentExpiry);
-        mainHandler.removeCallbacks(callIntentDispatch);
-        mainHandler.post(callIntentDispatch);
+        CallIntentDispatcher.dispatchMainFallback(this, intent);
     }
 
     @Override
@@ -362,7 +317,6 @@ public class MainActivity extends BridgeActivity {
     public void onDestroy() {
         AppUpdateCoordinator.get(this).removeListener(directUpdateListener);
         if (fallbackUpdateDialog != null) fallbackUpdateDialog.stop();
-        mainHandler.removeCallbacks(callIntentDispatch);
         super.onDestroy();
         mainHandler.removeCallbacks(updatePollRunnable);
         updateExecutor.shutdownNow();
@@ -506,8 +460,6 @@ public class MainActivity extends BridgeActivity {
         @Override
         public void onPageFinished(WebView view, String url) {
             super.onPageFinished(view, url);
-            mainHandler.removeCallbacks(callIntentDispatch);
-            mainHandler.post(callIntentDispatch);
         }
 
         @Override

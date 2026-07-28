@@ -83,9 +83,12 @@ public final class AutoAiTelecomBridge {
             ? callExtras.getBundle(TelecomManager.EXTRA_INCOMING_CALL_EXTRAS)
             : callExtras.getBundle(TelecomManager.EXTRA_OUTGOING_CALL_EXTRAS);
         if (nested != null) callExtras = nested;
+        String callId = callExtras.getString(EXTRA_CALL_ID, "");
+        AutoAiCallConnection existing = CONNECTIONS.get(callId);
+        if (existing != null) return existing;
         AutoAiCallConnection connection = new AutoAiCallConnection(
             context.getApplicationContext(),
-            callExtras.getString(EXTRA_CALL_ID, ""),
+            callId,
             callExtras.getString(EXTRA_CALLER_NAME, "Auto-AI call"),
             callExtras.getString(EXTRA_CALL_TYPE, "audio"),
             callExtras.getLong(EXTRA_EXPIRES_AT, 0L),
@@ -104,24 +107,36 @@ public final class AutoAiTelecomBridge {
         if (connection != null) connection.markActiveFromApp();
     }
 
+    public static boolean ensureRegistered(Context context) {
+        if (!isAvailable(context)) return false;
+        try {
+            PhoneAccountHandle handle = ensurePhoneAccount(context);
+            TelecomManager telecom = telecom(context);
+            return telecom != null && telecom.getPhoneAccount(handle) != null;
+        } catch (RuntimeException error) {
+            Log.e(TAG, "Telecom registration failed.", error);
+            return false;
+        }
+    }
+
     public static void disconnectLocal(Context context, String callId) {
         AutoAiCallConnection connection = CONNECTIONS.get(callId);
         if (connection != null) connection.disconnectLocal();
     }
 
     static void acceptFromTelecom(Context context, String callId, long expiresAt) {
+        ActiveCallStore.Snapshot call = ActiveCallStore.get(context, callId);
+        if (call == null) return;
         CallNotificationManager.savePending(context, callId, "accept", expiresAt > 0L ? expiresAt : System.currentTimeMillis() + 60000L);
-        CallNotificationManager.cancelNotification(context, callId);
-        Intent intent = new Intent(context, MainActivity.class);
-        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        intent.putExtra(CallNotificationManager.EXTRA_CALL_ID, callId);
-        intent.putExtra(CallNotificationManager.EXTRA_ACTION, "accept");
+        Intent intent = CallIntentDispatcher.incomingIntent(context, call).putExtra(CallNotificationManager.EXTRA_ACTION, "accept");
         context.startActivity(intent);
     }
 
     static void rejectFromTelecom(Context context, String callId) {
         Intent intent = new Intent(context, CallActionReceiver.class).setAction(CallNotificationManager.ACTION_REJECT);
         intent.putExtra(CallNotificationManager.EXTRA_CALL_ID, callId);
+        ActiveCallStore.Snapshot call = ActiveCallStore.get(context, callId);
+        if (call != null) intent.putExtra(CallNotificationManager.EXTRA_ACTION_TOKEN, call.actionToken);
         context.sendBroadcast(intent);
     }
 

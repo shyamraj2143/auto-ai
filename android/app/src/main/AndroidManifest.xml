@@ -99,6 +99,18 @@
             android:screenOrientation="unspecified"
             android:theme="@style/AppTheme.NoActionBar" />
 
+        <activity
+            android:name=".ActiveCallActivity"
+            android:configChanges="orientation|keyboardHidden|screenSize|smallestScreenSize|screenLayout|uiMode|density"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true"
+            android:showWhenLocked="true"
+            android:supportsPictureInPicture="true"
+            android:turnScreenOn="true"
+            android:theme="@style/AppTheme.NoActionBar" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

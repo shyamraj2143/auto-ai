@@ -6,6 +6,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
@@ -28,8 +29,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public class CallForegroundService extends Service {
+public class CallForegroundService extends Service implements NativeCallSessionController.Listener {
     private static final String TAG = "AutoAiCallService";
+    private static final ExecutorService FAILURE_EXECUTOR = Executors.newSingleThreadExecutor();
     public static final String ACTION_START = "com.autoai.app.call.service.START";
     public static final String ACTION_STOP = "com.autoai.app.call.service.STOP";
     public static final String ACTION_SERVICE_STATUS = "com.autoai.app.call.service.STATUS";
@@ -44,6 +46,10 @@ public class CallForegroundService extends Service {
     private AudioFocusRequest audioFocusRequest;
     private boolean explicitTerminalStop;
     private final ExecutorService recoveryExecutor = Executors.newSingleThreadExecutor();
+    private NativeCallSessionController sessionController;
+    private String activeDisplayName;
+    private String activeCallType;
+    private int activeNotificationId;
 
     @Override
     public void onCreate() {
@@ -64,23 +70,31 @@ public class CallForegroundService extends Service {
         String displayName = recovery ? AcceptedCallHandoffStore.peerName(this) : clean(intent.getStringExtra(CallNotificationManager.EXTRA_CALLER_NAME));
         String callType = recovery ? firstNonEmpty(AcceptedCallHandoffStore.callType(this), AutoAiCallsPlugin.activeCallType(this)) : clean(intent.getStringExtra(CallNotificationManager.EXTRA_CALL_TYPE));
         if (activeCallId == null || (!"audio".equals(callType) && !"video".equals(callType))) {
-            failStart(activeCallId, "FOREGROUND_SERVICE_INTERNAL_ERROR");
+            failStart(activeCallId, "INTERNAL_SERVICE_ERROR");
             return START_NOT_STICKY;
         }
         if (!hasCallPermissions(callType)) {
-            failStart(activeCallId, "CALL_PERMISSION_REQUIRED");
+            failStart(activeCallId, "FOREGROUND_SERVICE_PERMISSION_DENIED");
+            return START_NOT_STICKY;
+        }
+        if (!hasDeclaredServiceTypes(callType)) {
+            failStart(activeCallId, "FOREGROUND_SERVICE_TYPE_MISSING");
             return START_NOT_STICKY;
         }
         AcceptedCallHandoffStore.setState(this, activeCallId, AcceptedCallHandoffStore.State.SERVICE_STARTING);
+        Log.i(TAG, "SERVICE_STARTING callId=" + activeCallId);
+        activeDisplayName = displayName;
+        activeCallType = callType;
         Notification notification;
         try {
             notification = buildNotification(displayName, callType);
         } catch (RuntimeException error) {
             Log.e(TAG, "Unable to build foreground notification callId=" + activeCallId, error);
-            failStart(activeCallId, "FOREGROUND_SERVICE_NOTIFICATION_FAILED");
+            failStart(activeCallId, "FOREGROUND_NOTIFICATION_FAILED");
             return START_NOT_STICKY;
         }
         int notificationId = CallNotificationManager.notificationId(activeCallId) + 100000;
+        activeNotificationId = notificationId;
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 int serviceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
@@ -92,21 +106,31 @@ public class CallForegroundService extends Service {
             }
         } catch (RuntimeException error) {
             Log.e(TAG, "Foreground call service startForeground failed callId=" + activeCallId, error);
-            String code = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-                ? "FOREGROUND_SERVICE_START_NOT_ALLOWED" : "FOREGROUND_SERVICE_NOTIFICATION_FAILED";
+            String simpleName = error.getClass().getSimpleName();
+            String code = "MissingForegroundServiceTypeException".equals(simpleName)
+                ? "FOREGROUND_SERVICE_TYPE_MISSING"
+                : error instanceof SecurityException ? "FOREGROUND_SERVICE_PERMISSION_DENIED"
+                : Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                    ? "FOREGROUND_SERVICE_START_NOT_ALLOWED" : "FOREGROUND_NOTIFICATION_FAILED";
             failStart(activeCallId, code);
             return START_NOT_STICKY;
         }
         if (!initializeAudio(callType)) {
-            failStart(activeCallId, "FOREGROUND_SERVICE_INTERNAL_ERROR");
+            failStart(activeCallId, "AUDIO_FOCUS_FAILED");
+            return START_NOT_STICKY;
+        }
+        if (!AutoAiTelecomBridge.ensureRegistered(this)) {
+            failStart(activeCallId, "TELECOM_REGISTRATION_FAILED");
             return START_NOT_STICKY;
         }
         try {
-            AutoAiTelecomBridge.markActive(this, activeCallId);
             AutoAiCallsPlugin.saveActiveCall(this, activeCallId, callType);
+            sessionController = NativeCallSessionController.get(this);
+            sessionController.addListener(this);
+            sessionController.start(activeCallId, callType, displayName);
         } catch (RuntimeException error) {
             Log.e(TAG, "Unable to register active call metadata callId=" + activeCallId, error);
-            failStart(activeCallId, "FOREGROUND_SERVICE_INTERNAL_ERROR");
+            failStart(activeCallId, "INTERNAL_SERVICE_ERROR");
             return START_NOT_STICKY;
         }
         AcceptedCallHandoffStore.setState(this, activeCallId, AcceptedCallHandoffStore.State.SERVICE_READY);
@@ -126,6 +150,7 @@ public class CallForegroundService extends Service {
 
     @Override
     public void onDestroy() {
+        if (sessionController != null) sessionController.removeListener(this);
         if (audioManager != null) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && audioFocusRequest != null) {
                 audioManager.abandonAudioFocusRequest(audioFocusRequest);
@@ -137,6 +162,7 @@ public class CallForegroundService extends Service {
         }
         if (activeCallId != null && explicitTerminalStop) {
             Log.i(TAG, "Foreground call service destroyed callId=" + activeCallId);
+            if (sessionController != null) sessionController.terminateAfterBackendAction(activeCallId);
             AutoAiTelecomBridge.disconnectLocal(this, activeCallId);
             AutoAiCallsPlugin.clearActiveCall(this, activeCallId);
             CallNotificationManager.cancelOngoingCall(this, activeCallId);
@@ -149,7 +175,7 @@ public class CallForegroundService extends Service {
     }
 
     private Notification buildNotification(String displayName, String callType) {
-        Intent openIntent = new Intent(this, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        Intent openIntent = new Intent(this, ActiveCallActivity.class).setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .putExtra(CallNotificationManager.EXTRA_CALL_ID, activeCallId)
             .putExtra(CallNotificationManager.EXTRA_ACTION, "resume_call")
             .putExtra(CallNotificationManager.EXTRA_CALL_TYPE, callType);
@@ -161,12 +187,11 @@ public class CallForegroundService extends Service {
             : new Notification.Builder(this);
         return builder.setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(displayName == null ? "Auto-AI call" : displayName)
-            .setContentText("Active " + ("audio".equals(callType) ? "audio" : "video") + " call")
+            .setContentText("Connecting call…")
             .setContentIntent(open)
             .setCategory(Notification.CATEGORY_CALL)
             .setOngoing(true)
-            .setUsesChronometer(true)
-            .setWhen(System.currentTimeMillis())
+            .setUsesChronometer(false)
             .addAction(new Notification.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel, "Hang up", end).build())
             .build();
     }
@@ -204,8 +229,53 @@ public class CallForegroundService extends Service {
         CallNotificationManager.cancelOngoingCall(this, callId);
         broadcastStatus(callId, SERVICE_FAILED, errorCode);
         Log.e(TAG, "SERVICE_FAILED callId=" + callId + " errorCode=" + errorCode);
+        if (callId != null) FAILURE_EXECUTOR.execute(() -> {
+            try { new NativeCallApi(this).fail(callId, errorCode); }
+            catch (Exception reportError) { Log.e(TAG, "Unable to synchronize service failure callId=" + callId, reportError); }
+        });
         activeCallId = null;
         stopSelf();
+    }
+
+    private boolean hasDeclaredServiceTypes(String callType) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return true;
+        try {
+            ServiceInfo info = getPackageManager().getServiceInfo(new ComponentName(this, CallForegroundService.class), 0);
+            int required = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE | ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL;
+            if ("video".equals(callType)) required |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
+            return (info.getForegroundServiceType() & required) == required;
+        } catch (PackageManager.NameNotFoundException error) {
+            return false;
+        }
+    }
+
+    @Override public void onState(ActiveCallStore.State state, String errorCode) {
+        if (activeCallId == null) return;
+        if (state == ActiveCallStore.State.MEDIA_CONNECTED) {
+            Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? new Notification.Builder(this, CallNotificationManager.CHANNEL_ACTIVE)
+                : new Notification.Builder(this);
+            Intent openIntent = new Intent(this, ActiveCallActivity.class).setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra(CallNotificationManager.EXTRA_CALL_ID, activeCallId)
+                .putExtra(CallNotificationManager.EXTRA_ACTION, "resume_call")
+                .putExtra(CallNotificationManager.EXTRA_CALL_TYPE, activeCallType);
+            PendingIntent open = PendingIntent.getActivity(this, uniqueRequestCode(activeCallId, "resume_call"), openIntent, pendingFlags());
+            Intent endIntent = new Intent(this, CallActionReceiver.class).setAction(CallNotificationManager.ACTION_END)
+                .putExtra(CallNotificationManager.EXTRA_CALL_ID, activeCallId);
+            PendingIntent end = PendingIntent.getBroadcast(this, uniqueRequestCode(activeCallId, "end"), endIntent, pendingFlags());
+            Notification connected = builder.setSmallIcon(R.mipmap.ic_launcher)
+                .setContentTitle(activeDisplayName == null ? "Auto-AI call" : activeDisplayName)
+                .setContentText("Connected " + activeCallType + " call")
+                .setContentIntent(open).setCategory(Notification.CATEGORY_CALL).setOngoing(true)
+                .setUsesChronometer(true).setWhen(System.currentTimeMillis())
+                .addAction(new Notification.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel, "Hang up", end).build()).build();
+            NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (manager != null) manager.notify(activeNotificationId, connected);
+        } else if (state == ActiveCallStore.State.TERMINAL) {
+            if (errorCode != null) broadcastStatus(activeCallId, SERVICE_FAILED, errorCode);
+            explicitTerminalStop = true;
+            stopSelf();
+        }
     }
 
     private void broadcastStatus(String callId, String status, String errorCode) {

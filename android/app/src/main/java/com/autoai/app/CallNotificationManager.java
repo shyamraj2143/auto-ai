@@ -106,6 +106,9 @@ public final class CallNotificationManager {
         // message is authenticated by FCM, bounded by expiresAt/eventId, and the accept
         // path revalidates the authoritative call state before media starts.
         boolean silent = Boolean.parseBoolean(data.get("silent"));
+        ActiveCallStore.presentIncoming(context, callId, callType, callerId, name,
+            value(data, "caller_avatar_url"), actionToken, revision, expiresAt);
+        Log.i(TAG, "INCOMING_PRESENTED callId=" + callId);
         savePending(context, callId, null, expiresAt);
         createChannels(context);
         boolean telecomReported = false;
@@ -122,12 +125,12 @@ public final class CallNotificationManager {
         incomingIntent.putExtra(EXTRA_CALL_REVISION, revision);
         PendingIntent fullScreen = PendingIntent.getActivity(context, requestCode(callId, "open", revision), incomingIntent, pendingFlags());
 
-        Intent acceptIntent = new Intent(context, CallActionReceiver.class).setAction(ACTION_ACCEPT).putExtras(incomingIntent);
+        Intent acceptIntent = new Intent(incomingIntent).setAction(ACTION_ACCEPT);
         acceptIntent.putExtra(EXTRA_ACTION, "accept");
-        PendingIntent accept = PendingIntent.getBroadcast(context, requestCode(callId, "accept", revision), acceptIntent, pendingFlags());
-        Intent audioOnlyIntent = new Intent(context, CallActionReceiver.class).setAction(ACTION_AUDIO_ONLY).putExtras(incomingIntent);
+        PendingIntent accept = PendingIntent.getActivity(context, requestCode(callId, "accept", revision), acceptIntent, pendingFlags());
+        Intent audioOnlyIntent = new Intent(incomingIntent).setAction(ACTION_AUDIO_ONLY);
         audioOnlyIntent.putExtra(EXTRA_ACTION, "audio_only");
-        PendingIntent audioOnly = PendingIntent.getBroadcast(context, requestCode(callId, "audio_only", revision), audioOnlyIntent, pendingFlags());
+        PendingIntent audioOnly = PendingIntent.getActivity(context, requestCode(callId, "audio_only", revision), audioOnlyIntent, pendingFlags());
         Intent rejectIntent = new Intent(context, CallActionReceiver.class).setAction(ACTION_REJECT)
             .putExtra(EXTRA_CALL_ID, callId).putExtra(EXTRA_ACTION_TOKEN, actionToken);
         PendingIntent reject = PendingIntent.getBroadcast(context, requestCode(callId, "decline", revision), rejectIntent, pendingFlags());
@@ -141,7 +144,7 @@ public final class CallNotificationManager {
             .setContentText(text)
             .setCategory(Notification.CATEGORY_CALL)
             .setPriority(Notification.PRIORITY_MAX)
-            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setVisibility(Notification.VISIBILITY_PRIVATE)
             .setOngoing(true)
             .setAutoCancel(false)
             .setOnlyAlertOnce(false)

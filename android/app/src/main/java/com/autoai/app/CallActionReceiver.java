@@ -44,13 +44,17 @@ public class CallActionReceiver extends BroadcastReceiver {
         String flightKey = callId + ":" + endpoint;
         if (!ACTIONS_IN_FLIGHT.add(flightKey)) return;
         Log.i(TAG, "Call notification action received callId=" + callId + " action=" + endpoint);
-        CallNotificationManager.cancelAllForTerminalCall(context, callId);
-        Intent stop = new Intent(context, CallForegroundService.class).setAction(CallForegroundService.ACTION_STOP)
-            .putExtra(CallNotificationManager.EXTRA_CALL_ID, callId);
-        try { context.startService(stop); } catch (RuntimeException error) { Log.w(TAG, "Terminal service stop failed callId=" + callId, error); }
+        CallNotificationManager.cancelIncomingPresentation(context, callId);
         PendingResult pendingResult = goAsync();
         EXECUTOR.execute(() -> {
-            try { sendAction(context, callId, endpoint, actionToken); }
+            try {
+                sendAction(context, callId, endpoint, actionToken);
+                NativeCallSessionController.get(context).terminateAfterBackendAction(callId);
+                CallNotificationManager.cancelAllForTerminalCall(context, callId);
+                Intent stop = new Intent(context, CallForegroundService.class).setAction(CallForegroundService.ACTION_STOP)
+                    .putExtra(CallNotificationManager.EXTRA_CALL_ID, callId);
+                try { context.startService(stop); } catch (RuntimeException error) { Log.w(TAG, "Terminal service stop failed callId=" + callId, error); }
+            }
             finally { ACTIONS_IN_FLIGHT.remove(flightKey); pendingResult.finish(); }
         });
     }

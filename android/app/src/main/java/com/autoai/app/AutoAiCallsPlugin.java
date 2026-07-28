@@ -205,6 +205,8 @@ public class AutoAiCallsPlugin extends Plugin {
         intent.putExtra(CallNotificationManager.EXTRA_CALLER_NAME, displayName);
         intent.putExtra(CallNotificationManager.EXTRA_CALL_TYPE, video ? "video" : "audio");
         final String readyCallId = callId.trim();
+        ActiveCallStore.Snapshot existingCall = ActiveCallStore.get(getContext(), readyCallId);
+        if (existingCall == null) ActiveCallStore.startOutgoing(getContext(), readyCallId, video ? "video" : "audio", displayName);
         final Handler handler = new Handler(Looper.getMainLooper());
         final BroadcastReceiver receiver = new BroadcastReceiver() {
             private boolean completed;
@@ -219,11 +221,12 @@ public class AutoAiCallsPlugin extends Plugin {
                 String status = result.getStringExtra(CallForegroundService.EXTRA_SERVICE_STATUS);
                 if (CallForegroundService.SERVICE_READY.equals(status)) {
                     complete();
+                    CallIntentDispatcher.launchActive(getContext(), ActiveCallStore.get(getContext(), readyCallId));
                     call.resolve();
                 } else if (CallForegroundService.SERVICE_FAILED.equals(status)) {
                     String code = result.getStringExtra(CallForegroundService.EXTRA_ERROR_CODE);
                     complete();
-                    call.reject("Unable to start the call service.", code == null ? "FOREGROUND_SERVICE_INTERNAL_ERROR" : code);
+                    call.reject("Unable to start the call service.", code == null ? "INTERNAL_SERVICE_ERROR" : code);
                 }
             }
         };
@@ -233,7 +236,7 @@ public class AutoAiCallsPlugin extends Plugin {
         handler.postDelayed(() -> {
             try { getContext().unregisterReceiver(receiver); } catch (IllegalArgumentException ignored) { return; }
             CallNotificationManager.cancelOngoingCall(getContext(), readyCallId);
-            call.reject("Call service readiness timed out.", "FOREGROUND_SERVICE_TIMEOUT");
+            call.reject("Call service readiness timed out.", "SERVICE_READY_TIMEOUT");
         }, 9000L);
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) getContext().startForegroundService(intent);

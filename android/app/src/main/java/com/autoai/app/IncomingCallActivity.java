@@ -12,8 +12,6 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
@@ -24,15 +22,11 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
-
-import org.json.JSONObject;
 
 public class IncomingCallActivity extends Activity {
     private static final String TAG = "AutoAiIncomingCall";
@@ -46,7 +40,9 @@ public class IncomingCallActivity extends Activity {
     private TextView statusView;
     private Button rejectButton;
     private Button acceptButton;
+    private Button audioOnlyButton;
     private final AtomicBoolean actionRunning = new AtomicBoolean(false);
+    private BroadcastReceiver activeUiReadyReceiver;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -86,6 +82,14 @@ public class IncomingCallActivity extends Activity {
             return;
         }
         if (callerName == null) callerName = "Auto-AI user";
+        activeUiReadyReceiver = new BroadcastReceiver() {
+            @Override public void onReceive(Context context, Intent intent) {
+                if (callId.equals(intent.getStringExtra(CallNotificationManager.EXTRA_CALL_ID))) finish();
+            }
+        };
+        IntentFilter readyFilter = new IntentFilter(CallIntentDispatcher.ACTION_UI_READY);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) registerReceiver(activeUiReadyReceiver, readyFilter, Context.RECEIVER_NOT_EXPORTED);
+        else registerReceiver(activeUiReadyReceiver, readyFilter);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -127,6 +131,13 @@ public class IncomingCallActivity extends Activity {
         actions.addView(rejectButton, actionParams());
         actions.addView(acceptButton, actionParams());
         root.addView(actions, new LinearLayout.LayoutParams(-1, -2));
+        if ("video".equals(callType)) {
+            audioOnlyButton = actionButton("Answer audio only", Color.rgb(14, 116, 144), Color.rgb(30, 64, 175));
+            LinearLayout.LayoutParams audioOnlyParams = new LinearLayout.LayoutParams(-1, dp(52));
+            audioOnlyParams.setMargins(dp(8), dp(12), dp(8), 0);
+            root.addView(audioOnlyButton, audioOnlyParams);
+            audioOnlyButton.setOnClickListener(view -> acceptCall(true));
+        }
         setContentView(root);
 
         rejectButton.setOnClickListener(view -> rejectCall());
@@ -146,6 +157,7 @@ public class IncomingCallActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (activeUiReadyReceiver != null) try { unregisterReceiver(activeUiReadyReceiver); } catch (IllegalArgumentException ignored) {}
         avatarExecutor.shutdownNow();
         super.onDestroy();
     }
@@ -154,145 +166,19 @@ public class IncomingCallActivity extends Activity {
         if (!actionRunning.compareAndSet(false, true)) return;
         Log.i(TAG, "ACCEPT_TAPPED callId=" + callId + " audioOnly=" + audioOnly);
         setActionsEnabled(false);
-        setStatus("Connecting\u2026", Color.rgb(34, 211, 238));
-        String action = audioOnly ? "audio_only" : "accept";
-        avatarExecutor.execute(() -> {
-            boolean ownsAccept = AcceptedCallHandoffStore.beginAccept(this, callId, callType, callerName, actionToken, expiresAt, callRevision);
-            long acceptedRevision = ownsAccept ? sendAccept() : AcceptedCallHandoffStore.revision(this);
-            if (acceptedRevision < 0) {
+        setStatus("Connecting call…", Color.rgb(34, 211, 238));
+        CallAcceptCoordinator.accept(this, callId, audioOnly, new CallAcceptCoordinator.Listener() {
+            @Override public void onAcceptCommitted() { runOnUiThread(() -> setStatus("Preparing secure call…", Color.rgb(34, 211, 238))); }
+            @Override public void onServiceStarting() { runOnUiThread(() -> setStatus("Starting call service…", Color.rgb(34, 211, 238))); }
+            @Override public void onServiceReady() { runOnUiThread(() -> setStatus("Opening call…", Color.rgb(34, 197, 94))); }
+            @Override public void onFailure(String code) {
                 runOnUiThread(() -> {
-                    setStatus("Unable to accept this call.", Color.rgb(239, 68, 68));
-                    reportFailure("BACKEND_ACCEPT_FAILED");
-                    terminalCleanup();
+                    setStatus("Unable to start call: " + (code == null ? "unknown error" : code), Color.rgb(239, 68, 68));
+                    setActionsEnabled(true);
+                    actionRunning.set(false);
                 });
-                return;
             }
-            AcceptedCallHandoffStore.commit(this, callId, acceptedRevision);
-            Log.i(TAG, "ACTIVE_CALL_HANDOFF_SAVED callId=" + callId + " revision=" + acceptedRevision);
-            CallNotificationManager.savePending(this, callId, "resume_call", expiresAt);
-            CallNotificationManager.cancelIncomingPresentation(this, callId);
-            Log.i(TAG, "ACCEPT_COMMITTED callId=" + callId);
-            runOnUiThread(this::startActiveService);
         });
-    }
-
-    private long sendAccept() {
-        String accessToken = AutoAiSecureStoragePlugin.readStoredValue(this, "auto-ai-access-token");
-        if (accessToken == null || accessToken.trim().isEmpty()) return -1L;
-        HttpURLConnection connection = null;
-        try {
-            connection = (HttpURLConnection) new URL(BuildConfig.AUTO_AI_API_BASE_URL.replaceAll("/+$", "") + "/calls/" + callId + "/accept").openConnection();
-            connection.setConnectTimeout(12000);
-            connection.setReadTimeout(15000);
-            connection.setRequestMethod("POST");
-            connection.setRequestProperty("Authorization", "Bearer " + accessToken.trim());
-            connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
-            connection.setDoOutput(true);
-            JSONObject body = new JSONObject();
-            body.put("action_token", actionToken);
-            body.put("device_id", PushTokenRegistrar.deviceId(this, "auto_ai_call_device", "fallback_device_id"));
-            try (OutputStream output = connection.getOutputStream()) {
-                output.write(body.toString().getBytes(StandardCharsets.UTF_8));
-            }
-            int status = connection.getResponseCode();
-            Log.i(TAG, "Native accept completed callId=" + callId + " status=" + status);
-            if (status < 200 || status >= 300) return -1L;
-            try (InputStream input = connection.getInputStream()) {
-                byte[] bodyBytes = new byte[8192];
-                int read = input.read(bodyBytes);
-                if (read > 0) return new JSONObject(new String(bodyBytes, 0, read, StandardCharsets.UTF_8)).optLong("revision", callRevision);
-            }
-            return callRevision;
-        } catch (Exception error) {
-            Log.w(TAG, "Native accept failed callId=" + callId, error);
-            return -1L;
-        } finally {
-            if (connection != null) connection.disconnect();
-        }
-    }
-
-    private void startActiveService() {
-        AcceptedCallHandoffStore.setState(this, callId, AcceptedCallHandoffStore.State.SERVICE_STARTING);
-        BroadcastReceiver receiver = new BroadcastReceiver() {
-            @Override public void onReceive(Context context, Intent result) {
-                if (!callId.equals(result.getStringExtra(CallNotificationManager.EXTRA_CALL_ID))) return;
-                try { unregisterReceiver(this); } catch (IllegalArgumentException ignored) {}
-                if (CallForegroundService.SERVICE_READY.equals(result.getStringExtra(CallForegroundService.EXTRA_SERVICE_STATUS))) {
-                    openCallScreen();
-                } else {
-                    serviceFailure(result.getStringExtra(CallForegroundService.EXTRA_ERROR_CODE));
-                }
-            }
-        };
-        IntentFilter filter = new IntentFilter(CallForegroundService.ACTION_SERVICE_STATUS);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED);
-        else registerReceiver(receiver, filter);
-        new Handler(Looper.getMainLooper()).postDelayed(() -> {
-            try { unregisterReceiver(receiver); } catch (IllegalArgumentException ignored) { return; }
-            serviceFailure("FOREGROUND_SERVICE_TIMEOUT");
-        }, 9000L);
-        Intent service = new Intent(this, CallForegroundService.class).setAction(CallForegroundService.ACTION_START)
-            .putExtra(CallNotificationManager.EXTRA_CALL_ID, callId)
-            .putExtra(CallNotificationManager.EXTRA_CALLER_NAME, callerName)
-            .putExtra(CallNotificationManager.EXTRA_CALL_TYPE, callType);
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(service); else startService(service);
-            Log.i(TAG, "SERVICE_START_REQUESTED callId=" + callId);
-        } catch (RuntimeException error) {
-            try { unregisterReceiver(receiver); } catch (IllegalArgumentException ignored) {}
-            serviceFailure("FOREGROUND_SERVICE_START_NOT_ALLOWED");
-        }
-    }
-
-    private void openCallScreen() {
-        AcceptedCallHandoffStore.setState(this, callId, AcceptedCallHandoffStore.State.UI_LAUNCHING);
-        BroadcastReceiver ready = new BroadcastReceiver() {
-            @Override public void onReceive(Context context, Intent intent) {
-                if (!callId.equals(intent.getStringExtra(CallNotificationManager.EXTRA_CALL_ID))) return;
-                try { unregisterReceiver(this); } catch (IllegalArgumentException ignored) {}
-                finish();
-            }
-        };
-        IntentFilter filter = new IntentFilter(AutoAiCallsPlugin.ACTION_UI_READY);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) registerReceiver(ready, filter, Context.RECEIVER_NOT_EXPORTED); else registerReceiver(ready, filter);
-        Intent intent = new Intent(this, MainActivity.class);
-        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        intent.putExtra(CallNotificationManager.EXTRA_CALL_ID, callId);
-        intent.putExtra(CallNotificationManager.EXTRA_ACTION, "resume_call");
-        intent.putExtra(CallNotificationManager.EXTRA_CALL_TYPE, callType);
-        startActivity(intent);
-        Log.i(TAG, "ACTIVE_CALL_UI_LAUNCHED callId=" + callId);
-    }
-
-    private void serviceFailure(String code) {
-        setStatus("Unable to start the call. Please try again.", Color.rgb(239, 68, 68));
-        reportFailure(code == null ? "FOREGROUND_SERVICE_INTERNAL_ERROR" : code);
-        terminalCleanup();
-    }
-
-    private void reportFailure(String code) {
-        avatarExecutor.execute(() -> {
-            String accessToken = AutoAiSecureStoragePlugin.readStoredValue(this, "auto-ai-access-token");
-            if (accessToken == null) return;
-            HttpURLConnection connection = null;
-            try {
-                connection = (HttpURLConnection) new URL(BuildConfig.AUTO_AI_API_BASE_URL.replaceAll("/+$", "") + "/calls/" + callId + "/fail").openConnection();
-                connection.setRequestMethod("POST"); connection.setDoOutput(true);
-                connection.setRequestProperty("Authorization", "Bearer " + accessToken.trim());
-                connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
-                JSONObject body = new JSONObject().put("failure_code", code).put("source_device", PushTokenRegistrar.deviceId(this, "auto_ai_call_device", "fallback_device_id"));
-                try (OutputStream output = connection.getOutputStream()) { output.write(body.toString().getBytes(StandardCharsets.UTF_8)); }
-                connection.getResponseCode();
-            } catch (Exception error) { Log.w(TAG, "Unable to report native call failure callId=" + callId, error); }
-            finally { if (connection != null) connection.disconnect(); }
-        });
-    }
-
-    private void terminalCleanup() {
-        CallNotificationManager.cancelAllForTerminalCall(this, callId);
-        Intent stop = new Intent(this, CallForegroundService.class).setAction(CallForegroundService.ACTION_STOP)
-            .putExtra(CallNotificationManager.EXTRA_CALL_ID, callId);
-        try { startService(stop); } catch (RuntimeException ignored) {}
     }
 
     private void setStatus(String text, int color) {
@@ -302,6 +188,7 @@ public class IncomingCallActivity extends Activity {
     private void setActionsEnabled(boolean enabled) {
         if (acceptButton != null) acceptButton.setEnabled(enabled);
         if (rejectButton != null) rejectButton.setEnabled(enabled);
+        if (audioOnlyButton != null) audioOnlyButton.setEnabled(enabled);
     }
 
     private void rejectCall() {
