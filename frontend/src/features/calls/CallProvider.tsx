@@ -684,12 +684,15 @@ export function CallProvider({ children }: { children: ReactNode }) {
     setError("");
     setSessionState("connecting");
     sessionStateRef.current = "connecting";
-    navigate(`/calls/active/${encodeURIComponent(callId)}`, { replace: true });
-    callDebug("ACTIVE_CALL_UI_LAUNCHED", { call_id: callId, backend_status: authoritative.status });
+    if (!callNative.isAndroid()) navigate(`/calls/active/${encodeURIComponent(callId)}`, { replace: true });
     try {
       await ensureNativeCallService(authoritative);
       await callNative.acknowledgeCallHandoff(callId).catch(() => undefined);
       callDebug("ACTIVE_CALL_UI_READY", { call_id: callId });
+      if (callNative.isAndroid()) {
+        signaling.close();
+        return;
+      }
 
       let currentConfig = configRef.current;
       for (let attempt = 0; (!currentConfig?.enabled || !currentConfig.realtime_configured) && attempt < 3; attempt += 1) {
@@ -855,22 +858,25 @@ export function CallProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!token || !user) return;
     let active = true;
-    void Promise.all([callApi.config(token), callApi.settings(token), callNative.registration()]).then(async ([nextConfig, callSettings, registration]) => {
+    void (async () => {
+      const nativeCall: { callId?: string | null; action?: NativeIncomingAction | null } = await callNative.consumeIncomingCall().catch(() => ({}));
+      if (nativeCall.callId) await processNativeCallAction(nativeCall.callId, nativeCall.action);
+      const registration = await callNative.registration();
+      deviceIdRef.current = registration.device_id;
+      await callApi.registerDevice(token, registration).catch(() => undefined);
+      const [nextConfig, callSettings] = await Promise.all([callApi.config(token), callApi.settings(token)]);
       if (!active) return;
       setConfig(nextConfig);
       configRef.current = nextConfig;
       callSettingsRef.current = callSettings;
-      deviceIdRef.current = registration.device_id;
-      await callApi.registerDevice(token, registration).catch(() => undefined);
       await callNative.requestNotificationPermission().catch(() => undefined);
-      const nativeCall: { callId?: string | null; action?: NativeIncomingAction | null } = await callNative.consumeIncomingCall().catch(() => ({}));
-      if (nativeCall.callId) await processNativeCallAction(nativeCall.callId, nativeCall.action);
       if (!nextConfig.enabled || !nextConfig.realtime_configured) {
         signaling.close();
         return;
       }
+      if (callNative.isAndroid() && nativeCall.callId) return;
       await signaling.connect(token);
-    }).catch((configError) => {
+    })().catch((configError) => {
       if (active) setError(errorMessage(configError, "Calling setup is unavailable."));
     });
     const visibility = () => signaling.updatePresence(document.visibilityState === "hidden" ? "background" : "online");
@@ -932,18 +938,23 @@ export function CallProvider({ children }: { children: ReactNode }) {
     setSessionState("preparing");
     sessionStateRef.current = "preparing";
     try {
-      await requestLocalMedia(callType);
+      if (!callNative.isAndroid()) await requestLocalMedia(callType);
       const created = await callApi.initiate(token, peer.id, callType, deviceIdRef.current);
       callRef.current = created;
       setCall(created);
       setSessionState("notifying");
       sessionStateRef.current = "notifying";
-      void ensureNativeCallService(created).catch((nativeError) => {
-        callDebug("native_outgoing_service_failed", {
-          call_id: created.id,
-          reason: errorMessage(nativeError, "native start failed"),
+      if (callNative.isAndroid()) {
+        await ensureNativeCallService(created);
+        signaling.close();
+      } else {
+        void ensureNativeCallService(created).catch((nativeError) => {
+          callDebug("native_outgoing_service_failed", {
+            call_id: created.id,
+            reason: errorMessage(nativeError, "native start failed"),
+          });
         });
-      });
+      }
       if (created.delivery === "unreachable") {
         callDebug("call_cancel_source", { call_id: created.id, role: created.direction, source: "delivery_unreachable" });
         await callApi.cancel(token, created.id).catch(() => undefined);
@@ -997,6 +1008,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
       setCall(accepted);
       clearProgressTimers();
       await ensureNativeCallService(accepted);
+      if (callNative.isAndroid()) {
+        await callNative.acknowledgeCallHandoff(accepted.id).catch(() => undefined);
+        signaling.close();
+        setSessionState("connecting");
+        sessionStateRef.current = "connecting";
+        return;
+      }
       if (configRef.current?.diagnostic === CALL_RELAY_UNAVAILABLE_MESSAGE) throw new Error(CALL_RELAY_UNAVAILABLE_MESSAGE);
       await signaling.connect(token);
       if (!await signaling.waitUntilConnected()) throw new Error("Call signaling is not connected.");

@@ -55,7 +55,7 @@ public class AutoAiCallConnection extends Connection {
         if (completed) return;
         answered = true;
         Log.i(TAG, "Telecom answer callId=" + callId);
-        setActive();
+        setInitializing();
         AutoAiTelecomBridge.acceptFromTelecom(context, callId, expiresAt);
     }
 
