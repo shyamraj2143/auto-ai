@@ -281,6 +281,7 @@ public class AutoAiCallsPlugin extends Plugin {
 
     @PluginMethod
     public void refreshCallingSetupState(PluginCall call) {
+        CallingPermissionCoordinator.invalidateCachedState();
         CallNotificationManager.createChannels(getContext());
         try { FirebaseMessaging.getInstance().register(); } catch (RuntimeException ignored) {}
         call.resolve(CallingPermissionCoordinator.inspect(getContext()).toJs(getContext()));
@@ -303,6 +304,21 @@ public class AutoAiCallsPlugin extends Plugin {
             call.resolve();
         } catch (RuntimeException error) {
             call.reject("Unable to open the required Android setting.", error);
+        }
+    }
+
+    @PluginMethod
+    public void openBackgroundActivitySettings(PluginCall call) {
+        try {
+            getActivity().startActivity(CallingPermissionCoordinator.backgroundActivitySettingsIntent(getContext()));
+            call.resolve();
+        } catch (RuntimeException error) {
+            try {
+                getActivity().startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+                call.resolve();
+            } catch (RuntimeException fallbackError) {
+                call.reject("Unable to open Android background settings.", fallbackError);
+            }
         }
     }
 

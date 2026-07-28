@@ -47,7 +47,12 @@ public final class CallingSetupActivity extends AppCompatActivity {
         super.onSaveInstanceState(out);
     }
 
-    @Override protected void onResume() { super.onResume(); if (checklist != null) render(); }
+    @Override protected void onResume() {
+        super.onResume();
+        CallingPermissionCoordinator.invalidateCachedState();
+        if (checklist != null) render();
+        sendBroadcast(new Intent(ACTION_SETUP_CHANGED).setPackage(getPackageName()));
+    }
 
     private void buildUi() {
         ScrollView scroll = new ScrollView(this);
@@ -88,13 +93,13 @@ public final class CallingSetupActivity extends AppCompatActivity {
         CallingPermissionCoordinator.Snapshot snapshot = CallingPermissionCoordinator.inspect(this);
         checklist.removeAllViews();
         addRow("Call notifications", worst(snapshot, "notifications", "incomingChannel"), "notifications");
-        addRow("Microphone", snapshot.items.get("microphone"), "microphone");
-        addRow("Camera", snapshot.items.get("camera"), "camera");
-        addRow("Bluetooth audio", snapshot.items.get("bluetooth"), "bluetooth");
-        addRow("Full-screen incoming calls", snapshot.items.get("fullScreen"), "fullScreen");
-        addRow("Background reliability", worst(snapshot, "battery", "firebase", "playServices", "foregroundService", "telecom"), "battery");
-        statusText.setText(snapshot.status == CallingPermissionCoordinator.Status.READY ? "Calling setup is ready." :
-            snapshot.status == CallingPermissionCoordinator.Status.LIMITED ? "Calls can work with the limitations shown below." :
+        addRow("Microphone", snapshot.permissionItems.get("microphone"), "microphone");
+        addRow("Camera", snapshot.permissionItems.get("camera"), "camera");
+        addRow("Bluetooth audio", snapshot.permissionItems.get("bluetooth"), "bluetooth");
+        addRow("Full-screen incoming calls", snapshot.permissionItems.get("fullScreen"), "fullScreen");
+        addRow("Background activity", snapshot.permissionItems.get("backgroundActivity"), "backgroundActivity");
+        statusText.setText(snapshot.permissionStatus == CallingPermissionCoordinator.Status.READY ? "Calling setup is ready." :
+            snapshot.permissionStatus == CallingPermissionCoordinator.Status.LIMITED ? "Calls can work with the limitations shown below." :
             "One or more required settings currently block calling.");
     }
 
@@ -104,13 +109,13 @@ public final class CallingSetupActivity extends AppCompatActivity {
         row.setPadding(dp(2), dp(12), dp(2), dp(12));
         TextView icon = text(icon(state), 20, color(state));
         row.addView(icon, new LinearLayout.LayoutParams(dp(34), -2));
-        TextView value = text(label + "\n" + stateLabel(state), 15, Color.WHITE);
+        TextView value = text(label + "\n" + stateLabel(state, item) + supportingText(state, item), 15, Color.WHITE);
         row.addView(value, new LinearLayout.LayoutParams(0, -2, 1));
-        if (state == CallingPermissionCoordinator.ItemState.PERMANENTLY_DENIED || state == CallingPermissionCoordinator.ItemState.SPECIAL_ACCESS_REQUIRED || state == CallingPermissionCoordinator.ItemState.CHANNEL_DISABLED) {
-            Button fix = button("Open settings");
+        if (state == CallingPermissionCoordinator.ItemState.PERMANENTLY_DENIED || state == CallingPermissionCoordinator.ItemState.SPECIAL_ACCESS_REQUIRED || state == CallingPermissionCoordinator.ItemState.CHANNEL_DISABLED || ("backgroundActivity".equals(item) && (state == CallingPermissionCoordinator.ItemState.LIMITED || state == CallingPermissionCoordinator.ItemState.DENIED))) {
+            Button fix = button("backgroundActivity".equals(item) ? "Open background settings" : "Open settings");
             fix.setTextSize(12);
             fix.setOnClickListener(v -> openSetting(item, state));
-            row.addView(fix, new LinearLayout.LayoutParams(dp(112), dp(42)));
+            row.addView(fix, new LinearLayout.LayoutParams(dp("backgroundActivity".equals(item) ? 170 : 112), dp(42)));
         }
         checklist.addView(row, new LinearLayout.LayoutParams(-1, -2));
     }
@@ -125,8 +130,8 @@ public final class CallingSetupActivity extends AppCompatActivity {
             "Allow camera", "Camera access is required only for video calls.")) return;
         if (Build.VERSION.SDK_INT >= 31 && requestIfAvailable(snapshot, "bluetooth", Manifest.permission.BLUETOOTH_CONNECT, "bluetooth_prompted",
             "Allow Bluetooth audio", "Allow nearby-device access to use Bluetooth headphones during calls.")) return;
-        for (String item : new String[]{"notifications", "incomingChannel", "microphone", "camera", "bluetooth", "fullScreen", "battery"}) {
-            CallingPermissionCoordinator.ItemState state = snapshot.items.get(item);
+        for (String item : new String[]{"notifications", "incomingChannel", "microphone", "camera", "bluetooth", "fullScreen", "backgroundActivity"}) {
+            CallingPermissionCoordinator.ItemState state = snapshot.permissionItems.get(item);
             if (state == CallingPermissionCoordinator.ItemState.PERMANENTLY_DENIED || state == CallingPermissionCoordinator.ItemState.CHANNEL_DISABLED || state == CallingPermissionCoordinator.ItemState.SPECIAL_ACCESS_REQUIRED) {
                 openSetting(item, state);
                 return;
@@ -136,7 +141,7 @@ public final class CallingSetupActivity extends AppCompatActivity {
     }
 
     private boolean requestIfAvailable(CallingPermissionCoordinator.Snapshot snapshot, String item, String permission, String key, String title, String rationale) {
-        if (snapshot.items.get(item) != CallingPermissionCoordinator.ItemState.PROMPT_AVAILABLE && snapshot.items.get(item) != CallingPermissionCoordinator.ItemState.DENIED) return false;
+        if (snapshot.permissionItems.get(item) != CallingPermissionCoordinator.ItemState.PROMPT_AVAILABLE && snapshot.permissionItems.get(item) != CallingPermissionCoordinator.ItemState.DENIED) return false;
         pendingPermission = permission;
         pendingKey = key;
         new AlertDialog.Builder(this).setTitle(title).setMessage(rationale).setNegativeButton("Not now", (d, w) -> {
@@ -158,7 +163,7 @@ public final class CallingSetupActivity extends AppCompatActivity {
 
     private void openSetting(String item, CallingPermissionCoordinator.ItemState state) {
         if ("fullScreen".equals(item)) CallingPermissionCoordinator.preferences(this).edit().putBoolean("full_screen_explained", true).apply();
-        if ("battery".equals(item)) CallingPermissionCoordinator.preferences(this).edit().putBoolean("battery_settings_explained", true).apply();
+        if ("backgroundActivity".equals(item)) CallingPermissionCoordinator.preferences(this).edit().putBoolean("battery_settings_explained", true).apply();
         try { startActivity(CallingPermissionCoordinator.settingIntent(this, item)); }
         catch (RuntimeException ignored) { startActivity(CallingPermissionCoordinator.settingIntent(this, "app")); }
     }
@@ -179,7 +184,7 @@ public final class CallingSetupActivity extends AppCompatActivity {
     private CallingPermissionCoordinator.ItemState worst(CallingPermissionCoordinator.Snapshot snapshot, String... keys) {
         CallingPermissionCoordinator.ItemState result = CallingPermissionCoordinator.ItemState.GRANTED;
         for (String key : keys) {
-            CallingPermissionCoordinator.ItemState value = snapshot.items.get(key);
+            CallingPermissionCoordinator.ItemState value = snapshot.permissionItems.get(key);
             if (value == CallingPermissionCoordinator.ItemState.UNAVAILABLE || value == CallingPermissionCoordinator.ItemState.CHANNEL_DISABLED || value == CallingPermissionCoordinator.ItemState.PERMANENTLY_DENIED || value == CallingPermissionCoordinator.ItemState.DENIED) return value;
             if (value != CallingPermissionCoordinator.ItemState.GRANTED && value != CallingPermissionCoordinator.ItemState.NOT_REQUIRED) result = value;
         }
@@ -189,16 +194,35 @@ public final class CallingSetupActivity extends AppCompatActivity {
     private String icon(CallingPermissionCoordinator.ItemState state) {
         if (state == CallingPermissionCoordinator.ItemState.GRANTED) return "✓";
         if (state == CallingPermissionCoordinator.ItemState.NOT_REQUIRED) return "—";
-        if (state == CallingPermissionCoordinator.ItemState.UNAVAILABLE || state == CallingPermissionCoordinator.ItemState.CHANNEL_DISABLED || state == CallingPermissionCoordinator.ItemState.PERMANENTLY_DENIED) return "●";
+        if (state == CallingPermissionCoordinator.ItemState.UNAVAILABLE || state == CallingPermissionCoordinator.ItemState.CHANNEL_DISABLED || state == CallingPermissionCoordinator.ItemState.PERMANENTLY_DENIED || state == CallingPermissionCoordinator.ItemState.DENIED) return "●";
         return "▲";
     }
     private int color(CallingPermissionCoordinator.ItemState state) {
         if (state == CallingPermissionCoordinator.ItemState.GRANTED) return Color.rgb(65, 210, 140);
         if (state == CallingPermissionCoordinator.ItemState.NOT_REQUIRED) return Color.rgb(145, 155, 170);
-        if (state == CallingPermissionCoordinator.ItemState.UNAVAILABLE || state == CallingPermissionCoordinator.ItemState.CHANNEL_DISABLED || state == CallingPermissionCoordinator.ItemState.PERMANENTLY_DENIED) return Color.rgb(245, 92, 92);
+        if (state == CallingPermissionCoordinator.ItemState.UNAVAILABLE || state == CallingPermissionCoordinator.ItemState.CHANNEL_DISABLED || state == CallingPermissionCoordinator.ItemState.PERMANENTLY_DENIED || state == CallingPermissionCoordinator.ItemState.DENIED) return Color.rgb(245, 92, 92);
         return Color.rgb(245, 183, 70);
     }
-    private String stateLabel(CallingPermissionCoordinator.ItemState state) { return state.name().toLowerCase().replace('_', ' '); }
+    private String stateLabel(CallingPermissionCoordinator.ItemState state, String item) {
+        if ("backgroundActivity".equals(item)) {
+            if (state == CallingPermissionCoordinator.ItemState.GRANTED) return "Unrestricted";
+            if (state == CallingPermissionCoordinator.ItemState.LIMITED) return "Battery optimized";
+            if (state == CallingPermissionCoordinator.ItemState.DENIED) return "Restricted";
+            return "Check device settings";
+        }
+        if (state == CallingPermissionCoordinator.ItemState.GRANTED) return "Allowed";
+        if (state == CallingPermissionCoordinator.ItemState.NOT_REQUIRED) return "Not required";
+        if (state == CallingPermissionCoordinator.ItemState.PROMPT_AVAILABLE) return "Ready to ask";
+        if (state == CallingPermissionCoordinator.ItemState.LIMITED || state == CallingPermissionCoordinator.ItemState.SPECIAL_ACCESS_REQUIRED) return "Limited";
+        return "Action needed";
+    }
+    private String supportingText(CallingPermissionCoordinator.ItemState state, String item) {
+        if (!"backgroundActivity".equals(item)) return "";
+        if (state == CallingPermissionCoordinator.ItemState.GRANTED) return "\nAndroid allows background activity.";
+        if (state == CallingPermissionCoordinator.ItemState.LIMITED) return "\nCalls can work, but your phone may delay background activity.";
+        if (state == CallingPermissionCoordinator.ItemState.DENIED) return "\nBackground calls may not arrive until AutoAI is opened.";
+        return "\nAllow AutoAI to receive calls while the app is not open.";
+    }
     private TextView text(String value, int size, int color) { TextView view = new TextView(this); view.setText(value); view.setTextSize(size); view.setTextColor(color); return view; }
     private Button button(String value) { Button button = new Button(this); button.setText(value); button.setAllCaps(false); return button; }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }

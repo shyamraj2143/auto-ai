@@ -266,6 +266,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onResume() {
         super.onResume();
+        CallingPermissionCoordinator.invalidateCachedState();
         AppUpdateCoordinator.get(this).refreshInstallState();
         AppUpdateCoordinator.get(this).check(false);
         syncPushDeviceIfAuthenticated();
@@ -282,7 +283,7 @@ public class MainActivity extends BridgeActivity {
             return;
         }
         CallingPermissionCoordinator.Snapshot snapshot = CallingPermissionCoordinator.inspect(this);
-        if (snapshot.status == CallingPermissionCoordinator.Status.READY) {
+        if (snapshot.permissionStatus == CallingPermissionCoordinator.Status.READY) {
             CallingPermissionCoordinator.completeCurrentVersion(this);
             notifyCallingSetupChanged(snapshot);
             return;

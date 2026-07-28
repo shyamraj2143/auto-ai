@@ -43,6 +43,7 @@ type NativeCallPlugin = {
   refreshCallingSetupState(): Promise<NativeCallReadiness>;
   startCallingSetup(): Promise<void>;
   openRequiredSetting(options: { item: string }): Promise<void>;
+  openBackgroundActivitySettings(): Promise<void>;
   openAppSettings(): Promise<void>;
   openAppNotificationSettings(): Promise<void>;
   openFullScreenIntentSettings(): Promise<void>;
@@ -52,14 +53,21 @@ type NativeCallPlugin = {
 
 export type NativeCallReadiness = {
   status: "READY" | "LIMITED" | "BLOCKED";
-  sdkVersion: number;
-  manufacturer: string;
-  model: string;
-  appVersion: string;
-  appVersionCode: number;
   versionCode: number;
   onboardingCompleted: boolean;
-  items: Record<string, { state: "GRANTED" | "NOT_REQUIRED" | "PROMPT_AVAILABLE" | "DENIED" | "PERMANENTLY_DENIED" | "SPECIAL_ACCESS_REQUIRED" | "CHANNEL_DISABLED" | "UNAVAILABLE" }>;
+  items: {
+    notifications: NativeCallingSetupItem;
+    incomingChannel: NativeCallingSetupItem;
+    microphone: NativeCallingSetupItem;
+    camera: NativeCallingSetupItem;
+    bluetooth: NativeCallingSetupItem;
+    fullScreen: NativeCallingSetupItem;
+    backgroundActivity: NativeCallingSetupItem;
+  };
+};
+
+export type NativeCallingSetupItem = {
+  state: "GRANTED" | "LIMITED" | "NOT_REQUIRED" | "PROMPT_AVAILABLE" | "DENIED" | "PERMANENTLY_DENIED" | "SPECIAL_ACCESS_REQUIRED" | "CHANNEL_DISABLED" | "UNAVAILABLE";
 };
 
 const NativeCalls = registerPlugin<NativeCallPlugin>("AutoAiCalls");
@@ -112,6 +120,7 @@ export const callNative = {
     if (!state.onboardingCompleted) await NativeCalls.startCallingSetup();
   },
   openRequiredSetting: (item: string) => Capacitor.getPlatform() === "android" ? NativeCalls.openRequiredSetting({ item }) : Promise.resolve(),
+  openBackgroundActivitySettings: () => Capacitor.getPlatform() === "android" ? NativeCalls.openBackgroundActivitySettings() : Promise.resolve(),
   openAppSettings: () => Capacitor.getPlatform() === "android" ? NativeCalls.openAppSettings() : Promise.resolve(),
   openAppNotificationSettings: () => Capacitor.getPlatform() === "android" ? NativeCalls.openAppNotificationSettings() : Promise.resolve(),
   openFullScreenIntentSettings: () => Capacitor.getPlatform() === "android" ? NativeCalls.openFullScreenIntentSettings() : Promise.resolve(),

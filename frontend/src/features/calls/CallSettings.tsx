@@ -1,11 +1,32 @@
 import { BellRing, Eye, EyeOff, LoaderCircle, Mic, PhoneCall, ShieldAlert, ShieldBan, Smartphone, Video } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { resolveApiAssetUrl } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { AppSelect } from "../../components/common/AppSelect";
 import { callApi } from "./services/callApi";
 import { callNative, type NativeCallReadiness } from "./services/callNative";
 import type { BlockedCallUser, CallSettings as Settings } from "./types";
+
+export const CALLING_PERMISSION_ROWS = [
+  ["notifications", "Notifications"],
+  ["incomingChannel", "Incoming-call alerts"],
+  ["microphone", "Microphone"],
+  ["camera", "Camera"],
+  ["bluetooth", "Bluetooth audio"],
+  ["fullScreen", "Full-screen calls"],
+  ["backgroundActivity", "Background activity"],
+] as const;
+
+type PermissionKey = (typeof CALLING_PERMISSION_ROWS)[number][0];
+
+export function callingPermissionDisplay(key: PermissionKey, state: NativeCallReadiness["items"][PermissionKey]["state"]) {
+  if (state === "GRANTED") return { label: key === "backgroundActivity" ? "Unrestricted" : "Allowed", tone: "ready" };
+  if (state === "NOT_REQUIRED") return { label: "Not required", tone: "neutral" };
+  if (key === "backgroundActivity" && state === "LIMITED") return { label: "Battery optimized", tone: "limited" };
+  if (key === "backgroundActivity" && state === "DENIED") return { label: "Restricted", tone: "blocked" };
+  if (state === "LIMITED" || state === "SPECIAL_ACCESS_REQUIRED") return { label: "Limited", tone: "limited" };
+  return { label: "Action needed", tone: "blocked" };
+}
 
 function SettingToggle({ label, description, checked, onChange, icon: Icon }: { label: string; description: string; checked: boolean; onChange: (checked: boolean) => void; icon: typeof Eye }) {
   return <div className="call-setting-row"><span><Icon size={16} /><span><strong>{label}</strong><small>{description}</small></span></span><button type="button" className={`call-setting-toggle ${checked ? "active" : ""}`} onClick={() => onChange(!checked)} aria-pressed={checked}><i /></button></div>;
@@ -18,16 +39,31 @@ export function CallSettings() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [readiness, setReadiness] = useState<NativeCallReadiness | null>(null);
+  const [checkingReadiness, setCheckingReadiness] = useState(false);
+  const readinessRequest = useRef<Promise<void> | null>(null);
 
   const refreshReadiness = useCallback(async () => {
-    if (!callNative.isAndroid()) return;
-    setReadiness(await callNative.refreshCallingSetupState());
+    if (!callNative.isAndroid() || readinessRequest.current) return readinessRequest.current;
+    setCheckingReadiness(true);
+    const request = callNative.refreshCallingSetupState().then((state) => { if (state) setReadiness(state); }).finally(() => {
+      readinessRequest.current = null;
+      setCheckingReadiness(false);
+    });
+    readinessRequest.current = request;
+    return request;
   }, []);
 
   useEffect(() => {
     const refresh = () => void refreshReadiness();
     window.addEventListener("auto-ai-calling-setup-changed", refresh);
-    return () => window.removeEventListener("auto-ai-calling-setup-changed", refresh);
+    window.addEventListener("focus", refresh);
+    const visibility = () => { if (document.visibilityState === "visible") refresh(); };
+    document.addEventListener("visibilitychange", visibility);
+    return () => {
+      window.removeEventListener("auto-ai-calling-setup-changed", refresh);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", visibility);
+    };
   }, [refreshReadiness]);
 
   const load = useCallback(async () => {
@@ -63,13 +99,15 @@ export function CallSettings() {
       {saving && <span className="call-settings-saving"><LoaderCircle className="animate-spin" size={13} /> Saving</span>}
       {error && <p className="calls-inline-alert">{error}</p>}
       {callNative.isAndroid() && <section className={`call-readiness call-readiness-${readiness?.status?.toLowerCase() || "loading"}`}>
-        <div className="call-settings-heading"><Smartphone size={16} /><strong>Call readiness: {readiness?.status ?? "CHECKING"}</strong></div>
-        <p>{readiness?.status === "READY" ? "Calling setup complete" : readiness?.status === "LIMITED" ? "Calls work, but full-screen display or another optional feature is limited" : readiness?.status === "BLOCKED" ? "Incoming calls are blocked by required Android settings" : "Checking Android call delivery settings…"}</p>
-        {readiness && <small>Android {readiness.sdkVersion} · {readiness.manufacturer} {readiness.model} · App {readiness.appVersion}</small>}
-        {readiness && readiness.status !== "READY" && <ul>{Object.entries(readiness.items).filter(([, item]) => !["GRANTED", "NOT_REQUIRED"].includes(item.state)).map(([name, item]) => <li key={name}>{name.replace(/([A-Z])/g, " $1")}: {item.state.toLowerCase().replace(/_/g, " ")}</li>)}</ul>}
+        <div className="call-settings-heading"><Smartphone size={16} /><strong>Calling permissions: {checkingReadiness ? "Checking…" : readiness?.status === "READY" ? "Ready" : readiness?.status === "LIMITED" ? "Limited" : readiness?.status === "BLOCKED" ? "Action needed" : "Checking…"}</strong></div>
+        {readiness && readiness.status !== "READY" && <ul>{CALLING_PERMISSION_ROWS.filter(([key]) => !["GRANTED", "NOT_REQUIRED"].includes(readiness.items[key].state)).map(([key, label]) => {
+          const display = callingPermissionDisplay(key, readiness.items[key].state);
+          return <li key={key} className={`calling-permission-${display.tone}`}>{label}: {display.label}</li>;
+        })}</ul>}
         <div className="call-readiness-actions">
           {readiness?.status !== "READY" && <button type="button" onClick={() => void callNative.startCallingSetup()}>{readiness?.onboardingCompleted ? "Fix missing permissions" : "Complete setup"}</button>}
-          <button type="button" onClick={() => void refreshReadiness()}>Check again</button>
+          {readiness?.items.backgroundActivity.state === "LIMITED" && <button type="button" onClick={() => void callNative.openBackgroundActivitySettings()}>Open background settings</button>}
+          <button type="button" disabled={checkingReadiness} onClick={() => void refreshReadiness()}>{checkingReadiness ? "Checking…" : "Check again"}</button>
         </div>
       </section>}
       <section>

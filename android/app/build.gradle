@@ -18,10 +18,10 @@ def releaseKeyPassword = signingValue('AUTO_AI_ANDROID_KEY_PASSWORD')
 def releaseSigningReady = releaseKeystorePath && releaseKeystorePassword && releaseKeyAlias && releaseKeyPassword
 def autoAiApiBaseUrl = signingValue('AUTO_AI_API_BASE_URL') ?: 'https://auto-ai-production-a6ef.up.railway.app/api/v1'
 def googleWebClientId = signingValue('AUTO_AI_GOOGLE_WEB_CLIENT_ID') ?: signingValue('GOOGLE_WEB_CLIENT_ID') ?: signingValue('VITE_GOOGLE_WEB_CLIENT_ID') ?: ''
-def requestedVersionCode = (signingValue('AUTO_AI_ANDROID_VERSION_CODE') ?: '37') as Integer
-def autoAiVersionCode = Math.max(37, requestedVersionCode)
-def autoAiVersionName = requestedVersionCode >= 37 && signingValue('AUTO_AI_ANDROID_VERSION_NAME')
-    ? signingValue('AUTO_AI_ANDROID_VERSION_NAME') : '1.0.37'
+def requestedVersionCode = (signingValue('AUTO_AI_ANDROID_VERSION_CODE') ?: '38') as Integer
+def autoAiVersionCode = Math.max(38, requestedVersionCode)
+def autoAiVersionName = requestedVersionCode >= 38 && signingValue('AUTO_AI_ANDROID_VERSION_NAME')
+    ? signingValue('AUTO_AI_ANDROID_VERSION_NAME') : '1.0.38'
 def firebaseServicesFile = file('google-services.json')
 def firebaseConfigured = firebaseServicesFile.isFile() && firebaseServicesFile.length() > 0
 
