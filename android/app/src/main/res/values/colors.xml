@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="colorPrimary">#4B7BFF</color>
+    <color name="colorPrimary">#7C4DFF</color>
     <color name="colorPrimaryDark">#030A17</color>
-    <color name="colorAccent">#5FE3FF</color>
+    <color name="colorAccent">#1EE7FF</color>
     <color name="autoai_window_background">#030A17</color>
     <color name="autoai_navigation_bar">#020A16</color>
+    <color name="autoai_surface">#0D1935</color>
+    <color name="autoai_violet">#7C4DFF</color>
+    <color name="autoai_blue">#287CFF</color>
+    <color name="autoai_cyan">#1EE7FF</color>
+    <color name="autoai_magenta">#FF4FD8</color>
+    <color name="autoai_success">#22D68A</color>
+    <color name="autoai_warning">#FFB020</color>
+    <color name="autoai_error">#FF4D67</color>
 </resources>
