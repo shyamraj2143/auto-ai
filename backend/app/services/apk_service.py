@@ -14,10 +14,8 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.apk import ApkDownload, ApkRelease
-from app.models.push import PushDeviceToken
 from app.models.user import User
 from app.schemas.download import ApkReleaseRead
-from app.services.firebase_notifications import firebase_notification_service
 
 
 def kolkata_timezone():
@@ -504,17 +502,6 @@ class ApkService:
         db.add(release)
         db.commit()
         db.refresh(release)
-        # Publication is durable before the routing-only update push is dispatched.
-        if firebase_notification_service.configured:
-            tokens = db.scalars(select(PushDeviceToken).where(PushDeviceToken.is_active.is_(True), PushDeviceToken.platform == "android")).all()
-            for device in tokens:
-                result = firebase_notification_service.send_update_notification(
-                    device.token, version_code=release.version_code, version_name=release.version_name, release_id=release.id
-                )
-                if result.inactive:
-                    device.is_active = False
-                    device.updated_at = datetime.utcnow()
-            db.commit()
         return release
 
 

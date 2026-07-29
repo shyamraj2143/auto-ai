@@ -1,12 +1,13 @@
 import hmac
+import logging
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.db.session import get_db
+from app.db.session import SessionLocal, get_db
 from app.models.push import PushDeviceToken
 from app.schemas.notifications import (
     ApkUpdateNotificationRequest,
@@ -18,6 +19,7 @@ from app.services.firebase_notifications import firebase_notification_service
 
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
+logger = logging.getLogger(__name__)
 
 
 def notify_secret_value() -> str:
@@ -60,35 +62,52 @@ def register_device_token(
 def notify_apk_update(
     payload: ApkUpdateNotificationRequest,
     request: Request,
-    db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks,
 ) -> ApkUpdateNotificationResponse:
     require_notify_secret(request)
     if not firebase_notification_service.configured:
         return ApkUpdateNotificationResponse(skipped=True, detail="Firebase service account is not configured.")
 
-    tokens = db.scalars(
-        select(PushDeviceToken).where(
-            PushDeviceToken.is_active == True,  # noqa: E712
-            PushDeviceToken.platform == "android",
-        )
-    ).all()
+    background_tasks.add_task(
+        dispatch_apk_update_notifications,
+        payload.version_code,
+        payload.version_name,
+        payload.changelog,
+    )
+    return ApkUpdateNotificationResponse(detail="Notification dispatch queued.")
+
+
+def dispatch_apk_update_notifications(version_code: int, version_name: str, changelog: str | None) -> None:
     sent = 0
     failed = 0
     inactive = 0
-    for token in tokens:
-        result = firebase_notification_service.send_update_notification(
-            token.token,
-            version_code=payload.version_code,
-            version_name=payload.version_name,
-            changelog=payload.changelog,
-        )
-        if result.ok:
-            sent += 1
-            continue
-        failed += 1
-        if result.inactive:
-            inactive += 1
-            token.is_active = False
-            token.updated_at = datetime.utcnow()
-    db.commit()
-    return ApkUpdateNotificationResponse(sent=sent, failed=failed, inactive=inactive, detail="Notification dispatch completed.")
+    with SessionLocal() as db:
+        tokens = db.scalars(
+            select(PushDeviceToken).where(
+                PushDeviceToken.is_active == True,  # noqa: E712
+                PushDeviceToken.platform == "android",
+            )
+        ).all()
+        for token in tokens:
+            result = firebase_notification_service.send_update_notification(
+                token.token,
+                version_code=version_code,
+                version_name=version_name,
+                changelog=changelog,
+            )
+            if result.ok:
+                sent += 1
+                continue
+            failed += 1
+            if result.inactive:
+                inactive += 1
+                token.is_active = False
+                token.updated_at = datetime.utcnow()
+        db.commit()
+    logger.info(
+        "apk_update_notification_dispatch version_code=%d sent=%d failed=%d inactive=%d",
+        version_code,
+        sent,
+        failed,
+        inactive,
+    )
