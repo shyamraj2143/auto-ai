@@ -53,6 +53,36 @@ def test_github_repository_is_not_legacy_repository() -> None:
     assert GITHUB_REPO != "robinmaker123-ai/auto-ai"
 
 
+def test_metadata_release_keeps_checksum_and_uses_missing_storage_path(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(settings, "APK_STORAGE_DIR", str(tmp_path))
+    checksum = "a" * 64
+
+    with Session(engine) as db:
+        release = apk_service.upsert_version(
+            db,
+            release_id=None,
+            version_code=101461,
+            version_name="1.0.101461",
+            apk_url="/api/download/apk/github/latest?version=1.0.101461",
+            file_name="auto-ai.apk",
+            file_size=55_374_476,
+            sha256=checksum,
+            changelog="GitHub release",
+            force_update=False,
+            is_active=True,
+            released_at=None,
+            min_android_version="Android 7.0",
+            release_notes=["GitHub release"],
+        )
+
+        assert release.sha256 == checksum
+        assert release.file_path == str(tmp_path / "auto-ai.apk")
+        assert not (tmp_path / "auto-ai.apk").exists()
+        assert apk_service.release_read(release).download_url.endswith("version=1.0.101461")
+
+
 @pytest.mark.asyncio
 async def test_apk_upload_uses_dedicated_size_limit(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     engine = create_engine("sqlite:///:memory:")

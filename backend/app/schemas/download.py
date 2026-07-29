@@ -71,6 +71,7 @@ class ApkVersionUpsert(BaseModel):
     apk_url: str = Field(min_length=1, max_length=500)
     file_name: str | None = Field(default=None, max_length=255)
     file_size: int = Field(default=0, ge=0)
+    sha256: str = Field(default="", pattern=r"^$|^[A-Fa-f0-9]{64}$")
     changelog: str = Field(default="", max_length=8000)
     force_update: bool = False
     is_active: bool = True

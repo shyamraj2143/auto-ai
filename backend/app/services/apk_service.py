@@ -381,6 +381,7 @@ class ApkService:
         apk_url: str | None = None,
         file_name: str | None = None,
         file_size: int | None = None,
+        sha256: str | None = None,
         changelog: str | None = None,
         force_update: bool | None = None,
         release_notes: list[str] | None = None,
@@ -409,6 +410,8 @@ class ApkService:
             self.set_release_file_name(release, file_name.strip() or self.file_name_from_url(release.apk_url))
         if file_size is not None:
             release.file_size = file_size
+        if sha256 is not None:
+            release.sha256 = sha256.lower()
         if changelog is not None:
             release.changelog = changelog
         if force_update is not None:
@@ -443,6 +446,7 @@ class ApkService:
         apk_url: str,
         file_name: str | None,
         file_size: int,
+        sha256: str,
         changelog: str,
         force_update: bool,
         is_active: bool,
@@ -465,6 +469,7 @@ class ApkService:
                 apk_url=apk_url,
                 file_name=file_name or self.file_name_from_url(apk_url),
                 file_size=file_size,
+                sha256=sha256,
                 changelog=changelog,
                 force_update=force_update,
                 release_notes=release_notes,
@@ -476,15 +481,16 @@ class ApkService:
             db.execute(update(ApkRelease).values(is_active=False))
         now = datetime.utcnow()
         release_time = self._db_datetime(released_at) if released_at else now
+        resolved_file_name = file_name or self.file_name_from_url(apk_url)
         release = ApkRelease(
             version_code=version_code,
             version_name=version_name,
             apk_url=apk_url,
-            file_name=file_name or self.file_name_from_url(apk_url),
-            filename=file_name or self.file_name_from_url(apk_url),
-            file_path="",
+            file_name=resolved_file_name,
+            filename=resolved_file_name,
+            file_path=str(self.storage_dir() / resolved_file_name),
             file_size=file_size,
-            sha256="",
+            sha256=sha256.lower(),
             min_android_version=min_android_version,
             release_notes=[item.strip() for item in release_notes if item.strip()],
             changelog=changelog,

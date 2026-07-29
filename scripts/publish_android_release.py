@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import mimetypes
 import os
@@ -9,6 +10,7 @@ import sys
 import uuid
 from pathlib import Path
 from urllib import error, request
+from urllib.parse import urlencode
 
 
 DEFAULT_API_URL = "https://auto-ai-production-a6ef.up.railway.app/api/v1"
@@ -87,8 +89,49 @@ def upload_apk(base_url: str, token: str, apk_path: Path, fields: dict[str, str]
         return json.loads(response.read().decode("utf-8"))
 
 
+def publish_metadata(
+    base_url: str,
+    token: str,
+    apk_path: Path,
+    *,
+    version_name: str,
+    version_code: int,
+    min_android_version: str,
+    release_notes: str,
+    changelog: str,
+    force_update: bool,
+) -> dict[str, object]:
+    checksum = sha256_file(apk_path)
+    query = urlencode({"version": version_name})
+    return post_json(
+        api_url(base_url, "/admin/apk/version"),
+        {
+            "version_name": version_name,
+            "version_code": version_code,
+            "apk_url": f"/api/download/apk/github/latest?{query}",
+            "file_name": apk_path.name,
+            "file_size": apk_path.stat().st_size,
+            "sha256": checksum,
+            "is_active": True,
+            "min_android_version": min_android_version,
+            "release_notes": [release_notes],
+            "changelog": changelog,
+            "force_update": force_update,
+        },
+        token,
+    )
+
+
 def env_or_arg(value: str | None, env_name: str, fallback: str | None = None) -> str | None:
     return value or os.getenv(env_name) or fallback
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def main() -> int:
@@ -103,6 +146,11 @@ def main() -> int:
     parser.add_argument("--release-notes", default="")
     parser.add_argument("--changelog", default="")
     parser.add_argument("--force-update", action="store_true")
+    parser.add_argument(
+        "--metadata-only",
+        action="store_true",
+        help="Register the GitHub-hosted APK without uploading the binary to the backend.",
+    )
     args = parser.parse_args()
 
     api_base = env_or_arg(args.api_url, "AUTO_AI_API_BASE_URL", DEFAULT_API_URL)
@@ -124,19 +172,33 @@ def main() -> int:
         )
         token = str(login["access_token"])
         release_notes = args.release_notes.strip() or args.changelog.strip() or f"Version {args.version_name}"
-        release = upload_apk(
-            api_base,
-            token,
-            apk_path,
-            {
-                "version_name": args.version_name,
-                "version_code": str(args.version_code),
-                "min_android_version": args.min_android_version,
-                "release_notes": json.dumps([release_notes]),
-                "changelog": args.changelog.strip() or release_notes,
-                "force_update": "true" if args.force_update else "false",
-            },
-        )
+        changelog = args.changelog.strip() or release_notes
+        if args.metadata_only:
+            release = publish_metadata(
+                api_base,
+                token,
+                apk_path,
+                version_name=args.version_name,
+                version_code=args.version_code,
+                min_android_version=args.min_android_version,
+                release_notes=release_notes,
+                changelog=changelog,
+                force_update=args.force_update,
+            )
+        else:
+            release = upload_apk(
+                api_base,
+                token,
+                apk_path,
+                {
+                    "version_name": args.version_name,
+                    "version_code": str(args.version_code),
+                    "min_android_version": args.min_android_version,
+                    "release_notes": json.dumps([release_notes]),
+                    "changelog": changelog,
+                    "force_update": "true" if args.force_update else "false",
+                },
+            )
     except error.HTTPError as exc:
         print(f"Release publish failed ({exc.code}): {read_http_error(exc)}", file=sys.stderr)
         return 1
