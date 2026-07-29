@@ -7,7 +7,7 @@
     linear-gradient(145deg, #020812, #061225 54%, #020914);
 }
 
-.app-shell > main { min-width: 0; height: 100dvh; overflow: hidden; }
+.app-shell > main { min-width: 0; height: 100vh; height: 100dvh; overflow: hidden; }
 .route-transition-stage { min-height: 0; flex: 1; overflow: hidden; }
 
 .autoai-feature-page {
@@ -231,7 +231,7 @@
 }
 
 @media (max-width: 767px) {
-  .app-shell > main { height: 100dvh; padding-bottom: 77px; }
+  .app-shell > main { height: 100vh; height: 100dvh; padding-bottom: 77px; }
   .route-transition-stage { overflow: visible; }
   .autoai-feature-page { padding: 22px 15px 94px; }
   .autoai-feature-header { align-items: flex-start; }

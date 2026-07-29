@@ -27,8 +27,29 @@ describe("Call Hub navigation", () => {
   it("owns vertical scrolling inside the call list without duplicate mobile height", () => {
     expect(styles).toContain(".calls-list { min-height:0; overflow-x:hidden; overflow-y:auto");
     expect(styles).toContain("-webkit-overflow-scrolling:touch");
+    expect(styles).toContain(".route-transition-stage:has(>.calls-workspace-page){overflow:hidden}");
+    expect(styles).toContain(".calls-workspace-content>.pulse-connect-shell{height:100%;min-height:0;flex:1}");
+    expect(styles).toContain(".pulse-connect-content>.calls-list{padding-bottom:calc(18px + env(safe-area-inset-bottom))");
     expect(styles).toContain(".calls-workspace-page{height:100%;min-height:0;padding-bottom:0}");
+    expect(workspaceSurfaces).toContain("height: 100vh; height: 100dvh");
     expect(workspaceSurfaces).toContain(".calls-workspace-page { height: 100%; min-height: 0; padding-bottom: 0; }");
+  });
+
+  it("uses explicit balanced connection actions without positional button patches", () => {
+    expect(source).toContain('className="connected-actions"');
+    expect(source).toContain('className="call-hub-action message-action"');
+    expect(source).toContain('className="call-hub-action video-action"');
+    expect(styles).toContain("grid-template-columns:minmax(0,1fr) 52px");
+    expect(styles).toContain(".message-action{width:100%!important");
+    expect(styles).not.toContain(".connected-row>button:first-of-type");
+    expect(styles).not.toContain(".connections-panel .social-request-row>button:nth-of-type");
+  });
+
+  it("keeps sent cancellation full-width on small screens with a guarded loading state", () => {
+    expect(source).toContain('className="call-hub-action cancel-request-action"');
+    expect(source).toContain('processing ? "Cancelling…" : "Cancel Request"');
+    expect(source).toContain("if (!token || pendingRequestId) return;");
+    expect(styles).toContain(".sent-request-row>.cancel-request-action{grid-column:1/-1;width:100%");
   });
 
   it("keeps search controls keyboard-visible with accessible touch targets", () => {

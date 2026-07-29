@@ -421,13 +421,16 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
   }
 
   async function cancel(request: SocialRequest) {
-    if (!token) return;
+    if (!token || pendingRequestId) return;
+    setPendingRequestId(request.id);
     try {
       const profile = await socialApi.cancelRequest(token, request.user.id);
       setSent((items) => items.filter((item) => item.id !== request.id));
       updateProfileInLists(profile);
     } catch (actionError) {
       showToast(errorText(actionError, "Unable to cancel request."));
+    } finally {
+      setPendingRequestId(null);
     }
   }
 
@@ -673,16 +676,26 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
             </div>;
           })}
           {requestView === "incoming" && !incoming.length && !loading && <CallHubEmptyState title="No incoming requests" />}
-          {requestView === "sent" && sent.map((request) => <div className="social-request-row" key={request.id}>
-            <Avatar profile={request.user} /><span><strong>{request.user.display_name}</strong><small>@{request.user.username} · Sent {new Date(request.requested_at).toLocaleString()}</small></span>
-            <button type="button" disabled={Boolean(pendingRequestId)} onClick={() => void cancel(request)}><X size={15} /> Cancel Request</button>
-          </div>)}
+          {requestView === "sent" && sent.map((request) => {
+            const processing = pendingRequestId === request.id;
+            return <div className="social-request-row sent-request-row" key={request.id}>
+              <Avatar profile={request.user} /><span><strong>{request.user.display_name}</strong><small>@{request.user.username} · Sent {new Date(request.requested_at).toLocaleString()}</small></span>
+              <button type="button" className="call-hub-action cancel-request-action" disabled={Boolean(pendingRequestId)} aria-busy={processing} onClick={() => void cancel(request)}>
+                {processing ? <LoaderCircle className="animate-spin" size={16} /> : <X size={16} />}
+                <span>{processing ? "Cancelling…" : "Cancel Request"}</span>
+              </button>
+            </div>;
+          })}
           {requestView === "sent" && !sent.length && !loading && <div className="calls-empty"><UserPlus size={20} /> No sent requests <button type="button" onClick={() => changeView("search")}>Find People</button></div>}
           {requestView === "connected" && connections.map((profile) => <div className="social-request-row connected-row" key={profile.id}>
-            <Avatar profile={profile} /><span><strong>{profile.display_name}</strong><small>@{profile.username}</small></span>
-            <button type="button" onClick={() => void openMessage(profile)}><MessageCircle size={15} /> Message</button>
-            <button type="button" onClick={() => placeCall(profile, "audio")} disabled={!profile.can_audio_call}><Phone size={15} aria-label="Audio call" /></button>
-            <button type="button" onClick={() => placeCall(profile, "video")} disabled={!profile.can_video_call}><Video size={15} aria-label="Video call" /></button>
+            <Avatar profile={profile} />
+            <div className="connected-content">
+              <span><strong>{profile.display_name}</strong><small>@{profile.username}</small></span>
+              <div className="connected-actions">
+                <button type="button" className="call-hub-action message-action" onClick={() => void openMessage(profile)}><MessageCircle size={17} aria-hidden="true" /><span>Message</span></button>
+                <button type="button" className="call-hub-action video-action" onClick={() => placeCall(profile, "video")} disabled={!profile.can_video_call} aria-label={`Video call ${profile.display_name}`} title="Video call"><Video size={18} aria-hidden="true" /></button>
+              </div>
+            </div>
           </div>)}
           {requestView === "connected" && !connections.length && !loading && <div className="calls-empty">No connections yet</div>}
           {requestView === "history" && historyRequests.map((request) => <div className="social-request-row" key={request.id}>
