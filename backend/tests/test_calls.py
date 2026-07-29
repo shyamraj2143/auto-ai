@@ -532,6 +532,30 @@ async def test_accepting_call_sends_dismiss_push_for_other_devices(db: Session, 
 
 
 @pytest.mark.asyncio
+async def test_end_remains_successful_and_attempts_dismiss_when_realtime_publish_fails(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    caller = create_user(db, "caller_end_delivery", "Caller")
+    callee = create_user(db, "callee_end_delivery", "Callee")
+    call = Call(caller_id=caller.id, callee_id=callee.id, call_type="audio", status="active")
+    db.add(call)
+    db.commit()
+    dismisses: list[tuple[str, str]] = []
+    monkeypatch.setattr(global_presence_service, "publish", AsyncMock(side_effect=RuntimeError("redis unavailable")))
+    monkeypatch.setattr(global_presence_service, "release_call_locks", AsyncMock(side_effect=RuntimeError("redis unavailable")))
+    monkeypatch.setattr(
+        "app.services.call_service.send_call_dismiss_notifications",
+        lambda _db, next_call, event_type: dismisses.append((next_call.id, event_type)) or 1,
+    )
+
+    ended = await CallService().end(db, call.id, caller.id)
+
+    assert ended.status == "ended"
+    assert dismisses == [(call.id, "call_ended")]
+    assert db.get(Call, call.id).status == "ended"
+
+
+@pytest.mark.asyncio
 async def test_late_reject_after_accept_does_not_mark_callee_rejected(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     caller = create_user(db, "caller_user", "Caller")
     callee = create_user(db, "callee_user", "Callee")

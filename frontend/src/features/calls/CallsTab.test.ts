@@ -31,6 +31,12 @@ describe("Call Hub navigation", () => {
     expect(workspaceSurfaces).toContain(".calls-workspace-page { height: 100%; min-height: 0; padding-bottom: 0; }");
   });
 
+  it("keeps search controls keyboard-visible with accessible touch targets", () => {
+    expect(styles).toContain(".calls-search-wrap:focus-within");
+    expect(styles).toContain(".calls-search-wrap>button{min-height:44px");
+    expect(styles).toContain(".calls-clear-search{width:44px;min-width:44px");
+  });
+
   it("keeps chats restricted to accepted connections and groups call history", () => {
     expect(source).toContain("userMessagesApi.listThreads");
     expect(source).toContain("thread.unread_count");

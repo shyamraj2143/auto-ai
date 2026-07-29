@@ -22,6 +22,8 @@ const TERMINAL_EVENT_STATES: Record<string, CallSessionState> = {
   "call.failed": "failed",
 };
 const CALL_RECONNECT_GRACE_MS = 15_000;
+const CALL_MEDIA_CONNECT_TIMEOUT_MS = 25_000;
+const CALL_MEDIA_RECOVERY_TIMEOUT_MS = 10_000;
 const CALL_RELAY_UNAVAILABLE_MESSAGE = "Calling network relay is temporarily unavailable.";
 const TIMER_NAMES = ["ringing", "noAnswer", "notificationExpiry", "outgoingTimeout", "fcmTimeout", "pendingRetry", "reconnect", "terminal"] as const;
 type CallTimerName = typeof TIMER_NAMES[number];
@@ -85,12 +87,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const statsTimerRef = useRef(0);
   const ringtoneTimerRef = useRef(0);
   const ringtoneContextRef = useRef<AudioContext | null>(null);
+  const browserNotificationRef = useRef<Notification | null>(null);
   const eventHandlerRef = useRef<(event: SignalEnvelope) => void>(() => undefined);
   const cleanupRef = useRef<(terminalState?: CallSessionState, detail?: string) => Promise<void>>(async () => undefined);
   const deviceIdRef = useRef<string | null>(null);
   const startPendingRef = useRef(false);
   const acceptInProgressRef = useRef(false);
   const rejectInProgressRef = useRef(false);
+  const endInProgressRef = useRef(false);
   const callEndedRef = useRef(false);
   const cleanupRunningRef = useRef(false);
   const intentionalPeerCloseRef = useRef(false);
@@ -177,6 +181,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
     ringtoneContextRef.current = null;
     navigator.vibrate?.(0);
     document.title = originalTitleRef.current;
+  }, []);
+
+  const closeBrowserNotification = useCallback(() => {
+    browserNotificationRef.current?.close();
+    browserNotificationRef.current = null;
   }, []);
 
   const ensureNativeCallService = useCallback(async (currentCall: CallRecord) => {
@@ -391,6 +400,21 @@ export function CallProvider({ children }: { children: ReactNode }) {
     }
   }, [setCallTimer, signaling, transition]);
 
+  const armMediaConnectTimeout = useCallback((callId: string, recoveryAttempt = 0) => {
+    setCallTimer("outgoingTimeout", () => {
+      if (callRef.current?.id !== callId || !["accepting", "connecting", "reconnecting"].includes(sessionStateRef.current)) return;
+      if (recoveryAttempt >= 2) {
+        void (async () => {
+          await callApi.fail(token || "", callId, "MEDIA_CONNECT_TIMEOUT", deviceIdRef.current).catch(() => undefined);
+          await cleanupRef.current("failed", "Media connection timed out. Please try again.");
+        })();
+        return;
+      }
+      void attemptReconnect();
+      armMediaConnectTimeout(callId, recoveryAttempt + 1);
+    }, recoveryAttempt === 0 ? CALL_MEDIA_CONNECT_TIMEOUT_MS : CALL_MEDIA_RECOVERY_TIMEOUT_MS);
+  }, [attemptReconnect, setCallTimer, token]);
+
   const ensurePeerConnection = useCallback(async (currentCall: CallRecord) => {
     if (peerConnectionRef.current && peerCallIdRef.current === currentCall.id) return peerConnectionRef.current;
     intentionalPeerCloseRef.current = true;
@@ -583,6 +607,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     callEndedRef.current = true;
     callDebug("cleanup", { call_id: callRef.current?.id, state: sessionStateRef.current, terminal_state: terminalState, reason: detail });
     stopRingtone();
+    closeBrowserNotification();
     clearProgressTimers();
     window.clearInterval(statsTimerRef.current);
     setSessionState(terminalState);
@@ -620,8 +645,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
       callEndedRef.current = false;
       rejectInProgressRef.current = false;
       acceptInProgressRef.current = false;
+      endInProgressRef.current = false;
     }, terminalState === "ended" ? 900 : 2200);
-  }, [clearProgressTimers, setCallTimer, stopRingtone]);
+  }, [clearProgressTimers, closeBrowserNotification, setCallTimer, stopRingtone]);
   cleanupRef.current = cleanup;
 
   const receiveIncomingCall = useCallback(async (callId: string, payload?: IncomingCallPayload) => {
@@ -640,6 +666,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       callEndedRef.current = false;
       rejectInProgressRef.current = false;
       acceptInProgressRef.current = false;
+      endInProgressRef.current = false;
       callRef.current = incomingCall;
       setCall(incomingCall);
       setPendingPeer(incomingCall.peer);
@@ -650,8 +677,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
       const silent = Boolean(payload?.silent ?? incomingCall.silent);
       startRingtone(silent);
       if (document.visibilityState === "hidden" && "Notification" in window && Notification.permission === "granted") {
+        closeBrowserNotification();
         const notification = new Notification(`Incoming ${incomingCall.call_type} call`, { body: incomingCall.peer.display_name, icon: resolveApiAssetUrl(incomingCall.peer.avatar_url) || "/icons/icon-192.png", tag: `call-${callId}`, requireInteraction: true });
+        browserNotificationRef.current = notification;
         notification.onclick = () => { window.focus(); notification.close(); };
+        notification.onclose = () => {
+          if (browserNotificationRef.current === notification) browserNotificationRef.current = null;
+        };
       }
       clearRingTimer();
       setCallTimer("ringing", () => {
@@ -660,7 +692,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     } catch {
       // Expired or cancelled native notifications are dismissed without showing a stale call.
     }
-  }, [cleanup, clearRingTimer, setCallTimer, signaling, startRingtone, token]);
+  }, [cleanup, clearRingTimer, closeBrowserNotification, setCallTimer, signaling, startRingtone, token]);
 
   const resumeAcceptedCall = useCallback(async (callId: string, knownCall?: CallRecord) => {
     if (!token) return;
@@ -724,6 +756,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       await ensurePeerConnection(authoritative);
       setSessionState("connecting");
       sessionStateRef.current = "connecting";
+      armMediaConnectTimeout(authoritative.id);
       if (authoritative.direction === "incoming") {
         const negotiationId = crypto.randomUUID();
         negotiationIdRef.current = negotiationId;
@@ -743,7 +776,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       await callApi.fail(token, callId, failureCode, deviceIdRef.current).catch(() => undefined);
       await callNative.stopActiveCall(callId).catch(() => undefined);
     }
-  }, [cleanup, clearProgressTimers, clearRingTimer, ensureNativeCallService, ensurePeerConnection, loadIceConfiguration, navigate, receiveIncomingCall, requestLocalMedia, signaling, stopRingtone, token]);
+  }, [armMediaConnectTimeout, cleanup, clearProgressTimers, clearRingTimer, ensureNativeCallService, ensurePeerConnection, loadIceConfiguration, navigate, receiveIncomingCall, requestLocalMedia, signaling, stopRingtone, token]);
   resumeAcceptedCallRef.current = resumeAcceptedCall;
 
   const processNativeCallAction = useCallback(async (callId: string, action?: NativeIncomingAction | null) => {
@@ -805,6 +838,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     if (event.type === "call.ringing") transition("ringing");
     else if (event.type === "call.accepted") {
       stopRingtone();
+      closeBrowserNotification();
       clearProgressTimers();
       transition("connecting");
       callDebug("accepted_received", { call_id: event.call_id, state: sessionStateRef.current, role: callRef.current?.direction });
@@ -812,6 +846,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         callRef.current = { ...callRef.current, status: "accepted" };
         setCall(callRef.current);
         void ensurePeerConnection(callRef.current);
+        armMediaConnectTimeout(callRef.current.id);
       }
     } else if (event.type === "webrtc.offer" || event.type === "webrtc.answer") void applyDescription(event);
     else if (event.type === "webrtc.ice_candidate") void applyIceCandidate(event);
@@ -833,6 +868,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         try {
           await peer.setLocalDescription(await peer.createOffer());
           if (peer.localDescription) signaling.send("webrtc.offer", current.id, { ...peer.localDescription.toJSON() });
+          armMediaConnectTimeout(current.id);
           callDebug("OFFER_SENT", { call_id: current.id, trace_id: current.trace_id, role: "outgoing", negotiation_id: negotiationId });
         } finally {
           makingOfferRef.current = false;
@@ -852,7 +888,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       void cleanup(TERMINAL_EVENT_STATES[event.type], String(event.payload.end_reason || ""));
     }
     else if (event.type === "call.error") setError(String(event.payload.detail || "Call error"));
-  }, [applyDescription, applyIceCandidate, attemptReconnect, cleanup, clearProgressTimers, ensurePeerConnection, receiveIncomingCall, stopRingtone, transition]);
+  }, [applyDescription, applyIceCandidate, armMediaConnectTimeout, attemptReconnect, cleanup, clearProgressTimers, closeBrowserNotification, ensurePeerConnection, receiveIncomingCall, stopRingtone, transition]);
   eventHandlerRef.current = handleSignalEvent;
 
   useEffect(() => {
@@ -933,6 +969,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     callEndedRef.current = false;
     rejectInProgressRef.current = false;
     acceptInProgressRef.current = false;
+    endInProgressRef.current = false;
     setError("");
     setPendingPeer(peer);
     setSessionState("preparing");
@@ -966,6 +1003,22 @@ export function CallProvider({ children }: { children: ReactNode }) {
         return;
       }
       clearCallTimer("noAnswer");
+      const pollOutgoingStatus = () => {
+        setCallTimer("fcmTimeout", async () => {
+          if (callRef.current?.id !== created.id || !["dialing", "notifying", "ringing"].includes(sessionStateRef.current)) return;
+          const authoritative = await callApi.get(token, created.id).catch(() => null);
+          if (authoritative && ["accepted", "connecting", "active"].includes(authoritative.status)) {
+            await resumeAcceptedCallRef.current(created.id, authoritative);
+            return;
+          }
+          if (authoritative && ["rejected", "cancelled", "missed", "busy", "failed", "ended"].includes(authoritative.status)) {
+            await cleanup(TERMINAL_EVENT_STATES[`call.${authoritative.status}`] ?? "ended", authoritative.end_reason || "");
+            return;
+          }
+          pollOutgoingStatus();
+        }, 4_000);
+      };
+      pollOutgoingStatus();
       setCallTimer("noAnswer", async () => {
         if (callRef.current?.id === created.id && ["dialing", "notifying", "ringing"].includes(sessionStateRef.current)) {
           const authoritative = await callApi.get(token, created.id).catch(() => null);
@@ -973,6 +1026,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
             if (authoritative) {
               callRef.current = authoritative;
               setCall(authoritative);
+              if (["accepted", "connecting", "active"].includes(authoritative.status)) {
+                await resumeAcceptedCallRef.current(created.id, authoritative);
+              }
             }
             clearCallTimer("noAnswer");
             return;
@@ -995,6 +1051,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     startPendingRef.current = true;
     acceptInProgressRef.current = true;
     stopRingtone();
+    closeBrowserNotification();
     clearProgressTimers();
     setSessionState("accepting");
     sessionStateRef.current = "accepting";
@@ -1043,6 +1100,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         negotiation_id: negotiationId,
         revision: accepted.revision,
       });
+      armMediaConnectTimeout(accepted.id);
     } catch (acceptError) {
       acceptedCallIdsRef.current.delete(currentCall.id);
       if (acceptedSent) {
@@ -1087,7 +1145,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       startPendingRef.current = false;
       acceptInProgressRef.current = false;
     }
-  }, [cleanup, clearProgressTimers, ensureNativeCallService, ensurePeerConnection, loadIceConfiguration, requestLocalMedia, setCallTimer, signaling, stopRingtone, token, transition]);
+  }, [armMediaConnectTimeout, cleanup, clearProgressTimers, closeBrowserNotification, ensureNativeCallService, ensurePeerConnection, loadIceConfiguration, requestLocalMedia, setCallTimer, signaling, stopRingtone, token, transition]);
   acceptCallRef.current = acceptCall;
 
   const rejectCall = useCallback(async () => {
@@ -1111,16 +1169,35 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const endCall = useCallback(async (reason?: string) => {
     const currentCall = callRef.current;
     if (!currentCall || !token) { await cleanup("ended"); return; }
-    transition("ending");
-    if (["dialing", "notifying", "ringing", "preparing"].includes(sessionStateRef.current)) {
-      callDebug("call_cancel_source", { call_id: currentCall.id, role: currentCall.direction, source: "user_endCall", state: sessionStateRef.current });
-      await callApi.cancel(token, currentCall.id).catch(() => undefined);
+    if (endInProgressRef.current || cleanupRunningRef.current || callEndedRef.current) return;
+    endInProgressRef.current = true;
+    const stateAtEnd = sessionStateRef.current;
+    setSessionState("ending");
+    sessionStateRef.current = "ending";
+    stopRingtone();
+    closeBrowserNotification();
+    clearProgressTimers();
+    let terminalRequest: Promise<unknown>;
+    if (["dialing", "notifying", "ringing", "preparing"].includes(stateAtEnd)) {
+      callDebug("call_cancel_source", { call_id: currentCall.id, role: currentCall.direction, source: "user_endCall", state: stateAtEnd });
+      signaling.send("call.cancel", currentCall.id);
+      terminalRequest = callApi.cancel(token, currentCall.id).catch(async (cancelError) => {
+        const authoritative = await callApi.get(token, currentCall.id).catch(() => null);
+        if (authoritative && ["accepted", "connecting", "active"].includes(authoritative.status)) {
+          return callApi.end(token, currentCall.id, reason);
+        }
+        throw cancelError;
+      });
     } else {
       callDebug("call_end_source", { call_id: currentCall.id, role: currentCall.direction, source: "user_endCall", end_reason: reason || "user_default" });
-      await callApi.end(token, currentCall.id, reason).catch(() => undefined);
+      signaling.send("call.end", currentCall.id, { end_reason: reason || "" });
+      terminalRequest = callApi.end(token, currentCall.id, reason);
     }
     await cleanup("ended");
-  }, [cleanup, token, transition]);
+    await terminalRequest.catch((terminalError) => {
+      callDebug("terminal_sync_failed", { call_id: currentCall.id, reason: errorMessage(terminalError, "terminal request failed") });
+    });
+  }, [cleanup, clearProgressTimers, closeBrowserNotification, signaling, stopRingtone, token]);
 
   const toggleMute = useCallback(() => {
     const track = localStreamRef.current?.getAudioTracks()[0];

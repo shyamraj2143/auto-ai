@@ -22,4 +22,27 @@ describe("website call surface parity", () => {
     expect(source).toContain("disabled={controlPending}");
     expect(styles).toContain(".incoming-call-actions .accept{background:linear-gradient(145deg,#22d3ee,#2563eb)}");
   });
+
+  it("ends locally on the first click while synchronizing the terminal state in the background", () => {
+    const provider = readFileSync(new URL("./CallProvider.tsx", import.meta.url), "utf8");
+    expect(provider).toContain("if (endInProgressRef.current || cleanupRunningRef.current || callEndedRef.current) return");
+    expect(provider).toContain('sessionStateRef.current = "ending"');
+    expect(provider).toContain('signaling.send("call.end"');
+    expect(provider).toContain('await cleanup("ended")');
+    expect(provider).toContain('return callApi.end(token, currentCall.id, reason)');
+  });
+
+  it("bounds media connection recovery and closes the correlated browser notification", () => {
+    const provider = readFileSync(new URL("./CallProvider.tsx", import.meta.url), "utf8");
+    expect(provider).toContain("CALL_MEDIA_CONNECT_TIMEOUT_MS");
+    expect(provider).toContain('"MEDIA_CONNECT_TIMEOUT"');
+    expect(provider).toContain("browserNotificationRef.current?.close()");
+    expect(provider).toContain("browserNotificationRef.current = notification");
+  });
+
+  it("recovers an accepted call when its realtime event was missed during reconnect", () => {
+    const provider = readFileSync(new URL("./CallProvider.tsx", import.meta.url), "utf8");
+    expect(provider).toContain('setCallTimer("fcmTimeout"');
+    expect(provider).toContain("await resumeAcceptedCallRef.current(created.id, authoritative)");
+  });
 });

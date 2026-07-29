@@ -312,8 +312,12 @@ class CallService:
         db.expire_all()
         call = self.get_authorized(db, call_id, user_id)
         await self._publish_both(call, "call.accepted", user_id)
-        send_call_dismiss_notifications(db, call, "call_accepted")
-        db.commit()
+        try:
+            send_call_dismiss_notifications(db, call, "call_accepted")
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception("call_dismiss_delivery_failed call_id=%s event_type=call.accepted", call.id)
         return call
 
     async def reject(self, db: Session, call_id: str, user_id: str) -> Call:
@@ -448,10 +452,25 @@ class CallService:
             raise
         db.expire_all()
         call = self.get_authorized(db, call.id, user_id)
-        await presence_service.release_call_locks(call.id, [call.caller_id, call.callee_id])
+        try:
+            await presence_service.release_call_locks(call.id, [call.caller_id, call.callee_id])
+        except Exception:
+            logger.warning(
+                "call_lock_release_failed call_id=%s event_type=%s",
+                call.id,
+                event_type,
+            )
         await self._publish_both(call, event_type, user_id, {"status": final_status, "end_reason": reason})
-        send_call_dismiss_notifications(db, call, event_type.replace(".", "_"))
-        db.commit()
+        try:
+            send_call_dismiss_notifications(db, call, event_type.replace(".", "_"))
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception(
+                "call_dismiss_delivery_failed call_id=%s event_type=%s",
+                call.id,
+                event_type,
+            )
         return call
 
     async def _publish_both(
@@ -463,10 +482,20 @@ class CallService:
     ) -> None:
         event_payload = {**(payload or {"status": call.status}), "revision": call.revision, "trace_id": call.trace_id}
         event = signal_event(event_type, sender_user_id=sender_user_id, call_id=call.id, payload=event_payload)
-        await asyncio.gather(
+        results = await asyncio.gather(
             presence_service.publish(call.caller_id, event),
             presence_service.publish(call.callee_id, event),
+            return_exceptions=True,
         )
+        for participant_id, result in zip((call.caller_id, call.callee_id), results):
+            if isinstance(result, Exception):
+                logger.warning(
+                    "call_realtime_publish_failed call_id=%s event_type=%s participant_id=%s error=%s",
+                    call.id,
+                    event_type,
+                    participant_id,
+                    type(result).__name__,
+                )
 
     @staticmethod
     def _require_state(call: Call, allowed: set[str]) -> None:
