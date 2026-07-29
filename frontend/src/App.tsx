@@ -34,6 +34,7 @@ const CallsPage = lazy(() => import("./features/calls/CallsPage").then((module) 
 const ActiveCallPage = lazy(() => import("./features/calls/ActiveCallPage").then((module) => ({ default: module.ActiveCallPage })));
 const UserMessagesPage = lazy(() => import("./features/userMessages/UserMessagesPage").then((module) => ({ default: module.UserMessagesPage })));
 const ScreenShareJoinPage = lazy(() => import("./features/screenShare/ScreenShareJoinPage").then((module) => ({ default: module.ScreenShareJoinPage })));
+const ScreenShareWorkspacePage = lazy(() => import("./features/screenShare/ScreenShareWorkspacePage").then((module) => ({ default: module.ScreenShareWorkspacePage })));
 const ActionHubPage = lazy(() => import("./features/actionHub/ActionHubPage").then((module) => ({ default: module.ActionHubPage })));
 
 /** Shows LandingPage for guests, redirects logged-in users to the Action Hub. */
@@ -100,6 +101,7 @@ function AppRoutes() {
               <Route path="/chat/:chatId" element={<ChatPage />} />
               <Route path="/messages" element={<UserMessagesPage />} />
               <Route path="/messages/:threadId" element={<UserMessagesPage />} />
+              <Route path="/screen-share" element={<ScreenShareWorkspacePage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/calls" element={<Navigate to="/call-hub/search" replace />} />
               <Route path="/calls/active/:callId" element={<ActiveCallPage />} />

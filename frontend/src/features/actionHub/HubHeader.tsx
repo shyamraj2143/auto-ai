@@ -86,7 +86,7 @@ export function HubHeader({
       </button>
 
       <div className="hub-header-actions">
-        <Link className="hub-header-icon" to="/calls?view=notifications" aria-label="Open notifications">
+        <Link className="hub-header-icon" to="/call-hub/alerts" aria-label="Open notifications">
           <Bell size={19} />
           {unreadNotifications > 0 && <span>{unreadNotifications > 9 ? "9+" : unreadNotifications}</span>}
         </Link>

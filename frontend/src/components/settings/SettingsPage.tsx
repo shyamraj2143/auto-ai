@@ -374,75 +374,78 @@ export function SettingsPage() {
 
   function renderMainSettings() {
     return (
-      <SettingsCard>
-        <SettingsRow
-          icon={SlidersHorizontal}
-          title="General"
-          description="Profile, account, theme, language and notifications"
-          onClick={() => openSection("general")}
-        />
-        <SettingsRow
-          icon={Bot}
-          accent="violet"
-          title="AI Chat"
-          description="Models, response streaming, voice, memory and research"
-          onClick={() => openSection("ai")}
-        />
-        <SettingsRow
-          icon={Monitor}
-          accent="cyan"
-          title="Screen Share"
-          description="Quality, connection status and session controls"
-          onClick={() => openSection("screen-share")}
-        />
-        <SettingsRow
-          icon={CreditCard}
-          accent="green"
-          title="Subscription"
-          description="Current plan, billing, tokens and payment"
-          onClick={() => openSection("subscription")}
-        />
-        <SettingsRow
-          icon={Gem}
-          accent="violet"
-          title="Visual Effects"
-          description={`Crystal UI: ${crystalUiEnabled ? settings.visualEffectsLevel : "disabled"}`}
-          onClick={() => openSection("visual")}
-        />
-        <SettingsRow
-          icon={LockKeyhole}
-          accent="green"
-          title="Privacy & Security"
-          description="Chat cleanup and data controls"
-          onClick={() => openSection("privacy")}
-        />
-        <SettingsRow
-          icon={PhoneCall}
-          accent="cyan"
-          title="Calls"
-          description="Discoverability, call privacy, sound and blocked users"
-          onClick={() => openSection("calls")}
-        />
-        <SettingsRow
-          icon={MessageCircle}
-          accent="violet"
-          title="Messages"
-          description="Message privacy, read receipts and typing"
-          onClick={() => openSection("chat")}
-        />
-        <SettingsRow icon={Monitor} title="App Version" description="Installed frontend build">
-          <span className="text-[11px] font-semibold text-slate-300">v{APP_VERSION}</span>
-        </SettingsRow>
-        <SettingsRow
-          icon={LogOut}
-          accent="red"
-          title="Logout"
-          description="Sign out from your account"
-          onClick={logout}
-          tone="danger"
-          showChevron={false}
-        />
-      </SettingsCard>
+      <div className="grid gap-3">
+        <ProfileAccountCard />
+        <SettingsCard>
+          <SettingsRow
+            icon={SlidersHorizontal}
+            title="General"
+            description="Profile, account, theme, language and notifications"
+            onClick={() => openSection("general")}
+          />
+          <SettingsRow
+            icon={Bot}
+            accent="violet"
+            title="AI Chat"
+            description="Models, response streaming, voice, memory and research"
+            onClick={() => openSection("ai")}
+          />
+          <SettingsRow
+            icon={Monitor}
+            accent="cyan"
+            title="Screen Share"
+            description="Quality, connection status and session controls"
+            onClick={() => openSection("screen-share")}
+          />
+          <SettingsRow
+            icon={CreditCard}
+            accent="green"
+            title="Subscription"
+            description="Current plan, billing, tokens and payment"
+            onClick={() => openSection("subscription")}
+          />
+          <SettingsRow
+            icon={Gem}
+            accent="violet"
+            title="Visual Effects"
+            description={`Crystal UI: ${crystalUiEnabled ? settings.visualEffectsLevel : "disabled"}`}
+            onClick={() => openSection("visual")}
+          />
+          <SettingsRow
+            icon={LockKeyhole}
+            accent="green"
+            title="Privacy & Security"
+            description="Chat cleanup and data controls"
+            onClick={() => openSection("privacy")}
+          />
+          <SettingsRow
+            icon={PhoneCall}
+            accent="cyan"
+            title="Calls"
+            description="Discoverability, call privacy, sound and blocked users"
+            onClick={() => openSection("calls")}
+          />
+          <SettingsRow
+            icon={MessageCircle}
+            accent="violet"
+            title="Messages"
+            description="Message privacy, read receipts and typing"
+            onClick={() => openSection("chat")}
+          />
+          <SettingsRow icon={Monitor} title="App Version" description="Installed frontend build">
+            <span className="text-[11px] font-semibold text-slate-300">v{APP_VERSION}</span>
+          </SettingsRow>
+          <SettingsRow
+            icon={LogOut}
+            accent="red"
+            title="Logout"
+            description="Sign out from your account"
+            onClick={logout}
+            tone="danger"
+            showChevron={false}
+          />
+        </SettingsCard>
+      </div>
     );
   }
 

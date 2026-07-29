@@ -5,6 +5,7 @@ import "./styles/index.css";
 import "./styles/crystal.css";
 import "./styles/prism.css";
 import "./styles/actionHubTheme.css";
+import "./styles/workspaceSurfaces.css";
 import App from "./App";
 import { beginStartupRecovery } from "./reliability/safeMode";
 
