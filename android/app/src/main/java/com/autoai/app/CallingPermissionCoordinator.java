@@ -66,7 +66,8 @@ public final class CallingPermissionCoordinator {
             SharedPreferences prefs = preferences(context);
             out.put("status", permissionStatus.name());
             out.put("versionCode", BuildConfig.VERSION_CODE);
-            out.put("onboardingCompleted", prefs.getInt(LAST_COMPLETED_VERSION, -1) == BuildConfig.VERSION_CODE);
+            out.put("onboardingCompleted", !requiresOnboarding(permissionItems)
+                || prefs.getInt(LAST_COMPLETED_VERSION, -1) == BuildConfig.VERSION_CODE);
             out.put("items", values);
             return out;
         }
@@ -121,12 +122,46 @@ public final class CallingPermissionCoordinator {
     }
 
     public static boolean needsOnboarding(Context context) {
+        Snapshot snapshot = inspect(context);
         SharedPreferences prefs = preferences(context);
-        return shouldOnboard(prefs.getInt(LAST_COMPLETED_VERSION, -1), BuildConfig.VERSION_CODE, prefs.getBoolean(POST_UPDATE_CHECK, false));
+        boolean required = shouldOnboard(
+            snapshot.permissionItems,
+            prefs.getInt(LAST_COMPLETED_VERSION, -1),
+            BuildConfig.VERSION_CODE,
+            prefs.getBoolean(POST_UPDATE_CHECK, false)
+        );
+        if (!required) {
+            prefs.edit()
+                .putInt(LAST_COMPLETED_VERSION, BuildConfig.VERSION_CODE)
+                .putBoolean(ONBOARDING_COMPLETED, true)
+                .putBoolean(POST_UPDATE_CHECK, false)
+                .putString(LAST_STATUS, snapshot.permissionStatus.name())
+                .apply();
+        }
+        return required;
     }
 
-    static boolean shouldOnboard(int completedVersion, int currentVersion, boolean postUpdate) {
-        return completedVersion < currentVersion || postUpdate;
+    static boolean shouldOnboard(
+        Map<String, ItemState> items,
+        int completedVersion,
+        int currentVersion,
+        boolean postUpdate
+    ) {
+        // Package updates are only a reason to re-check Android state. They are
+        // never, by themselves, a reason to show permission onboarding again.
+        return requiresOnboarding(items) && (completedVersion != currentVersion || postUpdate);
+    }
+
+    static boolean requiresOnboarding(Map<String, ItemState> items) {
+        for (String key : USER_PERMISSION_KEYS) {
+            ItemState state = items.get(key);
+            if (state == null) continue;
+            // Normal battery optimization is advisory. A true Android
+            // background restriction is still actionable for incoming calls.
+            if ("backgroundActivity".equals(key) && state == ItemState.LIMITED) continue;
+            if (!isReady(state)) return true;
+        }
+        return false;
     }
 
     static boolean runtimeNotificationRequired(int sdk) { return sdk >= 33; }

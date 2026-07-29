@@ -8,10 +8,27 @@ import java.util.Map;
 import java.util.Arrays;
 
 public class CallingPermissionCoordinatorTest {
-    @Test public void freshInstallRequiresOnboarding() { assertTrue(CallingPermissionCoordinator.shouldOnboard(-1, 37, false)); }
-    @Test public void completedCurrentVersionDoesNotRequireOnboarding() { assertFalse(CallingPermissionCoordinator.shouldOnboard(37, 37, false)); }
-    @Test public void newVersionRequiresOnboarding() { assertTrue(CallingPermissionCoordinator.shouldOnboard(36, 37, false)); }
-    @Test public void receiverFlagRequiresCheck() { assertTrue(CallingPermissionCoordinator.shouldOnboard(37, 37, true)); }
+    @Test public void grantedPermissionsSkipFreshInstallOnboarding() {
+        assertFalse(CallingPermissionCoordinator.shouldOnboard(ready(), -1, 37, false));
+    }
+    @Test public void grantedPermissionsSkipOnboardingAfterUpdate() {
+        assertFalse(CallingPermissionCoordinator.shouldOnboard(ready(), 36, 37, true));
+    }
+    @Test public void missingPermissionRequiresOnboardingOnAnyVersion() {
+        Map<String, CallingPermissionCoordinator.ItemState> items = ready();
+        items.put("microphone", CallingPermissionCoordinator.ItemState.PROMPT_AVAILABLE);
+        assertTrue(CallingPermissionCoordinator.shouldOnboard(items, -1, 37, false));
+    }
+    @Test public void revokedPermissionRequiresOnboardingAfterUpdateCheck() {
+        Map<String, CallingPermissionCoordinator.ItemState> items = ready();
+        items.put("notifications", CallingPermissionCoordinator.ItemState.DENIED);
+        assertTrue(CallingPermissionCoordinator.shouldOnboard(items, 37, 37, true));
+    }
+    @Test public void continueForNowDoesNotNagAgainOnSameVersion() {
+        Map<String, CallingPermissionCoordinator.ItemState> items = ready();
+        items.put("camera", CallingPermissionCoordinator.ItemState.DENIED);
+        assertFalse(CallingPermissionCoordinator.shouldOnboard(items, 37, 37, false));
+    }
     @Test public void notificationsAreRuntimeOnlyFromApi33() {
         assertFalse(CallingPermissionCoordinator.runtimeNotificationRequired(32));
         assertTrue(CallingPermissionCoordinator.runtimeNotificationRequired(33));
@@ -59,6 +76,12 @@ public class CallingPermissionCoordinatorTest {
         Map<String, CallingPermissionCoordinator.ItemState> items = ready();
         items.put("backgroundActivity", CallingPermissionCoordinator.backgroundState(false, false));
         assertEquals(CallingPermissionCoordinator.Status.LIMITED, CallingPermissionCoordinator.readinessFor(items));
+        assertFalse(CallingPermissionCoordinator.shouldOnboard(items, -1, 37, false));
+    }
+    @Test public void restrictedBackgroundRequiresSetupForReliableCalls() {
+        Map<String, CallingPermissionCoordinator.ItemState> items = ready();
+        items.put("backgroundActivity", CallingPermissionCoordinator.backgroundState(true, false));
+        assertTrue(CallingPermissionCoordinator.shouldOnboard(items, -1, 37, false));
     }
     @Test public void allowlistedBackgroundIsUnrestricted() {
         assertEquals(CallingPermissionCoordinator.ItemState.GRANTED, CallingPermissionCoordinator.backgroundState(false, true));
