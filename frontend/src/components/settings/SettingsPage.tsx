@@ -85,6 +85,18 @@ const PROVIDER_LABELS: Record<AiProvider, string> = {
 type SettingsSection = "main" | "general" | "ai" | "screen-share" | "visual" | "subscription" | "privacy" | "calls" | "chat";
 type Accent = "cyan" | "violet" | "amber" | "green" | "rose" | "red";
 
+const SETTINGS_TABS: Array<{ section: SettingsSection; label: string }> = [
+  { section: "main", label: "Account" },
+  { section: "general", label: "Preferences" },
+  { section: "ai", label: "AI Chat" },
+  { section: "screen-share", label: "Sharing" },
+  { section: "privacy", label: "Security" },
+  { section: "calls", label: "Calls" },
+  { section: "chat", label: "Messages" },
+  { section: "visual", label: "Visual" },
+  { section: "subscription", label: "Billing" }
+];
+
 function SettingsIcon({ icon: Icon, accent = "cyan" }: { icon: LucideIcon; accent?: Accent }) {
   return (
     <span
@@ -108,6 +120,23 @@ function SettingsCard({ children }: { children: React.ReactNode }) {
     <CrystalCard className="settings-card overflow-hidden">
       {children}
     </CrystalCard>
+  );
+}
+
+function SettingsGroup({
+  title,
+  children,
+  className
+}: {
+  title: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={clsx("settings-group", className)}>
+      <h2 className="settings-group-title">{title}</h2>
+      {children}
+    </section>
   );
 }
 
@@ -275,6 +304,10 @@ export function SettingsPage() {
     navigate(`/settings?section=${nextSection}`);
   }
 
+  function selectTab(nextSection: SettingsSection) {
+    navigate(nextSection === "main" ? "/settings" : `/settings?section=${nextSection}`);
+  }
+
   function openContextMemory() {
     const event = () => window.dispatchEvent(new CustomEvent("open-context-panel", { detail: { tab: "memory" } }));
     try {
@@ -374,77 +407,97 @@ export function SettingsPage() {
 
   function renderMainSettings() {
     return (
-      <div className="grid gap-3">
+      <div className="settings-section-stack">
         <ProfileAccountCard />
-        <SettingsCard>
-          <SettingsRow
-            icon={SlidersHorizontal}
-            title="General"
-            description="Profile, account, theme, language and notifications"
-            onClick={() => openSection("general")}
-          />
-          <SettingsRow
-            icon={Bot}
-            accent="violet"
-            title="AI Chat"
-            description="Models, response streaming, voice, memory and research"
-            onClick={() => openSection("ai")}
-          />
-          <SettingsRow
-            icon={Monitor}
-            accent="cyan"
-            title="Screen Share"
-            description="Quality, connection status and session controls"
-            onClick={() => openSection("screen-share")}
-          />
-          <SettingsRow
-            icon={CreditCard}
-            accent="green"
-            title="Subscription"
-            description="Current plan, billing, tokens and payment"
-            onClick={() => openSection("subscription")}
-          />
-          <SettingsRow
-            icon={Gem}
-            accent="violet"
-            title="Visual Effects"
-            description={`Crystal UI: ${crystalUiEnabled ? settings.visualEffectsLevel : "disabled"}`}
-            onClick={() => openSection("visual")}
-          />
-          <SettingsRow
-            icon={LockKeyhole}
-            accent="green"
-            title="Privacy & Security"
-            description="Chat cleanup and data controls"
-            onClick={() => openSection("privacy")}
-          />
-          <SettingsRow
-            icon={PhoneCall}
-            accent="cyan"
-            title="Calls"
-            description="Discoverability, call privacy, sound and blocked users"
-            onClick={() => openSection("calls")}
-          />
-          <SettingsRow
-            icon={MessageCircle}
-            accent="violet"
-            title="Messages"
-            description="Message privacy, read receipts and typing"
-            onClick={() => openSection("chat")}
-          />
-          <SettingsRow icon={Monitor} title="App Version" description="Installed frontend build">
-            <span className="text-[11px] font-semibold text-slate-300">v{APP_VERSION}</span>
-          </SettingsRow>
-          <SettingsRow
-            icon={LogOut}
-            accent="red"
-            title="Logout"
-            description="Sign out from your account"
-            onClick={logout}
-            tone="danger"
-            showChevron={false}
-          />
-        </SettingsCard>
+        <SettingsGroup title="App Settings">
+          <SettingsCard>
+            <SettingsRow
+              icon={SlidersHorizontal}
+              title="Preferences"
+              description="Theme, language, notifications and motion"
+              onClick={() => openSection("general")}
+            />
+            <SettingsRow
+              icon={Bot}
+              accent="violet"
+              title="AI Chat"
+              description="Models, streaming, voice, memory and research"
+              onClick={() => openSection("ai")}
+            />
+            <SettingsRow
+              icon={Monitor}
+              accent="cyan"
+              title="Screen Share"
+              description="Quality, connection and session controls"
+              onClick={() => openSection("screen-share")}
+            />
+            <SettingsRow
+              icon={LockKeyhole}
+              accent="green"
+              title="Data & Privacy"
+              description="Security, saved chats and data controls"
+              onClick={() => openSection("privacy")}
+            />
+            <SettingsRow
+              icon={PhoneCall}
+              accent="cyan"
+              title="Calls"
+              description="Call privacy, sound and blocked users"
+              onClick={() => openSection("calls")}
+            />
+            <SettingsRow
+              icon={MessageCircle}
+              accent="violet"
+              title="Messages"
+              description="Privacy, read receipts, typing and last seen"
+              onClick={() => openSection("chat")}
+            />
+            <SettingsRow
+              icon={Gem}
+              accent="violet"
+              title="Visual Effects"
+              description={`Crystal UI: ${crystalUiEnabled ? settings.visualEffectsLevel : "disabled"}`}
+              onClick={() => openSection("visual")}
+            />
+          </SettingsCard>
+        </SettingsGroup>
+
+        <SettingsGroup title="Subscription">
+          <button className="settings-plan-preview" type="button" onClick={() => openSection("subscription")}>
+            <span className="settings-plan-icon"><CreditCard size={22} /></span>
+            <span className="min-w-0 flex-1">
+              <strong>Manage your plan</strong>
+              <small>Billing, token usage, promo codes and receipts</small>
+            </span>
+            <ChevronRight size={18} />
+          </button>
+          <SettingsCard>
+            <SettingsRow
+              icon={CreditCard}
+              accent="violet"
+              title="Redeem Code"
+              description="Apply a promo code to an eligible plan"
+              onClick={() => openSection("subscription")}
+            />
+          </SettingsCard>
+        </SettingsGroup>
+
+        <SettingsGroup title="About & Account">
+          <SettingsCard>
+            <SettingsRow icon={Monitor} title="App Version" description="Installed frontend build">
+              <span className="text-[11px] font-semibold text-slate-300">v{APP_VERSION}</span>
+            </SettingsRow>
+            <SettingsRow
+              icon={LogOut}
+              accent="red"
+              title="Sign Out"
+              description="Sign out from your account"
+              onClick={logout}
+              tone="danger"
+              showChevron={false}
+            />
+          </SettingsCard>
+        </SettingsGroup>
       </div>
     );
   }
@@ -676,18 +729,35 @@ export function SettingsPage() {
 
   return (
     <div
-      className="settings-page min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-3 text-white md:px-6 md:py-5"
+      className="settings-page settings-reference-page min-h-0 flex-1 overflow-y-auto overflow-x-hidden text-white"
     >
-      <div className="mx-auto w-full max-w-6xl pb-8">
-        <header className="sticky top-0 z-20 -mx-3 mb-3 flex h-11 items-center justify-between border-b border-white/10 bg-slate-950/80 px-3 backdrop-blur-xl md:static md:mx-0 md:h-auto md:rounded-lg md:border md:bg-white/[0.04] md:px-4 md:py-3">
-          <button className="icon-button-dark h-8 w-8" type="button" onClick={goBack} title="Back">
-            <ArrowLeft size={17} />
-          </button>
-          <h1 className="min-w-0 truncate px-3 text-sm font-semibold md:text-base">{sectionTitle}</h1>
-          <span className="h-8 w-8" />
+      <div className="settings-reference-shell">
+        <header className="settings-reference-header">
+          <div className="settings-title-row">
+            <button className="settings-back-button" type="button" onClick={goBack} title="Back" aria-label="Back">
+              <ArrowLeft size={18} />
+            </button>
+            <div className="min-w-0">
+              <h1>Settings</h1>
+              {section !== "main" && <p>{sectionTitle}</p>}
+            </div>
+          </div>
+          <nav className="settings-tabs" aria-label="Settings categories">
+            {SETTINGS_TABS.map((tab) => (
+              <button
+                key={tab.section}
+                type="button"
+                className={clsx(section === tab.section && "is-active")}
+                onClick={() => selectTab(tab.section)}
+                aria-current={section === tab.section ? "page" : undefined}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
         </header>
 
-        <div className="grid gap-3">
+        <div className="settings-reference-content">
           {section === "main" && renderMainSettings()}
           {section === "general" && renderGeneralSettings()}
           {section === "ai" && renderAiSettings()}

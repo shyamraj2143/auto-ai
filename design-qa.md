@@ -1,33 +1,24 @@
-# AutoAI Reference UI Design QA
+# AutoAI Settings Reference Design QA
 
-- Source visual truth:
-  - `/workspace/scratch/f0c2b9a64a26/upload/01-1000309554.png`
-  - `/workspace/scratch/f0c2b9a64a26/upload/02-1000309555.png`
-  - `/workspace/scratch/f0c2b9a64a26/upload/03-1000309556.png`
-  - `/workspace/scratch/f0c2b9a64a26/upload/04-1000309553.png`
-  - `/workspace/scratch/f0c2b9a64a26/upload/05-1000309552.png`
-  - `/workspace/scratch/f0c2b9a64a26/upload/06-1000309551.png`
-  - `/workspace/scratch/f0c2b9a64a26/upload/07-1000309549.png`
-  - `/workspace/scratch/f0c2b9a64a26/upload/08-1000309550.png`
-  - `/workspace/scratch/f0c2b9a64a26/upload/09-1000309548.png`
-- Intended implementation URL: `http://terminal.local:4173/`
-- Intended viewports: desktop 1440 × 900 CSS px; mobile 393 × 852 CSS px.
-- State: login plus authenticated dashboard, chat, screen-sharing, calls, messages, incoming-call, and settings states.
+- Source visual truth: `/workspace/scratch/f0c2b9a64a26/upload/01-1000309548.png`
+- Source pixels: 864 × 1536 (framed mobile reference).
+- Intended implementation viewport: 393 × 852 CSS px at device scale factor 1.
+- State: authenticated Settings account overview and AI Chat composer.
 - Implementation screenshot: unavailable.
 - Density normalization: not performed because the browser-rendered implementation could not be opened.
 
 ## Full-view comparison evidence
 
-The source images were available and inspected. The required Work Mode cloud browser rejected both `/login` and `/` with `net::ERR_BLOCKED_BY_CLIENT`, including a supported fresh-tab retry. Because no browser-rendered implementation screenshot exists, a valid source-versus-implementation comparison cannot be made.
+The source image was opened at original resolution and inspected. The Work Mode cloud browser rejected the authenticated Settings preview with `net::ERR_BLOCKED_BY_CLIENT`. Because no browser-rendered implementation screenshot exists, a valid side-by-side source-versus-implementation comparison cannot be made.
 
 ## Focused region comparison evidence
 
-Blocked for the same reason. Important focused regions would be the desktop navigation/sidebar split, mobile fixed bottom navigation, dashboard feature-card heights, chat composer, calls list, incoming-call actions, and settings rows.
+Blocked for the same reason. Required focused regions are the category tabs, profile card, grouped setting rows, subscription block, mobile bottom navigation, and AI Chat composer-to-navigation spacing.
 
 ## Findings
 
 - [P1] Browser-rendered visual verification is unavailable.
-  - Location: all implemented screens.
+  - Location: Settings overview/detail categories and AI Chat composer.
   - Evidence: cloud browser blocked the preview before rendering.
   - Impact: typography, spacing, wrapping, overflow, and exact color fidelity cannot be certified from code/build output alone.
   - Fix: reopen the preview in a Work Mode browser that permits `terminal.local`, then capture desktop and mobile states and compare them with the corresponding reference images.
@@ -35,24 +26,23 @@ Blocked for the same reason. Important focused regions would be the desktop navi
 ## Code-level checks completed
 
 - Production TypeScript/Vite build passed.
-- All 144 frontend tests passed.
-- `npx cap sync android` completed.
+- All frontend tests passed before the final contract-test addition.
 - `git diff --check` passed.
-- Core controls remain connected to existing production state/services rather than mock handlers.
-- No database, auth, call signaling, message delivery, updater, or Android native implementation was replaced.
+- All nine existing settings routes remain connected to their original production state and services.
+- Profile editing, plan management, promo code, receipts, theme, language, notifications, AI models, research, screen sharing, privacy, calls, messages, visual effects, app version, and sign-out remain present.
+- The mobile chat workspace bottom clearance changed from 76px to 70px so the composer sits 6px lower without covering the 62px navigation bar.
 
 ## Required fidelity surfaces
 
-- Fonts and typography: code uses the existing bundled Inter family and reference-like weight hierarchy; visual verification blocked.
-- Spacing and layout rhythm: responsive desktop/mobile grids and fixed navigation were implemented; visual verification blocked.
-- Colors and visual tokens: dark navy with blue/cyan/violet/green semantic accents was implemented; visual verification blocked.
-- Image quality and asset fidelity: the existing AutoAI logo and real user avatar URLs are retained; no placeholder customer imagery was introduced.
-- Copy and content: screen labels and feature ownership follow the supplied references while retaining existing product-specific actions and settings.
+- Fonts and typography: existing bundled application typography is retained with reference-like compact 11–14px labels and 26px mobile title; visual verification blocked.
+- Spacing and layout rhythm: sticky title/tabs, 62–64px setting rows, 15–16px card radii, grouped sections, and horizontal mobile controls were implemented; visual verification blocked.
+- Colors and visual tokens: dark navy glass, blue active tabs, cyan/violet/green semantic accents, and red sign-out treatment were implemented; visual verification blocked.
+- Image quality and asset fidelity: the real account avatar pipeline remains in the profile card; UI icons use the existing icon library. The screenshot's decorative subscription cube was not introduced as a separate raster asset because it is non-functional decoration and visual verification is blocked.
+- Copy and content: reference labels are used where they match product behavior; AutoAI-specific functions and settings remain intact.
 
 ## Comparison history
 
-- Attempt 1: cloud browser blocked `http://terminal.local:4173/login` with `net::ERR_BLOCKED_BY_CLIENT`.
-- Recovery attempt: created a fresh tab and opened `http://terminal.local:4173/`; the same policy block occurred.
+- Attempt 1: the supervised local preview became healthy, but the cloud browser blocked the Settings route with `net::ERR_BLOCKED_BY_CLIENT`.
 - No visual fixes were made after these attempts because there was no rendered evidence to compare.
 
 final result: blocked
