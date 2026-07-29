@@ -10,6 +10,8 @@ public final class AutoAiApplication extends Application {
         super.onCreate();
         CallNotificationManager.createChannels(this);
         AppUpdateCoordinator.get(this);
+        TelecomRegistrationResult telecomResult = AutoAiTelecomBridge.ensureRegisteredDetailed(this);
+        Log.i("AutoAiApplication", "Telecom startup registration result=" + telecomResult.name());
         try {
             if (FirebaseApp.getApps(this).isEmpty()) FirebaseApp.initializeApp(this);
             FcmInstallationMigrationWorker.schedule(this);

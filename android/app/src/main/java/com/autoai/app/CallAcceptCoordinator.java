@@ -35,11 +35,13 @@ final class CallAcceptCoordinator {
         ActiveCallStore.beginAccept(app, call.callId, audioOnly ? "audio" : call.callType, call.peerName,
             call.actionToken, call.expiresAt, call.revision);
         Log.i(TAG, "ACCEPT_TAPPED callId=" + callId);
+        Log.i(TAG, "ACCEPT_REQUEST_SENT callId=" + callId);
         EXECUTOR.execute(() -> {
             try {
                 long revision = new NativeCallApi(app).accept(callId, call.actionToken, call.revision);
                 ActiveCallStore.commitAccept(app, callId, revision);
                 CallNotificationManager.cancelIncomingPresentation(app, callId);
+                Log.i(TAG, "INCOMING_PRESENTATION_REMOVED callId=" + callId);
                 CallNotificationManager.savePending(app, callId, "resume_call", Math.max(call.expiresAt, System.currentTimeMillis() + 86_400_000L));
                 Log.i(TAG, "ACCEPT_COMMITTED callId=" + callId + " revision=" + revision);
                 listener.onAcceptCommitted();

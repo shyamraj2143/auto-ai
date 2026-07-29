@@ -15,8 +15,6 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.PowerManager;
 import android.provider.Settings;
-import android.telecom.PhoneAccountHandle;
-import android.telecom.TelecomManager;
 
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.GoogleApiAvailability;
@@ -236,11 +234,6 @@ public final class CallingPermissionCoordinator {
     }
 
     private static boolean telecomRegistered(Context context) {
-        if (Build.VERSION.SDK_INT < 26) return true;
-        try {
-            TelecomManager manager = (TelecomManager) context.getSystemService(Context.TELECOM_SERVICE);
-            PhoneAccountHandle handle = new PhoneAccountHandle(new ComponentName(context, AutoAiConnectionService.class), "auto_ai_self_managed_calls");
-            return manager != null && manager.getPhoneAccount(handle) != null;
-        } catch (RuntimeException ignored) { return false; }
+        return AutoAiTelecomBridge.isRegistrationReady(context);
     }
 }

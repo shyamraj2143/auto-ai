@@ -111,7 +111,7 @@ public final class CallNotificationManager {
         Log.i(TAG, "INCOMING_PRESENTED callId=" + callId);
         savePending(context, callId, null, expiresAt);
         createChannels(context);
-        boolean telecomReported = false;
+        TelecomCallResult telecomResult = TelecomCallResult.REGISTRATION_UNAVAILABLE;
 
         Intent incomingIntent = new Intent(context, IncomingCallActivity.class);
         incomingIntent.putExtra(EXTRA_CALL_ID, callId);
@@ -182,9 +182,12 @@ public final class CallNotificationManager {
                 CallDeliveryAckWorker.schedule(context, data, "callstyle_posted", "", "");
                 acknowledgeRinging(context, callId);
                 IncomingCallRingingService.start(context, callId, expiresAt, notification, data);
-                try { telecomReported = AutoAiTelecomBridge.reportIncomingCall(context, data); }
-                catch (RuntimeException telecomError) { Log.w(TAG, "Telecom presentation failed after notification post callId=" + callId, telecomError); }
-                Log.i(TAG, "Incoming call notification shown callId=" + callId + " silent=" + silent + " telecom=" + telecomReported);
+                telecomResult = AutoAiTelecomBridge.reportIncomingCall(context, data);
+                if (!telecomResult.isReported()) {
+                    Log.w(TAG, "Incoming Telecom presentation degraded callId=" + callId + " result=" + telecomResult);
+                }
+                Log.i(TAG, "Incoming call notification shown callId=" + callId + " silent=" + silent
+                    + " telecom=" + telecomResult.isReported());
             } catch (RuntimeException notificationError) {
                 diagnostic(context, "NOTIFICATION_POST_FAILED", data, "NOTIFICATION_POST_FAILED");
                 Log.e(TAG, "Incoming call notification post failed callId=" + callId, notificationError);
