@@ -7898,14 +7898,17 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
 @media (max-width: 640px) {
   .app-select-root { width:100%; max-width:none; flex-basis:100%; }
   .app-select-backdrop { display:block; position:fixed; z-index:1199; inset:0; background:rgba(0,4,14,.7); }
-  .app-select-menu { position:fixed; top:auto; right:12px; bottom:max(12px, env(safe-area-inset-bottom)); left:12px; width:auto; max-height:70vh; }
-  .app-select-options { max-height:calc(70vh - 44px - max(12px, env(safe-area-inset-bottom))); }
+  .app-select-menu { position:fixed; top:auto; right:12px; bottom:max(12px, env(safe-area-inset-bottom)); left:12px; width:auto; max-height:min(70dvh, 520px); }
+  .app-select-options { max-height:calc(min(70dvh, 520px) - 44px - max(12px, env(safe-area-inset-bottom))); }
 }
 
 /* Settings reference system: compact neon glass groups with persistent category tabs. */
 .settings-reference-page {
+  min-width: 0;
   overscroll-behavior-y: contain;
   scroll-padding-top: 112px;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   background:
     radial-gradient(circle at 8% 5%, rgba(20, 132, 255, .13), transparent 30%),
     radial-gradient(circle at 88% 30%, rgba(94, 58, 255, .11), transparent 32%),
@@ -7914,6 +7917,7 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
 
 .settings-reference-shell {
   width: min(100%, 980px);
+  min-width: 0;
   min-height: 100%;
   margin-inline: auto;
   padding: 0 22px 32px;
@@ -8079,6 +8083,121 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
   font-size: 11px;
 }
 
+.settings-reference-page .settings-row-title,
+.settings-reference-page .settings-row-description {
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.settings-reference-page .settings-row-description {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.profile-account-summary {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: 60px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid rgba(49, 150, 255, .48);
+  border-radius: 15px;
+  background:
+    radial-gradient(circle at 88% 30%, rgba(91, 53, 243, .27), transparent 39%),
+    linear-gradient(135deg, rgba(5, 92, 154, .27), rgba(10, 20, 48, .44));
+  padding: 16px 18px;
+  color: #fff;
+  text-align: left;
+  transition: border-color .16s ease, background .16s ease, transform .16s ease;
+}
+
+.profile-account-summary:not(:disabled):hover,
+.profile-account-summary:not(:disabled):focus-visible {
+  border-color: rgba(72, 198, 255, .78);
+  background:
+    radial-gradient(circle at 88% 30%, rgba(91, 53, 243, .36), transparent 42%),
+    linear-gradient(135deg, rgba(5, 107, 178, .34), rgba(10, 20, 48, .54));
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.profile-account-summary:disabled {
+  cursor: default;
+}
+
+.profile-account-avatar {
+  display: grid;
+  width: 60px;
+  height: 60px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(116, 210, 255, .36);
+  border-radius: 50%;
+  background: linear-gradient(145deg, rgba(22, 137, 201, .4), rgba(53, 49, 168, .34));
+  color: #dff8ff;
+  font-size: 20px;
+  font-weight: 760;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, .24);
+}
+
+.profile-account-copy {
+  min-width: 0;
+}
+
+.profile-account-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.profile-account-title h2 {
+  min-width: 0;
+  overflow: hidden;
+  color: #f7fbff;
+  font-size: 16px;
+  font-weight: 720;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-account-copy p,
+.profile-account-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-account-copy p {
+  margin-top: 4px;
+  color: #a8b9d0;
+  font-size: 12px;
+}
+
+.profile-account-copy small {
+  margin-top: 5px;
+  color: #78aefa;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.profile-account-chevron {
+  flex: 0 0 auto;
+  color: #d6e6fa;
+}
+
+.profile-account-message {
+  padding: 8px 16px 10px;
+  color: #6ee7b7;
+  font-size: 11px;
+  font-weight: 650;
+}
+
 .settings-reference-page .settings-toggle {
   width: 44px;
   height: 25px;
@@ -8173,16 +8292,6 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
   font-size: 11px;
 }
 
-.settings-reference-page .settings-card > div:first-child.grid {
-  min-height: 126px;
-  border: 1px solid rgba(50, 150, 255, .42);
-  border-radius: 15px;
-  background:
-    radial-gradient(circle at 88% 30%, rgba(91, 53, 243, .25), transparent 36%),
-    linear-gradient(135deg, rgba(5, 92, 154, .24), rgba(10, 20, 48, .38));
-  padding: 16px;
-}
-
 .settings-reference-page .settings-billing-center {
   padding: 14px;
 }
@@ -8236,6 +8345,66 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
 .settings-reference-page .call-setting-row small {
   color: #8697b0;
   font-size: 11px;
+}
+
+.settings-reference-page .call-type-heading {
+  display: flex;
+  min-height: 62px;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid rgba(118, 151, 198, .11);
+  padding: 11px 14px;
+}
+
+.settings-reference-page .call-type-heading > svg {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border: 1px solid rgba(83, 175, 244, .28);
+  border-radius: 11px;
+  background: linear-gradient(145deg, rgba(31, 112, 214, .24), rgba(90, 50, 219, .18));
+  padding: 10px;
+  color: #9bdfff;
+}
+
+.settings-reference-page .call-type-heading strong,
+.settings-reference-page .call-type-heading small {
+  display: block;
+}
+
+.settings-reference-page .call-type-heading strong {
+  color: #f5f9ff;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.settings-reference-page .call-type-heading small {
+  margin-top: 3px;
+  color: #8697b0;
+  font-size: 11px;
+}
+
+.settings-reference-page .call-type-row {
+  min-height: 76px;
+}
+
+.settings-reference-page .call-type-row > span > svg {
+  width: 44px;
+  height: 44px;
+  flex-basis: 44px;
+  border-radius: 12px;
+}
+
+.settings-reference-page .call-type-audio > span > svg {
+  border-color: rgba(57, 189, 255, .3);
+  background: rgba(20, 128, 212, .16);
+  color: #80dcff;
+}
+
+.settings-reference-page .call-type-video > span > svg {
+  border-color: rgba(135, 99, 255, .34);
+  background: rgba(101, 69, 213, .17);
+  color: #baa6ff;
 }
 
 .settings-reference-page .call-setting-toggle {
@@ -8311,13 +8480,13 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
 
   .settings-reference-page .settings-row > div:nth-child(2) {
     width: auto;
-    max-width: 48%;
+    max-width: min(48%, 210px);
     flex: 0 1 auto;
     justify-content: flex-end;
   }
 
   .settings-reference-page .settings-row p + p {
-    max-width: 54vw;
+    max-width: min(54vw, 430px);
   }
 
   .settings-reference-page .settings-row .app-select-root {
@@ -8344,6 +8513,21 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
     max-width: none;
   }
 
+  .profile-account-summary {
+    grid-template-columns: 54px minmax(0, 1fr) auto;
+    gap: 11px;
+    padding: 14px;
+  }
+
+  .profile-account-avatar {
+    width: 54px;
+    height: 54px;
+  }
+
+  .profile-account-title h2 {
+    font-size: 15px;
+  }
+
   .settings-plan-preview {
     min-height: 100px;
     padding: 15px;
@@ -8357,5 +8541,53 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
 
   .settings-plan-preview strong {
     font-size: 16px;
+  }
+}
+
+@media (max-width: 420px) {
+  .settings-reference-shell {
+    padding-inline: 10px;
+  }
+
+  .settings-reference-header {
+    margin-inline: -10px;
+    padding-inline: 10px;
+  }
+
+  .settings-reference-page .settings-row:has(.app-select-root) {
+    flex-wrap: wrap;
+  }
+
+  .settings-reference-page .settings-row:has(.app-select-root) .settings-row-controls {
+    width: 100%;
+    max-width: none;
+    justify-content: stretch;
+  }
+
+  .settings-reference-page .settings-row:has(.app-select-root) .app-select-root {
+    width: 100%;
+    max-width: none;
+  }
+
+  .profile-account-title .crystal-badge {
+    display: none;
+  }
+
+  .profile-account-copy p {
+    font-size: 11px;
+  }
+
+  .settings-reference-page .call-setting-row {
+    gap: 9px;
+    padding-inline: 11px;
+  }
+
+  .settings-reference-page .call-setting-row:has(.app-select-root) {
+    flex-wrap: wrap;
+  }
+
+  .settings-reference-page .call-setting-row:has(.app-select-root) .app-select-root {
+    width: 100%;
+    max-width: none;
   }
 }

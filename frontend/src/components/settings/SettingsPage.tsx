@@ -162,14 +162,14 @@ function SettingsRow({
 }) {
   const content = (
     <>
-      <div className="flex min-w-0 flex-1 items-center gap-2.5">
+      <div className="settings-row-copy flex min-w-0 flex-1 items-center gap-2.5">
         <SettingsIcon icon={icon} accent={accent} />
         <div className="min-w-0 flex-1">
-          <p className={clsx("truncate text-[13px] font-semibold", tone === "danger" ? "text-red-200" : "text-white")}>{title}</p>
-          {description && <p className="mt-0.5 truncate text-[11px] text-slate-400">{description}</p>}
+          <p className={clsx("settings-row-title text-[13px] font-semibold", tone === "danger" ? "text-red-200" : "text-white")}>{title}</p>
+          {description && <p className="settings-row-description mt-0.5 text-[11px] text-slate-400">{description}</p>}
         </div>
       </div>
-      {children && <div className="flex w-full min-w-0 flex-wrap items-center justify-start gap-1.5 sm:w-auto sm:shrink-0 sm:justify-end">{children}</div>}
+      {children && <div className="settings-row-controls flex w-full min-w-0 flex-wrap items-center justify-start gap-1.5 sm:w-auto sm:shrink-0 sm:justify-end">{children}</div>}
       {!children && showChevron && <ChevronRight className="hidden text-slate-500 sm:block" size={15} />}
     </>
   );

@@ -136,6 +136,8 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
   const [searching, setSearching] = useState(false);
   const [message, setMessage] = useState("");
   const [toast, setToast] = useState("");
+  const [clearAlertsOpen, setClearAlertsOpen] = useState(false);
+  const [clearingAlerts, setClearingAlerts] = useState(false);
   const queryRef = useRef(query);
   const searchAbortRef = useRef<AbortController | null>(null);
 
@@ -149,6 +151,15 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
     else if (requestedView === "chats" || requestedView === "calls" || requestedView === "search" || requestedView === "requests" || requestedView === "notifications") setView(requestedView === "notifications" ? "alerts" : requestedView);
     if (requestedQuery) setQuery(requestedQuery);
   }, [requestedQuery, requestedView, routeSection]);
+
+  useEffect(() => {
+    if (!clearAlertsOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setClearAlertsOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [clearAlertsOpen]);
 
   const changeView = useCallback((next: View) => {
     setView(next);
@@ -482,12 +493,15 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
   }
 
   async function clearAllAlerts() {
-    if (!token || !notifications.length || !window.confirm("Clear all alerts? Messages, calls and contacts will not be deleted.")) return;
+    if (!token || !notifications.length || clearingAlerts) return;
     const previous = notifications;
     const previousUnread = unread;
+    setClearAlertsOpen(false);
+    setClearingAlerts(true);
     setNotifications([]); setUnread(0);
     try { await socialApi.clearNotifications(token); }
     catch (clearError) { setNotifications(previous); setUnread(previousUnread); showToast(errorText(clearError, "Unable to clear alerts.")); }
+    finally { setClearingAlerts(false); }
   }
 
   async function deleteAlert(item: SocialNotification) {
@@ -656,7 +670,7 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
 
       {view === "alerts" && (
         <AlertsPanel>
-          <header className="connections-header"><span><strong>Alerts</strong><small>{unread} unread</small></span><span className="call-alert-actions"><button type="button" onClick={() => void markAllAlertsRead()} disabled={!unread}>Mark all read</button><button type="button" onClick={() => void clearAllAlerts()} disabled={!notifications.length}>Clear</button></span></header>
+          <header className="connections-header"><span><strong>Alerts</strong><small>{unread} unread</small></span><span className="call-alert-actions"><button type="button" onClick={() => void markAllAlertsRead()} disabled={!unread}>Mark all read</button><button type="button" onClick={() => setClearAlertsOpen(true)} disabled={!notifications.length || clearingAlerts}>{clearingAlerts ? "Clearing…" : "Clear"}</button></span></header>
           {loading && !notifications.length && <div className="connection-skeleton" aria-label="Loading alerts"><i /><i /><i /></div>}
           {(["Today", "This week", "Earlier"] as const).map((group) => groupedNotifications[group]?.length ? <section className="call-timeline-group" key={group}><h3>{group}</h3>{groupedNotifications[group].map((item) => (
             <div className={`social-notification-row ${item.read_at ? "" : "unread"}`} key={item.id}>
@@ -683,7 +697,7 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
               <div className={`call-history-row call-status-${status.toLowerCase().replace(" ", "-")}`} key={item.id}>
                 <span className="call-user-avatar">{avatarUrl ? <img src={avatarUrl} alt="" /> : item.peer.display_name.slice(0, 1).toUpperCase()}</span>
                 <span><strong>{item.peer.display_name}</strong><small className="call-direction">{item.direction === "incoming" ? <ArrowDownLeft size={13} aria-label="Incoming" /> : <ArrowUpRight size={13} aria-label="Outgoing" />}{item.call_type === "audio" ? <Phone size={12} aria-label="Voice" /> : <Video size={12} aria-label="Video" />}<em>{status}</em></small><small>{new Date(item.created_at).toLocaleString()}{item.duration_seconds > 0 ? ` · ${Math.floor(item.duration_seconds / 60)}:${String(item.duration_seconds % 60).padStart(2, "0")}` : ""}</small></span>
-                <button type="button" onClick={() => void startCall(item.peer, item.call_type)} disabled={!callingAvailable} aria-label={`Call back ${item.peer.display_name}`}><Phone size={15} /></button>
+                <button type="button" onClick={() => void startCall(item.peer, item.call_type)} disabled={!callingAvailable} aria-label={`${item.call_type === "video" ? "Video" : "Audio"} call ${item.peer.display_name}`}>{item.call_type === "video" ? <Video size={16} /> : <Phone size={16} />}</button>
               </div>
             );
           })}</section> : null)}
@@ -691,6 +705,21 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
         </CallHistoryPanel>
       )}
 
+      {clearAlertsOpen && (
+        <div className="calls-confirm-backdrop" role="presentation" onPointerDown={(event) => { if (event.target === event.currentTarget) setClearAlertsOpen(false); }}>
+          <section className="calls-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="clear-alerts-title" aria-describedby="clear-alerts-description">
+            <span className="calls-confirm-icon"><Trash2 size={22} /></span>
+            <div>
+              <h2 id="clear-alerts-title">Clear all alerts?</h2>
+              <p id="clear-alerts-description">This removes notification entries only. Your messages, call history and contacts will stay safe.</p>
+            </div>
+            <div className="calls-confirm-actions">
+              <button type="button" onClick={() => setClearAlertsOpen(false)}>Cancel</button>
+              <button type="button" className="danger" onClick={() => void clearAllAlerts()}>Clear alerts</button>
+            </div>
+          </section>
+        </div>
+      )}
       {toast && <div className="calls-toast" role="alert" aria-live="assertive"><ShieldAlert size={15} /> {toast}</div>}
     </CallHubShell>
   );

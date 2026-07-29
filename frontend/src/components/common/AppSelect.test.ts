@@ -31,7 +31,7 @@ describe("AppSelect chooser contract", () => {
   it("enforces bounded logo-free option rows and narrow-screen safety", () => {
     expect(styles).toContain("max-height:60px");
     expect(styles).toContain("min-height:48px");
-    expect(styles).toContain("max-height:70vh");
+    expect(styles).toContain("max-height:min(70dvh, 520px)");
     expect(styles).toContain("overflow-x:hidden");
     expect(styles).toContain(".app-select-option img");
     expect(styles).toContain("background-image:none !important");

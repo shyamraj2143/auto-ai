@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const settingsSource = readFileSync(new URL("./SettingsPage.tsx", import.meta.url), "utf8");
+const profileSource = readFileSync(new URL("./ProfileAccountCard.tsx", import.meta.url), "utf8");
 const surfaceCss = readFileSync(new URL("../../styles/workspaceSurfaces.css", import.meta.url), "utf8");
 const appCss = readFileSync(new URL("../../styles/index.css", import.meta.url), "utf8");
 
@@ -59,5 +60,19 @@ describe("settings reference layout contracts", () => {
     expect(appCss).toContain(".settings-reference-page.is-native-app .settings-reference-header");
     expect(appCss).toContain("overscroll-behavior-y: contain");
     expect(appCss).toContain("overflow-anchor: none");
+  });
+
+  it("uses a compact clickable profile summary before opening the editor", () => {
+    expect(profileSource).toContain('className="profile-account-summary"');
+    expect(profileSource).toContain("aria-expanded={editing}");
+    expect(profileSource).toContain('id="profile-account-editor"');
+    expect(appCss).toContain("grid-template-columns: 60px minmax(0, 1fr) auto");
+  });
+
+  it("stacks select controls safely on narrow mobile viewports", () => {
+    expect(settingsSource).toContain("settings-row-controls");
+    expect(appCss).toContain("@media (max-width: 420px)");
+    expect(appCss).toContain(".settings-reference-page .settings-row:has(.app-select-root)");
+    expect(appCss).toContain("max-height:min(70dvh, 520px)");
   });
 });

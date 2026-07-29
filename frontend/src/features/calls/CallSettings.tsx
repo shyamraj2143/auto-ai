@@ -1,4 +1,4 @@
-import { BellRing, Eye, EyeOff, LoaderCircle, Mic, PhoneCall, ShieldAlert, ShieldBan, Smartphone, Video } from "lucide-react";
+import { BellRing, Eye, EyeOff, LoaderCircle, PhoneCall, ShieldAlert, ShieldBan, Smartphone, Video } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { resolveApiAssetUrl } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
@@ -28,8 +28,8 @@ export function callingPermissionDisplay(key: PermissionKey, state: NativeCallRe
   return { label: "Action needed", tone: "blocked" };
 }
 
-function SettingToggle({ label, description, checked, onChange, icon: Icon }: { label: string; description: string; checked: boolean; onChange: (checked: boolean) => void; icon: typeof Eye }) {
-  return <div className="call-setting-row"><span><Icon size={16} /><span><strong>{label}</strong><small>{description}</small></span></span><button type="button" className={`call-setting-toggle ${checked ? "active" : ""}`} onClick={() => onChange(!checked)} aria-pressed={checked}><i /></button></div>;
+function SettingToggle({ label, description, checked, onChange, icon: Icon, callType }: { label: string; description: string; checked: boolean; onChange: (checked: boolean) => void; icon: typeof Eye; callType?: "audio" | "video" }) {
+  return <div className={`call-setting-row${callType ? ` call-type-row call-type-${callType}` : ""}`}><span><Icon size={18} /><span><strong>{label}</strong><small>{description}</small></span></span><button type="button" className={`call-setting-toggle ${checked ? "active" : ""}`} onClick={() => onChange(!checked)} aria-pressed={checked} aria-label={`${checked ? "Disable" : "Enable"} ${label}`}><i /></button></div>;
 }
 
 export function CallSettings() {
@@ -115,9 +115,10 @@ export function CallSettings() {
         <SettingToggle icon={Eye} label="Show my online status" description="Let discoverable users see when you are active" checked={settings.show_online_status} onChange={(value) => void update({ show_online_status: value })} />
         <SettingToggle icon={Eye} label="Show last seen" description="Share your last active time" checked={settings.show_last_seen} onChange={(value) => void update({ show_last_seen: value })} />
       </section>
-      <section>
-        <SettingToggle icon={Video} label="Allow video calls" description="Receive person-to-person video calls" checked={settings.allow_video_calls} onChange={(value) => void update({ allow_video_calls: value })} />
-        <SettingToggle icon={Mic} label="Allow audio calls" description="Receive person-to-person audio calls" checked={settings.allow_audio_calls} onChange={(value) => void update({ allow_audio_calls: value })} />
+      <section className="call-type-settings">
+        <div className="call-type-heading"><PhoneCall size={18} /><span><strong>Call types</strong><small>Choose which incoming calls AutoAI can receive</small></span></div>
+        <SettingToggle callType="audio" icon={PhoneCall} label="Audio calls" description="Voice-only calls with a clear phone indicator" checked={settings.allow_audio_calls} onChange={(value) => void update({ allow_audio_calls: value })} />
+        <SettingToggle callType="video" icon={Video} label="Video calls" description="Camera calls with a dedicated video indicator" checked={settings.allow_video_calls} onChange={(value) => void update({ allow_video_calls: value })} />
         <div className="call-setting-row"><span><PhoneCall size={16} /><span><strong>Allow calls from</strong><small>Choose who can start a call</small></span></span><AppSelect value={settings.call_permission} onChange={(value) => void update({ call_permission: value as Settings["call_permission"] })} label="Allow calls from" options={[{value:"everyone",label:"Everyone"},{value:"followers",label:"Followers"},{value:"mutual_followers",label:"Mutual followers"},{value:"approved_contacts",label:"Approved contacts"},{value:"previous_contacts",label:"Previous calls"},{value:"nobody",label:"Nobody"}]} /></div>
         <SettingToggle icon={ShieldBan} label="Silence unknown callers" description="Unknown calls arrive without sound or vibration" checked={settings.silence_unknown_callers} onChange={(value) => void update({ silence_unknown_callers: value })} />
       </section>
