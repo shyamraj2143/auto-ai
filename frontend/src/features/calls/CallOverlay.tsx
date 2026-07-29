@@ -1,5 +1,5 @@
-import { AlertTriangle, Camera, CameraOff, Copy, Mic, MicOff, Minimize2, Phone, PhoneOff, RefreshCw, Settings, SwitchCamera, Volume2, VolumeX, Wifi } from "lucide-react";
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { AlertTriangle, Camera, CameraOff, Copy, Maximize2, Mic, MicOff, Minimize2, Phone, PhoneOff, RefreshCw, Settings, SwitchCamera, Volume2, VolumeX, Wifi } from "lucide-react";
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { resolveApiAssetUrl } from "../../api/client";
 import { useCallSession } from "./hooks/useCallSession";
 import { callNative } from "./services/callNative";
@@ -8,8 +8,11 @@ import type { CrystalCallState } from "../../crystal/tokens";
 import { callStatusPresentation } from "./callStatus";
 import { callFailurePresentation } from "./callFailures";
 import { CallAvatar } from "./CallAvatar";
+import { useMediaViewport } from "../media/useMediaViewport";
+import { floatingAnchorPosition, nearestFloatingAnchor, type FloatingAnchor } from "../media/floatingPosition";
+import type { MediaViewMode } from "../media/mediaLayout";
 
-function VideoSurface({ stream, muted, className }: { stream: MediaStream | null; muted?: boolean; className: string }) {
+function VideoSurface({ stream, muted, className, style, onDimensions }: { stream: MediaStream | null; muted?: boolean; className: string; style?: CSSProperties; onDimensions?: (size: { width: number; height: number }) => void }) {
   const ref = useRef<HTMLVideoElement | null>(null);
   useEffect(() => {
     const video = ref.current;
@@ -21,10 +24,15 @@ function VideoSurface({ stream, muted, className }: { stream: MediaStream | null
     <video
       ref={ref}
       className={className}
+      style={style}
       autoPlay
       playsInline
       muted={muted}
-      onLoadedMetadata={(event) => void event.currentTarget.play().catch(() => undefined)}
+      onLoadedMetadata={(event) => {
+        onDimensions?.({ width: event.currentTarget.videoWidth, height: event.currentTarget.videoHeight });
+        void event.currentTarget.play().catch(() => undefined);
+      }}
+      onResize={(event) => onDimensions?.({ width: event.currentTarget.videoWidth, height: event.currentTarget.videoHeight })}
       onCanPlay={(event) => void event.currentTarget.play().catch(() => undefined)}
     />
   );
@@ -74,7 +82,14 @@ export function CallOverlay() {
   const [incomingActionPending, setIncomingActionPending] = useState(false);
   const [controlPending, setControlPending] = useState(false);
   const [minimized, setMinimized] = useState(false);
+  const [viewMode, setViewMode] = useState<MediaViewMode>("fit");
+  const [remoteSize, setRemoteSize] = useState({ width: 0, height: 0 });
+  const [pipSize, setPipSize] = useState<"small" | "medium">("small");
   const dragRef = useRef<{ x: number; y: number; originX: number; originY: number } | null>(null);
+  const activeScreenRef = useRef<HTMLDivElement | null>(null);
+  const mediaStageRef = useRef<HTMLDivElement | null>(null);
+  const pipRef = useRef<HTMLDivElement | null>(null);
+  const remoteLayout = useMediaViewport(mediaStageRef, remoteSize, "video-call", viewMode);
 
   useEffect(() => {
     if (sessionState !== "active") { setSeconds(0); return; }
@@ -88,7 +103,26 @@ export function CallOverlay() {
 
   useEffect(() => {
     setMinimized(false);
+    setViewMode("fit");
+    setRemoteSize({ width: 0, height: 0 });
   }, [call?.id]);
+
+  useEffect(() => {
+    if (!activeScreenRef.current || !pipRef.current) return;
+    const screen = activeScreenRef.current;
+    const preview = pipRef.current;
+    const reposition = () => {
+      const bounds = screen.getBoundingClientRect();
+      const panel = preview.getBoundingClientRect();
+      const saved = (localStorage.getItem("autoai.call.preview.anchor") as FloatingAnchor | null) ?? "top-right";
+      const anchor: FloatingAnchor = ["top-left", "top-right", "bottom-left", "bottom-right"].includes(saved) ? saved : "top-right";
+      setPipPosition(floatingAnchorPosition(anchor, { width: panel.width, height: panel.height }, { width: bounds.width, height: bounds.height, insetTop: 74, insetBottom: 92 }));
+    };
+    const observer = new ResizeObserver(reposition);
+    observer.observe(screen);
+    reposition();
+    return () => observer.disconnect();
+  }, [cameraEnabled, localStream, pipSize, sessionState]);
 
   useEffect(() => {
     if (sessionState === "idle" || sessionState === "ended" || sessionState === "rejected" || sessionState === "cancelled" || sessionState === "missed" || sessionState === "busy" || sessionState === "failed") {
@@ -146,12 +180,29 @@ export function CallOverlay() {
 
   function movePip(event: ReactPointerEvent<HTMLDivElement>) {
     if (!dragRef.current) return;
-    const maxX = Math.max(0, window.innerWidth - 150);
-    const maxY = Math.max(0, window.innerHeight - 230);
+    const screen = activeScreenRef.current?.getBoundingClientRect();
+    const panel = pipRef.current?.getBoundingClientRect();
+    if (!screen || !panel) return;
+    const candidate = { x: dragRef.current.originX + event.clientX - dragRef.current.x, y: dragRef.current.originY + event.clientY - dragRef.current.y };
     setPipPosition({
-      x: Math.max(-maxX, Math.min(maxX, dragRef.current.originX + event.clientX - dragRef.current.x)),
-      y: Math.max(-maxY, Math.min(maxY, dragRef.current.originY + event.clientY - dragRef.current.y)),
+      x: Math.max(10, Math.min(screen.width - panel.width - 10, candidate.x)),
+      y: Math.max(74, Math.min(screen.height - panel.height - 92, candidate.y)),
     });
+  }
+
+  function snapPip() {
+    const screen = activeScreenRef.current?.getBoundingClientRect();
+    const panel = pipRef.current?.getBoundingClientRect();
+    if (!screen || !panel) return;
+    const bounds = { width: screen.width, height: screen.height, insetTop: 74, insetBottom: 92 };
+    const anchor = nearestFloatingAnchor(pipPosition, { width: panel.width, height: panel.height }, bounds, false);
+    localStorage.setItem("autoai.call.preview.anchor", anchor);
+    setPipPosition(floatingAnchorPosition(anchor, { width: panel.width, height: panel.height }, bounds));
+  }
+
+  async function toggleFullscreen() {
+    if (document.fullscreenElement) await document.exitFullscreen().catch(() => undefined);
+    else await activeScreenRef.current?.requestFullscreen?.().catch(() => undefined);
   }
 
   function runIncomingAction(event: ReactMouseEvent<HTMLButtonElement>, action: () => Promise<void>) {
@@ -227,9 +278,11 @@ export function CallOverlay() {
   }
 
   return (
-    <div className="active-call-screen neural-call-screen" data-call-semantic={status.semantic} role="dialog" aria-modal="true" aria-label={`Call with ${peer.display_name}`}>
+    <div ref={activeScreenRef} className="active-call-screen neural-call-screen" data-call-semantic={status.semantic} role="dialog" aria-modal="true" aria-label={`Call with ${peer.display_name}`}>
       <RemoteAudioSurface stream={remoteStream} callId={call?.id} traceId={call?.trace_id} role={call?.direction} active={sessionState === "active"} />
-      {remoteStream && remoteCameraEnabled && hasRemoteVideo ? <VideoSurface stream={remoteStream} muted className="remote-call-video" /> : <div className="remote-call-placeholder"><Avatar name={peer.display_name} url={peer.avatar_url} ringState={avatarRingState} /></div>}
+      <div ref={mediaStageRef} className={`active-call-media-stage active-call-media-${remoteLayout.sourceOrientation}`} data-view-mode={viewMode}>
+        {remoteStream && remoteCameraEnabled && hasRemoteVideo ? <VideoSurface stream={remoteStream} muted className="remote-call-video" onDimensions={setRemoteSize} style={{ width: remoteLayout.renderedWidth || "100%", height: remoteLayout.renderedHeight || "100%", objectFit: remoteLayout.objectFit }} /> : <div className="remote-call-placeholder"><Avatar name={peer.display_name} url={peer.avatar_url} ringState={avatarRingState} /></div>}
+      </div>
       <div className="call-screen-shade" />
       <header className="active-call-header">
         <span><strong>{peer.display_name}</strong><small className="call-state-label">{sessionState === "active" ? time : status.label}</small></span>
@@ -237,17 +290,21 @@ export function CallOverlay() {
       </header>
       {localStream && cameraEnabled && (
         <div
+          ref={pipRef}
           className="local-call-preview"
-          style={{ transform: `translate(${pipPosition.x}px, ${pipPosition.y}px)` }}
+          data-size={pipSize}
+          style={{ left: pipPosition.x, top: pipPosition.y }}
           onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); dragRef.current = { x: event.clientX, y: event.clientY, originX: pipPosition.x, originY: pipPosition.y }; }}
           onPointerMove={movePip}
-          onPointerUp={(event) => { event.currentTarget.releasePointerCapture(event.pointerId); dragRef.current = null; }}
+          onPointerUp={(event) => { event.currentTarget.releasePointerCapture(event.pointerId); dragRef.current = null; snapPip(); }}
           onPointerCancel={() => { dragRef.current = null; }}
-        ><VideoSurface stream={localStream} muted className="local-call-video" /></div>
+        ><VideoSurface stream={localStream} muted className="local-call-video" /><button type="button" className="local-preview-size" data-no-drag onPointerDown={(event) => event.stopPropagation()} onClick={() => setPipSize((size) => size === "small" ? "medium" : "small")} aria-label="Resize local preview">{pipSize === "small" ? <Maximize2 size={13} /> : <Minimize2 size={13} />}</button></div>
       )}
       <FailureNotice floating />
       <nav className="active-call-controls" aria-label="Call controls">
         <button type="button" onClick={() => setMinimized(true)} aria-label="Minimize call"><Minimize2 size={21} /><span>Min</span></button>
+        {call?.call_type === "video" && <button type="button" disabled={controlPending} onClick={() => setViewMode((mode) => mode === "fit" ? "fill" : mode === "fill" ? "actual" : "fit")} aria-label={`Video view mode ${viewMode}`}><span className="call-view-mode">{viewMode === "actual" ? "1:1" : viewMode}</span><span>View</span></button>}
+        <button type="button" disabled={controlPending} onClick={() => runControl(toggleFullscreen)} aria-label="Toggle fullscreen"><Maximize2 size={21} /><span>Full</span></button>
         <button type="button" disabled={controlPending} className={muted ? "inactive" : ""} onClick={() => runControl(callSession.toggleMute)} aria-label={muted ? "Unmute microphone" : "Mute microphone"}>{muted ? <MicOff size={21} /> : <Mic size={21} />}<span>{muted ? "Unmute" : "Mute"}</span></button>
         {call?.call_type === "video" && <button type="button" disabled={controlPending} className={!cameraEnabled ? "inactive" : ""} onClick={() => runControl(callSession.toggleCamera)} aria-label={cameraEnabled ? "Turn camera off" : "Turn camera on"}>{cameraEnabled ? <Camera size={21} /> : <CameraOff size={21} />}<span>Camera</span></button>}
         {call?.call_type === "video" && <button type="button" disabled={controlPending || !cameraEnabled} onClick={() => runControl(callSession.switchCamera)} aria-label="Switch camera"><SwitchCamera size={21} /><span>Flip</span></button>}

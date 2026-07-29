@@ -9,7 +9,7 @@ import { canResumeAcceptedCall, requiresAcceptRequest } from "./callAcceptance";
 import { CallSetupError, failureCodeOf } from "./callFailures";
 import { CallSignaling } from "./services/callSignaling";
 import { mediaResourceCoordinator } from "./services/mediaResourceCoordinator";
-import { hasRequiredLocalSenders, syncLocalTracksToPeer } from "./mediaPeer";
+import { canMarkCallMediaConnected, hasRequiredLocalSenders, syncLocalTracksToPeer } from "./mediaPeer";
 import { nextCallState } from "./state/callStateMachine";
 import type { CallRecord, CallSessionState, CallSettings, CallType, IncomingCallPayload, PublicCallUser, SignalEnvelope } from "./types";
 
@@ -30,7 +30,7 @@ type CallTimerName = typeof TIMER_NAMES[number];
 
 function callDebug(label: string, details: Record<string, unknown> = {}) {
   if (!import.meta.env.DEV && localStorage.getItem("auto-ai-call-debug") !== "true") return;
-  console.debug(`[AutoAI Call] ${label}`, details);
+  console.debug(`[AutoAI Call] ${label}`, { build_version: import.meta.env.VITE_BUILD_VERSION ?? "dev", ...details });
 }
 
 function errorMessage(error: unknown, fallback: string) {
@@ -100,6 +100,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const intentionalPeerCloseRef = useRef(false);
   const acceptedCallIdsRef = useRef(new Set<string>());
   const connectedCallIdsRef = useRef(new Set<string>());
+  const remoteMediaCallIdsRef = useRef(new Set<string>());
   const nativeServiceCallIdsRef = useRef(new Set<string>());
   const terminalCallIdsRef = useRef(new Set<string>());
   const nativeAcceptIdsRef = useRef(new Set<string>());
@@ -440,7 +441,23 @@ export function CallProvider({ children }: { children: ReactNode }) {
     peerCallIdRef.current = currentCall.id;
     pendingIceRef.current = [];
     terminalCallIdsRef.current.delete(currentCall.id);
+    remoteMediaCallIdsRef.current.delete(currentCall.id);
     if (localStreamRef.current) await syncLocalTracksToPeer(peer, localStreamRef.current, currentCall.call_type);
+    const activateIfRemoteMediaReady = () => {
+      if (!canMarkCallMediaConnected(peer.connectionState, peer.iceConnectionState, remoteMediaCallIdsRef.current.has(currentCall.id))) return false;
+      reconnectAttemptsRef.current = 0;
+      clearProgressTimers();
+      transition("active");
+      if (!connectedCallIdsRef.current.has(currentCall.id)) {
+        connectedCallIdsRef.current.add(currentCall.id);
+        signaling.send("call.connected", currentCall.id);
+        beginStats();
+        void ensureNativeCallService(currentCall).catch((nativeError) => {
+          callDebug("native_call_service_failed", { call_id: currentCall.id, reason: errorMessage(nativeError, "native start failed") });
+        });
+      }
+      return true;
+    };
     peer.ontrack = (event) => {
       const stream = event.streams[0] ?? new MediaStream(remoteStreamRef.current?.getTracks() ?? []);
       if (!stream.getTracks().some((track) => track.id === event.track.id)) stream.addTrack(event.track);
@@ -449,6 +466,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
       setRemoteStream(nextRemoteStream);
       callDebug("REMOTE_MEDIA_RECEIVED", { call_id: currentCall.id, kind: event.track.kind });
       callDebug(event.track.kind === "audio" ? "REMOTE_AUDIO_TRACK_RECEIVED" : "REMOTE_VIDEO_TRACK_RECEIVED", { call_id: currentCall.id, trace_id: currentCall.trace_id, role: currentCall.direction, kind: event.track.kind, enabled: event.track.enabled, muted: event.track.muted, ready_state: event.track.readyState, receiver_present: true });
+      const markRemoteMediaReady = () => {
+        remoteMediaCallIdsRef.current.add(currentCall.id);
+        callDebug("REMOTE_MEDIA_READY", { call_id: currentCall.id, kind: event.track.kind });
+        activateIfRemoteMediaReady();
+      };
+      event.track.addEventListener("unmute", markRemoteMediaReady, { once: true });
+      if (!event.track.muted && event.track.readyState === "live") markRemoteMediaReady();
       if (event.track.kind === "video") {
         setRemoteCameraEnabled(true);
         event.track.onmute = () => callDebug("remote_video_track_muted", { call_id: currentCall.id, role: currentCall.direction });
@@ -495,18 +519,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
       callDebug("peer_connection_state", { call_id: currentCall.id, role: currentCall.direction, state: peer.connectionState });
       if (peer.connectionState !== "disconnected") clearCallTimer("reconnect");
       if (peer.connectionState === "connected") {
-        callDebug("CALL_CONNECTED", { call_id: currentCall.id });
-        reconnectAttemptsRef.current = 0;
-        clearProgressTimers();
-        transition("active");
-        if (!connectedCallIdsRef.current.has(currentCall.id)) {
-          connectedCallIdsRef.current.add(currentCall.id);
-          signaling.send("call.connected", currentCall.id);
-          beginStats();
-          void ensureNativeCallService(currentCall).catch((nativeError) => {
-            callDebug("native_call_service_failed", { call_id: currentCall.id, reason: errorMessage(nativeError, "native start failed") });
-          });
-        }
+        callDebug("CALL_TRANSPORT_CONNECTED", { call_id: currentCall.id });
+        if (!activateIfRemoteMediaReady()) transition("connecting");
       } else if (peer.connectionState === "disconnected") {
         transition("reconnecting");
         setCallTimer("reconnect", () => void attemptReconnect(), Math.max(CALL_RECONNECT_GRACE_MS, (configRef.current?.reconnect_grace_seconds ?? 15) * 1000));
@@ -523,17 +537,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         transition("connecting");
       } else if (peer.iceConnectionState === "connected" || peer.iceConnectionState === "completed") {
         callDebug("ICE_CONNECTED", { call_id: currentCall.id, state: peer.iceConnectionState });
-        reconnectAttemptsRef.current = 0;
-        clearProgressTimers();
-        transition("active");
-        if (!connectedCallIdsRef.current.has(currentCall.id)) {
-          connectedCallIdsRef.current.add(currentCall.id);
-          signaling.send("call.connected", currentCall.id);
-          beginStats();
-          void ensureNativeCallService(currentCall).catch((nativeError) => {
-            callDebug("native_call_service_failed", { call_id: currentCall.id, reason: errorMessage(nativeError, "native start failed") });
-          });
-        }
+        if (!activateIfRemoteMediaReady()) transition("connecting");
       } else if (peer.iceConnectionState === "disconnected") {
         transition("reconnecting");
         setCallTimer("reconnect", () => void attemptReconnect(), Math.max(CALL_RECONNECT_GRACE_MS, (configRef.current?.reconnect_grace_seconds ?? 15) * 1000));

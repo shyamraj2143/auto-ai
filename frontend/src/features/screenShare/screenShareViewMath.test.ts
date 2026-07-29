@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clamp, containSize, constrainScreenSharePan, coverSize, screenShareVideoStyle } from "./screenShareViewMath";
+import { clamp, containSize, constrainScreenSharePan, coverSize, screenShareMediaLayout, screenShareVideoStyle } from "./screenShareViewMath";
 
 describe("screen share viewer math", () => {
   it("keeps fit mode uncropped by default", () => {
@@ -51,5 +51,26 @@ describe("screen share viewer math", () => {
     expect(clamp(0.2, 1, 5)).toBe(1);
     expect(clamp(3, 1, 5)).toBe(3);
     expect(clamp(9, 1, 5)).toBe(5);
+  });
+
+  it("uses the shared portrait cap for a mobile screen on laptop", () => {
+    const layout = screenShareMediaLayout("fit", { width: 1080, height: 2400 }, { width: 1920, height: 1080 });
+    expect(layout.renderedWidth).toBeLessThanOrEqual(480);
+    expect(layout.renderedHeight).toBeLessThanOrEqual(1080);
+    expect(layout.objectFit).toBe("contain");
+  });
+
+  it("fits a desktop share completely on a portrait phone", () => {
+    const layout = screenShareMediaLayout("fit", { width: 2560, height: 1440 }, { width: 412, height: 915 });
+    expect(layout.renderedWidth).toBeCloseTo(412);
+    expect(layout.renderedHeight).toBeCloseTo(231.75);
+  });
+
+  it("recalculates fit after resize without changing view mode", () => {
+    const before = screenShareMediaLayout("fit", { width: 1920, height: 1080 }, { width: 1366, height: 768 });
+    const after = screenShareMediaLayout("fit", { width: 1920, height: 1080 }, { width: 768, height: 1024 });
+    expect(before.objectFit).toBe("contain");
+    expect(after.objectFit).toBe("contain");
+    expect(after.renderedWidth).toBeLessThanOrEqual(768);
   });
 });

@@ -1,7 +1,8 @@
-import { Maximize2, Minimize2, RotateCw, Search, Shrink, X, ZoomIn, ZoomOut } from "lucide-react";
+import { GripHorizontal, Maximize2, Minimize2, MoreHorizontal, RotateCw, Search, Shrink, X, ZoomIn, ZoomOut } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { screenShareDebug } from "./screenShareDiagnostics";
-import { clamp, constrainScreenSharePan, screenShareVideoStyle, type ScreenShareViewMode } from "./screenShareViewMath";
+import { clamp, constrainScreenSharePan, screenShareMediaLayout, type ScreenShareViewMode } from "./screenShareViewMath";
+import { useFloatingPanel } from "../media/useFloatingPanel";
 
 type PointerPoint = {
   id: number;
@@ -48,6 +49,8 @@ export function ScreenShareViewer({
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [fullscreen, setFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
+  const [secondaryControls, setSecondaryControls] = useState(false);
+  const toolbar = useFloatingPanel({ storageKey: "autoai.screen-share.viewer-toolbar.anchor", defaultAnchor: "bottom-center", bottomInset: 14 });
 
   const resetZoom = useCallback(() => {
     setZoom(1);
@@ -172,9 +175,12 @@ export function ScreenShareViewer({
   const naturalLabel = naturalSize.width && naturalSize.height ? `${naturalSize.width} x ${naturalSize.height}` : "Waiting";
   const containerLabel = containerSize.width && containerSize.height ? `${Math.round(containerSize.width)} x ${Math.round(containerSize.height)}` : "";
 
-  const videoStyle = useMemo(() => {
-    return screenShareVideoStyle(viewMode, naturalSize);
-  }, [naturalSize.height, naturalSize.width, viewMode]);
+  const mediaLayout = useMemo(() => screenShareMediaLayout(viewMode, naturalSize, containerSize), [containerSize, naturalSize, viewMode]);
+  const videoStyle = useMemo(() => ({
+    width: `${mediaLayout.renderedWidth || containerSize.width}px`,
+    height: `${mediaLayout.renderedHeight || containerSize.height}px`,
+    objectFit: mediaLayout.objectFit,
+  }), [containerSize.height, containerSize.width, mediaLayout.objectFit, mediaLayout.renderedHeight, mediaLayout.renderedWidth]);
 
   const transform = `translate3d(${pan.x}px, ${pan.y}px, 0) rotate(${rotation}deg) scale(${zoom})`;
 
@@ -270,7 +276,7 @@ export function ScreenShareViewer({
     >
       {stream ? (
         <div className="ss-screen-stage">
-          <div className="ss-screen-transform" style={{ transform }}>
+          <div className="ss-screen-transform" style={{ transform, width: videoStyle.width, height: videoStyle.height }}>
             <video
               ref={videoRef}
               className="ss-viewer-video"
@@ -296,21 +302,25 @@ export function ScreenShareViewer({
       </header>
 
       <div
+        ref={toolbar.ref}
         className={`ss-viewer-toolbar ${controlsVisible ? "" : "ss-controls-hidden"}`}
+        style={toolbar.style}
         role="toolbar"
         aria-label="Screen share view controls"
-        onPointerDown={(event) => event.stopPropagation()}
-        onPointerMove={(event) => event.stopPropagation()}
+        tabIndex={0}
+        onPointerDown={(event) => { event.stopPropagation(); toolbar.onPointerDown(event); }}
+        onPointerMove={(event) => { event.stopPropagation(); toolbar.onPointerMove(event); }}
+        onPointerUp={(event) => { event.stopPropagation(); toolbar.onPointerUp(event); }}
+        onPointerCancel={(event) => { event.stopPropagation(); toolbar.onPointerCancel(event); }}
+        onKeyDown={toolbar.onKeyDown}
       >
+        <span className="ss-viewer-drag" aria-hidden="true"><GripHorizontal size={15} /></span>
         <button type="button" className={viewMode === "fit" ? "active" : ""} onClick={() => setViewMode("fit")}>Fit</button>
-        <button type="button" className={viewMode === "fill" ? "active" : ""} onClick={() => setViewMode("fill")}>Fill</button>
-        <button type="button" className={viewMode === "actual" ? "active" : ""} onClick={() => setViewMode("actual")}>100%</button>
         <button type="button" onClick={() => setConstrainedZoom(zoom + 0.25)} aria-label="Zoom in"><ZoomIn size={16} /></button>
         <button type="button" onClick={() => setConstrainedZoom(zoom - 0.25)} aria-label="Zoom out"><ZoomOut size={16} /></button>
-        <button type="button" onClick={resetZoom} aria-label="Reset zoom"><Shrink size={16} /></button>
-        <button type="button" onClick={() => setRotation((value) => (value + 90) % 360)} aria-label="Rotate view"><RotateCw size={16} /></button>
         <button type="button" onClick={() => void toggleFullscreen()} aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}>{fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</button>
-        <span><Search size={14} /> {Math.round(zoom * 100)}%</span>
+        <button type="button" onClick={() => setSecondaryControls((value) => !value)} aria-expanded={secondaryControls} aria-label="More view controls"><MoreHorizontal size={16} /></button>
+        {secondaryControls && <div className="ss-viewer-secondary"><button type="button" className={viewMode === "fill" ? "active" : ""} onClick={() => setViewMode("fill")}>Fill</button><button type="button" className={viewMode === "actual" ? "active" : ""} onClick={() => setViewMode("actual")}>100%</button><button type="button" onClick={() => { resetZoom(); setRotation(0); setViewMode("fit"); }}><Shrink size={15} /> Reset</button><button type="button" onClick={() => { setRotation((value) => (value + 90) % 360); resetZoom(); }}><RotateCw size={15} /> Rotate</button><span><Search size={14} /> {Math.round(zoom * 100)}% · {naturalLabel}</span></div>}
       </div>
 
       {paused && <div className="ss-paused">Sharing paused</div>}

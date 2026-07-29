@@ -38,3 +38,12 @@ export function hasRequiredLocalSenders(peer: RTCPeerConnection, callType: CallT
   const liveKinds = new Set(peer.getSenders().filter((sender) => sender.track?.readyState === "live").map((sender) => sender.track?.kind));
   return liveKinds.has("audio") && (callType === "audio" || audioOnly || liveKinds.has("video"));
 }
+
+export function canMarkCallMediaConnected(
+  connectionState: RTCPeerConnectionState,
+  iceConnectionState: RTCIceConnectionState,
+  remoteMediaReady: boolean,
+) {
+  const transportConnected = connectionState === "connected" || iceConnectionState === "connected" || iceConnectionState === "completed";
+  return transportConnected && remoteMediaReady;
+}

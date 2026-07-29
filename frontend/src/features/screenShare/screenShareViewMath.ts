@@ -1,3 +1,5 @@
+import { calculateMediaLayout } from "../media/mediaLayout";
+
 export type ScreenShareViewMode = "fit" | "fill" | "actual";
 
 export function clamp(value: number, min: number, max: number) {
@@ -53,4 +55,19 @@ export function coverSize(source: { width: number; height: number }, container: 
     width: source.width * ratio,
     height: source.height * ratio,
   };
+}
+
+export function screenShareMediaLayout(
+  mode: ScreenShareViewMode,
+  naturalSize: { width: number; height: number },
+  containerSize: { width: number; height: number },
+) {
+  return calculateMediaLayout({
+    sourceWidth: naturalSize.width,
+    sourceHeight: naturalSize.height,
+    containerWidth: containerSize.width,
+    containerHeight: containerSize.height,
+    contentType: "screen-share",
+    preferredMode: mode,
+  });
 }

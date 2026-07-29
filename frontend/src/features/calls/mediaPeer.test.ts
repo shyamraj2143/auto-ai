@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { hasRequiredLocalSenders, syncLocalTracksToPeer } from "./mediaPeer";
+import { canMarkCallMediaConnected, hasRequiredLocalSenders, syncLocalTracksToPeer } from "./mediaPeer";
 
 function track(kind: "audio" | "video", id: string, readyState: MediaStreamTrackState = "live") {
   return { kind, id, readyState } as MediaStreamTrack;
@@ -41,5 +41,16 @@ describe("syncLocalTracksToPeer", () => {
     const next = track("audio", "new");
     const result = await syncLocalTracksToPeer(fixture.peer, { getTracks: () => [next] } as MediaStream, "audio");
     expect(result.replaced).toEqual([next]);
+  });
+});
+
+describe("call media connection gate", () => {
+  it("does not mark a call connected before remote media arrives", () => {
+    expect(canMarkCallMediaConnected("connected", "connected", false)).toBe(false);
+  });
+
+  it("marks connected only when transport and remote media are both ready", () => {
+    expect(canMarkCallMediaConnected("connected", "connected", true)).toBe(true);
+    expect(canMarkCallMediaConnected("connecting", "checking", true)).toBe(false);
   });
 });

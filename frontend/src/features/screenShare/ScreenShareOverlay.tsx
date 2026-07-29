@@ -1,10 +1,11 @@
-import { Clipboard, Hash, LogIn, Monitor, Mic, MicOff, Pause, Play, ScreenShare, Square, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Clipboard, GripHorizontal, Hash, LogIn, Monitor, Mic, MicOff, Pause, Play, ScreenShare, Square, Users, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { resolveApiAssetUrl } from "../../api/client";
 import { AppSelect } from "../../components/common/AppSelect";
 import { ScreenShareViewer } from "./ScreenShareViewer";
 import { useScreenShare } from "./useScreenShare";
 import type { ScreenShareQualityMode } from "./types";
+import { useFloatingPanel } from "../media/useFloatingPanel";
 
 function AudioSurface({ stream }: { stream: MediaStream | null }) {
   const ref = useRef<HTMLAudioElement | null>(null);
@@ -38,6 +39,22 @@ export function ScreenShareOverlay() {
   const active = share.uiState !== "idle" && share.uiState !== "ended";
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [dockCollapsed, setDockCollapsed] = useState(false);
+  const [codeExpanded, setCodeExpanded] = useState(false);
+  const collapseTimerRef = useRef<number>(0);
+  const dock = useFloatingPanel({ storageKey: "autoai.screen-share.dock.anchor", defaultAnchor: "bottom-center", bottomInset: 18 });
+
+  function keepDockOpen() {
+    window.clearTimeout(collapseTimerRef.current);
+    if (dockCollapsed) setDockCollapsed(false);
+    collapseTimerRef.current = window.setTimeout(() => setDockCollapsed(true), 6000);
+  }
+
+  useEffect(() => {
+    if (!active || share.role !== "sharer") return;
+    keepDockOpen();
+    return () => window.clearTimeout(collapseTimerRef.current);
+  }, [active, share.role]);
 
   async function generateCode() {
     setBusy(true);
@@ -120,19 +137,38 @@ export function ScreenShareOverlay() {
       )}
 
       {active && share.role === "sharer" && (
-        <div className="ss-control-bar" role="status">
+        <div
+          ref={dock.ref}
+          className={`ss-control-bar ss-floating-dock ${dockCollapsed ? "ss-dock-collapsed" : "ss-dock-expanded"}`}
+          style={dock.style}
+          role="toolbar"
+          aria-label="Screen sharing controls"
+          tabIndex={0}
+          onPointerDown={dock.onPointerDown}
+          onPointerMove={dock.onPointerMove}
+          onPointerUp={dock.onPointerUp}
+          onPointerCancel={dock.onPointerCancel}
+          onKeyDown={dock.onKeyDown}
+          onPointerEnter={keepDockOpen}
+          onFocus={keepDockOpen}
+        >
           <AudioSurface stream={share.remoteStream} />
-          <span><ScreenShare size={17} /><strong>You are sharing your screen</strong><time>{duration}</time></span>
+          <button type="button" className="ss-drag-handle" aria-label="Move screen share controls" title="Drag controls"><GripHorizontal size={17} /></button>
+          <span className="ss-live-summary"><ScreenShare size={17} /><strong>Live</strong><time>{duration}</time></span>
+          <button type="button" className="ss-dock-toggle" onClick={() => setDockCollapsed((value) => !value)} aria-label={dockCollapsed ? "Expand controls" : "Minimize controls"}>{dockCollapsed ? <ChevronUp size={17} /> : <ChevronDown size={17} />}</button>
+          <div className="ss-dock-expanded-content">
           {share.uiState === "reconnecting" && <small>Reconnecting...</small>}
           {share.uiState === "waiting" && <small>Waiting for viewer</small>}
           <small className={`ss-network ss-network-${share.networkQuality}`}>{share.networkQuality === "poor" ? "Poor network" : share.networkQuality === "good" ? "Network good" : share.networkQuality}</small>
           {share.sentResolution && <small>{share.sentResolution}</small>}
+          <small className="ss-viewer-count"><Users size={13} />{share.session?.viewer_user_id || share.session?.viewerUserId ? 1 : 0}</small>
           <AppSelect value={share.qualityMode} onChange={(value) => share.setQualityMode(value as ScreenShareQualityMode)} label="Screen share quality" options={[{value:"auto",label:"Auto"},{value:"data-saver",label:"Data Saver"},{value:"sharp-text",label:"Sharp Text"},{value:"smooth-motion",label:"Smooth Motion"},{value:"hd",label:"HD"}]} />
-          {share.shareCode && <button type="button" className="ss-code-pill" onClick={() => void share.copyShareCode()} aria-label="Copy screen share code"><Hash size={15} /> {share.shareCode}</button>}
+          {share.shareCode && <div className="ss-code-chip-wrap"><button type="button" className="ss-code-pill" onClick={() => setCodeExpanded((value) => !value)} aria-expanded={codeExpanded} aria-label="Show screen share code"><Hash size={15} /><span>{codeExpanded ? share.shareCode : `${share.shareCode.slice(0, 3)}•••`}</span></button>{codeExpanded && <div className="ss-code-popover"><strong>{share.shareCode}</strong><button type="button" onClick={() => void share.copyShareCode()}><Clipboard size={14} /> Copy</button><button type="button" onClick={() => void share.copyInviteLink()}>Share link</button></div>}</div>}
           <button type="button" onClick={() => void share.toggleMute()} aria-label={share.muted ? "Turn on mic" : "Mute mic"}>{share.muted ? <MicOff size={17} /> : <Mic size={17} />}</button>
           <button type="button" onClick={share.togglePause} aria-label={share.paused ? "Resume share" : "Pause share"}>{share.paused ? <Play size={17} /> : <Pause size={17} />}</button>
           <button type="button" onClick={() => void (share.shareCode ? share.copyShareCode() : share.copyInviteLink())} aria-label={share.shareCode ? "Copy code" : "Copy invite link"}><Clipboard size={17} /></button>
           <button type="button" className="stop" onClick={() => void share.stopShare()}><Square size={16} /> Stop Sharing</button>
+          </div>
         </div>
       )}
 
