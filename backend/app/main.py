@@ -160,7 +160,7 @@ def create_app() -> FastAPI:
     app.include_router(payments.router, prefix=settings.API_V1_STR)
     app.include_router(admin.router, prefix=settings.API_V1_STR)
     app.include_router(cms.router, prefix=settings.API_V1_STR)
-    app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
+    app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR, check_dir=False), name="uploads")
 
     return app
 
