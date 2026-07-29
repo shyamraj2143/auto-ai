@@ -30,6 +30,7 @@ type CallsTabProps = {
 type View = CallHubView;
 type RequestView = "incoming" | "sent" | "connected" | "history";
 type CallFilter = "all" | "missed" | "audio" | "video";
+type ChatFilter = "recent" | "unread";
 export const CALL_HUB_SECTIONS = ["search", "requests", "chats", "calls", "alerts"] as const;
 
 function errorText(error: unknown, fallback: string) {
@@ -86,6 +87,17 @@ function friendlyCallStatus(status: string) {
   return labels[status] || "No answer";
 }
 
+function friendlyRequestStatus(status: string) {
+  const labels: Record<string, string> = {
+    accepted: "Request accepted",
+    declined: "Request declined",
+    rejected: "Request declined",
+    cancelled: "Request cancelled",
+    canceled: "Request cancelled",
+  };
+  return labels[status.toLowerCase()] || "Request updated";
+}
+
 function callDateGroup(value: string) {
   const date = new Date(value);
   const today = new Date();
@@ -124,7 +136,7 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
   const [connections, setConnections] = useState<SocialProfile[]>([]);
   const [threads, setThreads] = useState<UserThread[]>([]);
   const [chatQuery, setChatQuery] = useState("");
-  const [unreadChatsOnly, setUnreadChatsOnly] = useState(false);
+  const [chatFilter, setChatFilter] = useState<ChatFilter>("recent");
   const [requestView, setRequestView] = useState<RequestView>("incoming");
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
   const [pendingSocialUserId, setPendingSocialUserId] = useState<string | null>(null);
@@ -525,7 +537,7 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
   const unreadChatCount = threads.reduce((sum, thread) => sum + thread.unread_count, 0);
   const visibleThreads = threads.filter((thread) => {
     const term = chatQuery.trim().toLowerCase();
-    return (!unreadChatsOnly || thread.unread_count > 0) && (!term || thread.peer.display_name.toLowerCase().includes(term) || thread.peer.username.toLowerCase().includes(term));
+    return (chatFilter !== "unread" || thread.unread_count > 0) && (!term || thread.peer.display_name.toLowerCase().includes(term) || thread.peer.username.toLowerCase().includes(term));
   });
   const filteredHistory = history.filter((item) => callFilter === "all" || (callFilter === "missed" ? item.status === "missed" : item.call_type === callFilter));
   const groupedHistory = filteredHistory.reduce<Record<string, CallRecord[]>>((groups, item) => {
@@ -549,7 +561,7 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
 
       {view === "chats" && (
         <ChatsPanel>
-          <div className="chat-list-tools"><label><Search size={15} /><input value={chatQuery} onChange={(event) => setChatQuery(event.target.value)} placeholder="Search accepted contacts" aria-label="Search accepted conversations" /></label><button type="button" className={unreadChatsOnly ? "active" : ""} onClick={() => setUnreadChatsOnly((value) => !value)}>Unread</button></div>
+          <div className="chat-list-tools"><label><Search size={15} /><input value={chatQuery} onChange={(event) => setChatQuery(event.target.value)} placeholder="Search accepted contacts" aria-label="Search accepted conversations" /></label><div className="chat-filter-buttons" role="group" aria-label="Conversation filter"><button type="button" className={chatFilter === "recent" ? "active" : ""} onClick={() => setChatFilter("recent")}>Recent</button><button type="button" className={chatFilter === "unread" ? "active" : ""} onClick={() => setChatFilter("unread")}>Unread</button></div></div>
           {loading && !threads.length && <div className="connection-skeleton" aria-label="Loading conversations"><i /><i /><i /></div>}
           {visibleThreads.map((thread) => (
             <div className="call-history-row call-chat-row" key={thread.id} role="button" tabIndex={0} onClick={() => navigate(`/messages/${thread.id}`)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") navigate(`/messages/${thread.id}`); }}>
@@ -560,7 +572,7 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
               <button type="button" onClick={(event) => { event.stopPropagation(); void startCall(thread.peer, "video"); }} disabled={!callingAvailable || !thread.peer.can_video_call} aria-label={`Video call ${thread.peer.display_name}`}><Video size={15} /></button>
             </div>
           ))}
-          {!visibleThreads.length && !loading && <CallHubEmptyState title={unreadChatsOnly ? "No unread conversations" : "Your accepted conversations will appear here"} action={<button type="button" onClick={() => changeView("search")}>Find People</button>} />}
+          {!visibleThreads.length && !loading && <CallHubEmptyState title={chatFilter === "unread" ? "No unread conversations" : "Your accepted conversations will appear here"} action={<button type="button" onClick={() => changeView("search")}>Find People</button>} />}
         </ChatsPanel>
       )}
 
@@ -605,7 +617,7 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
                 <strong>{selected.display_name}</strong>
                 <small>@{selected.username} - {selected.is_private ? "Private" : "Public"}</small>
                 <p>{selected.profile_restricted ? "Follow approval is required to view this profile." : selected.bio || "No bio yet."}</p>
-                {!selected.can_message && selected.follow_status !== "blocked" && selected.follow_status !== "self" && <p className="social-help-text">Follow request accept hone ke baad message aur call kar sakte hain.</p>}
+                {!selected.can_message && selected.follow_status !== "blocked" && selected.follow_status !== "self" && <p className="social-help-text">Messaging and calls unlock after the follow request is accepted.</p>}
                 <div className="social-profile-actions">
                   <button type="button" onClick={() => void applyFollowAction(selected)} disabled={Boolean(pendingSocialUserId) || selected.follow_status === "self" || selected.follow_status === "blocked"} aria-busy={pendingSocialUserId === selected.id}>
                     {pendingSocialUserId === selected.id && <LoaderCircle className="animate-spin" size={14} />}{followButtonLabel(selected)}
@@ -661,7 +673,7 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
           </div>)}
           {requestView === "connected" && !connections.length && !loading && <div className="calls-empty">No connections yet</div>}
           {requestView === "history" && historyRequests.map((request) => <div className="social-request-row" key={request.id}>
-            <Avatar profile={request.user} /><span><strong>{request.user.display_name}</strong><small>{request.actor_label || request.status} · {request.responded_at ? new Date(request.responded_at).toLocaleString() : new Date(request.requested_at).toLocaleString()}</small></span>
+            <Avatar profile={request.user} /><span><strong>{request.user.display_name}</strong><small>{friendlyRequestStatus(request.status)} · {request.responded_at ? new Date(request.responded_at).toLocaleString() : new Date(request.requested_at).toLocaleString()}</small></span>
             {request.status === "accepted" && <button type="button" onClick={() => void openMessage(request.user)}><MessageCircle size={15} /> Message</button>}
           </div>)}
           {requestView === "history" && !historyRequests.length && !loading && <div className="calls-empty">No request history</div>}

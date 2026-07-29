@@ -40,3 +40,41 @@ export class CallSetupError extends Error {
 export function failureCodeOf(error: unknown, fallback: CallFailureCode): CallFailureCode {
   return error instanceof CallSetupError ? error.code : fallback;
 }
+
+export type CallFailurePresentation = {
+  title: string;
+  message: string;
+  permissionRelated: boolean;
+  diagnostic?: string;
+};
+
+export function callFailurePresentation(error: string, includeDiagnostic = false): CallFailurePresentation {
+  const normalized = error.toLowerCase().replace(/[_-]+/g, " ");
+  const diagnostic = includeDiagnostic ? { diagnostic: error } : {};
+  const permissionRelated = /\b(permission|microphone|camera|record audio)\b/.test(normalized);
+
+  if (permissionRelated) {
+    return {
+      title: "Calling permission required",
+      message: "Allow microphone and camera access, then retry the call.",
+      permissionRelated: true,
+      ...diagnostic,
+    };
+  }
+
+  if (/\b(network|offline|socket|signaling|turn|relay|ice|connection|timeout)\b/.test(normalized)) {
+    return {
+      title: "Connection interrupted",
+      message: "Check your internet connection and retry.",
+      permissionRelated: false,
+      ...diagnostic,
+    };
+  }
+
+  return {
+    title: "Calling service could not start",
+    message: "AutoAI could not prepare the call. Please retry.",
+    permissionRelated: false,
+    ...diagnostic,
+  };
+}

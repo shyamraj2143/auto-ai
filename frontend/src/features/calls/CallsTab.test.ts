@@ -21,6 +21,8 @@ describe("Call Hub navigation", () => {
   it("keeps chats restricted to accepted connections and groups call history", () => {
     expect(source).toContain("userMessagesApi.listThreads");
     expect(source).toContain("thread.unread_count");
+    expect(source).toContain('type ChatFilter = "recent" | "unread"');
+    expect(source).toContain(">Recent</button>");
     expect(source).toContain("Today\", \"Yesterday\", \"Earlier");
     expect(source).toContain("No missed calls");
     expect(source).toContain("friendlyCallStatus");
@@ -40,6 +42,11 @@ describe("Call Hub navigation", () => {
   it("keeps raw readiness diagnostics development-only", () => {
     expect(source).toContain("import.meta.env.DEV");
     expect(source).toContain("CallHubStatusBanner");
+  });
+
+  it("uses friendly request history labels instead of raw backend statuses", () => {
+    expect(source).toContain("friendlyRequestStatus(request.status)");
+    expect(source).not.toContain("request.actor_label || request.status");
   });
 
   it("uses an app-owned clear-alerts dialog instead of the broken WebView confirm", () => {
