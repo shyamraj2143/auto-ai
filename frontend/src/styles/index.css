@@ -7904,6 +7904,8 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
 
 /* Settings reference system: compact neon glass groups with persistent category tabs. */
 .settings-reference-page {
+  overscroll-behavior-y: contain;
+  scroll-padding-top: 112px;
   background:
     radial-gradient(circle at 8% 5%, rgba(20, 132, 255, .13), transparent 30%),
     radial-gradient(circle at 88% 30%, rgba(94, 58, 255, .11), transparent 32%),
@@ -7921,12 +7923,19 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
   position: sticky;
   top: 0;
   z-index: 24;
+  isolation: isolate;
+  transform: translateZ(0);
+  overflow-anchor: none;
   margin: 0 -22px 18px;
   border-bottom: 1px solid rgba(117, 157, 220, .13);
   background: rgba(3, 9, 19, .9);
   padding: max(12px, env(safe-area-inset-top)) 22px 0;
   box-shadow: 0 14px 32px rgba(0, 0, 0, .18);
   backdrop-filter: blur(22px) saturate(1.12);
+}
+
+.settings-reference-page.is-native-app .settings-reference-header {
+  padding-top: 8px;
 }
 
 .settings-title-row {
@@ -8262,6 +8271,10 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
   .settings-reference-header {
     margin: 0 -12px 12px;
     padding: max(9px, env(safe-area-inset-top)) 12px 0;
+  }
+
+  .settings-reference-page.is-native-app .settings-reference-header {
+    padding-top: 6px;
   }
 
   .settings-title-row h1 {

@@ -53,4 +53,11 @@ describe("settings reference layout contracts", () => {
     expect(settingsSource).toContain("tabs.scrollTo({ left:");
     expect(settingsSource).toContain("data-settings-section={tab.section}");
   });
+
+  it("keeps the native sticky header stable without duplicating the system safe area", () => {
+    expect(settingsSource).toContain('isMobileAppRuntime() && "is-native-app"');
+    expect(appCss).toContain(".settings-reference-page.is-native-app .settings-reference-header");
+    expect(appCss).toContain("overscroll-behavior-y: contain");
+    expect(appCss).toContain("overflow-anchor: none");
+  });
 });

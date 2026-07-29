@@ -52,6 +52,7 @@ import { useMotionMode } from "../../motion/MotionProvider";
 import type { MotionPreference } from "../../motion/tokens";
 import { CrystalButton, CrystalCard } from "../crystal/Crystal";
 import { crystalUiEnabled, type CrystalEffectsLevel } from "../../crystal/tokens";
+import { isMobileAppRuntime } from "../../utils/runtime";
 
 const APP_VERSION = "1.0.3";
 
@@ -744,7 +745,10 @@ export function SettingsPage() {
   return (
     <div
       ref={pageRef}
-      className="settings-page settings-reference-page min-h-0 flex-1 overflow-y-auto overflow-x-hidden text-white"
+      className={clsx(
+        "settings-page settings-reference-page min-h-0 flex-1 overflow-y-auto overflow-x-hidden text-white",
+        isMobileAppRuntime() && "is-native-app"
+      )}
     >
       <div className="settings-reference-shell">
         <header className="settings-reference-header">

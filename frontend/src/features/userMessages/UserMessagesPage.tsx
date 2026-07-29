@@ -6,6 +6,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useShell } from "../../contexts/ShellContext";
 import { useCallSession } from "../calls/hooks/useCallSession";
 import { useScreenShare } from "../screenShare/useScreenShare";
+import { formatMessageDateTimeTitle, formatMessageTime, normalizedApiTimestamp } from "../../utils/dateTime";
 import type { ChatPublicUser, ChatRealtimeEvent, UserMessage, UserThread } from "./types";
 import { UserMessageSocket, userMessagesApi } from "./userMessagesApi";
 import { failOptimisticMessage, messageSendError, replaceOptimisticMessage } from "./messageDelivery";
@@ -21,9 +22,8 @@ function initials(name: string) {
   return name.trim().slice(0, 1).toUpperCase() || "A";
 }
 
-function timeLabel(value?: string | null) {
-  if (!value) return "";
-  return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+export function timeLabel(value?: string | null) {
+  return formatMessageTime(value);
 }
 
 function messagePreview(message?: UserMessage | null) {
@@ -670,7 +670,12 @@ export function UserMessagesPage() {
                 <em>{openingThreadId === thread.id || loadingThreadId === thread.id ? "Opening..." : messagePreview(thread.last_message)}</em>
               </span>
               <span className="um-thread-meta">
-                <time>{timeLabel(thread.last_message?.created_at || thread.updated_at)}</time>
+                <time
+                  dateTime={normalizedApiTimestamp(thread.last_message?.created_at || thread.updated_at) || undefined}
+                  title={formatMessageDateTimeTitle(thread.last_message?.created_at || thread.updated_at)}
+                >
+                  {timeLabel(thread.last_message?.created_at || thread.updated_at)}
+                </time>
                 {thread.unread_count > 0 && <b>{thread.unread_count}</b>}
                 <i>{thread.pinned && <Pin size={12} />}{thread.muted && <VolumeX size={12} />}{thread.archived && <Archive size={12} />}</i>
               </span>
@@ -700,7 +705,10 @@ export function UserMessagesPage() {
                     {message.attachment_url && message.message_type !== "image" && <a href={resolveApiAssetUrl(message.attachment_url)} target="_blank" rel="noreferrer"><FileText size={16} />{message.attachment_name || "File"}</a>}
                     {message.text_content && <p>{message.text_content}</p>}
                     <small>
-                      {timeLabel(message.created_at)} {own && <MessageStatus message={message} />}
+                      <time dateTime={normalizedApiTimestamp(message.created_at) || undefined} title={formatMessageDateTimeTitle(message.created_at)}>
+                        {timeLabel(message.created_at)}
+                      </time>
+                      {own && <MessageStatus message={message} />}
                       {own && (
                         <button
                           type="button"
