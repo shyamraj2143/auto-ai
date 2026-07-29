@@ -1,6 +1,6 @@
 import { Ban, EllipsisVertical, Flag, MessageCircle, Phone, Video } from "lucide-react";
 import { useState } from "react";
-import { resolveApiAssetUrl } from "../../api/client";
+import { CallAvatar } from "./CallAvatar";
 import type { CallType, PublicCallUser } from "./types";
 
 export function CallUserRow({
@@ -35,7 +35,6 @@ export function CallUserRow({
     : user.presence === "offline" && user.last_seen_at
       ? `Last seen ${new Date(user.last_seen_at).toLocaleString()}`
       : user.availability;
-  const avatarUrl = resolveApiAssetUrl(user.avatar_url);
   const openMessage = () => onMessage?.(user);
   return (
     <div
@@ -50,10 +49,9 @@ export function CallUserRow({
         }
       }}
     >
-      <span className="call-user-avatar">
-        {avatarUrl ? <img src={avatarUrl} alt="" /> : <span>{user.display_name.slice(0, 1).toUpperCase()}</span>}
+      <CallAvatar name={user.display_name} avatarUrl={user.avatar_url}>
         <i className={`call-presence-dot ${statusClass}`} aria-label={user.availability} />
-      </span>
+      </CallAvatar>
       <span className="call-user-copy">
         <strong>{user.display_name}</strong>
         <small>@{user.username} · {status}</small>

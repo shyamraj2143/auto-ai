@@ -16,14 +16,11 @@ from app.db.session import SessionLocal
 from app.models.call import Call, UserCallSettings
 from app.models.user import User
 from app.schemas.call import CallRead, PublicCallUser
-from app.services.call_notification_service import (
-    public_avatar,
-    send_call_dismiss_notifications,
-    send_incoming_call_notifications,
-)
+from app.services.call_notification_service import send_call_dismiss_notifications, send_incoming_call_notifications
 from app.services.call_permission_service import call_allowed, get_or_create_call_settings
 from app.services.presence_service import RealtimeUnavailable, presence_service
 from app.services.social_service import social_service
+from app.services.user_avatar import public_avatar
 
 
 TERMINAL_STATUSES = {"rejected", "cancelled", "busy", "missed", "failed", "ended"}
@@ -70,7 +67,7 @@ def base_public_user(user: User) -> PublicCallUser:
         id=user.id,
         display_name=user.name,
         username=user.username or f"user_{user.id.replace('-', '')[:8]}",
-        avatar_url=user.avatar or user.picture,
+        avatar_url=public_avatar(user) or None,
     )
 
 

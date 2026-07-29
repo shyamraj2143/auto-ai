@@ -11,6 +11,7 @@ from app.db.base import Base
 from app.models.user import User
 from app.schemas.auth import UserProfileUpdate
 from app.schemas.call import PublicCallUser
+from app.services.user_avatar import public_avatar
 
 
 @pytest.fixture()
@@ -95,6 +96,27 @@ async def test_avatar_upload_rejects_invalid_image(db: Session, tmp_path, monkey
 
     with pytest.raises(Exception):
         await upload_avatar(file, db, current)
+
+
+def test_missing_local_avatar_falls_back_to_provider_picture(db: Session, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    current = create_user(db, "current", "current_user")
+    current.avatar = "/uploads/profile/missing.webp"
+    current.picture = "https://images.example.com/current.webp"
+    monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path))
+
+    assert public_avatar(current) == current.picture
+
+
+def test_existing_local_avatar_remains_public(db: Session, tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    current = create_user(db, "current", "current_user")
+    profile_dir = tmp_path / "profile"
+    profile_dir.mkdir()
+    (profile_dir / "current.webp").write_bytes(b"RIFFxxxxWEBP")
+    current.avatar = "/uploads/profile/current.webp"
+    current.picture = "https://images.example.com/current.webp"
+    monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path))
+
+    assert public_avatar(current) == current.avatar
 
 
 def test_public_call_user_never_exposes_private_profile_fields() -> None:

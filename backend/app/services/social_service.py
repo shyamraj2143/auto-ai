@@ -15,6 +15,7 @@ from app.models.user import User
 from app.schemas.social import FollowRequestRead, SearchHistoryRead, SocialNotificationRead, SocialProfile
 from app.services.call_permission_service import call_allowed
 from app.services.social_notification_service import send_social_push_notification
+from app.services.user_avatar import public_avatar
 
 
 ACCEPTED = "accepted"
@@ -139,7 +140,7 @@ class SocialService:
             id=target.id,
             display_name=target.name,
             username=public_username(target),
-            avatar_url=target.avatar or target.picture,
+            avatar_url=public_avatar(target) or None,
             bio=target.bio if show_private_fields else None,
             is_private=target.profile_visibility == "private",
             follow_status=status_value,

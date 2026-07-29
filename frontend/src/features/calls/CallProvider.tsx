@@ -938,7 +938,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
     setSessionState("preparing");
     sessionStateRef.current = "preparing";
     try {
-      if (!callNative.isAndroid()) await requestLocalMedia(callType);
+      if (!callNative.isAndroid()) {
+        await signaling.connect(token);
+        if (!await signaling.waitUntilConnected()) throw new Error("Secure call signaling could not connect. Please retry.");
+        await requestLocalMedia(callType);
+      }
       const created = await callApi.initiate(token, peer.id, callType, deviceIdRef.current);
       callRef.current = created;
       setCall(created);
@@ -983,7 +987,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     } finally {
       startPendingRef.current = false;
     }
-  }, [cleanup, clearCallTimer, ensureNativeCallService, requestLocalMedia, setCallTimer, token]);
+  }, [cleanup, clearCallTimer, ensureNativeCallService, requestLocalMedia, setCallTimer, signaling, token]);
 
   const acceptCall = useCallback(async (audioOnly = false) => {
     const currentCall = callRef.current;

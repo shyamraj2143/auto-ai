@@ -4,18 +4,31 @@ import { CALL_HUB_SECTIONS } from "./CallsTab";
 
 const source = readFileSync(new URL("./CallsTab.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("./calls.css", import.meta.url), "utf8");
+const shell = readFileSync(new URL("./CallHubShell.tsx", import.meta.url), "utf8");
+const provider = readFileSync(new URL("./CallProvider.tsx", import.meta.url), "utf8");
+const avatar = readFileSync(new URL("./CallAvatar.tsx", import.meta.url), "utf8");
+const workspaceSurfaces = readFileSync(new URL("../../styles/workspaceSurfaces.css", import.meta.url), "utf8");
 
 describe("Call Hub navigation", () => {
   it("contains exactly the five production sections", () => {
     expect(CALL_HUB_SECTIONS).toEqual(["search", "requests", "chats", "calls", "alerts"]);
   });
 
-  it("uses mobile bottom navigation and desktop rail with real badge inputs", () => {
-    expect(styles).toContain("grid-template-columns:76px minmax(0,1fr)");
-    expect(styles).toContain("grid-row:2;flex-direction:row");
+  it("keeps every Call Hub section in a top navigation bar with real badge inputs", () => {
+    expect(shell).toContain("{header}{navigation}{status}");
+    expect(styles).toContain(".pulse-connect-nav{z-index:12;display:flex");
+    expect(styles).toContain("border-bottom:1px solid");
+    expect(styles).not.toContain("grid-row:2;flex-direction:row");
     expect(source).toContain("requests: incoming.length");
     expect(source).toContain("calls: missedCount");
     expect(source).toContain("alerts: unread");
+  });
+
+  it("owns vertical scrolling inside the call list without duplicate mobile height", () => {
+    expect(styles).toContain(".calls-list { min-height:0; overflow-x:hidden; overflow-y:auto");
+    expect(styles).toContain("-webkit-overflow-scrolling:touch");
+    expect(styles).toContain(".calls-workspace-page{height:100%;min-height:0;padding-bottom:0}");
+    expect(workspaceSurfaces).toContain(".calls-workspace-page { height: 100%; min-height: 0; padding-bottom: 0; }");
   });
 
   it("keeps chats restricted to accepted connections and groups call history", () => {
@@ -59,5 +72,18 @@ describe("Call Hub navigation", () => {
   it("uses the matching callback icon for audio and video history", () => {
     expect(source).toContain('item.call_type === "video" ? <Video');
     expect(source).toContain('item.call_type === "video" ? "Video" : "Audio"');
+  });
+
+  it("keeps call actions clickable while reconnecting and establishes signaling before browser media", () => {
+    expect(source).toContain('showToast("Connecting secure call service…")');
+    expect(source).toContain("latestConfig = await refreshRealtime()");
+    expect(source).not.toContain("disabled={!callingAvailable");
+    expect(provider).toContain("await signaling.waitUntilConnected()");
+  });
+
+  it("falls back to profile initials when an uploaded avatar URL fails", () => {
+    expect(avatar).toContain("onError={() => setFailedUrl(resolvedUrl)}");
+    expect(avatar).toContain("call-avatar-fallback");
+    expect(styles).toContain(".call-avatar-fallback");
   });
 });

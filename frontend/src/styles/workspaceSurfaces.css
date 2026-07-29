@@ -244,7 +244,7 @@
   .auth-page > .brand-mark .brand-icon { width: 62px; height: 62px; }
   .auth-page .auth-visual, .auth-page .auth-neural-core { display: none; }
   .auth-card { width: min(100%, 480px); padding: 22px; border-radius: 18px; }
-  .calls-workspace-page { padding-bottom: 76px; }
+  .calls-workspace-page { height: 100%; min-height: 0; padding-bottom: 0; }
   .um-page { padding-bottom: 0; }
   .settings-page { padding-bottom: 0; }
   .chat-workspace { padding-bottom: 0; }

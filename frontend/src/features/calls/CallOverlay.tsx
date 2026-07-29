@@ -7,6 +7,7 @@ import { CrystalAvatarRing } from "../../components/crystal/Crystal";
 import type { CrystalCallState } from "../../crystal/tokens";
 import { callStatusPresentation } from "./callStatus";
 import { callFailurePresentation } from "./callFailures";
+import { CallAvatar } from "./CallAvatar";
 
 function VideoSurface({ stream, muted, className }: { stream: MediaStream | null; muted?: boolean; className: string }) {
   const ref = useRef<HTMLVideoElement | null>(null);
@@ -58,10 +59,9 @@ export function RemoteAudioSurface({ stream, callId, traceId, role, active }: { 
 }
 
 function Avatar({ name, url, ringState }: { name: string; url?: string | null; ringState: CrystalCallState }) {
-  const avatarUrl = resolveApiAssetUrl(url);
   return (
     <CrystalAvatarRing state={ringState}>
-      <span className="call-screen-avatar">{avatarUrl ? <img src={avatarUrl} alt="" /> : name.slice(0, 1).toUpperCase()}</span>
+      <CallAvatar className="call-screen-avatar" name={name} avatarUrl={url} />
     </CrystalAvatarRing>
   );
 }

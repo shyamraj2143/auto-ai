@@ -15,6 +15,7 @@ from app.services.call_fallback_service import cancel_call_fallbacks, schedule_f
 from app.models.user import User
 from app.services.device_token_security import decrypt_token
 from app.services.firebase_notifications import firebase_notification_service
+from app.services.user_avatar import public_avatar
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +36,6 @@ def create_call_action_token(call: Call, expires_at: datetime) -> str:
         settings.jwt_secret_key,
         algorithm=settings.JWT_ALGORITHM,
     )
-
-
-def public_avatar(user: User) -> str:
-    return (user.avatar or user.picture or "")[:500]
 
 
 def absolute_public_avatar(user: User) -> str:

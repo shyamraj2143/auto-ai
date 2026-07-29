@@ -10,10 +10,11 @@ from app.models.user import User
 from app.models.user_chat import ChatMessage
 from app.services.device_token_security import decrypt_token
 from app.services.firebase_notifications import firebase_notification_service
+from app.services.user_avatar import public_avatar
 
 
 def _public_avatar(user: User) -> str:
-    value = (user.avatar or user.picture or "")[:500]
+    value = public_avatar(user)
     if not value or value.startswith(("https://", "http://")):
         return value
     return urljoin(settings.backend_url.rstrip("/") + "/", value.lstrip("/"))[:500]

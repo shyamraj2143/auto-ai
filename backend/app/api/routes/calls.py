@@ -40,6 +40,7 @@ from app.services.firebase_notifications import firebase_notification_service
 from jose import JWTError, jwt
 from app.services.presence_service import RealtimeUnavailable, presence_service
 from app.services.turn_credentials_service import TURN_UNAVAILABLE_MESSAGE, create_turn_credentials
+from app.services.user_avatar import public_avatar
 
 
 router = APIRouter(prefix="/calls", tags=["calls"])
@@ -407,7 +408,7 @@ def blocked_users(
             id=user.id,
             display_name=user.name,
             username=user.username or f"user_{user.id.replace('-', '')[:8]}",
-            avatar_url=user.avatar or user.picture,
+            avatar_url=public_avatar(user) or None,
             blocked_at=block.created_at,
         )
         for block, user in rows

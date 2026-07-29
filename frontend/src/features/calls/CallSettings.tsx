@@ -1,8 +1,8 @@
 import { BellRing, Eye, EyeOff, LoaderCircle, PhoneCall, ShieldAlert, ShieldBan, Smartphone, Video } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { resolveApiAssetUrl } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { AppSelect } from "../../components/common/AppSelect";
+import { CallAvatar } from "./CallAvatar";
 import { callApi } from "./services/callApi";
 import { callNative, type NativeCallReadiness } from "./services/callNative";
 import type { BlockedCallUser, CallSettings as Settings } from "./types";
@@ -129,10 +129,7 @@ export function CallSettings() {
       </section>
       <section>
         <div className="call-settings-heading"><ShieldBan size={16} /><strong>Blocked users</strong></div>
-        {blocked.map((item) => {
-          const avatarUrl = resolveApiAssetUrl(item.avatar_url);
-          return <div className="blocked-call-user" key={item.id}><span>{avatarUrl ? <img src={avatarUrl} alt="" /> : item.display_name.slice(0, 1)}</span><span><strong>{item.display_name}</strong><small>@{item.username}</small></span><button type="button" onClick={async () => { if (!token) return; await callApi.unblock(token, item.id); setBlocked((users) => users.filter((user) => user.id !== item.id)); }}>Unblock</button></div>;
-        })}
+        {blocked.map((item) => <div className="blocked-call-user" key={item.id}><CallAvatar name={item.display_name} avatarUrl={item.avatar_url} /><span><strong>{item.display_name}</strong><small>@{item.username}</small></span><button type="button" onClick={async () => { if (!token) return; await callApi.unblock(token, item.id); setBlocked((users) => users.filter((user) => user.id !== item.id)); }}>Unblock</button></div>)}
         {!blocked.length && <p className="call-settings-empty">No blocked users</p>}
       </section>
     </div>

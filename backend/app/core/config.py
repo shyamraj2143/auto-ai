@@ -13,6 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_FRONTEND_URL = "https://autoai.site.je"
 DEFAULT_BACKEND_URL = "http://localhost:8000"
 DEFAULT_RAZORPAY_CHECKOUT_CONFIG_ID = "config_T9uIbVgLBfz7ko"
+DEFAULT_UPLOAD_DIR = str(PROJECT_ROOT / "backend" / "uploads")
 
 
 class Settings(BaseSettings):
@@ -178,7 +179,7 @@ class Settings(BaseSettings):
     SEARCH_COUNTRY: str = "us"
     SEARCH_LANGUAGE: str = "en"
 
-    UPLOAD_DIR: str = str(PROJECT_ROOT / "backend" / "uploads")
+    UPLOAD_DIR: str = DEFAULT_UPLOAD_DIR
     APK_STORAGE_DIR: str = str(PROJECT_ROOT / "public" / "downloads")
     APK_FILENAME: str = "auto-ai.apk"
     APK_DEFAULT_VERSION: str = "1.0.18"
@@ -274,6 +275,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_payment_urls(self) -> "Settings":
+        if (
+            self.is_production
+            and self.UPLOAD_DIR == DEFAULT_UPLOAD_DIR
+            and self.SQLITE_PATH.strip().replace("\\", "/") == "/data/auto_ai.db"
+        ):
+            self.UPLOAD_DIR = "/data/uploads"
         if self.is_production:
             for name, value in (
                 ("FRONTEND_URL", self.frontend_url),

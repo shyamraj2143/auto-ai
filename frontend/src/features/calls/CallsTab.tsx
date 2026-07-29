@@ -1,7 +1,7 @@
 import { ArrowDownLeft, ArrowUpRight, Bell, Check, LoaderCircle, MessageCircle, Phone, Search, ShieldAlert, Trash2, UserPlus, Video, X } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { ApiClientError, resolveApiAssetUrl } from "../../api/client";
+import { ApiClientError } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { useCallSession } from "./hooks/useCallSession";
 import { callApi } from "./services/callApi";
@@ -11,6 +11,7 @@ import type { UserThread } from "../userMessages/types";
 import type { CallRecord, CallType, PublicCallUser, SearchHistoryItem, SocialNotification, SocialProfile, SocialRequest } from "./types";
 import { AlertsPanel } from "./AlertsPanel";
 import { CallHistoryPanel } from "./CallHistoryPanel";
+import { CallAvatar } from "./CallAvatar";
 import { CallHubEmptyState } from "./CallHubEmptyState";
 import { CallHubHeader } from "./CallHubHeader";
 import { CallHubNavigation, type CallHubView } from "./CallHubNavigation";
@@ -60,8 +61,7 @@ function asCallUser(profile: SocialProfile): PublicCallUser {
 }
 
 function Avatar({ profile }: { profile: Pick<SocialProfile, "display_name" | "avatar_url"> }) {
-  const avatarUrl = resolveApiAssetUrl(profile.avatar_url);
-  return <span className="call-user-avatar">{avatarUrl ? <img src={avatarUrl} alt="" /> : profile.display_name.slice(0, 1).toUpperCase()}</span>;
+  return <CallAvatar name={profile.display_name} avatarUrl={profile.avatar_url} />;
 }
 
 function FollowBadge({ profile }: { profile: SocialProfile }) {
@@ -441,16 +441,30 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
     }
   }
 
-  function placeCall(profile: SocialProfile, type: CallType) {
-    if (!callingAvailable) {
-      showToast(config?.diagnostic || "Calling service is temporarily unavailable.");
-      return;
-    }
-    if ((type === "audio" && !profile.can_audio_call) || (type === "video" && !profile.can_video_call)) {
+  async function placeUserCall(user: PublicCallUser, type: CallType) {
+    if ((type === "audio" && !user.can_audio_call) || (type === "video" && !user.can_video_call)) {
       showToast("Follow approval is required before calling this user.");
       return;
     }
-    void startCall(asCallUser(profile), type);
+    let latestConfig = config;
+    if (!latestConfig || !latestConfig.enabled || !latestConfig.realtime_configured || signalingState !== "connected") {
+      showToast("Connecting secure call service…");
+      try {
+        latestConfig = await refreshRealtime();
+      } catch (connectError) {
+        showToast(errorText(connectError, "Calling service could not connect. Please retry."));
+        return;
+      }
+    }
+    if (!latestConfig.enabled || !latestConfig.realtime_configured) {
+      showToast(latestConfig.diagnostic || "Calling service is temporarily unavailable.");
+      return;
+    }
+    await startCall(user, type);
+  }
+
+  function placeCall(profile: SocialProfile, type: CallType) {
+    void placeUserCall(asCallUser(profile), type);
   }
 
   async function block(profile: SocialProfile) {
@@ -528,7 +542,6 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
   }
 
   const featureEnabled = config?.enabled !== false;
-  const callingAvailable = Boolean(featureEnabled && config?.realtime_configured && signalingState === "connected");
   const readiness = !featureEnabled || !config?.realtime_configured ? "unavailable" : config?.limitations?.length || !config.turn_configured ? "limited" : "ready";
   const readinessDetails = import.meta.env.DEV
     ? [config?.diagnostic, ...(config?.limitations || [])].filter((item): item is string => Boolean(item))
@@ -565,11 +578,11 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
           {loading && !threads.length && <div className="connection-skeleton" aria-label="Loading conversations"><i /><i /><i /></div>}
           {visibleThreads.map((thread) => (
             <div className="call-history-row call-chat-row" key={thread.id} role="button" tabIndex={0} onClick={() => navigate(`/messages/${thread.id}`)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") navigate(`/messages/${thread.id}`); }}>
-              <span className="call-user-avatar">{resolveApiAssetUrl(thread.peer.avatar_url) ? <img src={resolveApiAssetUrl(thread.peer.avatar_url) || ""} alt="" /> : thread.peer.display_name.slice(0, 1).toUpperCase()}<i className={`call-presence-dot ${thread.peer.presence}`} /></span>
+              <CallAvatar name={thread.peer.display_name} avatarUrl={thread.peer.avatar_url}><i className={`call-presence-dot ${thread.peer.presence}`} /></CallAvatar>
               <span><strong>{thread.peer.display_name}</strong><small>{thread.last_message?.text_content || "Start a conversation"} · {thread.last_message ? new Date(thread.last_message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : `@${thread.peer.username}`}</small></span>
               {thread.muted && <small className="thread-muted" aria-label="Muted">Muted</small>}{thread.unread_count > 0 && <b className="thread-unread">{thread.unread_count > 99 ? "99+" : thread.unread_count}</b>}
-              <button type="button" onClick={(event) => { event.stopPropagation(); void startCall(thread.peer, "audio"); }} disabled={!callingAvailable || !thread.peer.can_audio_call} aria-label={`Voice call ${thread.peer.display_name}`}><Phone size={15} /></button>
-              <button type="button" onClick={(event) => { event.stopPropagation(); void startCall(thread.peer, "video"); }} disabled={!callingAvailable || !thread.peer.can_video_call} aria-label={`Video call ${thread.peer.display_name}`}><Video size={15} /></button>
+              <button type="button" onClick={(event) => { event.stopPropagation(); void placeUserCall(thread.peer, "audio"); }} disabled={!thread.peer.can_audio_call} aria-label={`Voice call ${thread.peer.display_name}`}><Phone size={15} /></button>
+              <button type="button" onClick={(event) => { event.stopPropagation(); void placeUserCall(thread.peer, "video"); }} disabled={!thread.peer.can_video_call} aria-label={`Video call ${thread.peer.display_name}`}><Video size={15} /></button>
             </div>
           ))}
           {!visibleThreads.length && !loading && <CallHubEmptyState title={chatFilter === "unread" ? "No unread conversations" : "Your accepted conversations will appear here"} action={<button type="button" onClick={() => changeView("search")}>Find People</button>} />}
@@ -703,13 +716,12 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
           <div className="call-log-filters" role="tablist" aria-label="Call history filters">{(["all", "missed", "audio", "video"] as CallFilter[]).map((filter) => <button type="button" role="tab" aria-selected={callFilter === filter} className={callFilter === filter ? "active" : ""} onClick={() => setCallFilter(filter)} key={filter}>{filter === "audio" ? "Voice" : filter.charAt(0).toUpperCase() + filter.slice(1)}</button>)}</div>
           {loading && !history.length && <div className="connection-skeleton" aria-label="Loading call history"><i /><i /><i /></div>}
           {(["Today", "Yesterday", "Earlier"] as const).map((group) => groupedHistory[group]?.length ? <section className="call-timeline-group" key={group}><h3>{group}</h3>{groupedHistory[group].map((item) => {
-            const avatarUrl = resolveApiAssetUrl(item.peer.avatar_url);
             const status = friendlyCallStatus(item.status);
             return (
               <div className={`call-history-row call-status-${status.toLowerCase().replace(" ", "-")}`} key={item.id}>
-                <span className="call-user-avatar">{avatarUrl ? <img src={avatarUrl} alt="" /> : item.peer.display_name.slice(0, 1).toUpperCase()}</span>
+                <CallAvatar name={item.peer.display_name} avatarUrl={item.peer.avatar_url} />
                 <span><strong>{item.peer.display_name}</strong><small className="call-direction">{item.direction === "incoming" ? <ArrowDownLeft size={13} aria-label="Incoming" /> : <ArrowUpRight size={13} aria-label="Outgoing" />}{item.call_type === "audio" ? <Phone size={12} aria-label="Voice" /> : <Video size={12} aria-label="Video" />}<em>{status}</em></small><small>{new Date(item.created_at).toLocaleString()}{item.duration_seconds > 0 ? ` · ${Math.floor(item.duration_seconds / 60)}:${String(item.duration_seconds % 60).padStart(2, "0")}` : ""}</small></span>
-                <button type="button" onClick={() => void startCall(item.peer, item.call_type)} disabled={!callingAvailable} aria-label={`${item.call_type === "video" ? "Video" : "Audio"} call ${item.peer.display_name}`}>{item.call_type === "video" ? <Video size={16} /> : <Phone size={16} />}</button>
+                <button type="button" onClick={() => void placeUserCall(item.peer, item.call_type)} disabled={item.call_type === "video" ? !item.peer.can_video_call : !item.peer.can_audio_call} aria-label={`${item.call_type === "video" ? "Video" : "Audio"} call ${item.peer.display_name}`}>{item.call_type === "video" ? <Video size={16} /> : <Phone size={16} />}</button>
               </div>
             );
           })}</section> : null)}
