@@ -7914,17 +7914,17 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
   width: min(100%, 980px);
   min-height: 100%;
   margin-inline: auto;
-  padding: 18px 22px 32px;
+  padding: 0 22px 32px;
 }
 
 .settings-reference-header {
   position: sticky;
   top: 0;
   z-index: 24;
-  margin: -18px -22px 18px;
+  margin: 0 -22px 18px;
   border-bottom: 1px solid rgba(117, 157, 220, .13);
   background: rgba(3, 9, 19, .9);
-  padding: 18px 22px 0;
+  padding: max(12px, env(safe-area-inset-top)) 22px 0;
   box-shadow: 0 14px 32px rgba(0, 0, 0, .18);
   backdrop-filter: blur(22px) saturate(1.12);
 }
@@ -7975,7 +7975,10 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
   margin-top: 16px;
   overflow-x: auto;
   padding: 0 0 10px;
+  overscroll-behavior-x: contain;
+  scroll-behavior: smooth;
   scrollbar-width: none;
+  touch-action: pan-x;
 }
 
 .settings-tabs::-webkit-scrollbar { display: none; }
@@ -8253,12 +8256,12 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
 
 @media (max-width: 640px) {
   .settings-reference-shell {
-    padding: 14px 12px 26px;
+    padding: 0 12px 18px;
   }
 
   .settings-reference-header {
-    margin: -14px -12px 14px;
-    padding: 14px 12px 0;
+    margin: 0 -12px 12px;
+    padding: max(9px, env(safe-area-inset-top)) 12px 0;
   }
 
   .settings-title-row h1 {

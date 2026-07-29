@@ -40,9 +40,17 @@ describe("settings reference layout contracts", () => {
     }
   });
 
-  it("uses the reference glass styling and lowers the mobile composer safely", () => {
+  it("uses the reference glass styling without duplicate mobile bottom spacing", () => {
     expect(appCss).toContain(".settings-reference-page");
     expect(appCss).toContain(".settings-plan-preview");
-    expect(surfaceCss).toContain(".chat-workspace { padding-bottom: 70px; }");
+    expect(surfaceCss).toContain(".settings-page { padding-bottom: 0; }");
+    expect(surfaceCss).toContain(".chat-workspace { padding-bottom: 0; }");
+    expect(surfaceCss).not.toContain(".chat-workspace { padding-bottom: 70px; }");
+  });
+
+  it("resets content scroll and keeps the selected category visible", () => {
+    expect(settingsSource).toContain("page?.scrollTo({ top: 0");
+    expect(settingsSource).toContain("tabs.scrollTo({ left:");
+    expect(settingsSource).toContain("data-settings-section={tab.section}");
   });
 });

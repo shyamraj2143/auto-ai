@@ -1,48 +1,51 @@
-# AutoAI Settings Reference Design QA
+# AutoAI Mobile Spacing Design QA
 
-- Source visual truth: `/workspace/scratch/f0c2b9a64a26/upload/01-1000309548.png`
-- Source pixels: 864 × 1536 (framed mobile reference).
-- Intended implementation viewport: 393 × 852 CSS px at device scale factor 1.
-- State: authenticated Settings account overview and AI Chat composer.
+- Source visual truth: three mobile screenshots attached in the current conversation; the runtime did not expose local attachment paths.
+- Source pixel dimensions: unavailable from the Work Mode attachment surface.
+- Intended implementation viewport: Android mobile widths from 320–430 CSS px.
+- State: authenticated Settings overview/detail categories and AI Chat composer above mobile navigation.
 - Implementation screenshot: unavailable.
-- Density normalization: not performed because the browser-rendered implementation could not be opened.
+- Density normalization: not possible without browser-rendered evidence.
 
 ## Full-view comparison evidence
 
-The source image was opened at original resolution and inspected. The Work Mode cloud browser rejected the authenticated Settings preview with `net::ERR_BLOCKED_BY_CLIENT`. Because no browser-rendered implementation screenshot exists, a valid side-by-side source-versus-implementation comparison cannot be made.
+The screenshots identify three visible problems: empty space above the Settings header, unstable category-tab/content scrolling, and excessive clearance below the AI Chat composer. The supervised local preview started successfully, but the Work Mode cloud browser rejected the preview with `net::ERR_BLOCKED_BY_CLIENT`. A valid source-versus-implementation image comparison therefore could not be completed.
 
 ## Focused region comparison evidence
 
-Blocked for the same reason. Required focused regions are the category tabs, profile card, grouped setting rows, subscription block, mobile bottom navigation, and AI Chat composer-to-navigation spacing.
+Blocked for the same reason. Required focused regions are the Settings title/header edge, horizontally scrolling category tabs, section content after a category change, the AI Chat composer, and the fixed mobile navigation.
 
 ## Findings
 
 - [P1] Browser-rendered visual verification is unavailable.
-  - Location: Settings overview/detail categories and AI Chat composer.
-  - Evidence: cloud browser blocked the preview before rendering.
-  - Impact: typography, spacing, wrapping, overflow, and exact color fidelity cannot be certified from code/build output alone.
-  - Fix: reopen the preview in a Work Mode browser that permits `terminal.local`, then capture desktop and mobile states and compare them with the corresponding reference images.
+  - Location: Settings header/tabs and AI Chat composer-to-navigation spacing.
+  - Evidence: the cloud browser blocked the local preview before rendering.
+  - Impact: exact screenshot fidelity, device-specific safe-area values, and final pixel spacing cannot be certified from code/build output alone.
+  - Fix: capture the authenticated Settings and Chat routes in a Work Mode browser that permits the local preview, then compare at the same Android viewport.
 
-## Code-level checks completed
+## Implemented fixes and code-level evidence
 
-- Production TypeScript/Vite build passed.
-- All 147 frontend tests passed, including the final Settings coverage and composer-spacing contracts.
-- `git diff --check` passed.
-- All nine existing settings routes remain connected to their original production state and services.
-- Profile editing, plan management, promo code, receipts, theme, language, notifications, AI models, research, screen sharing, privacy, calls, messages, visual effects, app version, and sign-out remain present.
-- The mobile chat workspace bottom clearance changed from 76px to 70px so the composer sits 6px lower without covering the 62px navigation bar.
+- Removed the duplicate mobile bottom reserve: `main` remains the single owner of the 77px mobile-navigation clearance; Settings and Chat no longer add another 76px/70px.
+- Removed the Settings shell's top spacer and made its sticky header own the real Android safe-area inset.
+- Added horizontal touch containment to the category strip.
+- On every category change, Settings content scrolls to the top and the active category is centered in the horizontal tab viewport.
+- All existing Settings sections and their production handlers remain unchanged.
+- Frontend tests: 148/148 passed.
+- TypeScript and production Vite build: passed.
+- `git diff --check`: passed.
 
 ## Required fidelity surfaces
 
-- Fonts and typography: existing bundled application typography is retained with reference-like compact 11–14px labels and 26px mobile title; visual verification blocked.
-- Spacing and layout rhythm: sticky title/tabs, 62–64px setting rows, 15–16px card radii, grouped sections, and horizontal mobile controls were implemented; visual verification blocked.
-- Colors and visual tokens: dark navy glass, blue active tabs, cyan/violet/green semantic accents, and red sign-out treatment were implemented; visual verification blocked.
-- Image quality and asset fidelity: the real account avatar pipeline remains in the profile card; UI icons use the existing icon library. The screenshot's decorative subscription cube was not introduced as a separate raster asset because it is non-functional decoration and visual verification is blocked.
-- Copy and content: reference labels are used where they match product behavior; AutoAI-specific functions and settings remain intact.
+- Fonts and typography: existing AutoAI typography and hierarchy are unchanged; visual verification blocked.
+- Spacing and layout rhythm: duplicate top/bottom reserves were removed and scrolling ownership was made explicit; visual verification blocked.
+- Colors and visual tokens: existing dark glass tokens and semantic accents are unchanged.
+- Image quality and asset fidelity: no image or icon assets were replaced.
+- Copy and content: no setting names, descriptions, routes, or feature controls were removed.
 
 ## Comparison history
 
-- Attempt 1: the supervised local preview became healthy, but the cloud browser blocked the Settings route with `net::ERR_BLOCKED_BY_CLIENT`.
-- No visual fixes were made after these attempts because there was no rendered evidence to compare.
+- Attempt 1: local preview started at the expected Work Mode address.
+- Attempt 1 result: cloud browser returned `net::ERR_BLOCKED_BY_CLIENT` before rendering Settings.
+- No browser screenshot was available for a valid side-by-side comparison.
 
 final result: blocked

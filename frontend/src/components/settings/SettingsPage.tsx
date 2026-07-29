@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import clsx from "clsx";
 import {
@@ -241,6 +241,8 @@ function Select({
 export function SettingsPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const pageRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<HTMLElement>(null);
   const { token, logout } = useAuth();
   const screenShare = useScreenShare();
   const { chats, refreshChats, setActiveChat } = useChat();
@@ -299,6 +301,18 @@ export function SettingsPage() {
     if (!token || section !== "chat") return;
     void userMessagesApi.settings(token).then(setChatSettings).catch(() => undefined);
   }, [section, token]);
+
+  useEffect(() => {
+    const page = pageRef.current;
+    const tabs = tabsRef.current;
+    const activeTab = tabs?.querySelector<HTMLElement>(`[data-settings-section="${section}"]`);
+
+    page?.scrollTo({ top: 0, behavior: "auto" });
+    if (!tabs || !activeTab) return;
+
+    const targetLeft = activeTab.offsetLeft - (tabs.clientWidth - activeTab.offsetWidth) / 2;
+    tabs.scrollTo({ left: Math.max(0, targetLeft), behavior: "smooth" });
+  }, [section]);
 
   function openSection(nextSection: Exclude<SettingsSection, "main">) {
     navigate(`/settings?section=${nextSection}`);
@@ -729,6 +743,7 @@ export function SettingsPage() {
 
   return (
     <div
+      ref={pageRef}
       className="settings-page settings-reference-page min-h-0 flex-1 overflow-y-auto overflow-x-hidden text-white"
     >
       <div className="settings-reference-shell">
@@ -742,11 +757,12 @@ export function SettingsPage() {
               {section !== "main" && <p>{sectionTitle}</p>}
             </div>
           </div>
-          <nav className="settings-tabs" aria-label="Settings categories">
+          <nav ref={tabsRef} className="settings-tabs" aria-label="Settings categories">
             {SETTINGS_TABS.map((tab) => (
               <button
                 key={tab.section}
                 type="button"
+                data-settings-section={tab.section}
                 className={clsx(section === tab.section && "is-active")}
                 onClick={() => selectTab(tab.section)}
                 aria-current={section === tab.section ? "page" : undefined}
