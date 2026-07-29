@@ -68,3 +68,10 @@ def test_explicit_production_upload_directory_is_preserved() -> None:
     configured = production_settings(UPLOAD_DIR="/mnt/media")
 
     assert configured.UPLOAD_DIR == "/mnt/media"
+
+
+def test_apk_upload_limit_is_separate_from_document_limit() -> None:
+    configured = production_settings()
+
+    assert configured.MAX_APK_UPLOAD_MB == 100
+    assert configured.MAX_UPLOAD_MB == 20

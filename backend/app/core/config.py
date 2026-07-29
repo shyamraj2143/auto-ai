@@ -185,6 +185,7 @@ class Settings(BaseSettings):
     APK_DEFAULT_VERSION: str = "1.0.18"
     APK_DEFAULT_VERSION_CODE: int = 19
     APK_MIN_ANDROID_VERSION: str = "Android 7.0"
+    MAX_APK_UPLOAD_MB: int = 100
     MAX_UPLOAD_MB: int = 20
     ALLOWED_DOCUMENT_EXTENSIONS: set[str] = {".pdf", ".txt", ".docx"}
     ALLOWED_IMAGE_EXTENSIONS: set[str] = {".png", ".jpg", ".jpeg", ".webp", ".gif"}

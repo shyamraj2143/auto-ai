@@ -312,7 +312,7 @@ class ApkService:
 
         filename = self.versioned_filename(next_version, next_version_code)
         path = self.storage_dir() / filename
-        max_bytes = settings.MAX_UPLOAD_MB * 1024 * 1024
+        max_bytes = settings.MAX_APK_UPLOAD_MB * 1024 * 1024
         bytes_written = 0
 
         with path.open("wb") as output:
@@ -323,7 +323,7 @@ class ApkService:
                     path.unlink(missing_ok=True)
                     raise HTTPException(
                         status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                        detail=f"APK upload exceeds {settings.MAX_UPLOAD_MB} MB.",
+                        detail=f"APK upload exceeds {settings.MAX_APK_UPLOAD_MB} MB.",
                     )
                 output.write(chunk)
 
