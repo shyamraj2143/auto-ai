@@ -60,6 +60,11 @@ jobs:
               raise RuntimeError('Unable to replace patch helper')
           script = script.replace(original_helper, tolerant_helper, 1)
           script = script.replace(r'Calling service could not start\nAutoAI', r'Calling service could not start\\nAutoAI')
+          script = script.replace('diagnostic?: string;', 'permissionRelated?: boolean;\n            diagnostic?: string;', 1)
+          script = script.replace('return { title: "Microphone permission required", message: "Allow microphone access in Android Settings, then retry the call." };', 'return { title: "Microphone permission required", message: "Allow microphone access in Android Settings, then retry the call.", permissionRelated: true };', 1)
+          script = script.replace('return { title: "Camera permission required", message: "Allow camera access for video calling, or answer using audio only." };', 'return { title: "Camera permission required", message: "Allow camera access for video calling, or answer using audio only.", permissionRelated: true };', 1)
+          script = script.replace('return { title: "Calling permission blocked", message: "Android blocked a required call permission. Open AutoAI app settings and allow microphone and camera access." };', 'return { title: "Calling permission blocked", message: "Android blocked a required call permission. Open AutoAI app settings and allow microphone and camera access.", permissionRelated: true };', 1)
+          script = script.replace('return { title: "Call notification unavailable", message: "Allow AutoAI call notifications in Android Settings, then retry." };', 'return { title: "Call notification unavailable", message: "Allow AutoAI call notifications in Android Settings, then retry.", permissionRelated: true };', 1)
           exec(compile(script, 'urgent_call_hotfix.py', 'exec'), {'__name__': '__main__'})
           PY
 
