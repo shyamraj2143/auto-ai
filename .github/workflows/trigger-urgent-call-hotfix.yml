@@ -32,6 +32,7 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
 
           workflow = Path('.github/workflows/urgent-call-hotfix.yml').read_text(encoding='utf-8')
           start_marker = "          python - <<'PY'\n"
@@ -72,6 +73,26 @@ jobs:
           script = script.replace('return { title: "Calling permission blocked", message: "Android blocked a required call permission. Open AutoAI app settings and allow microphone and camera access." };', 'return { title: "Calling permission blocked", message: "Android blocked a required call permission. Open AutoAI app settings and allow microphone and camera access.", permissionRelated: true };', 1)
           script = script.replace('return { title: "Call notification unavailable", message: "Allow AutoAI call notifications in Android Settings, then retry." };', 'return { title: "Call notification unavailable", message: "Allow AutoAI call notifications in Android Settings, then retry.", permissionRelated: true };', 1)
           exec(compile(script, 'urgent_call_hotfix.py', 'exec'), {'__name__': '__main__'})
+
+          controller = Path('android/app/src/main/java/com/autoai/app/NativeCallSessionController.java')
+          controller_text = controller.read_text(encoding='utf-8')
+          ready_pattern = re.compile(
+              r'new JSONObject\(\)\s*'
+              r'\.put\("call_type", backendCallType\)\.put\("audio_ready", true\)\s*'
+              r'\.put\("video_ready", !"video"\.equals\(backendCallType\) \|\| \(!audioOnly && cameraEnabled\)\)\s*'
+              r'\.put\("audio_only", audioOnly\)\s*'
+              r'\.put\("negotiation_id", UUID\.randomUUID\(\)\.toString\(\)\)'
+          )
+          controller_text, replacement_count = ready_pattern.subn(
+              'json("call_type", backendCallType, "audio_ready", true, '
+              '"video_ready", !"video".equals(backendCallType) || (!audioOnly && cameraEnabled), '
+              '"audio_only", audioOnly, "negotiation_id", UUID.randomUUID().toString())',
+              controller_text,
+              count=1,
+          )
+          if replacement_count != 1:
+              raise RuntimeError(f'Unable to replace peer-ready payload, matches={replacement_count}')
+          controller.write_text(controller_text, encoding='utf-8')
           PY
 
       - name: Prepare optional Firebase config
