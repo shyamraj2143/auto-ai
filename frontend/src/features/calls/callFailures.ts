@@ -26,7 +26,7 @@ export type CallFailurePresentation = {
   title: string;
   message: string;
   permissionRelated?: boolean;
-            diagnostic?: string;
+  diagnostic?: string;
 };
 
 const OFFLINE_MESSAGE = "No internet connection. Turn on mobile data or Wi-Fi, then retry.";
