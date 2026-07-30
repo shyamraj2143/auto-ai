@@ -34,6 +34,31 @@ jobs:
               raise RuntimeError('Unable to locate embedded patch script')
           embedded = workflow.split(start_marker, 1)[1].split(end_marker, 1)[0]
           script = '\n'.join(line[10:] if line.startswith('          ') else line for line in embedded.splitlines())
+          original_helper = '''def replace_once(path: str, old: str, new: str) -> None:
+              target = Path(path)
+              text = target.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise RuntimeError(f"Expected one match in {path}, found {count}: {old[:100]!r}")
+              target.write_text(text.replace(old, new, 1), encoding="utf-8")'''
+          tolerant_helper = '''def replace_once(path: str, old: str, new: str) -> None:
+              import re
+              target = Path(path)
+              text = target.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count == 1:
+                  target.write_text(text.replace(old, new, 1), encoding="utf-8")
+                  return
+              parts = re.split(r"(\\s+)", old)
+              pattern = "".join(r"\\s+" if part.isspace() else re.escape(part) for part in parts if part)
+              matches = list(re.finditer(pattern, text, flags=re.MULTILINE))
+              if len(matches) != 1:
+                  raise RuntimeError(f"Expected one flexible match in {path}, found {len(matches)}: {old[:100]!r}")
+              match = matches[0]
+              target.write_text(text[:match.start()] + new + text[match.end():], encoding="utf-8")'''
+          if original_helper not in script:
+              raise RuntimeError('Unable to replace patch helper')
+          script = script.replace(original_helper, tolerant_helper, 1)
           exec(compile(script, 'urgent_call_hotfix.py', 'exec'), {'__name__': '__main__'})
           PY
 
