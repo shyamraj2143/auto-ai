@@ -26,6 +26,8 @@ import type {
   FaceMemoryStatus,
   LiveMessageResponse,
   LiveSessionStart,
+  MessageFeedback,
+  MessageFeedbackReason,
   OrchestrationActivityEvent,
   PaymentConfig,
   PaymentHistoryPage,
@@ -724,7 +726,7 @@ export const api = {
     }),
   me: (token: string) => apiFetch<User>("/auth/me", { token, operation: "auth.me", timeoutMs: 6000 }),
   profile: (token: string) => apiFetch<User>("/users/me", { token, operation: "users.me" }),
-  updateProfile: (token: string, payload: Partial<Pick<User, "name" | "username" | "phone_number" | "phone_country_code">>) =>
+  updateProfile: (token: string, payload: Partial<Pick<User, "name" | "username" | "phone_number" | "phone_country_code" | "memory_enabled" | "feedback_learning_enabled">>) =>
     apiFetch<User>("/users/me", { method: "PATCH", token, operation: "users.me.update", body: JSON.stringify(payload) }),
   uploadAvatar: (token: string, file: File) => {
     const formData = new FormData();
@@ -827,6 +829,31 @@ export const api = {
   ) => apiFetch<UserMemory>(`/human/memories/${id}`, { method: "PATCH", token, operation: "human.memories.update", body: JSON.stringify(payload) }),
   deleteMemory: (token: string, id: string) =>
     apiFetch<void>(`/human/memories/${id}`, { method: "DELETE", token, operation: "human.memories.delete" }),
+  clearMemories: (token: string) =>
+    apiFetch<void>("/human/memories", { method: "DELETE", token, operation: "human.memories.clear" }),
+  getMessageFeedback: (token: string, chatId: string, messageId: string) =>
+    apiFetch<MessageFeedback | null>(`/chat/sessions/${chatId}/messages/${messageId}/feedback`, {
+      token,
+      operation: "chat.feedback.get"
+    }),
+  putMessageFeedback: (
+    token: string,
+    chatId: string,
+    messageId: string,
+    payload: { rating: 1 | -1; reason?: MessageFeedbackReason | null; comment?: string | null }
+  ) =>
+    apiFetch<MessageFeedback>(`/chat/sessions/${chatId}/messages/${messageId}/feedback`, {
+      method: "PUT",
+      token,
+      operation: "chat.feedback.put",
+      body: JSON.stringify(payload)
+    }),
+  deleteMessageFeedback: (token: string, chatId: string, messageId: string) =>
+    apiFetch<void>(`/chat/sessions/${chatId}/messages/${messageId}/feedback`, {
+      method: "DELETE",
+      token,
+      operation: "chat.feedback.delete"
+    }),
   listTurnAnalyses: (token: string, params: { chat_id?: string; limit?: number } = {}) => {
     const search = new URLSearchParams();
     if (params.chat_id) search.set("chat_id", params.chat_id);

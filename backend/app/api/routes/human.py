@@ -99,6 +99,15 @@ def delete_memory(
     return None
 
 
+@router.delete("/memories", status_code=status.HTTP_204_NO_CONTENT)
+def clear_memories(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    long_term_memory_engine.clear_memories(db, user_id=current_user.id)
+    return None
+
+
 @router.get("/turns", response_model=list[TurnAnalysisRead])
 def list_turn_analyses(
     chat_id: str | None = Query(default=None),

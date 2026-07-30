@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -28,6 +28,8 @@ from app.schemas.chat import (
     ChatRequest,
     ChatUpdate,
 )
+from app.schemas.feedback import MessageFeedbackRead, MessageFeedbackWrite
+from app.services.feedback_service import message_feedback_service
 from app.services.chat_storage import (
     delete_chat_storage,
     sync_chat_history,
@@ -54,7 +56,7 @@ def cancel_running_session_generations(db: Session, chat_id: str, user_id: str) 
 def get_session_or_404(db: Session, session_id: str, user_id: str, *, with_messages: bool = False) -> Chat:
     statement = select(Chat).where(Chat.id == session_id, Chat.user_id == user_id)
     if with_messages:
-        statement = statement.options(selectinload(Chat.messages))
+        statement = statement.options(selectinload(Chat.messages).selectinload(Message.feedback))
     chat = db.scalar(statement)
     if not chat:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat session not found")
@@ -109,6 +111,59 @@ def get_session(
     sync_chat_history(db, chat)
     db.commit()
     return chat
+
+
+@router.get(
+    "/{session_id}/messages/{message_id}/feedback",
+    response_model=MessageFeedbackRead | None,
+)
+def get_message_feedback(
+    session_id: str,
+    message_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return message_feedback_service.get(
+        db, user_id=current_user.id, chat_id=session_id, message_id=message_id
+    )
+
+
+@router.put(
+    "/{session_id}/messages/{message_id}/feedback",
+    response_model=MessageFeedbackRead,
+)
+def put_message_feedback(
+    session_id: str,
+    message_id: str,
+    payload: MessageFeedbackWrite,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return message_feedback_service.put(
+        db,
+        user=current_user,
+        chat_id=session_id,
+        message_id=message_id,
+        rating=payload.rating,
+        reason=payload.reason,
+        comment=payload.comment,
+    )
+
+
+@router.delete(
+    "/{session_id}/messages/{message_id}/feedback",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_message_feedback(
+    session_id: str,
+    message_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    message_feedback_service.delete(
+        db, user_id=current_user.id, chat_id=session_id, message_id=message_id
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{session_id}/messages", response_model=ChatGenerationRead, status_code=status.HTTP_202_ACCEPTED)

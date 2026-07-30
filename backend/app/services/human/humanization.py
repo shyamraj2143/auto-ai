@@ -35,6 +35,16 @@ class HumanizationLayer:
             sections.append("Style directives:")
             sections.extend(f"- {directive}" for directive in style_directives)
 
+        feedback_signals = (profile_snapshot.get("communication_style") or {}).get("feedback_signals") or {}
+        if feedback_signals.get("sample_count", 0) >= 2:
+            sections.append(
+                "Account-specific feedback guidance: use the user's repeated style feedback as a gentle preference, "
+                "never as a hard rule or another user's context."
+            )
+            disliked = feedback_signals.get("dislike_reasons") or {}
+            if disliked:
+                sections.append(f"- Repeated response issues to avoid: {', '.join(sorted(disliked, key=disliked.get, reverse=True)[:3])}.")
+
         personality_directives = personality.get("directives") or []
         if personality_directives:
             sections.append("Personality directives:")

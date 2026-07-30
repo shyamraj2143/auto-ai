@@ -121,6 +121,10 @@ def update_profile(
         current_user.phone_country_code = phone_country_code
         current_user.phone_verified = False
         current_user.phone_verified_at = None
+    if "memory_enabled" in data and data["memory_enabled"] is not None:
+        current_user.memory_enabled = data["memory_enabled"]
+    if "feedback_learning_enabled" in data and data["feedback_learning_enabled"] is not None:
+        current_user.feedback_learning_enabled = data["feedback_learning_enabled"]
     current_user.updated_at = datetime.utcnow()
     current_user.profile_updated_at = current_user.updated_at
     try:

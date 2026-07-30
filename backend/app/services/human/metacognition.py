@@ -1,9 +1,11 @@
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.human import ConversationTurnAnalysis, UserInteractionProfile, UserMemory
 from app.models.message import Message
+from app.models.user import User
 from app.services.human.conversation_manager import conversation_manager
 from app.services.human.emotion_detection import emotion_detection_engine
 from app.services.human.emotional_state import emotional_state_manager
@@ -35,15 +37,21 @@ class MetaCognitionLayer:
             tone=tone,
         )
         style_directives = style_mirroring_engine.build_directives(emotion, tone)
-        memory_candidates = long_term_memory_engine.extract_candidates(user_message)
-        relevant_memories = [
-            self._memory_snapshot(memory)
-            for memory in long_term_memory_engine.retrieve_relevant_memories(
-                db,
-                user_id=user_id,
-                query=user_message,
-            )
-        ]
+        user = db.get(User, user_id)
+        memory_enabled = user is None or bool(user.memory_enabled)
+        memory_candidates = long_term_memory_engine.extract_candidates(user_message) if memory_enabled else []
+        relevant_memories = (
+            [
+                self._memory_snapshot(memory)
+                for memory in long_term_memory_engine.retrieve_relevant_memories(
+                    db,
+                    user_id=user_id,
+                    query=user_message,
+                )
+            ]
+            if memory_enabled
+            else []
+        )
         state_delta = emotional_state_manager.compute_delta(
             emotion=emotion,
             tone=tone,
@@ -73,6 +81,7 @@ class MetaCognitionLayer:
             "state_delta": state_delta,
             "profile_snapshot": profile_snapshot,
             "prompt_context": prompt_context,
+            "memory_enabled": memory_enabled,
         }
 
     def complete_turn(
@@ -86,6 +95,15 @@ class MetaCognitionLayer:
         user_message_id: str | None,
         assistant_message_id: str | None,
     ) -> ConversationTurnAnalysis:
+        existing = db.scalar(
+            select(ConversationTurnAnalysis).where(
+                ConversationTurnAnalysis.user_id == user_id,
+                ConversationTurnAnalysis.chat_id == chat_id,
+                ConversationTurnAnalysis.assistant_message_id == assistant_message_id,
+            )
+        )
+        if existing:
+            return existing
         profile = emotional_state_manager.get_or_create_profile(db, user_id)
         emotional_state_manager.apply_delta(
             profile,
@@ -98,11 +116,13 @@ class MetaCognitionLayer:
             user_message=user_message,
             memory_candidates=prepared["memory_candidates"],
         )
-        long_term_memory_engine.upsert_candidates(
-            db,
-            user_id=user_id,
-            candidates=prepared["memory_candidates"],
-        )
+        user = db.get(User, user_id)
+        if prepared.get("memory_enabled", True) and (user is None or user.memory_enabled):
+            long_term_memory_engine.upsert_candidates(
+                db,
+                user_id=user_id,
+                candidates=prepared["memory_candidates"],
+            )
 
         analysis = ConversationTurnAnalysis(
             user_id=user_id,

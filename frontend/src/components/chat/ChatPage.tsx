@@ -13,6 +13,7 @@ import { Composer, type ComposerOptions, type UploadTask } from "./Composer";
 import { LiveModelActivity } from "./LiveModelActivity";
 import { ContextPanel } from "./ContextPanel";
 import { MessageBubble } from "./MessageBubble";
+import { DismissibleMenu } from "./DismissibleMenu";
 import { useAppSettings } from "../../contexts/AppSettingsContext";
 import { useShell } from "../../contexts/ShellContext";
 import { useSettingsNavigation } from "../../hooks/useSettingsNavigation";
@@ -160,6 +161,8 @@ export function ChatPage() {
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
   const [liveModeOpen, setLiveModeOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const messagesRef = useRef<Message[]>([]);
   const activeChatRef = useRef(activeChat);
   const tokenRef = useRef(token);
@@ -189,6 +192,20 @@ export function ChatPage() {
       setChatNotice(mediaError instanceof Error ? mediaError.message : "Microphone is currently in use");
     }
   }, []);
+
+  const closeChatMenu = useCallback((restoreFocus = false) => {
+    setChatMenuOpen(false);
+    if (restoreFocus) window.setTimeout(() => triggerRef.current?.focus(), 0);
+  }, []);
+
+  const toggleChatMenu = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    triggerRef.current = event.currentTarget;
+    setChatMenuOpen((value) => !value);
+  }, []);
+
+  useEffect(() => {
+    closeChatMenu(false);
+  }, [activeChat?.id, location.pathname, closeChatMenu]);
 
   useEffect(() => {
     const nextChatId = activeChat?.id ?? null;
@@ -366,6 +383,16 @@ export function ChatPage() {
       if (sync) syncActiveChatMessages(chatId, nextMessages);
       return nextMessages;
     });
+  }
+
+  function updateMessageFeedback(messageId: string, feedback: Message["feedback"]) {
+    const currentChatId = activeChatRef.current?.id;
+    if (!currentChatId) return;
+    updateMessagesForChat(
+      currentChatId,
+      (current) => current.map((message) => message.id === messageId ? { ...message, feedback } : message),
+      true
+    );
   }
 
   function resolveDeltaQueueIfIdle() {
@@ -1043,7 +1070,7 @@ export function ChatPage() {
             >
               <Brain size={17} className="text-cyan-200" />
             </button>
-            <button className="icon-button-dark" onClick={() => setChatMenuOpen((value) => !value)} title="Chat actions" aria-label="Open chat actions" aria-expanded={chatMenuOpen} type="button"><MoreHorizontal size={17} /></button>
+            <button className="icon-button-dark" onClick={toggleChatMenu} title="Chat actions" aria-label="Open chat actions" aria-expanded={chatMenuOpen} aria-controls="chat-actions-menu" type="button"><MoreHorizontal size={17} /></button>
           </div>
         </div>
 
@@ -1069,20 +1096,24 @@ export function ChatPage() {
               <MessageSquarePlus size={15} />
               New chat
             </button>
-            <button className="chat-topbar-action" onClick={() => setChatMenuOpen((value) => !value)} type="button" aria-label="Open chat actions" aria-expanded={chatMenuOpen}><MoreHorizontal size={16} />More</button>
+            <button className="chat-topbar-action" onClick={toggleChatMenu} type="button" aria-label="Open chat actions" aria-expanded={chatMenuOpen} aria-controls="chat-actions-menu"><MoreHorizontal size={16} />More</button>
           </div>
         </div>
 
-        {chatMenuOpen && (
-          <div className="chat-actions-menu" role="menu">
+        <DismissibleMenu
+          open={chatMenuOpen}
+          menuId="chat-actions-menu"
+          menuRef={menuRef}
+          triggerRef={triggerRef}
+          onClose={closeChatMenu}
+        >
             <button role="menuitem" type="button" onClick={renameCurrentChat} disabled={!activeChat}><Pencil size={15} />Rename conversation</button>
             <button role="menuitem" type="button" onClick={clearCurrentChat} disabled={!activeChat}><Eraser size={15} />Clear conversation</button>
             <button role="menuitem" type="button" onClick={() => { setChatMenuOpen(false); openSettings(); }}><Settings size={15} />Chat settings</button>
             <button className="is-danger" role="menuitem" type="button" onClick={deleteCurrentChat} disabled={!activeChat}><Trash2 size={15} />Delete conversation</button>
-          </div>
-        )}
+        </DismissibleMenu>
 
-        <div ref={scrollRef} className="chat-scroll">
+        <div ref={scrollRef} className="chat-scroll" onScrollCapture={() => chatMenuOpen && closeChatMenu(false)}>
           {messages.length > visibleMessages.length && (
             <div className="mx-auto my-3 max-w-3xl rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-center text-xs text-slate-400">
               Showing the latest {visibleMessages.length} messages for a faster chat view.
@@ -1103,11 +1134,14 @@ export function ChatPage() {
                     )}
                     <MessageBubble
                       message={message}
+                      chatId={activeChat?.id}
+                      token={token}
                       isStreaming={message.id === visibleStreamingMessageId}
                       isSearchingWeb={message.id === searchingMessageId}
                       fallbackModel={message.role === "assistant" ? fallbackResponseModel : null}
                       onRegenerate={handleRegenerate}
                       onShare={handleShare}
+                      onFeedbackChange={updateMessageFeedback}
                     />
                   </Fragment>
                 );

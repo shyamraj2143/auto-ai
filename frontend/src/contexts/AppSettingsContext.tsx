@@ -8,6 +8,7 @@ export type AppSettings = {
   defaultProvider: AiProvider;
   defaultModel: string;
   memoryEnabled: boolean;
+  feedbackLearningEnabled: boolean;
   streamingEnabled: boolean;
   voiceEnabled: boolean;
   notificationsEnabled: boolean;
@@ -28,6 +29,7 @@ type AppSettingsContextValue = {
   setDefaultProvider: (provider: AiProvider) => void;
   setDefaultModel: (model: string) => void;
   setMemoryEnabled: (enabled: boolean) => void;
+  setFeedbackLearningEnabled: (enabled: boolean) => void;
   setStreamingEnabled: (enabled: boolean) => void;
   setVoiceEnabled: (enabled: boolean) => void;
   setNotificationsEnabled: (enabled: boolean) => void;
@@ -85,6 +87,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   defaultProvider: "groq",
   defaultModel: PROVIDER_MODELS.groq[0].value,
   memoryEnabled: true,
+  feedbackLearningEnabled: true,
   streamingEnabled: true,
   voiceEnabled: true,
   notificationsEnabled: false,
@@ -128,6 +131,7 @@ function normalizeSettings(payload: unknown): AppSettings {
     defaultProvider: provider,
     defaultModel: model,
     memoryEnabled: raw.memoryEnabled ?? DEFAULT_SETTINGS.memoryEnabled,
+    feedbackLearningEnabled: raw.feedbackLearningEnabled ?? DEFAULT_SETTINGS.feedbackLearningEnabled,
     streamingEnabled: raw.streamingEnabled ?? DEFAULT_SETTINGS.streamingEnabled,
     voiceEnabled: raw.voiceEnabled ?? DEFAULT_SETTINGS.voiceEnabled,
     notificationsEnabled: raw.notificationsEnabled ?? DEFAULT_SETTINGS.notificationsEnabled,
@@ -244,6 +248,9 @@ export function AppSettingsProvider({ children }: { children: React.ReactNode })
       },
       setMemoryEnabled: (enabled) => {
         updateSettings((current) => ({ ...current, memoryEnabled: enabled }));
+      },
+      setFeedbackLearningEnabled: (enabled) => {
+        updateSettings((current) => ({ ...current, feedbackLearningEnabled: enabled }));
       },
       setStreamingEnabled: (enabled) => {
         updateSettings((current) => ({ ...current, streamingEnabled: enabled }));

@@ -47,6 +47,8 @@ class UserRead(BaseModel):
     role: str = "user"
     subscription_status: str = "free"
     intelligence_mode: str = "instant"
+    memory_enabled: bool = True
+    feedback_learning_enabled: bool = True
     created_at: datetime
     updated_at: datetime
     profile_updated_at: datetime | None = None
@@ -59,6 +61,8 @@ class UserProfileUpdate(BaseModel):
     username: str | None = Field(default=None, min_length=3, max_length=30)
     phone_country_code: str | None = Field(default=None, max_length=8)
     phone_number: str | None = Field(default=None, max_length=32)
+    memory_enabled: bool | None = None
+    feedback_learning_enabled: bool | None = None
 
 
 class UsernameAvailability(BaseModel):

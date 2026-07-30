@@ -19,7 +19,9 @@ import {
   Heart,
   Briefcase,
   User,
-  BookOpen
+  BookOpen,
+  Pencil,
+  Check
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
@@ -98,6 +100,8 @@ export function ContextPanel({
   const [category, setCategory] = useState("preference");
   const [memoryLoading, setMemoryLoading] = useState(false);
   const [panelError, setPanelError] = useState("");
+  const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
+  const [editingMemoryValue, setEditingMemoryValue] = useState("");
 
   // Search & filter states for memory
   const [searchQuery, setSearchQuery] = useState("");
@@ -168,6 +172,22 @@ export function ContextPanel({
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unable to delete memory";
       setPanelError(detail);
+    }
+  }
+
+  async function saveMemoryEdit(memory: UserMemory) {
+    if (!token || !editingMemoryValue.trim()) return;
+    setPanelError("");
+    try {
+      const updated = await api.updateMemory(token, memory.id, { value: editingMemoryValue.trim() });
+      setHumanState((current) => current ? {
+        ...current,
+        memories: current.memories.map((item) => item.id === updated.id ? updated : item)
+      } : current);
+      setEditingMemoryId(null);
+      setEditingMemoryValue("");
+    } catch (error) {
+      setPanelError(error instanceof Error ? error.message : "Unable to update memory");
     }
   }
 
@@ -541,18 +561,46 @@ export function ContextPanel({
                               {memory.category}
                             </p>
                           </div>
-                          <button
-                            className="icon-button-dark h-6 w-6 opacity-0 group-hover:opacity-100 hover:text-red-400 transition"
-                            onClick={() => deleteMemory(memory)}
-                            title="Delete memory block"
-                            type="button"
-                          >
-                            <Trash2 size={12} />
-                          </button>
+                          <div className="flex gap-1">
+                            <button
+                              className="icon-button-dark h-7 w-7"
+                              onClick={() => {
+                                if (editingMemoryId === memory.id) void saveMemoryEdit(memory);
+                                else {
+                                  setEditingMemoryId(memory.id);
+                                  setEditingMemoryValue(memory.value);
+                                }
+                              }}
+                              title={editingMemoryId === memory.id ? "Save memory" : "Edit memory"}
+                              aria-label={editingMemoryId === memory.id ? "Save memory" : "Edit memory"}
+                              type="button"
+                            >
+                              {editingMemoryId === memory.id ? <Check size={12} /> : <Pencil size={12} />}
+                            </button>
+                            <button
+                              className="icon-button-dark h-7 w-7 hover:text-red-400 transition"
+                              onClick={() => deleteMemory(memory)}
+                              title="Delete memory block"
+                              aria-label="Delete memory block"
+                              type="button"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
                         </div>
-                        <p className="text-xs leading-relaxed text-slate-200 bg-slate-950/25 p-2 rounded border border-white/5">
-                          {memory.value}
-                        </p>
+                        {editingMemoryId === memory.id ? (
+                          <textarea
+                            className="min-h-20 w-full resize-y rounded border border-cyan-300/30 bg-slate-950/70 p-2 text-xs text-white"
+                            value={editingMemoryValue}
+                            maxLength={2000}
+                            onChange={(event) => setEditingMemoryValue(event.target.value)}
+                            aria-label="Edit learned preference"
+                          />
+                        ) : (
+                          <p className="text-xs leading-relaxed text-slate-200 bg-slate-950/25 p-2 rounded border border-white/5">
+                            {memory.value}
+                          </p>
+                        )}
                         <div className="mt-1.5 flex items-center justify-between text-[9px] text-slate-500 font-medium">
                           <span>{Math.round(memory.confidence * 100)}% reliability</span>
                           <span>Source: {memory.source}</span>

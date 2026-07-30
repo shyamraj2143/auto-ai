@@ -244,7 +244,7 @@ export function SettingsPage() {
   const location = useLocation();
   const pageRef = useRef<HTMLDivElement>(null);
   const tabsRef = useRef<HTMLElement>(null);
-  const { token, logout } = useAuth();
+  const { token, user, updateUser, logout } = useAuth();
   const screenShare = useScreenShare();
   const { chats, refreshChats, setActiveChat } = useChat();
   const { theme, setTheme } = useTheme();
@@ -263,6 +263,7 @@ export function SettingsPage() {
     setDefaultProvider,
     setDefaultModel,
     setMemoryEnabled,
+    setFeedbackLearningEnabled,
     setStreamingEnabled,
     setVoiceEnabled,
     setNotificationsEnabled,
@@ -281,6 +282,7 @@ export function SettingsPage() {
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("unsupported");
   const [isClearingChats, setIsClearingChats] = useState(false);
   const [chatSettings, setChatSettings] = useState<ChatSettings | null>(null);
+  const [memoryNotice, setMemoryNotice] = useState("");
 
   const section = useMemo<SettingsSection>(() => {
     const current = new URLSearchParams(location.search).get("section");
@@ -297,6 +299,64 @@ export function SettingsPage() {
   useEffect(() => {
     setNotificationPermission("Notification" in window ? Notification.permission : "unsupported");
   }, []);
+
+  useEffect(() => {
+    if (typeof user?.memory_enabled === "boolean" && settings.memoryEnabled !== user.memory_enabled) {
+      setMemoryEnabled(user.memory_enabled);
+    }
+    if (
+      typeof user?.feedback_learning_enabled === "boolean"
+      && settings.feedbackLearningEnabled !== user.feedback_learning_enabled
+    ) {
+      setFeedbackLearningEnabled(user.feedback_learning_enabled);
+    }
+  }, [user?.feedback_learning_enabled, user?.memory_enabled]);
+
+  async function updatePersonalizationSetting(
+    field: "memory_enabled" | "feedback_learning_enabled",
+    enabled: boolean
+  ) {
+    if (!token) return;
+    const localSetter = field === "memory_enabled" ? setMemoryEnabled : setFeedbackLearningEnabled;
+    const previous = field === "memory_enabled" ? settings.memoryEnabled : settings.feedbackLearningEnabled;
+    localSetter(enabled);
+    setMemoryNotice("");
+    try {
+      const nextUser = await api.updateProfile(token, { [field]: enabled });
+      updateUser(nextUser);
+    } catch (error) {
+      localSetter(previous);
+      setMemoryNotice(error instanceof Error ? error.message : "Unable to update personalization settings.");
+    }
+  }
+
+  async function clearLearnedPreferences() {
+    if (!token || !window.confirm("Clear all learned preferences for this account?")) return;
+    try {
+      await api.clearMemories(token);
+      setMemoryNotice("Learned preferences cleared.");
+    } catch (error) {
+      setMemoryNotice(error instanceof Error ? error.message : "Unable to clear learned preferences.");
+    }
+  }
+
+  async function exportMemories() {
+    if (!token) return;
+    try {
+      const memories = await api.listMemories(token);
+      const blob = new Blob([JSON.stringify({ exported_at: new Date().toISOString(), memories }, null, 2)], {
+        type: "application/json"
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "autoai-memories.json";
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setMemoryNotice(error instanceof Error ? error.message : "Unable to export learned preferences.");
+    }
+  }
 
   useEffect(() => {
     if (!token || section !== "chat") return;
@@ -653,8 +713,11 @@ export function SettingsPage() {
             <Select value={settings.defaultProvider} options={Object.entries(PROVIDER_LABELS).map(([value, label]) => ({ value, label }))} onChange={updateProvider} label="Default AI provider" />
             <Select value={settings.defaultModel} options={providerModels} onChange={setDefaultModel} label="Default AI model" />
           </SettingsRow>
-          <SettingsRow icon={Shield} title="Memory & personalization" description="Use saved memory and selected document context">
-            <Toggle checked={settings.memoryEnabled} onChange={setMemoryEnabled} />
+          <SettingsRow icon={Shield} title="Personalization memory" description="Pause new long-term memories while keeping existing preferences available to manage">
+            <Toggle checked={settings.memoryEnabled} onChange={(checked) => void updatePersonalizationSetting("memory_enabled", checked)} />
+          </SettingsRow>
+          <SettingsRow icon={CheckCheck} accent="green" title="Learn from my feedback" description="Use repeated Like/Dislike patterns as gentle preferences for this account">
+            <Toggle checked={settings.feedbackLearningEnabled} onChange={(checked) => void updatePersonalizationSetting("feedback_learning_enabled", checked)} />
           </SettingsRow>
           <SettingsRow icon={Radio} accent="cyan" title="Response streaming" description="Stream AI responses as they are generated">
             <Toggle checked={settings.streamingEnabled} onChange={setStreamingEnabled} />
@@ -663,6 +726,15 @@ export function SettingsPage() {
             <Toggle checked={settings.voiceEnabled} onChange={setVoiceEnabled} />
           </SettingsRow>
           <SettingsRow icon={Bot} accent="cyan" title="Context, files & memory" description="Manage AI documents, saved memory and human signals" onClick={openContextMemory} />
+          <SettingsRow icon={BrainCircuit} accent="violet" title="Learned preference controls" description="View, edit, delete, export, or clear account memories">
+            <button className="btn-secondary min-h-8 px-2.5 py-1 text-[11px]" type="button" onClick={openContextMemory}>View & edit</button>
+            <button className="btn-secondary min-h-8 px-2.5 py-1 text-[11px]" type="button" onClick={() => void exportMemories()}>Export</button>
+            <button className="btn-secondary min-h-8 px-2.5 py-1 text-[11px] text-rose-200" type="button" onClick={() => void clearLearnedPreferences()}>Clear</button>
+          </SettingsRow>
+          <div className="px-3 py-2 text-[11px] leading-5 text-slate-400">
+            AutoAI uses your approved preferences to personalize your account. Your private chats are not used as another user&apos;s personal memory.
+            {memoryNotice && <p className="mt-1 text-cyan-200" role="status">{memoryNotice}</p>}
+          </div>
         </SettingsCard>
         <SettingsCard>
           <SettingsRow

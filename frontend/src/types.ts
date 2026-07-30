@@ -16,6 +16,8 @@ export type User = {
   role: UserRole;
   subscription_status: string;
   intelligence_mode?: IntelligenceMode;
+  memory_enabled?: boolean;
+  feedback_learning_enabled?: boolean;
   created_at: string;
   updated_at: string;
   profile_updated_at?: string | null;
@@ -97,6 +99,7 @@ export type Message = {
   content: string;
   model?: string | null;
   token_count?: number;
+  feedback?: MessageFeedback | null;
   message_metadata?: {
     search?: SearchResultBundle;
     model?: ResponseModelInfo;
@@ -106,6 +109,23 @@ export type Message = {
     [key: string]: unknown;
   };
   created_at: string;
+};
+
+export type MessageFeedbackReason =
+  | "incorrect"
+  | "not_helpful"
+  | "outdated"
+  | "ignored_instructions"
+  | "poor_writing"
+  | "unsafe"
+  | "other";
+
+export type MessageFeedback = {
+  message_id: string;
+  rating: 1 | -1;
+  reason?: MessageFeedbackReason | null;
+  comment?: string | null;
+  updated_at: string;
 };
 
 export type ResponseModelInfo = {

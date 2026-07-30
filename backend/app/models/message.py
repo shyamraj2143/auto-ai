@@ -22,3 +22,9 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     chat = relationship("Chat", back_populates="messages")
+    feedback = relationship(
+        "MessageFeedback",
+        back_populates="message",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )

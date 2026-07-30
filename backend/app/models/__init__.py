@@ -14,6 +14,7 @@ from app.models.document import Document
 from app.models.human import ConversationTurnAnalysis, UserInteractionProfile, UserMemory
 from app.models.live import FaceMemory, LiveMessage, LiveSession, VisionFrame
 from app.models.message import Message
+from app.models.message_feedback import MessageFeedback
 from app.models.push import PushDeviceToken
 from app.models.promo import PromoCode, PromoRedemption
 from app.models.search import SearchCache, SearchRun
@@ -53,6 +54,7 @@ __all__ = [
     "LiveMessage",
     "LiveSession",
     "Message",
+    "MessageFeedback",
     "GlobalContent",
     "MediaAsset",
     "PaymentRecord",

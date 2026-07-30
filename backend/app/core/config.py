@@ -220,6 +220,8 @@ class Settings(BaseSettings):
     ALLOWED_AUDIO_EXTENSIONS: set[str] = {".flac", ".mp3", ".m4a", ".mpeg", ".mpga", ".ogg", ".wav", ".webm"}
 
     RATE_LIMIT_PER_MINUTE: int = 90
+    FEEDBACK_AGGREGATE_ANALYTICS_ENABLED: bool = True
+    FEEDBACK_ANALYTICS_MIN_GROUP_SIZE: int = 10
     PUBLIC_DEMO_CHAT_ENABLED: bool = True
     PUBLIC_DEMO_CHAT_LIMIT: int = 5
     PUBLIC_DEMO_CHAT_TTL_HOURS: int = 24

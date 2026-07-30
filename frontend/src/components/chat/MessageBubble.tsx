@@ -2,12 +2,9 @@ import { memo, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   Bot,
-  Check,
-  Copy,
   FileText,
   ImageIcon,
   RefreshCw,
-  Share2,
   Search,
   User
 } from "lucide-react";
@@ -21,6 +18,8 @@ import { ThinkingIndicator } from "./ThinkingIndicator";
 import { useMotionMode } from "../../motion/MotionProvider";
 import { StreamingPulse } from "../../motion/primitives";
 import { formatMessageDateTimeTitle, formatMessageTime, normalizedApiTimestamp } from "../../utils/dateTime";
+import { MessageActionBar } from "./MessageActionBar";
+import type { MessageFeedback } from "../../types";
 
 const THINK_BLOCK_PATTERN = /<think\b[^>]*>[\s\S]*?<\/think>\s*/gi;
 const OPEN_THINK_BLOCK_PATTERN = /<think\b[^>]*>[\s\S]*$/i;
@@ -97,6 +96,16 @@ function responseErrorText(value?: string) {
   return "Response interrupted. Your message was saved. Retry response.";
 }
 
+export function shouldShowMessageActions({
+  isEmptyStreaming,
+  isFailedAssistant
+}: {
+  isEmptyStreaming: boolean;
+  isFailedAssistant: boolean;
+}) {
+  return !isEmptyStreaming && !isFailedAssistant;
+}
+
 export function formatMessageTimestamp(value: string, now = new Date()) {
   void now;
   return formatMessageTime(value);
@@ -135,22 +144,27 @@ function AttachmentList({ attachments }: { attachments: ChatAttachment[] }) {
 
 function MessageBubbleComponent({
   message,
+  chatId,
+  token,
   isStreaming,
   isSearchingWeb,
   onRegenerate,
   onShare,
+  onFeedbackChange,
   fallbackModel
 }: {
   message: Message;
+  chatId?: string | null;
+  token?: string | null;
   isStreaming?: boolean;
   isSearchingWeb?: boolean;
   fallbackModel?: ResponseModelInfo | null;
   onRegenerate: (messageId: string) => void;
   onShare: (messageId: string) => void;
+  onFeedbackChange: (messageId: string, feedback: MessageFeedback | null) => void;
 }) {
   const isAssistant = message.role === "assistant";
   const { enabled, reduceMotion } = useMotionMode();
-  const [copied, setCopied] = useState(false);
   const rawContent = coerceTextContent(message.content);
   const content = useMemo(
     () => (isAssistant ? stripThinkBlocks(rawContent) : rawContent),
@@ -170,13 +184,6 @@ function MessageBubbleComponent({
   const consultedModels = deepResearch?.models_consulted ?? [];
   const normalizedTimestamp = normalizedApiTimestamp(message.created_at);
   void fallbackModel;
-
-  function copyMessage() {
-    void navigator.clipboard.writeText(content).then(() => {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1300);
-    });
-  }
 
   return (
     <motion.article
@@ -242,22 +249,17 @@ function MessageBubbleComponent({
         )}
       </div>
 
-        {!isEmptyStreaming && !isFailedAssistant && (
-          <div className="message-actions">
-            <button className="message-action" onClick={copyMessage} title="Copy message" aria-label="Copy message" type="button">
-              {copied ? <Check size={15} /> : <Copy size={15} />}
-            </button>
-            {isAssistant && (
-              <>
-                <button className="message-action" onClick={() => onShare(message.id)} title="Share message" aria-label="Share response" type="button">
-                  <Share2 size={15} />
-                </button>
-                <button className="message-action" onClick={() => onRegenerate(message.id)} title="Regenerate response" aria-label="Regenerate response" type="button">
-                  <RefreshCw size={15} />
-                </button>
-              </>
-            )}
-          </div>
+        {shouldShowMessageActions({ isEmptyStreaming: Boolean(isEmptyStreaming), isFailedAssistant }) && (
+          <MessageActionBar
+            message={message}
+            chatId={chatId}
+            token={token}
+            content={content}
+            isStreaming={Boolean(isStreaming)}
+            onFeedbackChange={onFeedbackChange}
+            onShare={onShare}
+            onRegenerate={onRegenerate}
+          />
         )}
       </div>
     </motion.article>
@@ -270,5 +272,7 @@ export const MessageBubble = memo(MessageBubbleComponent, (previous, next) => {
     previous.isStreaming === next.isStreaming &&
     previous.isSearchingWeb === next.isSearchingWeb &&
     previous.fallbackModel === next.fallbackModel
+    && previous.chatId === next.chatId
+    && previous.token === next.token
   );
 });

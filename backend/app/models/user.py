@@ -32,6 +32,8 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(32), default="user", index=True, nullable=False)
     subscription_status: Mapped[str] = mapped_column(String(32), default="free", index=True, nullable=False)
     intelligence_mode: Mapped[str] = mapped_column(String(32), default="instant", nullable=False)
+    memory_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    feedback_learning_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -57,6 +59,7 @@ class User(Base):
         uselist=False,
     )
     memories = relationship("UserMemory", back_populates="user", cascade="all, delete-orphan")
+    message_feedback = relationship("MessageFeedback", back_populates="user", cascade="all, delete-orphan")
     refresh_tokens = relationship("RefreshToken", back_populates="user", cascade="all, delete-orphan")
     password_reset_tokens = relationship("PasswordResetToken", back_populates="user", cascade="all, delete-orphan")
     call_settings = relationship(

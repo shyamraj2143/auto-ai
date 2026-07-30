@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_serializer
 
 from app.schemas.search import SearchMode
+from app.schemas.feedback import MessageFeedbackRead
 from app.utils.datetime import to_rfc3339_utc
 
 
@@ -20,6 +21,7 @@ class MessageRead(BaseModel):
     model: str | None = None
     token_count: int = 0
     message_metadata: dict | None = Field(default_factory=dict)
+    feedback: MessageFeedbackRead | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
