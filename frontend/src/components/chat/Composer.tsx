@@ -879,7 +879,7 @@ export function Composer({
                 />
                 <label className="inline-flex h-7 items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2">
                   <Box size={13} />
-                  <AppSelect label="Max research models" value={maxModels} disabled={allModels} onChange={(value) => setMaxModels(Number(value))} options={[1,2,3,4,5,6].map((value) => ({value:String(value),label:`Max ${value}`}))} />
+                  <AppSelect label="Max research models" value={maxModels} disabled={allModels} onChange={(value) => setMaxModels(Number(value))} options={[1,2,3,4,5,6,7,8,9].map((value) => ({value:String(value),label:`Max ${value}`}))} />
                 </label>
                 <label className="inline-flex h-7 items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 font-semibold">
                   <input

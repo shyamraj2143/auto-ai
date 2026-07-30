@@ -241,7 +241,7 @@ def search_payload(bundle: SearchResultBundle | None) -> dict:
 
 
 def deep_research_payload(metadata: dict | None) -> dict:
-    return {"deep_research": metadata} if metadata else {}
+    return {"orchestration": metadata, "deep_research": metadata} if metadata else {}
 
 
 def model_payload(provider: str, model: str) -> dict:
@@ -765,7 +765,7 @@ def run_chat_generation(generation_id: str) -> None:
                         *payload.openai_models,
                         *payload.gemini_models,
                     ],
-                    max_models=payload.max_models,
+                    max_models=None if payload.all_models else payload.max_models,
                     stream_content=persist_synthesis,
                 )
                 if generation_cancel_requested(db, generation):

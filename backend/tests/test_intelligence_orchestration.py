@@ -129,6 +129,21 @@ def test_medium_runs_models_concurrently_and_survives_failure(monkeypatch):
     assert "medium-c" in result.content
 
 
+def test_medium_plans_every_healthy_configured_groq_model(monkeypatch):
+    records = [record(f"groq-{index}") for index in range(6)]
+    monkeypatch.setattr(
+        "app.services.orchestration.task_planner.model_registry.eligible",
+        lambda _mode: records,
+    )
+    planned = task_planner.plan(
+        IntelligenceMode.MEDIUM,
+        type("Analysis", (), {"complexity": "low"})(),
+        MESSAGES,
+    )
+    assert [item.model.actual_model_id for item in planned] == [f"groq-{index}" for index in range(6)]
+    assert len({item.role for item in planned}) == 6
+
+
 def test_high_combines_actual_groq_and_bedrock_tasks(monkeypatch):
     tasks = [task("groq-high", "groq"), task("nova-high", "bedrock")]
     monkeypatch.setattr(task_planner, "plan", lambda *_args, **_kwargs: tasks)
@@ -143,6 +158,24 @@ def test_high_combines_actual_groq_and_bedrock_tasks(monkeypatch):
     result = run("high", [])
     providers = {item["provider"] for item in result.metadata["models_consulted"]}
     assert providers == {"groq", "bedrock"}
+
+
+def test_high_plans_every_healthy_configured_groq_and_bedrock_model(monkeypatch):
+    records = [
+        *[record(f"groq-{index}", "groq") for index in range(6)],
+        *[record(f"bedrock-{index}", "bedrock") for index in range(3)],
+    ]
+    monkeypatch.setattr(
+        "app.services.orchestration.task_planner.model_registry.eligible",
+        lambda _mode: records,
+    )
+    planned = task_planner.plan(
+        IntelligenceMode.HIGH,
+        type("Analysis", (), {"complexity": "high"})(),
+        MESSAGES,
+    )
+    assert len(planned) == 9
+    assert {item.model.provider for item in planned} == {"groq", "bedrock"}
 
 
 def test_activity_working_and_completed_events_match_real_calls(monkeypatch):
@@ -161,6 +194,27 @@ def test_activity_working_and_completed_events_match_real_calls(monkeypatch):
     completed = [payload for name, payload in events if name == "model.completed"][-1]
     assert completed["task_id"] == selected.task_id
     assert completed["contributed_to_final_answer"] is True
+
+
+def test_persisted_audit_records_real_status_role_duration_and_contribution(monkeypatch):
+    completed_task = task("completed-model")
+    failed_task = task("failed-model")
+    monkeypatch.setattr(task_planner, "plan", lambda *_args, **_kwargs: [completed_task, failed_task])
+
+    def complete(model_task, *, max_tokens):
+        if model_task.model.actual_model_id == "failed-model":
+            raise RuntimeError("provider failed")
+        return ModelResult(model_task, TaskStatus.COMPLETED, content="done")
+
+    monkeypatch.setattr(provider_adapter, "complete", complete)
+    install_synthesis_stub(monkeypatch)
+    result = run("medium", [])
+    audit = {item["display_name"]: item for item in result.metadata["models_consulted"]}
+    assert audit["completed-model"]["status"] == "completed"
+    assert audit["completed-model"]["contributed"] is True
+    assert audit["completed-model"]["activity_label"] == "Reviewing technical accuracy"
+    assert audit["failed-model"]["status"] == "failed"
+    assert audit["failed-model"]["contributed"] is False
 
 
 def test_unselected_model_never_appears_in_activity(monkeypatch):
