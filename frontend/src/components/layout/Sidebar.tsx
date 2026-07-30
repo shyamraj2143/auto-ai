@@ -32,6 +32,8 @@ export function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
+  const [pendingDeleteChat, setPendingDeleteChat] = useState<{ id: string; title: string } | null>(null);
+  const [deletingChat, setDeletingChat] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -108,9 +110,18 @@ export function Sidebar() {
     }
   }
 
-  async function removeChat(id: string) {
-    if (window.confirm("Delete this chat?")) {
-      await deleteChat(id);
+  function removeChat(id: string, title: string) {
+    setPendingDeleteChat({ id, title });
+  }
+
+  async function confirmRemoveChat() {
+    if (!pendingDeleteChat || deletingChat) return;
+    setDeletingChat(true);
+    try {
+      await deleteChat(pendingDeleteChat.id);
+      setPendingDeleteChat(null);
+    } finally {
+      setDeletingChat(false);
     }
   }
 
@@ -243,7 +254,7 @@ export function Sidebar() {
               </button>
               <button
                 className="mr-2 rounded p-1 text-white/50 opacity-0 hover:text-red-300 group-hover:opacity-100"
-                onClick={() => removeChat(chat.id)}
+                onClick={() => removeChat(chat.id, chat.title)}
                 title="Delete chat"
                 type="button"
               >
@@ -376,6 +387,49 @@ export function Sidebar() {
           </div>
         </div>
       </aside>
+      {pendingDeleteChat && (
+        <div
+          className="chat-delete-dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !deletingChat) setPendingDeleteChat(null);
+          }}
+        >
+          <section
+            className="chat-delete-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="chat-delete-dialog-title"
+            aria-describedby="chat-delete-dialog-description"
+          >
+            <span className="chat-delete-dialog-icon" aria-hidden="true">
+              <Trash2 size={20} />
+            </span>
+            <div className="min-w-0">
+              <h2 id="chat-delete-dialog-title">Delete chat?</h2>
+              <p id="chat-delete-dialog-description">“{pendingDeleteChat.title}” will be permanently deleted.</p>
+            </div>
+            <div className="chat-delete-dialog-actions">
+              <button
+                className="chat-delete-dialog-cancel"
+                disabled={deletingChat}
+                onClick={() => setPendingDeleteChat(null)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                className="chat-delete-dialog-confirm"
+                disabled={deletingChat}
+                onClick={() => void confirmRemoveChat()}
+                type="button"
+              >
+                {deletingChat ? "Deleting…" : "Delete chat"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </>
   );
 }

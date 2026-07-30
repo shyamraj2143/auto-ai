@@ -9306,3 +9306,91 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
     max-width: none;
   }
 }
+
+
+/* CHAT_SIDEBAR_MOBILE_HOTFIX */
+@media (max-width: 767px) {
+  .workspace-sidebar {
+    bottom: calc(var(--mobile-nav-height) + var(--safe-bottom) + 10px) !important;
+    height: auto !important;
+    max-height: calc(100dvh - var(--mobile-nav-height) - var(--safe-bottom) - 10px);
+    border-bottom-right-radius: 20px;
+  }
+}
+
+.chat-delete-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: grid;
+  place-items: center;
+  padding: max(18px, var(--safe-top)) max(18px, var(--safe-right)) max(18px, var(--safe-bottom)) max(18px, var(--safe-left));
+  background: rgba(1, 7, 20, 0.76);
+  backdrop-filter: blur(14px);
+}
+
+.chat-delete-dialog {
+  display: grid;
+  width: min(100%, 360px);
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 12px;
+  padding: 18px;
+  color: #f8fbff;
+  border: 1px solid rgba(255, 103, 126, 0.34);
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(22, 20, 48, 0.98), rgba(5, 15, 34, 0.98));
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.58), 0 0 32px rgba(255, 77, 103, 0.1);
+}
+
+.chat-delete-dialog-icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  color: #ff8093;
+  border: 1px solid rgba(255, 103, 126, 0.3);
+  border-radius: 13px;
+  background: rgba(255, 77, 103, 0.11);
+}
+
+.chat-delete-dialog h2 {
+  margin: 1px 0 6px;
+  font-size: 16px;
+  font-weight: 750;
+}
+
+.chat-delete-dialog p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #aebed4;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.chat-delete-dialog-actions {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.chat-delete-dialog-actions button {
+  min-height: 42px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.chat-delete-dialog-cancel {
+  color: #c9d6e8;
+  border: 1px solid rgba(143, 166, 202, 0.25);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.chat-delete-dialog-confirm {
+  color: #fff;
+  border: 1px solid rgba(255, 122, 143, 0.38);
+  background: linear-gradient(135deg, #c82f4a, #ff4d67);
+  box-shadow: 0 9px 24px rgba(255, 77, 103, 0.2);
+}
