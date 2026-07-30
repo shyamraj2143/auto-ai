@@ -71,6 +71,10 @@ public final class NativeCallSessionController {
     private boolean sessionStarted;
     private boolean muted;
     private boolean cameraEnabled = true;
+    private boolean peerReadySent;
+    private String pendingOfferSdp;
+    private String pendingAnswerSdp;
+    private final List<PendingRemoteCandidate> pendingRemoteCandidates = new ArrayList<>();
     private ConnectivityManager.NetworkCallback networkCallback;
 
     private NativeCallSessionController(Context context) {
@@ -91,6 +95,10 @@ public final class NativeCallSessionController {
         remoteMediaReceived = false;
         iceRestartAttempted = false;
         peerReadyPending = false;
+        peerReadySent = false;
+        pendingOfferSdp = null;
+        pendingAnswerSdp = null;
+        pendingRemoteCandidates.clear();
         iceDisconnected = false;
         reconnectAttempts = 0;
         sessionStarted = true;
@@ -149,6 +157,10 @@ public final class NativeCallSessionController {
 
     private void initializeSession() {
         try {
+            if (!CallFailureMessages.isOnline(context)) {
+                fail("NETWORK_LOST", new IllegalStateException("No validated internet connection"));
+                return;
+            }
             JSONObject call = api.getCall(callId);
             backendStatus = call.optString("status", "");
             direction = call.optString("direction", "incoming");
@@ -184,29 +196,30 @@ public final class NativeCallSessionController {
                 Log.i(TAG, "SIGNALING_CONNECTED callId=" + callId);
                 send("presence.ready", null, json("state", "background"));
                 executor.execute(() -> {
-                    try {
-                        backendStatus = api.getCall(callId).optString("status", backendStatus);
-                        if (isAcceptedStatus(backendStatus)) startMediaAfterAccept();
-                        else if (isTerminalStatus(backendStatus)) closeInternal(true, null);
+                    try {                        backendStatus = api.getCall(callId).optString("status", backendStatus);
+                            if (isAcceptedStatus(backendStatus)) {
+                                startMediaAfterAccept();
+                                announcePeerReadyIfPossible();
+                            } else if (isTerminalStatus(backendStatus)) closeInternal(true, null);
                     } catch (Exception error) { Log.w(TAG, "Authoritative state refresh deferred callId=" + callId, error); }
                 });
             }
 
             @Override public void onMessage(WebSocket webSocket, String text) {
                 executor.execute(() -> handleSignal(text));
-            }
+            }            @Override public void onClosed(WebSocket webSocket, int code, String reason) {
+                    if (webSocket != socket) return;
+                    signalingOpen = false;
+                    peerReadySent = false;
+                    if (!terminal.get()) scheduleReconnect();
+                }
 
-            @Override public void onClosed(WebSocket webSocket, int code, String reason) {
-                if (webSocket != socket) return;
-                signalingOpen = false;
-                if (!terminal.get()) scheduleReconnect();
-            }
-
-            @Override public void onFailure(WebSocket webSocket, Throwable error, Response response) {
-                if (webSocket != socket) return;
-                signalingOpen = false;
-                if (!terminal.get()) scheduleReconnect();
-            }
+                @Override public void onFailure(WebSocket webSocket, Throwable error, Response response) {
+                    if (webSocket != socket) return;
+                    signalingOpen = false;
+                    peerReadySent = false;
+                    if (!terminal.get()) scheduleReconnect();
+                }
         });
     }
 
@@ -215,7 +228,8 @@ public final class NativeCallSessionController {
         int attempt = ++reconnectAttempts;
         if (attempt > 8) {
             reconnectScheduled.set(false);
-            fail("SIGNALING_TIMEOUT", new IllegalStateException("Signaling reconnect limit reached"));
+            String failure = CallFailureMessages.isOnline(context) ? "SIGNALING_TIMEOUT" : "NETWORK_LOST";
+            fail(failure, new IllegalStateException("Signaling reconnect limit reached"));
             return;
         }
         update(ActiveCallStore.State.RECONNECTING, null);
@@ -249,11 +263,16 @@ public final class NativeCallSessionController {
                     engine.createOffer(false);
                 }
             } else if ("webrtc.offer".equals(type)) {
-                if (engine != null) engine.applyOffer(payload.getString("sdp"));
+                String sdp = payload.getString("sdp");
+                if (engine != null) engine.applyOffer(sdp); else pendingOfferSdp = sdp;
             } else if ("webrtc.answer".equals(type)) {
-                if (engine != null) engine.applyAnswer(payload.getString("sdp"));
+                String sdp = payload.getString("sdp");
+                if (engine != null) engine.applyAnswer(sdp); else pendingAnswerSdp = sdp;
             } else if ("webrtc.ice_candidate".equals(type)) {
-                if (engine != null) engine.addRemoteCandidate(payload.optString("sdpMid", null), payload.optInt("sdpMLineIndex", 0), payload.optString("candidate", ""));
+                PendingRemoteCandidate candidate = new PendingRemoteCandidate(
+                    payload.optString("sdpMid", null), payload.optInt("sdpMLineIndex", 0), payload.optString("candidate", ""));
+                if (engine != null) engine.addRemoteCandidate(candidate.mid, candidate.lineIndex, candidate.candidate);
+                else pendingRemoteCandidates.add(candidate);
             } else if ("webrtc.ice_restart".equals(type) && engine != null && !iceRestartAttempted) {
                 iceRestartAttempted = true;
                 engine.restartIce();
@@ -273,25 +292,46 @@ public final class NativeCallSessionController {
                 update(ActiveCallStore.State.MEDIA_CONNECTING, null);
                 List<PeerConnection.IceServer> iceServers = parseIceServers(api.turnCredentials());
                 NativeWebRtcEngine created = new NativeWebRtcEngine(context, engineListener);
-                created.start("video".equals(callType), iceServers);
-                synchronized (this) { engine = created; engine.setMuted(muted); engine.setCameraEnabled(cameraEnabled); }
-                if ("outgoing".equals(direction) && peerReadyPending && signalingOpen) {
-                    peerReadyPending = false;
-                    created.createOffer(false);
-                }
-                if (signalingOpen && "incoming".equals(direction)) {
-                    send("call.peer_ready", callId, new JSONObject()
-                        .put("call_type", backendCallType).put("audio_ready", true)
-                        .put("video_ready", !"video".equals(backendCallType) || (!audioOnly && cameraEnabled))
-                        .put("audio_only", audioOnly)
-                        .put("negotiation_id", UUID.randomUUID().toString()));
-                }
+                created.start("video".equals(callType), iceServers);                synchronized (this) { engine = created; engine.setMuted(muted); engine.setCameraEnabled(cameraEnabled); }
+                    flushPendingRemoteSignals(created);
+                    announcePeerReadyIfPossible();
             } catch (SecurityException permission) {
                 fail("video".equals(callType) ? "CAMERA_PERMISSION_DENIED" : "MICROPHONE_PERMISSION_DENIED", permission);
             } catch (Exception error) {
                 fail("INTERNAL_CALL_ERROR", error);
             }
         });
+    }
+
+    private synchronized void announcePeerReadyIfPossible() {
+        NativeWebRtcEngine current = engine;
+        if (!signalingOpen || current == null || terminal.get()) return;
+        if ("outgoing".equals(direction)) {
+            if (peerReadyPending) {
+                peerReadyPending = false;
+                current.createOffer(false);
+            }
+            return;
+        }
+        if ("incoming".equals(direction) && !peerReadySent) {
+            peerReadySent = true;
+            send("call.peer_ready", callId, json("call_type", backendCallType, "audio_ready", true, "video_ready", !"video".equals(backendCallType) || (!audioOnly && cameraEnabled), "audio_only", audioOnly, "negotiation_id", UUID.randomUUID().toString()));
+            Log.i(TAG, "PEER_READY_SENT callId=" + callId);
+        }
+    }
+
+    private synchronized void flushPendingRemoteSignals(NativeWebRtcEngine current) {
+        if ("incoming".equals(direction) && pendingOfferSdp != null) {
+            current.applyOffer(pendingOfferSdp);
+            pendingOfferSdp = null;
+        } else if ("outgoing".equals(direction) && pendingAnswerSdp != null) {
+            current.applyAnswer(pendingAnswerSdp);
+            pendingAnswerSdp = null;
+        }
+        for (PendingRemoteCandidate candidate : pendingRemoteCandidates) {
+            current.addRemoteCandidate(candidate.mid, candidate.lineIndex, candidate.candidate);
+        }
+        pendingRemoteCandidates.clear();
     }
 
     private final NativeWebRtcEngine.Listener engineListener = new NativeWebRtcEngine.Listener() {
@@ -397,6 +437,10 @@ public final class NativeCallSessionController {
         socket = null;
         if (engine != null) engine.close();
         engine = null;
+        pendingOfferSdp = null;
+        pendingAnswerSdp = null;
+        pendingRemoteCandidates.clear();
+        peerReadySent = false;
         ConnectivityManager manager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
         if (manager != null && networkCallback != null) try { manager.unregisterNetworkCallback(networkCallback); } catch (RuntimeException ignored) {}
         networkCallback = null;
@@ -418,6 +462,18 @@ public final class NativeCallSessionController {
         for (Listener listener : listeners) listener.onState(state, errorCode);
         context.sendBroadcast(new android.content.Intent("com.autoai.app.call.NATIVE_STATE").setPackage(context.getPackageName())
             .putExtra(CallNotificationManager.EXTRA_CALL_ID, callId).putExtra("state", state.name()).putExtra("error_code", errorCode));
+    }
+
+    private static final class PendingRemoteCandidate {
+        final String mid;
+        final int lineIndex;
+        final String candidate;
+
+        PendingRemoteCandidate(String mid, int lineIndex, String candidate) {
+            this.mid = mid;
+            this.lineIndex = lineIndex;
+            this.candidate = candidate;
+        }
     }
 
     private static boolean isAcceptedStatus(String status) { return "accepted".equals(status) || "connecting".equals(status) || "active".equals(status); }

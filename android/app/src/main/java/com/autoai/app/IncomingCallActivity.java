@@ -1,10 +1,12 @@
 package com.autoai.app;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -24,12 +26,15 @@ import android.widget.TextView;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class IncomingCallActivity extends Activity {
     private static final String TAG = "AutoAiIncomingCall";
+    private static final int REQUEST_CALL_PERMISSIONS = 5401;
     private final ExecutorService avatarExecutor = Executors.newSingleThreadExecutor();
     private String callId;
     private String actionToken;
@@ -42,6 +47,7 @@ public class IncomingCallActivity extends Activity {
     private Button acceptButton;
     private Button audioOnlyButton;
     private final AtomicBoolean actionRunning = new AtomicBoolean(false);
+    private boolean pendingAudioOnly;
     private BroadcastReceiver activeUiReadyReceiver;
 
     @Override
@@ -163,6 +169,48 @@ public class IncomingCallActivity extends Activity {
     }
 
     private void acceptCall(boolean audioOnly) {
+        if (actionRunning.get()) return;
+        if (!CallFailureMessages.isOnline(this)) {
+            showFailure("NETWORK_LOST");
+            return;
+        }
+        pendingAudioOnly = audioOnly;
+        List<String> missing = new ArrayList<>();
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            missing.add(Manifest.permission.RECORD_AUDIO);
+        }
+        if ("video".equals(callType) && !audioOnly
+            && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            missing.add(Manifest.permission.CAMERA);
+        }
+        if (!missing.isEmpty()) {
+            setActionsEnabled(false);
+            setStatus("Allow the required call permissions…", Color.rgb(34, 211, 238));
+            requestPermissions(missing.toArray(new String[0]), REQUEST_CALL_PERMISSIONS);
+            return;
+        }
+        beginAccept(audioOnly);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != REQUEST_CALL_PERMISSIONS) return;
+        boolean microphoneGranted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+        if (!microphoneGranted) {
+            showFailure("MICROPHONE_PERMISSION_DENIED");
+            return;
+        }
+        boolean answerAudioOnly = pendingAudioOnly;
+        if ("video".equals(callType) && !answerAudioOnly
+            && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            answerAudioOnly = true;
+            setStatus("Camera was not allowed. Answering with audio only…", Color.rgb(251, 191, 36));
+        }
+        beginAccept(answerAudioOnly);
+    }
+
+    private void beginAccept(boolean audioOnly) {
         if (!actionRunning.compareAndSet(false, true)) return;
         Log.i(TAG, "ACCEPT_TAPPED callId=" + callId + " audioOnly=" + audioOnly);
         setActionsEnabled(false);
@@ -171,15 +219,15 @@ public class IncomingCallActivity extends Activity {
             @Override public void onAcceptCommitted() { runOnUiThread(() -> setStatus("Preparing secure call…", Color.rgb(34, 211, 238))); }
             @Override public void onServiceStarting() { runOnUiThread(() -> setStatus("Starting call service…", Color.rgb(34, 211, 238))); }
             @Override public void onServiceReady() { runOnUiThread(() -> setStatus("Opening call…", Color.rgb(34, 211, 238))); }
-            @Override public void onFailure(String code) {
-                runOnUiThread(() -> {
-                    setStatus("Calling service could not start\nAutoAI could not prepare the call. Please retry.", Color.rgb(239, 68, 68));
-                    acceptButton.setText("Retry");
-                    setActionsEnabled(true);
-                    actionRunning.set(false);
-                });
-            }
+            @Override public void onFailure(String code) { runOnUiThread(() -> showFailure(code)); }
         });
+    }
+
+    private void showFailure(String code) {
+        setStatus(CallFailureMessages.message(this, code), Color.rgb(239, 68, 68));
+        acceptButton.setText("Retry");
+        setActionsEnabled(true);
+        actionRunning.set(false);
     }
 
     private void setStatus(String text, int color) {

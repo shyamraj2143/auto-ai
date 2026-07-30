@@ -74,8 +74,13 @@ public class CallForegroundService extends Service implements NativeCallSessionC
             failStart(activeCallId, "INTERNAL_SERVICE_ERROR");
             return START_NOT_STICKY;
         }
-        if (!hasCallPermissions(callType)) {
-            failStart(activeCallId, "FOREGROUND_SERVICE_PERMISSION_DENIED");
+        if (!CallFailureMessages.isOnline(this)) {
+            failStart(activeCallId, "NETWORK_LOST");
+            return START_NOT_STICKY;
+        }
+        String missingPermission = missingCallPermission(callType);
+        if (missingPermission != null) {
+            failStart(activeCallId, missingPermission);
             return START_NOT_STICKY;
         }
         if (!hasDeclaredServiceTypes(callType)) {
@@ -97,10 +102,8 @@ public class CallForegroundService extends Service implements NativeCallSessionC
         int notificationId = CallNotificationManager.notificationId(activeCallId) + 100000;
         activeNotificationId = notificationId;
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                int serviceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
-                serviceType |= ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL;
-                if ("video".equals(callType)) serviceType |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {                int serviceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+                    if ("video".equals(callType)) serviceType |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
                 startForeground(notificationId, notification, serviceType);
             } else {
                 startForeground(notificationId, notification);
@@ -109,16 +112,14 @@ public class CallForegroundService extends Service implements NativeCallSessionC
             Log.e(TAG, "Foreground call service startForeground failed callId=" + activeCallId, error);
             String simpleName = error.getClass().getSimpleName();
             String code = "MissingForegroundServiceTypeException".equals(simpleName)
-                ? "FOREGROUND_SERVICE_TYPE_MISSING"
-                : error instanceof SecurityException ? "FOREGROUND_SERVICE_PERMISSION_DENIED"
-                : Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                ? "FOREGROUND_SERVICE_TYPE_MISSING"                : error instanceof SecurityException ? "FOREGROUND_SERVICE_START_NOT_ALLOWED"
+                    : Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
                     ? "FOREGROUND_SERVICE_START_NOT_ALLOWED" : "FOREGROUND_NOTIFICATION_FAILED";
             failStart(activeCallId, code);
             return START_NOT_STICKY;
         }
         if (!initializeAudio(callType)) {
-            failStart(activeCallId, "AUDIO_FOCUS_FAILED");
-            return START_NOT_STICKY;
+            Log.w(TAG, "AUDIO_FOCUS_DEGRADED callId=" + activeCallId + "; continuing call setup");
         }
         TelecomRegistrationResult telecomResult = AutoAiTelecomBridge.ensureRegisteredDetailed(this);
         if (telecomResult.isRegistered()) {
@@ -204,32 +205,41 @@ public class CallForegroundService extends Service implements NativeCallSessionC
             .build();
     }
 
-    private boolean hasCallPermissions(String callType) {
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return false;
-        return !"video".equals(callType)
-            || checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
+    private String missingCallPermission(String callType) {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            return "MICROPHONE_PERMISSION_DENIED";
+        }
+        if ("video".equals(callType)
+            && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            return "CAMERA_PERMISSION_DENIED";
+        }
+        return null;
     }
 
     private boolean initializeAudio(String callType) {
-        audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-        if (audioManager == null) return false;
-        previousAudioMode = audioManager.getMode();
-        previousSpeakerState = audioManager.isSpeakerphoneOn();
-        audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-        audioManager.setSpeakerphoneOn("video".equals(callType));
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            AudioAttributes attributes = new AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                .build();
-            audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-                .setAudioAttributes(attributes)
-                .setAcceptsDelayedFocusGain(false)
-                .setOnAudioFocusChangeListener(focusChange -> Log.d(TAG, "Audio focus changed=" + focusChange))
-                .build();
-            return audioManager.requestAudioFocus(audioFocusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
-        } else {
+        try {
+            audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+            if (audioManager == null) return false;
+            previousAudioMode = audioManager.getMode();
+            previousSpeakerState = audioManager.isSpeakerphoneOn();
+            audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+            audioManager.setSpeakerphoneOn("video".equals(callType));
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                AudioAttributes attributes = new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build();
+                audioFocusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                    .setAudioAttributes(attributes)
+                    .setAcceptsDelayedFocusGain(false)
+                    .setOnAudioFocusChangeListener(focusChange -> Log.d(TAG, "Audio focus changed=" + focusChange))
+                    .build();
+                return audioManager.requestAudioFocus(audioFocusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+            }
             return audioManager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+        } catch (RuntimeException error) {
+            Log.w(TAG, "Audio focus setup degraded callId=" + activeCallId, error);
+            return false;
         }
     }
 
@@ -248,9 +258,8 @@ public class CallForegroundService extends Service implements NativeCallSessionC
     private boolean hasDeclaredServiceTypes(String callType) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return true;
         try {
-            ServiceInfo info = getPackageManager().getServiceInfo(new ComponentName(this, CallForegroundService.class), 0);
-            int required = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE | ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL;
-            if ("video".equals(callType)) required |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
+            ServiceInfo info = getPackageManager().getServiceInfo(new ComponentName(this, CallForegroundService.class), 0);            int required = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+                if ("video".equals(callType)) required |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
             return (info.getForegroundServiceType() & required) == required;
         } catch (PackageManager.NameNotFoundException error) {
             return false;

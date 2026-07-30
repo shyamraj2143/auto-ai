@@ -27,7 +27,6 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 import com.google.firebase.messaging.FirebaseMessaging;
-import com.google.firebase.installations.FirebaseInstallations;
 
 import org.json.JSONArray;
 
@@ -73,13 +72,12 @@ public class AutoAiCallsPlugin extends Plugin {
         }
 
         try {
-            FirebaseMessaging.getInstance().register().continueWithTask(ignored -> FirebaseInstallations.getInstance().getId()).addOnCompleteListener(task -> {
+            FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
                 if (task.isSuccessful() && task.getResult() != null && !task.getResult().trim().isEmpty()) {
                     result.put("fcmToken", task.getResult());
-                    result.put("firebaseInstallationId", task.getResult());
-                    Log.i(TAG, "FCM installation identity available hash=" + PushTokenRegistrar.sha256Prefix(task.getResult()));
+                    Log.i(TAG, "FCM registration token available hash=" + PushTokenRegistrar.sha256Prefix(task.getResult()));
                 } else {
-                    Log.w(TAG, "FCM installation identity unavailable for call device registration.");
+                    Log.w(TAG, "FCM registration token unavailable for call device registration.", task.getException());
                 }
                 call.resolve(result);
             });
@@ -195,8 +193,12 @@ public class AutoAiCallsPlugin extends Plugin {
             call.reject("Call id is required.");
             return;
         }
-        if (!hasRequiredCallPermissions(video)) {
-            call.reject("Required call permissions are missing.", "CALL_PERMISSION_REQUIRED");
+        if (!isGranted("microphone")) {
+            call.reject("Microphone permission is required.", "MICROPHONE_PERMISSION_DENIED");
+            return;
+        }
+        if (video && !isGranted("camera")) {
+            call.reject("Camera permission is required for video calling.", "CAMERA_PERMISSION_DENIED");
             return;
         }
         Intent intent = new Intent(getContext(), CallForegroundService.class);

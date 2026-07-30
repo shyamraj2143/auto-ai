@@ -189,7 +189,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     browserNotificationRef.current = null;
   }, []);
 
-  const ensureNativeCallService = useCallback(async (currentCall: CallRecord) => {
+  const ensureNativeCallService = useCallback(async (currentCall: CallRecord, audioOnly = false) => {
     if (nativeServiceCallIdsRef.current.has(currentCall.id)) return;
     nativeServiceCallIdsRef.current.add(currentCall.id);
     try {
@@ -197,7 +197,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         callId: currentCall.id,
         displayName: currentCall.peer.display_name,
         startedAt: Date.now(),
-        video: currentCall.call_type === "video",
+        video: currentCall.call_type === "video" && !audioOnly,
       });
       callDebug("native_call_service_started", { call_id: currentCall.id, role: currentCall.direction, state: currentCall.status });
     } catch (nativeError) {
@@ -978,13 +978,23 @@ export function CallProvider({ children }: { children: ReactNode }) {
     setPendingPeer(peer);
     setSessionState("preparing");
     sessionStateRef.current = "preparing";
-    try {
-      if (!callNative.isAndroid()) {
-        await signaling.connect(token);
-        if (!await signaling.waitUntilConnected()) throw new Error("Secure call signaling could not connect. Please retry.");
-        await requestLocalMedia(callType);
-      }
-      const created = await callApi.initiate(token, peer.id, callType, deviceIdRef.current);
+    try {      if (callNative.isAndroid()) {
+            const permissions = callType === "video"
+              ? await callNative.requestVideoCallPermissions()
+              : await callNative.requestAudioCallPermissions();
+            if (!permissions.microphone.granted) {
+              throw new CallSetupError("MICROPHONE_PERMISSION_DENIED", "Microphone permission is required.");
+            }
+            if (callType === "video" && !permissions.camera.granted) {
+              callType = "audio";
+              setError("Camera permission was not granted. Starting an audio call instead.");
+            }
+          } else {
+            await signaling.connect(token);
+            if (!await signaling.waitUntilConnected()) throw new Error("Secure call signaling could not connect. Please retry.");
+            await requestLocalMedia(callType);
+          }
+          const created = await callApi.initiate(token, peer.id, callType, deviceIdRef.current);
       callRef.current = created;
       setCall(created);
       setSessionState("notifying");
@@ -1070,10 +1080,21 @@ export function CallProvider({ children }: { children: ReactNode }) {
       acceptedCallIdsRef.current.add(fresh.id);
       acceptedSent = true;
       callRef.current = accepted;
-      setCall(accepted);
-      clearProgressTimers();
-      await ensureNativeCallService(accepted);
-      if (callNative.isAndroid()) {
+      setCall(accepted);      clearProgressTimers();
+          if (callNative.isAndroid()) {
+            const permissions = fresh.call_type === "video" && !audioOnly
+              ? await callNative.requestVideoCallPermissions()
+              : await callNative.requestAudioCallPermissions();
+            if (!permissions.microphone.granted) {
+              throw new CallSetupError("MICROPHONE_PERMISSION_DENIED", "Microphone permission is required.");
+            }
+            if (fresh.call_type === "video" && !audioOnly && !permissions.camera.granted) {
+              audioOnly = true;
+              setError("Camera permission was not granted. Answering with audio only.");
+            }
+          }
+          await ensureNativeCallService(accepted, audioOnly);
+          if (callNative.isAndroid()) {
         await callNative.acknowledgeCallHandoff(accepted.id).catch(() => undefined);
         signaling.close();
         setSessionState("connecting");

@@ -37,8 +37,18 @@ type ChatFilter = "recent" | "unread";
 export const CALL_HUB_SECTIONS = ["search", "requests", "chats", "calls", "alerts"] as const;
 
 function errorText(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
-}
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      return "No internet connection. Turn on mobile data or Wi-Fi, then retry.";
+    }
+    if (error instanceof ApiClientError) {
+      if (error.kind === "network_unavailable") return "No internet connection. Turn on mobile data or Wi-Fi, then retry.";
+      if (error.kind === "authentication_failed") return "Your session expired. Sign in again and retry.";
+      if (["server_unreachable", "cors_blocked", "ssl_certificate_issue"].includes(error.kind)) {
+        return "AutoAI server could not be reached. Check the connection and retry.";
+      }
+    }
+    return error instanceof Error ? error.message : fallback;
+  }
 
 function socialActionError(error: unknown, action: "follow" | "accept") {
   if (error instanceof ApiClientError && error.kind !== "http_error") {
