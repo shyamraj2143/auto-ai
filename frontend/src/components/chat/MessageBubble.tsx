@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import clsx from "clsx";
-import type { ChatAttachment, Message, ResponseModelInfo } from "../../types";
+import type { ChatAttachment, ChatGeneration, Message, ResponseModelInfo } from "../../types";
 import { coerceTextContent } from "../../utils/text";
 import { MarkdownMessage } from "./MarkdownMessage";
 import { SourceCards } from "./SourceCards";
@@ -149,6 +149,7 @@ function MessageBubbleComponent({
   token,
   isStreaming,
   isSearchingWeb,
+  generation,
   onRegenerate,
   onShare,
   onFeedbackChange,
@@ -159,6 +160,7 @@ function MessageBubbleComponent({
   token?: string | null;
   isStreaming?: boolean;
   isSearchingWeb?: boolean;
+  generation?: ChatGeneration | null;
   fallbackModel?: ResponseModelInfo | null;
   onRegenerate: (messageId: string) => void;
   onShare: (messageId: string) => void;
@@ -197,7 +199,7 @@ function MessageBubbleComponent({
       <div className="message-content-stack">
       <div className={clsx("message-card", isAssistant ? "message-card-ai" : "message-card-user")}>
         {isEmptyStreaming ? (
-          <ThinkingIndicator {...thinkingCopy(streamingMetadata?.phase)} />
+          <ThinkingIndicator {...thinkingCopy(streamingMetadata?.phase)} generation={generation} />
         ) : isFailedAssistant ? (
           <div className="message-error-panel">
             <AlertCircle size={18} />
@@ -262,6 +264,7 @@ export const MessageBubble = memo(MessageBubbleComponent, (previous, next) => {
     previous.message === next.message &&
     previous.isStreaming === next.isStreaming &&
     previous.isSearchingWeb === next.isSearchingWeb &&
+    previous.generation === next.generation &&
     previous.fallbackModel === next.fallbackModel
     && previous.chatId === next.chatId
     && previous.token === next.token

@@ -1108,6 +1108,7 @@ export function ChatPage() {
                       token={token}
                       isStreaming={message.id === visibleStreamingMessageId}
                       isSearchingWeb={message.id === searchingMessageId}
+                      generation={message.id === visibleStreamingMessageId ? visibleGeneration : null}
                       fallbackModel={message.role === "assistant" ? fallbackResponseModel : null}
                       onRegenerate={handleRegenerate}
                       onShare={handleShare}

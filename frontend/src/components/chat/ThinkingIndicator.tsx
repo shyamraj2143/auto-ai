@@ -1,14 +1,53 @@
 import { AnimatePresence, motion } from "framer-motion";
 import type { CSSProperties } from "react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { NeuralCore } from "../../motion/NeuralCore";
+import type { ChatGeneration, OrchestrationActivityEvent } from "../../types";
+import { modelActivityCards } from "./LiveModelActivity";
 
-export function ThinkingIndicator({ label, subtitle }: { label?: string; subtitle?: string } = {}) {
+export function thinkingActivitySnapshot(events: OrchestrationActivityEvent[]) {
+  const tasks = modelActivityCards(events);
+  const working = tasks.filter((task) => task.status === "working");
+  const queued = tasks.filter((task) => task.status === "queued");
+  return {
+    tasks,
+    visibleTasks: working.length ? working : queued,
+    completed: tasks.filter((task) => task.status === "completed").length,
+    working: working.length,
+    stage: [...events].reverse().find((event) => event.stage)?.stage
+  };
+}
+
+export function ThinkingIndicator({
+  label,
+  subtitle,
+  generation
+}: {
+  label?: string;
+  subtitle?: string;
+  generation?: ChatGeneration | null;
+} = {}) {
   const particles = useMemo(() => Array.from({ length: 14 }, (_, particleIndex) => particleIndex), []);
   const displayLabel = label || "Thinking";
+  const activity = useMemo(
+    () => thinkingActivitySnapshot(generation?.activity ?? []),
+    [generation?.activity]
+  );
+  const [visibleTaskIndex, setVisibleTaskIndex] = useState(0);
+  const visibleTask = activity.visibleTasks[visibleTaskIndex % Math.max(activity.visibleTasks.length, 1)];
+
+  useEffect(() => {
+    setVisibleTaskIndex(0);
+    if (activity.visibleTasks.length < 2) return;
+    const timer = window.setInterval(
+      () => setVisibleTaskIndex((current) => (current + 1) % activity.visibleTasks.length),
+      2200
+    );
+    return () => window.clearInterval(timer);
+  }, [activity.visibleTasks.length]);
 
   return (
-    <div className="thinking-panel">
+    <div className="thinking-panel" aria-live="polite">
       <div className="thinking-particles" aria-hidden="true">
         {particles.map((particle) => (
           <span key={particle} style={{ "--i": particle } as CSSProperties} />
@@ -23,7 +62,7 @@ export function ThinkingIndicator({ label, subtitle }: { label?: string; subtitl
       </div>
       <div className="relative z-10 flex min-w-0 items-center gap-3">
         <NeuralCore className="thinking-core neural-core-chat" state="thinking" size="sm" />
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <AnimatePresence mode="wait">
             <motion.p
               key={displayLabel}
@@ -41,9 +80,34 @@ export function ThinkingIndicator({ label, subtitle }: { label?: string; subtitl
               </span>
             </motion.p>
           </AnimatePresence>
-          <p className="mt-1 text-xs text-slate-300/80">{subtitle || "Crafting a response with the current context."}</p>
+          <p className="mt-1 text-xs text-slate-300/80">
+            {activity.stage || subtitle || "Crafting a response with the current context."}
+          </p>
         </div>
       </div>
+      {visibleTask && (
+        <div className="thinking-live-activity relative z-10">
+          <div className="thinking-live-model">
+            <span className={`thinking-live-status is-${visibleTask.status || "queued"}`}>
+              {visibleTask.status === "working" ? "Working" : "Queued"}
+            </span>
+            <strong>{visibleTask.model_display_name || visibleTask.actual_model_id || "Intelligence model"}</strong>
+            {visibleTask.provider_display_name && <span>{visibleTask.provider_display_name}</span>}
+          </div>
+          <p>{visibleTask.activity_label || visibleTask.role || "Processing your request"}</p>
+          <div className="thinking-live-progress">
+            <span
+              style={{
+                width: `${activity.tasks.length ? Math.max(4, (activity.completed / activity.tasks.length) * 100) : 4}%`
+              }}
+            />
+          </div>
+          <small>
+            {activity.completed} of {activity.tasks.length} completed
+            {activity.working > 0 ? ` · ${activity.working} working now` : ""}
+          </small>
+        </div>
+      )}
     </div>
   );
 }

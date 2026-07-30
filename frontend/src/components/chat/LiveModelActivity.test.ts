@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { OrchestrationActivityEvent } from "../../types";
 import { modelActivityCards } from "./LiveModelActivity";
+import { thinkingActivitySnapshot } from "./ThinkingIndicator";
 
 function event(sequence: number, type: string, status: OrchestrationActivityEvent["status"], extra = {}) {
   return {
@@ -40,5 +41,31 @@ describe("live model activity", () => {
       event(2, "model.failed", "failed")
     ]);
     expect(cards[0]?.status).toBe("failed");
+  });
+
+  it("reports the models currently working and overall progress in the thinking banner", () => {
+    const snapshot = thinkingActivitySnapshot([
+      event(1, "model.queued", "queued"),
+      event(2, "model.started", "working"),
+      {
+        ...event(3, "model.completed", "completed"),
+        task_id: "task-2",
+        model_display_name: "Claude 3.7 Sonnet",
+        provider_display_name: "Amazon Bedrock"
+      },
+      event(4, "stage.started", undefined, { task_id: undefined, stage: "Comparing model findings" })
+    ]);
+
+    expect(snapshot.visibleTasks).toHaveLength(1);
+    expect(snapshot.visibleTasks[0]).toMatchObject({
+      model_display_name: "GPT-OSS 120B",
+      provider_display_name: "Groq",
+      activity_label: "Preparing the primary answer"
+    });
+    expect(snapshot).toMatchObject({
+      completed: 1,
+      working: 1,
+      stage: "Comparing model findings"
+    });
   });
 });
