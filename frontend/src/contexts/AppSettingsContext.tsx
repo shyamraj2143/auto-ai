@@ -123,6 +123,8 @@ function normalizeSettings(payload: unknown): AppSettings {
   const model = raw.defaultModel && validModels.includes(raw.defaultModel)
     ? raw.defaultModel
     : PROVIDER_MODELS[provider][0].value;
+  const hasLegacyResearchDefaults =
+    raw.deepResearchMaxModels === 3 && raw.deepResearchAllModels === false;
 
   return {
     defaultProvider: provider,
@@ -133,8 +135,12 @@ function normalizeSettings(payload: unknown): AppSettings {
     notificationsEnabled: raw.notificationsEnabled ?? DEFAULT_SETTINGS.notificationsEnabled,
     language: raw.language && LANGUAGE_VALUES.has(raw.language) ? raw.language : DEFAULT_SETTINGS.language,
     deepResearchProviders: normalizeResearchProviders(raw.deepResearchProviders),
-    deepResearchMaxModels: clampNumber(raw.deepResearchMaxModels, DEFAULT_SETTINGS.deepResearchMaxModels, 1, 9),
-    deepResearchAllModels: raw.deepResearchAllModels ?? DEFAULT_SETTINGS.deepResearchAllModels,
+    deepResearchMaxModels: hasLegacyResearchDefaults
+      ? DEFAULT_SETTINGS.deepResearchMaxModels
+      : clampNumber(raw.deepResearchMaxModels, DEFAULT_SETTINGS.deepResearchMaxModels, 1, 9),
+    deepResearchAllModels: hasLegacyResearchDefaults
+      ? DEFAULT_SETTINGS.deepResearchAllModels
+      : raw.deepResearchAllModels ?? DEFAULT_SETTINGS.deepResearchAllModels,
     deepResearchTimeoutSeconds: clampNumber(
       raw.deepResearchTimeoutSeconds,
       DEFAULT_SETTINGS.deepResearchTimeoutSeconds,
