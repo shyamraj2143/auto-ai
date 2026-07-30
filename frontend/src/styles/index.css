@@ -9311,10 +9311,32 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
 /* CHAT_SIDEBAR_MOBILE_HOTFIX */
 @media (max-width: 767px) {
   .workspace-sidebar {
-    bottom: calc(var(--mobile-nav-height) + var(--safe-bottom) + 10px) !important;
-    height: auto !important;
-    max-height: calc(100dvh - var(--mobile-nav-height) - var(--safe-bottom) - 10px);
+    top: 0 !important;
+    bottom: 0 !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    z-index: 95 !important;
     border-bottom-right-radius: 20px;
+    box-shadow: 20px 0 72px rgba(0, 0, 0, 0.58);
+  }
+
+  .workspace-sidebar > nav {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .workspace-sidebar > div:last-child {
+    position: relative;
+    z-index: 2;
+    flex-shrink: 0;
+    padding-bottom: max(12px, calc(var(--safe-bottom) + 8px));
+    background: linear-gradient(180deg, rgba(5, 18, 39, 0.92), rgba(3, 10, 24, 0.99));
+    box-shadow: 0 -14px 30px rgba(0, 0, 0, 0.22);
+  }
+
+  .autoai-mobile-nav {
+    z-index: 80;
   }
 }
 
