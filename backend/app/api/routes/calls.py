@@ -1,4 +1,5 @@
 from datetime import datetime
+import hashlib
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -9,13 +10,14 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.core.config import settings
 from app.db.session import get_db
-from app.models.call import BlockedUser, Call, CallReport, UserCallSettings, UserDevice
+from app.models.call import BlockedUser, Call, CallDelivery, CallReport, UserCallSettings, UserDevice
 from app.models.user import User
 from app.schemas.call import (
     BlockedUserRead,
     BlockRequest,
     CallActionRequest,
     CallCreateRequest,
+    CallDeliveryAckRequest,
     CallFeatureConfig,
     CallFailureRequest,
     CallHealth,
@@ -32,15 +34,65 @@ from app.schemas.call import (
 )
 from app.services.call_permission_service import call_allowed, get_or_create_call_settings
 from app.services.call_service import base_public_user, call_service
+from app.services.call_fallback_service import acknowledge_delivery
 from app.services.device_token_security import encrypt_token, token_hash
 from app.services.firebase_notifications import firebase_notification_service
 from jose import JWTError, jwt
 from app.services.presence_service import RealtimeUnavailable, presence_service
 from app.services.turn_credentials_service import TURN_UNAVAILABLE_MESSAGE, create_turn_credentials
+from app.services.user_avatar import public_avatar
 
 
 router = APIRouter(prefix="/calls", tags=["calls"])
 logger = logging.getLogger("auto_ai.calls.api")
+
+
+@router.get("/devices/readiness")
+def call_device_readiness(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[dict[str, object]]:
+    devices = db.scalars(select(UserDevice).where(UserDevice.user_id == current_user.id).order_by(UserDevice.last_registered_at.desc())).all()
+    latest = {
+        device.id: db.scalar(select(CallDelivery).where(CallDelivery.device_id == device.id).order_by(CallDelivery.created_at.desc()).limit(1))
+        for device in devices
+    }
+    return [
+        {
+            "installation_id": hashlib.sha256(device.device_id.encode("utf-8")).hexdigest()[:16],
+            "device_name": device.device_name,
+            "manufacturer": device.manufacturer,
+            "model": device.model,
+            "android_sdk": device.android_sdk,
+            "app_version": device.app_version,
+            "app_version_code": device.app_version_code,
+            "active": device.is_active,
+            "fcm_token_present": bool(device.fcm_token_hash),
+            "fcm_token_last_registered_at": device.last_registered_at,
+            "last_fcm_send_result": device.last_fcm_send_result,
+            "last_fcm_received_at": device.last_fcm_received_at,
+            "last_notification_displayed_at": device.last_notification_displayed_at,
+            "native_incoming_call_status": (
+                "READY" if latest[device.id]
+                    and latest[device.id].firebase_service_started_at
+                    and latest[device.id].notification_displayed_at
+                    and latest[device.id].ringtone_started_at
+                    and latest[device.id].delivered_priority == "HIGH"
+                else "DEGRADED_SYSTEM_FALLBACK_ONLY" if latest[device.id] and latest[device.id].fallback_sent_at
+                else "DEGRADED_PRIORITY_DOWNGRADED" if latest[device.id]
+                    and latest[device.id].original_priority == "HIGH"
+                    and latest[device.id].delivered_priority != "HIGH"
+                else "BLOCKED"
+            ),
+            "ready_for_background_calls": bool(latest[device.id]
+                and latest[device.id].firebase_service_started_at
+                and latest[device.id].notification_displayed_at
+                and latest[device.id].ringtone_started_at
+                and latest[device.id].delivered_priority == "HIGH"),
+            "failure_code": device.last_fcm_failure_code,
+        }
+        for device in devices
+    ]
 
 
 def validate_call_action_token(token: str | None, call_id: str, user_id: str) -> None:
@@ -356,7 +408,7 @@ def blocked_users(
             id=user.id,
             display_name=user.name,
             username=user.username or f"user_{user.id.replace('-', '')[:8]}",
-            avatar_url=user.avatar or user.picture,
+            avatar_url=public_avatar(user) or None,
             blocked_at=block.created_at,
         )
         for block, user in rows
@@ -505,6 +557,25 @@ async def end_call(
 ) -> CallRead:
     call = await call_service.end(db, call_id, current_user.id, payload.end_reason)
     return await call_service.serialize_call(db, call, current_user.id)
+
+
+@router.post("/{call_id}/delivery-ack", status_code=status.HTTP_204_NO_CONTENT)
+def delivery_ack(
+    call_id: str,
+    payload: CallDeliveryAckRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    call = db.get(Call, call_id)
+    if not call or call.callee_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Call not found.")
+    device = db.scalar(select(UserDevice).where(UserDevice.user_id == current_user.id, UserDevice.device_id == payload.installation_id))
+    if not device or not acknowledge_delivery(
+        call_id, payload.installation_id, payload.stage, payload.event_id,
+        payload.original_priority, payload.delivered_priority,
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Call delivery event not found.")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{call_id}/fail", response_model=CallRead)

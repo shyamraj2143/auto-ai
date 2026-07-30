@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Camera, CheckCircle2, LoaderCircle, Pencil, Trash2, UserCircle2, XCircle } from "lucide-react";
+import { Camera, CheckCircle2, ChevronRight, LoaderCircle, Trash2, UserCircle2, XCircle } from "lucide-react";
 import clsx from "clsx";
 import { api, resolveApiAssetUrl } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import type { User } from "../../types";
 import { CrystalBadge, CrystalCard } from "../crystal/Crystal";
+import { AppSelect } from "../common/AppSelect";
 
 const USERNAME_PATTERN = /^[a-z0-9._]{3,30}$/;
 const RESERVED_USERNAMES = new Set(["admin", "administrator", "support", "autoai", "system", "api", "null"]);
@@ -17,12 +18,6 @@ type AvatarAction = "keep" | "replace" | "remove";
 function initials(name?: string | null, email?: string | null) {
   const source = (name || email || "A").trim();
   return source.slice(0, 1).toUpperCase();
-}
-
-function maskPhone(value?: string | null) {
-  if (!value) return "No mobile number";
-  const tail = value.replace(/\D/g, "").slice(-4);
-  return `${value.slice(0, Math.min(3, value.length))} ******${tail}`;
 }
 
 function normalizeUsername(value: string) {
@@ -77,8 +72,6 @@ export function ProfileAccountCard() {
 
   const currentAvatar = resolveApiAssetUrl(user?.avatar || user?.picture);
   const shownAvatar = avatarAction === "remove" ? "" : avatarPreview || currentAvatar;
-  const phoneValue = user?.phone_number || user?.mobile || "";
-  const joinedAt = user?.created_at ? new Date(user.created_at).toLocaleDateString() : "Unknown";
   const mobileVerified = Boolean(user?.phone_verified);
 
   const dirty = useMemo(() => {
@@ -197,35 +190,33 @@ export function ProfileAccountCard() {
 
   return (
     <CrystalCard className="settings-card overflow-hidden">
-      <div className="grid gap-3 p-3 md:grid-cols-[auto_1fr_auto] md:items-center md:p-4">
-        <div className="mx-auto grid h-20 w-20 place-items-center overflow-hidden rounded-full border border-cyan-200/25 bg-cyan-200/10 text-xl font-bold text-cyan-50 md:mx-0">
+      <button
+        className="profile-account-summary"
+        type="button"
+        onClick={() => setEditing(true)}
+        aria-expanded={editing}
+        aria-controls="profile-account-editor"
+        disabled={editing}
+      >
+        <div className="profile-account-avatar">
           {shownAvatar ? <img className="h-full w-full object-cover" src={shownAvatar} alt="" /> : initials(user?.name, user?.email)}
         </div>
-        <div className="min-w-0 text-center md:text-left">
-          <p className="mb-1 text-[11px] font-semibold text-cyan-200/80">Profile & Account</p>
-          <div className="flex flex-wrap items-center justify-center gap-2 md:justify-start">
-            <h2 className="truncate text-[15px] font-semibold text-white">{user?.name || "Profile & Account"}</h2>
-            <span className="rounded-full border border-cyan-200/20 bg-cyan-200/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-100">@{user?.username || "create_username"}</span>
+        <div className="profile-account-copy">
+          <div className="profile-account-title">
+            <h2>{user?.name || "Profile & Account"}</h2>
             {mobileVerified && <CrystalBadge tone="verified">Verified</CrystalBadge>}
             {(user?.role === "admin" || user?.role === "super_admin") && <CrystalBadge tone="admin">Admin</CrystalBadge>}
             {user?.subscription_status && !["free", "inactive", "expired"].includes(user.subscription_status.toLowerCase()) && <CrystalBadge tone="premium">Premium</CrystalBadge>}
           </div>
-          <div className="mt-2 grid gap-1 text-[11px] text-slate-400 sm:grid-cols-2">
-            <span className="truncate">{user?.email || "Unknown email"}</span>
-            <span>{maskPhone(phoneValue)}</span>
-            <span>Joined {joinedAt}</span>
-            <span>{phoneValue ? mobileVerified ? "Mobile verified" : "Mobile number not verified" : "Mobile not added"}</span>
-          </div>
-          {message && <p className="mt-2 text-[11px] font-semibold text-emerald-300">{message}</p>}
+          <p>{user?.email || `@${user?.username || "create_username"}`}</p>
+          <small>@{user?.username || "create_username"}</small>
         </div>
-        <button className="btn-secondary min-h-9 justify-center px-3 text-[11px]" type="button" onClick={() => setEditing(true)}>
-          <Pencil size={14} />
-          Edit Profile
-        </button>
-      </div>
+        <ChevronRight className="profile-account-chevron" size={21} aria-hidden="true" />
+      </button>
+      {message && !editing && <p className="profile-account-message">{message}</p>}
 
       {editing && (
-        <div className="border-t border-white/10 p-3 md:p-4">
+        <div id="profile-account-editor" className="border-t border-white/10 p-3 md:p-4">
           <div className="grid gap-3 md:grid-cols-[auto_1fr]">
             <div className="grid justify-items-center gap-2">
               <div className="grid h-24 w-24 place-items-center overflow-hidden rounded-full border border-white/15 bg-slate-900 text-2xl font-bold text-slate-100">
@@ -254,9 +245,7 @@ export function ProfileAccountCard() {
               <label className="grid gap-1 text-[11px] font-semibold text-slate-300">
                 Mobile number
                 <div className="grid grid-cols-[92px_1fr] gap-2">
-                  <select className="settings-select h-10" value={country} onChange={(event) => setPhone((current) => ({ ...current, country: event.target.value }))}>
-                    {COUNTRY_CODES.map((code) => <option key={code} value={code}>{code}</option>)}
-                  </select>
+                  <AppSelect label="Country code" value={country} onChange={(value) => setPhone((current) => ({ ...current, country: value }))} options={COUNTRY_CODES.map((code) => ({ value: code, label: code }))} />
                   <input className="input-dark" value={number} inputMode="tel" onChange={(event) => setPhone((current) => ({ ...current, number: event.target.value.replace(/[^\d\s-]/g, "") }))} />
                 </div>
               </label>

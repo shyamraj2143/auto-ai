@@ -75,6 +75,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [persistSession]);
 
+  useEffect(() => {
+    if (!loading && token && user && callNative.isAndroid()) {
+      void callNative.startCallingSetupIfNeeded().catch((error) => {
+        console.warn("[Auto-AI Calls] Calling setup could not be started.", error);
+      });
+    }
+  }, [loading, token, user]);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,

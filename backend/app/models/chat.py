@@ -5,6 +5,7 @@ from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.utils.datetime import utc_now
 
 
 class Chat(Base):
@@ -16,9 +17,9 @@ class Chat(Base):
     system_prompt: Mapped[str] = mapped_column(Text, nullable=True)
     model: Mapped[str] = mapped_column(String(120), nullable=False)
     mode: Mapped[str] = mapped_column(String(32), default="normal", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
     )
 
     user = relationship("User", back_populates="chats")

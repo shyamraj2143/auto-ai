@@ -109,7 +109,7 @@ jobs:
             --notes-file "$notes" \
             --latest
 
-      - name: Publish APK to backend
+      - name: Publish APK metadata to backend
         if: ${{ env.AUTO_AI_ADMIN_EMAIL != '' && env.AUTO_AI_ADMIN_PASSWORD != '' }}
         shell: bash
         run: |
@@ -124,6 +124,7 @@ jobs:
             --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
             --changelog "GitHub push ${GITHUB_SHA::7}" \
             --release-notes "Auto update from GitHub push ${GITHUB_SHA::7}" \
+            --metadata-only \
             "${args[@]}"
 
       - name: Notify installed Android apps

@@ -30,12 +30,15 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.core.content.FileProvider;
+import androidx.activity.OnBackPressedCallback;
 
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebChromeClient;
 import com.getcapacitor.BridgeWebViewClient;
 import com.google.firebase.messaging.FirebaseMessaging;
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.GoogleApiAvailability;
 
 import org.json.JSONObject;
 
@@ -51,8 +54,12 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Locale;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MainActivity extends BridgeActivity {
     private static final int CONNECT_TIMEOUT_MS = 15000;
@@ -80,6 +87,11 @@ public class MainActivity extends BridgeActivity {
     private boolean updateCheckRunning;
     private boolean waitingForInstallPermission;
     private long lastUpdateCheckAtMs;
+    private long lastNativeRootBackAtMs;
+    private final AtomicBoolean directInstallerHandoff = new AtomicBoolean(false);
+    private final AppUpdateCoordinator.Listener directUpdateListener = this::handleDirectUpdateState;
+    private AppUpdateDialog fallbackUpdateDialog;
+    private boolean callingSetupVisible;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -90,7 +102,15 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(LiveVisionPlugin.class);
         registerPlugin(ScreenCapturePlugin.class);
         registerPlugin(AutoAiCallsPlugin.class);
+        registerPlugin(AutoAiUpdatePlugin.class);
         super.onCreate(savedInstanceState);
+
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                dispatchNativeBack();
+            }
+        });
 
         WebView webView = getBridge().getWebView();
         webView.setNestedScrollingEnabled(true);
@@ -110,15 +130,47 @@ public class MainActivity extends BridgeActivity {
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
 
-        createUpdateNotificationChannel();
         CallNotificationManager.createChannels(this);
         registerFirebaseMessagingToken();
-        UpdateCheckScheduler.schedule(this);
-        checkForUpdate(true);
-        startUpdatePolling();
+        UpdateCheckScheduler.cancelLegacy(this);
+        AppUpdateCoordinator.get(this).addListener(directUpdateListener);
+        AppUpdateCoordinator.get(this).check(false);
+        dispatchUpdateIntent(getIntent());
         syncPushDeviceIfAuthenticated();
         dispatchIncomingCallIntent(getIntent());
         dispatchOpenChatIntent(getIntent());
+    }
+
+    private void dispatchNativeBack() {
+        WebView webView = getBridge() == null ? null : getBridge().getWebView();
+        if (webView == null) {
+            handleUnconsumedNativeBack(null);
+            return;
+        }
+        String backEventId = UUID.randomUUID().toString();
+        String script = "(function(){try{" +
+            "var e=new CustomEvent('auto-ai-native-back',{cancelable:true,detail:{backEventId:'" + backEventId + "'}});" +
+            "var handled=!window.dispatchEvent(e);" +
+            "return handled?'handled':(window.location.pathname==='/hub'?'root':'unhandled');" +
+            "}catch(e){return 'unhandled';}})()";
+        webView.evaluateJavascript(script, result -> {
+            if (result != null && result.contains("handled") && !result.contains("unhandled")) return;
+            if (result != null && result.contains("root")) {
+                handleUnconsumedNativeBack(null);
+            } else {
+                webView.evaluateJavascript("window.location.assign('/hub')", null);
+            }
+        });
+    }
+
+    private void handleUnconsumedNativeBack(WebView webView) {
+        long now = System.currentTimeMillis();
+        if (now - lastNativeRootBackAtMs <= 2000L) {
+            finishAndRemoveTask();
+            return;
+        }
+        lastNativeRootBackAtMs = now;
+        Toast.makeText(this, "Press Back again to exit", Toast.LENGTH_SHORT).show();
     }
 
     @Override
@@ -127,6 +179,47 @@ public class MainActivity extends BridgeActivity {
         setIntent(intent);
         dispatchIncomingCallIntent(intent);
         dispatchOpenChatIntent(intent);
+        dispatchUpdateIntent(intent);
+    }
+
+    private void dispatchUpdateIntent(Intent intent) {
+        if (intent == null) return;
+        boolean start = intent.getBooleanExtra("start_app_update", false);
+        boolean open = intent.getBooleanExtra("open_app_update", false);
+        intent.removeExtra("start_app_update");
+        intent.removeExtra("open_app_update");
+        AppUpdateCoordinator coordinator = AppUpdateCoordinator.get(this);
+        if (start || open) coordinator.startDirectUpdate();
+    }
+
+    private void handleDirectUpdateState(AppUpdateCoordinator.Snapshot snapshot) {
+        AppUpdateCoordinator coordinator = AppUpdateCoordinator.get(this);
+        boolean mandatoryExplanation = snapshot.metadata != null && snapshot.metadata.mandatory
+            && snapshot.state == AppUpdateCoordinator.State.AVAILABLE;
+        if (((snapshot.state == AppUpdateCoordinator.State.FAILED && coordinator.isDirectUpdateActive()) || mandatoryExplanation) && fallbackUpdateDialog == null) {
+            runOnUiThread(() -> {
+                if (fallbackUpdateDialog == null && !isFinishing()) {
+                    fallbackUpdateDialog = new AppUpdateDialog(this);
+                    fallbackUpdateDialog.start();
+                }
+            });
+        }
+        if (!coordinator.isDirectUpdateActive() || snapshot.state != AppUpdateCoordinator.State.READY_TO_INSTALL) return;
+        runOnUiThread(() -> {
+            if (!directInstallerHandoff.compareAndSet(false, true) || isFinishing()) return;
+            if (!coordinator.canInstallPackages()) {
+                coordinator.requireInstallPermission();
+                startActivity(coordinator.installPermissionIntent());
+                return;
+            }
+            Intent installer = coordinator.installerIntent();
+            if (installer == null) {
+                directInstallerHandoff.set(false);
+                return;
+            }
+            try { startActivity(installer); }
+            catch (RuntimeException error) { directInstallerHandoff.set(false); }
+        });
     }
 
     private void dispatchOpenChatIntent(Intent intent) {
@@ -147,6 +240,28 @@ public class MainActivity extends BridgeActivity {
 
     private void dispatchIncomingCallIntent(Intent intent) {
         if (intent == null) return;
+        if ("incoming_call_fallback".equals(intent.getStringExtra("type"))) {
+            Map<String, String> fallback = new HashMap<>();
+            for (String key : intent.getExtras() == null ? java.util.Collections.<String>emptySet() : intent.getExtras().keySet()) {
+                Object value = intent.getExtras().get(key);
+                if (value != null) fallback.put(key, String.valueOf(value));
+            }
+            CallNotificationManager.showIncoming(this, fallback);
+            CallDeliveryAckWorker.schedule(this, fallback, "fallback_opened", "", "");
+            long fallbackExpiry;
+            try { fallbackExpiry = Long.parseLong(fallback.get(CallNotificationManager.EXTRA_EXPIRES_AT)); }
+            catch (Exception ignored) { fallbackExpiry = 0L; }
+            if (fallbackExpiry <= System.currentTimeMillis()) {
+                CallNotificationManager.cancelAllForCall(this, fallback.get(CallNotificationManager.EXTRA_CALL_ID));
+                Toast.makeText(this, "This call has already ended.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            Intent incoming = new Intent(this, IncomingCallActivity.class);
+            if (intent.getExtras() != null) incoming.putExtras(intent.getExtras());
+            incoming.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            startActivity(incoming);
+            return;
+        }
         String callId = intent.getStringExtra(CallNotificationManager.EXTRA_CALL_ID);
         if (callId == null || callId.trim().isEmpty()) return;
         String action = intent.getStringExtra(CallNotificationManager.EXTRA_ACTION);
@@ -157,17 +272,51 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onResume() {
         super.onResume();
-        if (waitingForInstallPermission && pendingInstallFile != null && canRequestPackageInstalls()) {
-            waitingForInstallPermission = false;
-            openPackageInstaller(pendingInstallFile);
+        directInstallerHandoff.set(false);
+        CallingPermissionCoordinator.invalidateCachedState();
+        AppUpdateCoordinator.get(this).refreshInstallState();
+        AppUpdateCoordinator.get(this).check(false);
+        syncPushDeviceIfAuthenticated();
+        mainHandler.postDelayed(this::launchCallingSetupIfRequired, 600L);
+    }
+
+    private void launchCallingSetupIfRequired() {
+        if (!hasWindowFocus() || isFinishing() || callingSetupVisible || CallingSetupActivity.isVisible() || waitingForInstallPermission || pendingInstallFile != null || updateDialogVisible) return;
+        String accessToken = AutoAiSecureStoragePlugin.readStoredValue(this, "auto-ai-access-token");
+        if (accessToken == null || accessToken.trim().isEmpty()) return;
+        if (AutoAiCallsPlugin.isAnyActiveCall(this) || CallNotificationManager.pendingCallId(this) != null) return;
+        if (!CallingPermissionCoordinator.needsOnboarding(this)) {
+            notifyCallingSetupChanged(CallingPermissionCoordinator.inspect(this));
             return;
         }
-        checkForUpdate(false);
+        CallingPermissionCoordinator.Snapshot snapshot = CallingPermissionCoordinator.inspect(this);
+        if (snapshot.permissionStatus == CallingPermissionCoordinator.Status.READY) {
+            CallingPermissionCoordinator.completeCurrentVersion(this);
+            notifyCallingSetupChanged(snapshot);
+            return;
+        }
+        CallingPermissionCoordinator.preferences(this).edit().putBoolean(CallingPermissionCoordinator.ONBOARDING_STARTED, true).apply();
+        callingSetupVisible = true;
+        startActivityForResult(new Intent(this, CallingSetupActivity.class), 7042);
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != 7042) return;
+        callingSetupVisible = false;
+        registerFirebaseMessagingToken();
         syncPushDeviceIfAuthenticated();
+        notifyCallingSetupChanged(CallingPermissionCoordinator.inspect(this));
+    }
+
+    private void notifyCallingSetupChanged(CallingPermissionCoordinator.Snapshot snapshot) {
+        if (getBridge() != null) getBridge().triggerWindowJSEvent("auto-ai-calling-setup-changed", snapshot.toJs(this).toString());
     }
 
     @Override
     public void onDestroy() {
+        AppUpdateCoordinator.get(this).removeListener(directUpdateListener);
+        if (fallbackUpdateDialog != null) fallbackUpdateDialog.stop();
         super.onDestroy();
         mainHandler.removeCallbacks(updatePollRunnable);
         updateExecutor.shutdownNow();
@@ -202,23 +351,28 @@ public class MainActivity extends BridgeActivity {
     private void syncPushDeviceIfAuthenticated() {
         String accessToken = AutoAiSecureStoragePlugin.readStoredValue(this, "auto-ai-access-token");
         if (accessToken == null || accessToken.trim().isEmpty()) return;
-        requestNotificationPermissionIfNeeded();
-        PushTokenRegistrar.registerStoredUserDeviceIfAuthenticated(this);
-    }
-
-    private void requestNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT < 33) return;
-        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return;
-        requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 4512);
+        int gmsStatus = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(this);
+        if (gmsStatus != ConnectionResult.SUCCESS) {
+            android.util.Log.w("AutoAiPushSync", "NON_GMS_DEVICE google_play_services_status=" + gmsStatus);
+            return;
+        }
+        try {
+            FirebaseMessaging.getInstance().register().addOnCompleteListener(task -> {
+                if (!task.isSuccessful()) {
+                    android.util.Log.w("AutoAiPushSync", "FCM installation registration unavailable during authenticated sync.", task.getException());
+                    PushTokenRegistrar.registerStoredUserDeviceIfAuthenticated(this);
+                }
+            });
+            FcmInstallationMigrationWorker.schedule(this);
+        } catch (RuntimeException error) {
+            android.util.Log.w("AutoAiPushSync", "Fresh FCM token request failed.", error);
+            PushTokenRegistrar.registerStoredUserDeviceIfAuthenticated(this);
+        }
     }
 
     private void registerFirebaseMessagingToken() {
         try {
-            FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
-                if (task.isSuccessful()) {
-                    PushTokenRegistrar.registerAsync(this, task.getResult());
-                }
-            });
+            FirebaseMessaging.getInstance().register();
         } catch (Exception ignored) {
             // Firebase is optional until google-services.json is configured.
         }
@@ -365,27 +519,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void checkForUpdate(boolean force) {
-        long now = System.currentTimeMillis();
-        if (updateCheckRunning || updateDialogVisible || downloadProgress != null) return;
-        if (!force && now - lastUpdateCheckAtMs < UPDATE_CHECK_INTERVAL_MS) return;
-        updateCheckRunning = true;
-        lastUpdateCheckAtMs = now;
-        updateExecutor.execute(() -> {
-            try {
-                ApkUpdate update = fetchLatestUpdate();
-                if (update.versionCode > BuildConfig.VERSION_CODE) {
-                    latestUpdate = update;
-                    mainHandler.post(() -> {
-                        showUpdateNotification(update);
-                        showUpdateDialog(update);
-                    });
-                }
-            } catch (Exception ignored) {
-                // Update checks must never block normal app startup.
-            } finally {
-                updateCheckRunning = false;
-            }
-        });
+        AppUpdateCoordinator.get(this).check(force);
     }
 
     private ApkUpdate fetchLatestUpdate() throws Exception {

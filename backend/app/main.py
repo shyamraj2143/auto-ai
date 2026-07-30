@@ -16,6 +16,7 @@ from app.services.apk_service import apk_service
 from app.services.call_service import call_timeout_worker
 from app.services.cms_service import ensure_cms_defaults
 from app.services.presence_service import RealtimeUnavailable, presence_service
+from app.services.orchestration.model_registry import model_registry
 from app.websockets import call_signaling, screen_share as screen_share_signaling, user_chat
 
 
@@ -118,15 +119,36 @@ def create_app() -> FastAPI:
         stop_event = asyncio.Event()
         app.state.call_stop_event = stop_event
         app.state.call_timeout_task = asyncio.create_task(call_timeout_worker(stop_event))
+        registry_stop_event = asyncio.Event()
+        app.state.registry_stop_event = registry_stop_event
+
+        async def registry_worker() -> None:
+            while not registry_stop_event.is_set():
+                await asyncio.to_thread(model_registry.refresh, force=True)
+                try:
+                    await asyncio.wait_for(
+                        registry_stop_event.wait(),
+                        timeout=max(30, settings.ORCHESTRATION_HEALTH_TTL_SECONDS),
+                    )
+                except TimeoutError:
+                    continue
+
+        app.state.registry_task = asyncio.create_task(registry_worker())
 
     @app.on_event("shutdown")
     async def stop_call_workers() -> None:
         stop_event = getattr(app.state, "call_stop_event", None)
         task = getattr(app.state, "call_timeout_task", None)
+        registry_stop_event = getattr(app.state, "registry_stop_event", None)
+        registry_task = getattr(app.state, "registry_task", None)
         if stop_event:
             stop_event.set()
         if task:
             await asyncio.gather(task, return_exceptions=True)
+        if registry_stop_event:
+            registry_stop_event.set()
+        if registry_task:
+            await asyncio.gather(registry_task, return_exceptions=True)
         await presence_service.close()
 
 
@@ -160,7 +182,7 @@ def create_app() -> FastAPI:
     app.include_router(payments.router, prefix=settings.API_V1_STR)
     app.include_router(admin.router, prefix=settings.API_V1_STR)
     app.include_router(cms.router, prefix=settings.API_V1_STR)
-    app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
+    app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR, check_dir=False), name="uploads")
 
     return app
 

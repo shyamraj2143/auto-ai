@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="auto_ai_call_device.xml" />
+        <exclude domain="sharedpref" path="auto_ai_push_token.xml" />
+        <exclude domain="sharedpref" path="auto_ai_calls.xml" />
+        <exclude domain="sharedpref" path="auto_ai_active_call.xml" />
+        <exclude domain="sharedpref" path="CapacitorStorage.xml" />
+        <exclude domain="sharedpref" path="auto_ai_secure_storage.xml" />
+        <exclude domain="file" path="PersistedInstallation.W0RFRkFVTFRd+MTo0MzMxMzU3MjMzMTk6YW5kcm9pZDplN2Q4NmU0Y2ZmM2VhMzU2YjM3MGIy.json" />
+        <exclude domain="sharedpref" path="com.google.android.gms.appid.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="auto_ai_call_device.xml" />
+        <exclude domain="sharedpref" path="auto_ai_push_token.xml" />
+        <exclude domain="sharedpref" path="auto_ai_calls.xml" />
+        <exclude domain="sharedpref" path="auto_ai_active_call.xml" />
+        <exclude domain="sharedpref" path="CapacitorStorage.xml" />
+        <exclude domain="sharedpref" path="auto_ai_secure_storage.xml" />
+        <exclude domain="file" path="PersistedInstallation.W0RFRkFVTFRd+MTo0MzMxMzU3MjMzMTk6YW5kcm9pZDplN2Q4NmU0Y2ZmM2VhMzU2YjM3MGIy.json" />
+        <exclude domain="sharedpref" path="com.google.android.gms.appid.xml" />
+    </device-transfer>
+</data-extraction-rules>

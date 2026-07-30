@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import clsx from "clsx";
 import {
@@ -31,6 +31,7 @@ import {
   type LucideIcon
 } from "lucide-react";
 import { api } from "../../api/client";
+import { AppSelect, type AppSelectOption } from "../common/AppSelect";
 import {
   PROVIDER_MODELS,
   useAppSettings,
@@ -51,6 +52,7 @@ import { useMotionMode } from "../../motion/MotionProvider";
 import type { MotionPreference } from "../../motion/tokens";
 import { CrystalButton, CrystalCard } from "../crystal/Crystal";
 import { crystalUiEnabled, type CrystalEffectsLevel } from "../../crystal/tokens";
+import { isMobileAppRuntime } from "../../utils/runtime";
 
 const APP_VERSION = "1.0.3";
 
@@ -84,6 +86,18 @@ const PROVIDER_LABELS: Record<AiProvider, string> = {
 type SettingsSection = "main" | "general" | "ai" | "screen-share" | "visual" | "subscription" | "privacy" | "calls" | "chat";
 type Accent = "cyan" | "violet" | "amber" | "green" | "rose" | "red";
 
+const SETTINGS_TABS: Array<{ section: SettingsSection; label: string }> = [
+  { section: "main", label: "Account" },
+  { section: "general", label: "Preferences" },
+  { section: "ai", label: "AI Chat" },
+  { section: "screen-share", label: "Sharing" },
+  { section: "privacy", label: "Security" },
+  { section: "calls", label: "Calls" },
+  { section: "chat", label: "Messages" },
+  { section: "visual", label: "Visual" },
+  { section: "subscription", label: "Billing" }
+];
+
 function SettingsIcon({ icon: Icon, accent = "cyan" }: { icon: LucideIcon; accent?: Accent }) {
   return (
     <span
@@ -110,6 +124,23 @@ function SettingsCard({ children }: { children: React.ReactNode }) {
   );
 }
 
+function SettingsGroup({
+  title,
+  children,
+  className
+}: {
+  title: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={clsx("settings-group", className)}>
+      <h2 className="settings-group-title">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
 function SettingsRow({
   icon,
   accent,
@@ -131,14 +162,14 @@ function SettingsRow({
 }) {
   const content = (
     <>
-      <div className="flex min-w-0 flex-1 items-center gap-2.5">
+      <div className="settings-row-copy flex min-w-0 flex-1 items-center gap-2.5">
         <SettingsIcon icon={icon} accent={accent} />
         <div className="min-w-0 flex-1">
-          <p className={clsx("truncate text-[13px] font-semibold", tone === "danger" ? "text-red-200" : "text-white")}>{title}</p>
-          {description && <p className="mt-0.5 truncate text-[11px] text-slate-400">{description}</p>}
+          <p className={clsx("settings-row-title text-[13px] font-semibold", tone === "danger" ? "text-red-200" : "text-white")}>{title}</p>
+          {description && <p className="settings-row-description mt-0.5 text-[11px] text-slate-400">{description}</p>}
         </div>
       </div>
-      {children && <div className="flex w-full min-w-0 flex-wrap items-center justify-start gap-1.5 sm:w-auto sm:shrink-0 sm:justify-end">{children}</div>}
+      {children && <div className="settings-row-controls flex w-full min-w-0 flex-wrap items-center justify-start gap-1.5 sm:w-auto sm:shrink-0 sm:justify-end">{children}</div>}
       {!children && showChevron && <ChevronRight className="hidden text-slate-500 sm:block" size={15} />}
     </>
   );
@@ -193,32 +224,26 @@ function Toggle({
 function Select({
   value,
   onChange,
-  children,
+  options,
   disabled,
   label
 }: {
   value: string | number;
   onChange: (value: string) => void;
-  children: React.ReactNode;
+  options: AppSelectOption[];
   disabled?: boolean;
   label: string;
 }) {
   return (
-    <select
-      aria-label={label}
-      className="settings-select h-8 w-full min-w-0 rounded-md border border-white/10 bg-slate-950/80 px-2 text-[11px] font-semibold text-cyan-50 outline-none transition focus:border-cyan-200/60 focus:ring-2 focus:ring-cyan-200/15 disabled:opacity-50 sm:w-auto sm:max-w-[220px]"
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      disabled={disabled}
-    >
-      {children}
-    </select>
+    <AppSelect label={label} value={value} options={options} onChange={onChange} disabled={disabled} />
   );
 }
 
 export function SettingsPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const pageRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<HTMLElement>(null);
   const { token, logout } = useAuth();
   const screenShare = useScreenShare();
   const { chats, refreshChats, setActiveChat } = useChat();
@@ -278,8 +303,24 @@ export function SettingsPage() {
     void userMessagesApi.settings(token).then(setChatSettings).catch(() => undefined);
   }, [section, token]);
 
+  useEffect(() => {
+    const page = pageRef.current;
+    const tabs = tabsRef.current;
+    const activeTab = tabs?.querySelector<HTMLElement>(`[data-settings-section="${section}"]`);
+
+    page?.scrollTo({ top: 0, behavior: "auto" });
+    if (!tabs || !activeTab) return;
+
+    const targetLeft = activeTab.offsetLeft - (tabs.clientWidth - activeTab.offsetWidth) / 2;
+    tabs.scrollTo({ left: Math.max(0, targetLeft), behavior: "smooth" });
+  }, [section]);
+
   function openSection(nextSection: Exclude<SettingsSection, "main">) {
     navigate(`/settings?section=${nextSection}`);
+  }
+
+  function selectTab(nextSection: SettingsSection) {
+    navigate(nextSection === "main" ? "/settings" : `/settings?section=${nextSection}`);
   }
 
   function openContextMemory() {
@@ -381,75 +422,98 @@ export function SettingsPage() {
 
   function renderMainSettings() {
     return (
-      <SettingsCard>
-        <SettingsRow
-          icon={SlidersHorizontal}
-          title="General"
-          description="Profile, account, theme, language and notifications"
-          onClick={() => openSection("general")}
-        />
-        <SettingsRow
-          icon={Bot}
-          accent="violet"
-          title="AI Chat"
-          description="Models, response streaming, voice, memory and research"
-          onClick={() => openSection("ai")}
-        />
-        <SettingsRow
-          icon={Monitor}
-          accent="cyan"
-          title="Screen Share"
-          description="Quality, connection status and session controls"
-          onClick={() => openSection("screen-share")}
-        />
-        <SettingsRow
-          icon={CreditCard}
-          accent="green"
-          title="Subscription"
-          description="Current plan, billing, tokens and payment"
-          onClick={() => openSection("subscription")}
-        />
-        <SettingsRow
-          icon={Gem}
-          accent="violet"
-          title="Visual Effects"
-          description={`Crystal UI: ${crystalUiEnabled ? settings.visualEffectsLevel : "disabled"}`}
-          onClick={() => openSection("visual")}
-        />
-        <SettingsRow
-          icon={LockKeyhole}
-          accent="green"
-          title="Privacy & Security"
-          description="Chat cleanup and data controls"
-          onClick={() => openSection("privacy")}
-        />
-        <SettingsRow
-          icon={PhoneCall}
-          accent="cyan"
-          title="Calls"
-          description="Discoverability, call privacy, sound and blocked users"
-          onClick={() => openSection("calls")}
-        />
-        <SettingsRow
-          icon={MessageCircle}
-          accent="violet"
-          title="Messages"
-          description="Message privacy, read receipts and typing"
-          onClick={() => openSection("chat")}
-        />
-        <SettingsRow icon={Monitor} title="App Version" description="Installed frontend build">
-          <span className="text-[11px] font-semibold text-slate-300">v{APP_VERSION}</span>
-        </SettingsRow>
-        <SettingsRow
-          icon={LogOut}
-          accent="red"
-          title="Logout"
-          description="Sign out from your account"
-          onClick={logout}
-          tone="danger"
-          showChevron={false}
-        />
-      </SettingsCard>
+      <div className="settings-section-stack">
+        <ProfileAccountCard />
+        <SettingsGroup title="App Settings">
+          <SettingsCard>
+            <SettingsRow
+              icon={SlidersHorizontal}
+              title="Preferences"
+              description="Theme, language, notifications and motion"
+              onClick={() => openSection("general")}
+            />
+            <SettingsRow
+              icon={Bot}
+              accent="violet"
+              title="AI Chat"
+              description="Models, streaming, voice, memory and research"
+              onClick={() => openSection("ai")}
+            />
+            <SettingsRow
+              icon={Monitor}
+              accent="cyan"
+              title="Screen Share"
+              description="Quality, connection and session controls"
+              onClick={() => openSection("screen-share")}
+            />
+            <SettingsRow
+              icon={LockKeyhole}
+              accent="green"
+              title="Data & Privacy"
+              description="Security, saved chats and data controls"
+              onClick={() => openSection("privacy")}
+            />
+            <SettingsRow
+              icon={PhoneCall}
+              accent="cyan"
+              title="Calls"
+              description="Call privacy, sound and blocked users"
+              onClick={() => openSection("calls")}
+            />
+            <SettingsRow
+              icon={MessageCircle}
+              accent="violet"
+              title="Messages"
+              description="Privacy, read receipts, typing and last seen"
+              onClick={() => openSection("chat")}
+            />
+            <SettingsRow
+              icon={Gem}
+              accent="violet"
+              title="Visual Effects"
+              description={`Crystal UI: ${crystalUiEnabled ? settings.visualEffectsLevel : "disabled"}`}
+              onClick={() => openSection("visual")}
+            />
+          </SettingsCard>
+        </SettingsGroup>
+
+        <SettingsGroup title="Subscription">
+          <button className="settings-plan-preview" type="button" onClick={() => openSection("subscription")}>
+            <span className="settings-plan-icon"><CreditCard size={22} /></span>
+            <span className="min-w-0 flex-1">
+              <strong>Manage your plan</strong>
+              <small>Billing, token usage, promo codes and receipts</small>
+            </span>
+            <ChevronRight size={18} />
+          </button>
+          <SettingsCard>
+            <SettingsRow
+              icon={CreditCard}
+              accent="violet"
+              title="Redeem Code"
+              description="Apply a promo code to an eligible plan"
+              onClick={() => openSection("subscription")}
+            />
+          </SettingsCard>
+        </SettingsGroup>
+
+        <SettingsGroup title="About & Account">
+          <SettingsCard>
+            <SettingsRow icon={Monitor} title="App Version" description="Installed frontend build">
+              <span className="text-[11px] font-semibold text-slate-300">v{APP_VERSION}</span>
+            </SettingsRow>
+            <SettingsRow
+              icon={LogOut}
+              accent="red"
+              title="Sign Out"
+              description="Sign out from your account"
+              onClick={logout}
+              tone="danger"
+              showChevron={false}
+            />
+          </SettingsCard>
+        </SettingsGroup>
+      </div>
     );
   }
 
@@ -535,13 +599,7 @@ export function SettingsPage() {
             title="Motion"
             description={safeMode ? `Safe Mode active${safeModeReason ? `: ${safeModeReason}` : ""}` : `Active: ${activeMotionMode} / ${performanceTier}`}
           >
-            <Select value={motionPreference} onChange={(value) => setMotionPreference(value as MotionPreference)} label="Motion preference">
-              {MOTION_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
+            <Select value={motionPreference} options={MOTION_OPTIONS} onChange={(value) => setMotionPreference(value as MotionPreference)} label="Motion preference" />
           </SettingsRow>
           <SettingsRow
             icon={Shield}
@@ -575,13 +633,7 @@ export function SettingsPage() {
             />
           </SettingsRow>
           <SettingsRow icon={Globe2} title="Language" description="Sets app language metadata">
-            <Select value={settings.language} onChange={(value) => setLanguage(value as AppLanguage)} label="Language">
-              {LANGUAGE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
+            <Select value={settings.language} options={LANGUAGE_OPTIONS} onChange={(value) => setLanguage(value as AppLanguage)} label="Language" />
           </SettingsRow>
         </SettingsCard>
       </div>
@@ -598,12 +650,8 @@ export function SettingsPage() {
             title="AI Model Preferences"
             description={`${PROVIDER_LABELS[settings.defaultProvider]} - ${selectedModelLabel}`}
           >
-            <Select value={settings.defaultProvider} onChange={updateProvider} label="Default AI provider">
-              {Object.entries(PROVIDER_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </Select>
-            <Select value={settings.defaultModel} onChange={setDefaultModel} label="Default AI model">
-              {providerModels.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </Select>
+            <Select value={settings.defaultProvider} options={Object.entries(PROVIDER_LABELS).map(([value, label]) => ({ value, label }))} onChange={updateProvider} label="Default AI provider" />
+            <Select value={settings.defaultModel} options={providerModels} onChange={setDefaultModel} label="Default AI model" />
           </SettingsRow>
           <SettingsRow icon={Shield} title="Memory & personalization" description="Use saved memory and selected document context">
             <Toggle checked={settings.memoryEnabled} onChange={setMemoryEnabled} />
@@ -628,12 +676,8 @@ export function SettingsPage() {
                 <button key={provider} type="button" onClick={() => toggleResearchProvider(provider)} className={clsx("h-8 rounded-md border px-2 text-[11px] font-semibold transition", settings.deepResearchProviders.includes(provider) ? "border-cyan-200/35 bg-cyan-200/12 text-cyan-50" : "border-white/10 bg-white/5 text-slate-400")}>{PROVIDER_LABELS[provider]}</button>
               ))}
             </div>
-            <Select value={settings.deepResearchMaxModels} onChange={(value) => setDeepResearchMaxModels(Number(value))} disabled={settings.deepResearchAllModels} label="Max deep research models">
-              {[1, 2, 3, 4, 5, 6].map((value) => <option key={value} value={value}>Max {value}</option>)}
-            </Select>
-            <Select value={settings.deepResearchTimeoutSeconds} onChange={(value) => setDeepResearchTimeoutSeconds(Number(value))} label="Deep research timeout">
-              {[20, 35, 45, 60, 90, 120].map((value) => <option key={value} value={value}>{value}s</option>)}
-            </Select>
+            <Select value={settings.deepResearchMaxModels} options={[1, 2, 3, 4, 5, 6].map((value) => ({ value: String(value), label: `Max ${value}` }))} onChange={(value) => setDeepResearchMaxModels(Number(value))} disabled={settings.deepResearchAllModels} label="Max deep research models" />
+            <Select value={settings.deepResearchTimeoutSeconds} options={[20, 35, 45, 60, 90, 120].map((value) => ({ value: String(value), label: `${value}s` }))} onChange={(value) => setDeepResearchTimeoutSeconds(Number(value))} label="Deep research timeout" />
           </SettingsRow>
           <SettingsRow icon={Sparkles} accent="violet" title="Use all deep research models" description="Overrides max model limit">
             <Toggle checked={settings.deepResearchAllModels} onChange={setDeepResearchAllModels} />
@@ -648,13 +692,7 @@ export function SettingsPage() {
     return (
       <SettingsCard>
         <SettingsRow icon={Monitor} accent="cyan" title="Share quality" description="Used by the existing screen-sharing sender">
-          <Select value={screenShare.qualityMode} onChange={(value) => screenShare.setQualityMode(value as ScreenShareQualityMode)} label="Screen share quality">
-            <option value="auto">Auto</option>
-            <option value="data-saver">Data Saver</option>
-            <option value="sharp-text">Sharp Text</option>
-            <option value="smooth-motion">Smooth Motion</option>
-            <option value="hd">HD</option>
-          </Select>
+          <Select value={screenShare.qualityMode} options={[{ value: "auto", label: "Auto" }, { value: "data-saver", label: "Data Saver" }, { value: "sharp-text", label: "Sharp Text" }, { value: "smooth-motion", label: "Smooth Motion" }, { value: "hd", label: "HD" }]} onChange={(value) => screenShare.setQualityMode(value as ScreenShareQualityMode)} label="Screen share quality" />
         </SettingsRow>
         <SettingsRow icon={Radio} accent={active ? "green" : "cyan"} title="Connection status" description={active ? `${screenShare.uiState} · ${screenShare.networkQuality} network` : "No active screen-sharing session"} />
         <SettingsRow icon={Mic} accent="violet" title="Shared audio and session controls" description="Microphone, pause, viewer access and copy-code controls appear only during an active session" />
@@ -689,11 +727,7 @@ export function SettingsPage() {
     return (
       <SettingsCard>
         <SettingsRow icon={MessageCircle} accent="violet" title="Message privacy" description="Who can start a user-to-user chat">
-          <Select value={current?.allow_messages_from || "everyone"} onChange={(value) => void updateChatSettings({ allow_messages_from: value as ChatSettings["allow_messages_from"] })} label="Allow messages from">
-            <option value="everyone">Everyone</option>
-            <option value="known_users">Known users</option>
-            <option value="nobody">Nobody</option>
-          </Select>
+          <Select value={current?.allow_messages_from || "everyone"} options={[{ value: "everyone", label: "Everyone" }, { value: "known_users", label: "Known users" }, { value: "nobody", label: "Nobody" }]} onChange={(value) => void updateChatSettings({ allow_messages_from: value as ChatSettings["allow_messages_from"] })} label="Allow messages from" />
         </SettingsRow>
         <SettingsRow icon={CheckCheck} accent="cyan" title="Read receipts" description="Show when you read messages">
           <Toggle checked={current?.read_receipts_enabled ?? true} onChange={(checked) => void updateChatSettings({ read_receipts_enabled: checked })} disabled={!current} />
@@ -710,18 +744,40 @@ export function SettingsPage() {
 
   return (
     <div
-      className="settings-page min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-3 text-white md:px-6 md:py-5"
+      ref={pageRef}
+      className={clsx(
+        "settings-page settings-reference-page min-h-0 flex-1 overflow-y-auto overflow-x-hidden text-white",
+        isMobileAppRuntime() && "is-native-app"
+      )}
     >
-      <div className="mx-auto w-full max-w-6xl pb-8">
-        <header className="sticky top-0 z-20 -mx-3 mb-3 flex h-11 items-center justify-between border-b border-white/10 bg-slate-950/80 px-3 backdrop-blur-xl md:static md:mx-0 md:h-auto md:rounded-lg md:border md:bg-white/[0.04] md:px-4 md:py-3">
-          <button className="icon-button-dark h-8 w-8" type="button" onClick={goBack} title="Back">
-            <ArrowLeft size={17} />
-          </button>
-          <h1 className="min-w-0 truncate px-3 text-sm font-semibold md:text-base">{sectionTitle}</h1>
-          <span className="h-8 w-8" />
+      <div className="settings-reference-shell">
+        <header className="settings-reference-header">
+          <div className="settings-title-row">
+            <button className="settings-back-button" type="button" onClick={goBack} title="Back" aria-label="Back">
+              <ArrowLeft size={18} />
+            </button>
+            <div className="min-w-0">
+              <h1>Settings</h1>
+              {section !== "main" && <p>{sectionTitle}</p>}
+            </div>
+          </div>
+          <nav ref={tabsRef} className="settings-tabs" aria-label="Settings categories">
+            {SETTINGS_TABS.map((tab) => (
+              <button
+                key={tab.section}
+                type="button"
+                data-settings-section={tab.section}
+                className={clsx(section === tab.section && "is-active")}
+                onClick={() => selectTab(tab.section)}
+                aria-current={section === tab.section ? "page" : undefined}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
         </header>
 
-        <div className="grid gap-3">
+        <div className="settings-reference-content">
           {section === "main" && renderMainSettings()}
           {section === "general" && renderGeneralSettings()}
           {section === "ai" && renderAiSettings()}

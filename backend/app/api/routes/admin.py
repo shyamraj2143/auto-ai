@@ -3,7 +3,7 @@ import platform
 import shutil
 
 import razorpay
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from razorpay.errors import BadRequestError, GatewayError, ServerError
 from sqlalchemy import String, cast, func, or_, select
@@ -78,6 +78,8 @@ from app.services.admin_control import (
     refresh_quota_periods,
 )
 from app.services.apk_service import apk_service
+from app.services.firebase_notifications import firebase_notification_service
+from app.api.routes.notifications import dispatch_apk_update_notifications
 from app.services.promo_service import SUCCESS_PAYMENT_STATUSES, promo_status
 
 
@@ -1351,12 +1353,20 @@ def update_plan_limit(
 @router.post("/apk/version", response_model=ApkReleaseRead)
 def upsert_apk_version(
     payload: ApkVersionUpsert,
+    background_tasks: BackgroundTasks,
     _: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> ApkReleaseRead:
     data = payload.model_dump()
     release_id = data.pop("id", None)
     release = apk_service.upsert_version(db, release_id=release_id, **data)
+    if firebase_notification_service.configured:
+        background_tasks.add_task(
+            dispatch_apk_update_notifications,
+            release.version_code,
+            release.version_name,
+            release.changelog,
+        )
     return apk_service.release_read(release)
 
 

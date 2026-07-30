@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.media.AudioManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -34,6 +35,8 @@ public class ActiveCallActivity extends Activity implements NativeCallSessionCon
     private Button mute;
     private Button speaker;
     private Button camera;
+    private Button flipCamera;
+    private Button minimize;
     private SurfaceViewRenderer localVideo;
     private SurfaceViewRenderer remoteVideo;
     private PowerManager.WakeLock proximityLock;
@@ -87,9 +90,9 @@ public class ActiveCallActivity extends Activity implements NativeCallSessionCon
         runOnUiThread(() -> {
             if (status == null) return;
             switch (state) {
-                case SERVICE_READY: setStatus("Preparing secure call…", 0xFF22C55E); break;
+                case SERVICE_READY: setStatus("Preparing secure call…", 0xFF22D3EE); break;
                 case SIGNALING_CONNECTING: setStatus("Connecting signaling…", 0xFF22D3EE); break;
-                case SIGNALING_CONNECTED: setStatus("Connecting media…", 0xFF22C55E); break;
+                case SIGNALING_CONNECTED: setStatus("Connecting media…", 0xFF22D3EE); break;
                 case MEDIA_CONNECTING: setStatus("Connecting call…", 0xFF22D3EE); break;
                 case MEDIA_CONNECTED:
                     setStatus("Connected", 0xFF22C55E);
@@ -121,7 +124,10 @@ public class ActiveCallActivity extends Activity implements NativeCallSessionCon
 
     private void buildUi(ActiveCallStore.Snapshot call) {
         FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Color.rgb(2, 6, 23));
+        root.setBackground(new GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            new int[] {0xFF020617, 0xFF1E1B4B, 0xFF082F49, 0xFF020617}
+        ));
         if ("video".equals(callType)) {
             remoteVideo = new SurfaceViewRenderer(this);
             remoteVideo.setVisibility(View.INVISIBLE);
@@ -137,6 +143,19 @@ public class ActiveCallActivity extends Activity implements NativeCallSessionCon
         panel.setPadding(dp(20), dp(48), dp(20), dp(28));
         TextView privacy = text("Secure Auto-AI " + call.callType + " call", 13, 0xFF94A3B8);
         panel.addView(privacy);
+        if ("audio".equals(callType)) {
+            TextView avatar = text(initial(call.peerName), 42, Color.WHITE);
+            avatar.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            GradientDrawable avatarBackground = new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[] {0xFF312E81, 0xFF0E7490}
+            );
+            avatarBackground.setShape(GradientDrawable.OVAL);
+            avatar.setBackground(avatarBackground);
+            LinearLayout.LayoutParams avatarParams = new LinearLayout.LayoutParams(dp(112), dp(112));
+            avatarParams.topMargin = dp(22);
+            panel.addView(avatar, avatarParams);
+        }
         TextView name = text(call.peerName, 26, Color.WHITE);
         name.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(-2, -2); nameParams.topMargin = dp(14);
@@ -147,19 +166,29 @@ public class ActiveCallActivity extends Activity implements NativeCallSessionCon
         chronometer = new Chronometer(this); chronometer.setTextColor(Color.WHITE); chronometer.setTextSize(18); chronometer.setVisibility(View.GONE);
         panel.addView(chronometer);
         LinearLayout controls = new LinearLayout(this); controls.setGravity(Gravity.CENTER); controls.setPadding(0, dp(36), 0, 0);
-        mute = control("Mute"); speaker = control("Speaker");
+        mute = control("Mute", android.R.drawable.ic_lock_silent_mode);
+        speaker = control("Speaker", android.R.drawable.ic_lock_silent_mode_off);
         controls.addView(mute, controlParams()); controls.addView(speaker, controlParams());
-        if ("video".equals(callType)) { camera = control("Camera"); controls.addView(camera, controlParams()); }
-        panel.addView(controls);
-        Button end = control("End call"); end.setTextColor(0xFFFFE4E6); end.setBackgroundColor(0xFF991B1B);
+        if ("video".equals(callType)) {
+            camera = control("Camera", android.R.drawable.ic_menu_camera);
+            flipCamera = control("Flip", android.R.drawable.ic_menu_rotate);
+            controls.addView(camera, controlParams());
+            controls.addView(flipCamera, controlParams());
+        }
+        minimize = control("Minimize", android.R.drawable.ic_menu_view);
+        controls.addView(minimize, controlParams());
+        panel.addView(controls, new LinearLayout.LayoutParams(-1, -2));
+        Button end = control("End call", android.R.drawable.ic_menu_close_clear_cancel); end.setTextColor(0xFFFFE4E6); end.setBackgroundColor(0xFF991B1B);
         LinearLayout.LayoutParams endParams = new LinearLayout.LayoutParams(dp(180), dp(56)); endParams.topMargin = dp(24);
         panel.addView(end, endParams);
         root.addView(panel, new FrameLayout.LayoutParams(-1, -1));
         setContentView(root);
 
-        mute.setOnClickListener(view -> { boolean value = !controller.isMuted(); controller.setMuted(value); mute.setText(value ? "Unmute" : "Mute"); });
-        speaker.setOnClickListener(view -> toggleSpeaker());
-        if (camera != null) camera.setOnClickListener(view -> { boolean value = !controller.isCameraEnabled(); controller.setCameraEnabled(value); camera.setText(value ? "Camera" : "Camera off"); });
+        mute.setOnClickListener(view -> guarded(mute, () -> { boolean value = !controller.isMuted(); controller.setMuted(value); mute.setText(value ? "Unmute" : "Mute"); }));
+        speaker.setOnClickListener(view -> guarded(speaker, this::toggleSpeaker));
+        if (camera != null) camera.setOnClickListener(view -> guarded(camera, () -> { boolean value = !controller.isCameraEnabled(); controller.setCameraEnabled(value); camera.setText(value ? "Camera" : "Camera off"); }));
+        if (flipCamera != null) flipCamera.setOnClickListener(view -> guarded(flipCamera, controller::switchCamera));
+        minimize.setOnClickListener(view -> guarded(minimize, this::minimizeCall));
         end.setOnClickListener(view -> { end.setEnabled(false); controller.end("user_hangup"); });
     }
 
@@ -168,6 +197,21 @@ public class ActiveCallActivity extends Activity implements NativeCallSessionCon
         AudioManager manager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         if (manager != null) { manager.setMode(AudioManager.MODE_IN_COMMUNICATION); manager.setSpeakerphoneOn(speakerEnabled); }
         speaker.setText(speakerEnabled ? "Earpiece" : "Speaker");
+    }
+
+    private void minimizeCall() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && "video".equals(callType)) {
+            enterPictureInPictureMode(new PictureInPictureParams.Builder().setAspectRatio(new Rational(9, 16)).build());
+        } else {
+            moveTaskToBack(true);
+        }
+    }
+
+    private void guarded(Button button, Runnable action) {
+        if (!button.isEnabled()) return;
+        button.setEnabled(false);
+        action.run();
+        button.postDelayed(() -> button.setEnabled(true), 350L);
     }
 
     private void readIntent(Intent intent) {
@@ -186,9 +230,10 @@ public class ActiveCallActivity extends Activity implements NativeCallSessionCon
     private boolean keyguardLocked() { android.app.KeyguardManager manager = (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE); return manager != null && manager.isKeyguardLocked(); }
     private void setStatus(String value, int color) { status.setText(value); status.setTextColor(color); }
     private TextView text(String value, int size, int color) { TextView view = new TextView(this); view.setText(value); view.setTextSize(size); view.setTextColor(color); view.setGravity(Gravity.CENTER); return view; }
-    private Button control(String value) { Button button = new Button(this); button.setText(value); button.setTextColor(Color.WHITE); button.setBackgroundColor(0xCC0F172A); return button; }
+    private Button control(String value, int icon) { Button button = new Button(this); button.setText(value); button.setTextColor(Color.WHITE); button.setTextSize(10); button.setCompoundDrawablesWithIntrinsicBounds(0, icon, 0, 0); button.setCompoundDrawablePadding(dp(3)); button.setBackgroundColor(0xCC0F172A); return button; }
     private LinearLayout.LayoutParams controlParams() { LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(54), 1f); params.setMargins(dp(4), 0, dp(4), 0); return params; }
-    private String readableFailure(String code) { return code == null ? "Call failed" : "Call failed: " + code.replace('_', ' ').toLowerCase(java.util.Locale.US); }
+    private String readableFailure(String code) { return "AutoAI could not prepare the call. Please retry."; }
+    private String initial(String name) { return name == null || name.trim().isEmpty() ? "A" : name.trim().substring(0, 1).toUpperCase(java.util.Locale.US); }
     private String clean(String value) { return value == null || value.trim().isEmpty() ? null : value.trim(); }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
 }

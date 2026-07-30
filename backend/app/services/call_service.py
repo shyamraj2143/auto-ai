@@ -16,14 +16,11 @@ from app.db.session import SessionLocal
 from app.models.call import Call, UserCallSettings
 from app.models.user import User
 from app.schemas.call import CallRead, PublicCallUser
-from app.services.call_notification_service import (
-    public_avatar,
-    send_call_dismiss_notifications,
-    send_incoming_call_notifications,
-)
+from app.services.call_notification_service import send_call_dismiss_notifications, send_incoming_call_notifications
 from app.services.call_permission_service import call_allowed, get_or_create_call_settings
 from app.services.presence_service import RealtimeUnavailable, presence_service
 from app.services.social_service import social_service
+from app.services.user_avatar import public_avatar
 
 
 TERMINAL_STATUSES = {"rejected", "cancelled", "busy", "missed", "failed", "ended"}
@@ -70,7 +67,7 @@ def base_public_user(user: User) -> PublicCallUser:
         id=user.id,
         display_name=user.name,
         username=user.username or f"user_{user.id.replace('-', '')[:8]}",
-        avatar_url=user.avatar or user.picture,
+        avatar_url=public_avatar(user) or None,
     )
 
 
@@ -315,8 +312,12 @@ class CallService:
         db.expire_all()
         call = self.get_authorized(db, call_id, user_id)
         await self._publish_both(call, "call.accepted", user_id)
-        send_call_dismiss_notifications(db, call, "call_accepted")
-        db.commit()
+        try:
+            send_call_dismiss_notifications(db, call, "call_accepted")
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception("call_dismiss_delivery_failed call_id=%s event_type=call.accepted", call.id)
         return call
 
     async def reject(self, db: Session, call_id: str, user_id: str) -> Call:
@@ -451,10 +452,25 @@ class CallService:
             raise
         db.expire_all()
         call = self.get_authorized(db, call.id, user_id)
-        await presence_service.release_call_locks(call.id, [call.caller_id, call.callee_id])
+        try:
+            await presence_service.release_call_locks(call.id, [call.caller_id, call.callee_id])
+        except Exception:
+            logger.warning(
+                "call_lock_release_failed call_id=%s event_type=%s",
+                call.id,
+                event_type,
+            )
         await self._publish_both(call, event_type, user_id, {"status": final_status, "end_reason": reason})
-        send_call_dismiss_notifications(db, call, event_type.replace(".", "_"))
-        db.commit()
+        try:
+            send_call_dismiss_notifications(db, call, event_type.replace(".", "_"))
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception(
+                "call_dismiss_delivery_failed call_id=%s event_type=%s",
+                call.id,
+                event_type,
+            )
         return call
 
     async def _publish_both(
@@ -466,10 +482,20 @@ class CallService:
     ) -> None:
         event_payload = {**(payload or {"status": call.status}), "revision": call.revision, "trace_id": call.trace_id}
         event = signal_event(event_type, sender_user_id=sender_user_id, call_id=call.id, payload=event_payload)
-        await asyncio.gather(
+        results = await asyncio.gather(
             presence_service.publish(call.caller_id, event),
             presence_service.publish(call.callee_id, event),
+            return_exceptions=True,
         )
+        for participant_id, result in zip((call.caller_id, call.callee_id), results):
+            if isinstance(result, Exception):
+                logger.warning(
+                    "call_realtime_publish_failed call_id=%s event_type=%s participant_id=%s error=%s",
+                    call.id,
+                    event_type,
+                    participant_id,
+                    type(result).__name__,
+                )
 
     @staticmethod
     def _require_state(call: Call, allowed: set[str]) -> None:
@@ -538,6 +564,8 @@ async def call_timeout_worker(stop_event: asyncio.Event) -> None:
         try:
             if settings.CALL_FEATURE_ENABLED and await presence_service.check():
                 await expire_stale_calls_once()
+                from app.services.call_fallback_service import process_due_fallbacks
+                await asyncio.to_thread(process_due_fallbacks)
         except Exception:
             pass
         try:

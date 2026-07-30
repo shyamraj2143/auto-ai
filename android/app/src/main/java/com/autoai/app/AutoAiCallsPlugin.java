@@ -27,6 +27,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 import com.google.firebase.messaging.FirebaseMessaging;
+import com.google.firebase.installations.FirebaseInstallations;
 
 import org.json.JSONArray;
 
@@ -72,12 +73,13 @@ public class AutoAiCallsPlugin extends Plugin {
         }
 
         try {
-            FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
+            FirebaseMessaging.getInstance().register().continueWithTask(ignored -> FirebaseInstallations.getInstance().getId()).addOnCompleteListener(task -> {
                 if (task.isSuccessful() && task.getResult() != null && !task.getResult().trim().isEmpty()) {
                     result.put("fcmToken", task.getResult());
-                    Log.i(TAG, "FCM registration token available for call device registration.");
+                    result.put("firebaseInstallationId", task.getResult());
+                    Log.i(TAG, "FCM installation identity available hash=" + PushTokenRegistrar.sha256Prefix(task.getResult()));
                 } else {
-                    Log.w(TAG, "FCM registration token unavailable for call device registration.");
+                    Log.w(TAG, "FCM installation identity unavailable for call device registration.");
                 }
                 call.resolve(result);
             });
@@ -157,6 +159,7 @@ public class AutoAiCallsPlugin extends Plugin {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
             || isGranted("notifications")
             || isPermanentlyDenied("notifications")
+            || CallingPermissionCoordinator.preferences(getContext()).getBoolean("notification_prompted", false)
             || permissions().getBoolean(KEY_NOTIFICATIONS_REQUESTED, false)) {
             call.resolve(callPermissionsResult(false));
             return;
@@ -322,6 +325,79 @@ public class AutoAiCallsPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void getCallReadiness(PluginCall call) {
+        call.resolve(CallingPermissionCoordinator.inspect(getContext()).toJs(getContext()));
+    }
+
+    @PluginMethod
+    public void getCallingSetupState(PluginCall call) {
+        call.resolve(CallingPermissionCoordinator.inspect(getContext()).toJs(getContext()));
+    }
+
+    @PluginMethod
+    public void refreshCallingSetupState(PluginCall call) {
+        CallingPermissionCoordinator.invalidateCachedState();
+        CallNotificationManager.createChannels(getContext());
+        try { FirebaseMessaging.getInstance().register(); } catch (RuntimeException ignored) {}
+        call.resolve(CallingPermissionCoordinator.inspect(getContext()).toJs(getContext()));
+    }
+
+    @PluginMethod
+    public void startCallingSetup(PluginCall call) {
+        Intent intent = new Intent(getContext(), CallingSetupActivity.class);
+        getActivity().runOnUiThread(() -> {
+            if (!CallingSetupActivity.isVisible() && !isAnyActiveCall(getContext())) getActivity().startActivity(intent);
+            call.resolve();
+        });
+    }
+
+    @PluginMethod
+    public void openRequiredSetting(PluginCall call) {
+        String item = call.getString("item", "app");
+        try {
+            getActivity().startActivity(CallingPermissionCoordinator.settingIntent(getContext(), item));
+            call.resolve();
+        } catch (RuntimeException error) {
+            call.reject("Unable to open the required Android setting.", error);
+        }
+    }
+
+    @PluginMethod
+    public void openBackgroundActivitySettings(PluginCall call) {
+        try {
+            getActivity().startActivity(CallingPermissionCoordinator.backgroundActivitySettingsIntent(getContext()));
+            call.resolve();
+        } catch (RuntimeException error) {
+            try {
+                getActivity().startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+                call.resolve();
+            } catch (RuntimeException fallbackError) {
+                call.reject("Unable to open Android background settings.", fallbackError);
+            }
+        }
+    }
+
+    @PluginMethod
+    public void openIncomingCallChannelSettings(PluginCall call) {
+        Intent intent = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            ? new Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, getContext().getPackageName())
+                .putExtra(Settings.EXTRA_CHANNEL_ID, CallNotificationManager.CHANNEL_INCOMING)
+            : new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getContext().getPackageName()));
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        getContext().startActivity(intent);
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void openBatteryOptimizationSettings(PluginCall call) {
+        Intent intent = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try { getContext().startActivity(intent); }
+        catch (RuntimeException error) { openAppSettings(call); return; }
+        call.resolve();
+    }
+
+    @PluginMethod
     public void openAppSettings(PluginCall call) {
         Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getContext().getPackageName()));
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -366,6 +442,11 @@ public class AutoAiCallsPlugin extends Plugin {
     public static boolean isActiveVideoCall(Context context) {
         SharedPreferences prefs = context.getSharedPreferences(ACTIVE_CALL_PREFERENCES, Context.MODE_PRIVATE);
         return prefs.getString(KEY_ACTIVE_CALL_ID, null) != null && "video".equals(prefs.getString(KEY_ACTIVE_CALL_TYPE, null));
+    }
+
+    public static boolean isAnyActiveCall(Context context) {
+        return context.getSharedPreferences(ACTIVE_CALL_PREFERENCES, Context.MODE_PRIVATE)
+            .getString(KEY_ACTIVE_CALL_ID, null) != null;
     }
 
     public static boolean isActiveCall(Context context, String callId) {

@@ -509,7 +509,7 @@ def enforce_plan_and_feature_access(
         if not is_feature_enabled(db, "deep_research", user.id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Deep Research is disabled for this account.")
 
-    if mode == "multi_model":
+    if mode in {"multi_model", "medium", "high"}:
         if not subscription_is_active or not limits or not limits.allow_multi_model:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Multi-Model routing is not enabled for this plan.")
         if not is_feature_enabled(db, "multi_model_routing", user.id):

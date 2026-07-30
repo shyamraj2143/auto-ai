@@ -42,16 +42,26 @@ class UserDevice(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     device_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    legacy_device_id: Mapped[str] = mapped_column(String(128), index=True, nullable=True)
     platform: Mapped[str] = mapped_column(String(32), default="web", index=True, nullable=False)
     fcm_token: Mapped[str] = mapped_column(String(512), nullable=True)
     fcm_token_ciphertext: Mapped[str] = mapped_column(Text, nullable=True)
     fcm_token_hash: Mapped[str] = mapped_column(String(64), index=True, nullable=True)
+    firebase_installation_id_ciphertext: Mapped[str] = mapped_column(Text, nullable=True)
+    firebase_installation_id_hash: Mapped[str] = mapped_column(String(64), index=True, nullable=True)
+    installation_rotation_status: Mapped[str] = mapped_column(String(48), nullable=True)
+    push_provider: Mapped[str] = mapped_column(String(32), default="fcm", nullable=False)
     app_version: Mapped[str] = mapped_column(String(64), nullable=True)
     app_version_code: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     device_name: Mapped[str] = mapped_column(String(120), nullable=True)
     os_version: Mapped[str] = mapped_column(String(80), nullable=True)
     manufacturer: Mapped[str] = mapped_column(String(80), nullable=True)
     model: Mapped[str] = mapped_column(String(80), nullable=True)
+    android_sdk: Mapped[int] = mapped_column(Integer, nullable=True)
+    last_fcm_send_result: Mapped[str] = mapped_column(String(40), nullable=True)
+    last_fcm_failure_code: Mapped[str] = mapped_column(String(64), nullable=True)
+    last_fcm_received_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    last_notification_displayed_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     # Deprecated telemetry columns: retained for schema compatibility; no active code writes them.
     battery_level: Mapped[int] = mapped_column(Integer, nullable=True)
     charging: Mapped[bool] = mapped_column(Boolean, nullable=True)
@@ -115,6 +125,33 @@ class Call(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
+
+
+class CallDelivery(Base):
+    __tablename__ = "call_deliveries"
+    __table_args__ = (UniqueConstraint("call_id", "device_id", name="uq_call_delivery_device"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    call_id: Mapped[str] = mapped_column(String(36), ForeignKey("calls.id", ondelete="CASCADE"), index=True, nullable=False)
+    device_id: Mapped[str] = mapped_column(String(36), ForeignKey("user_devices.id", ondelete="CASCADE"), index=True, nullable=False)
+    primary_event_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    primary_fcm_requested_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    primary_fcm_result: Mapped[str] = mapped_column(String(48), nullable=False)
+    native_received_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    notification_displayed_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    original_priority: Mapped[str] = mapped_column(String(40), nullable=True)
+    delivered_priority: Mapped[str] = mapped_column(String(40), nullable=True)
+    firebase_service_started_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    ringtone_started_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    fallback_due_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    fallback_sent_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    fallback_fcm_result: Mapped[str] = mapped_column(String(48), nullable=True)
+    fallback_event_id: Mapped[str] = mapped_column(String(36), nullable=True)
+    fallback_opened_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    last_delivery_failure_code: Mapped[str] = mapped_column(String(64), nullable=True)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 
 class BlockedUser(Base):

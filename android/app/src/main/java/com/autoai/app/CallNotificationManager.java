@@ -5,17 +5,18 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
-import android.app.Person;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.SharedPreferences;
-import android.graphics.drawable.Icon;
 import android.media.AudioAttributes;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
 import android.util.Log;
+
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.Person;
 
 import java.util.HashSet;
 import java.util.Map;
@@ -24,12 +25,17 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class CallNotificationManager {
     private static final String TAG = "AutoAiCallNotif";
-    public static final String CHANNEL_INCOMING = "auto_ai_incoming_calls";
+    public static final String CHANNEL_INCOMING_LEGACY = "auto_ai_incoming_calls";
+    public static final String CHANNEL_INCOMING_V3 = "auto_ai_incoming_calls_v3";
+    public static final String CHANNEL_INCOMING_V4 = "auto_ai_incoming_calls_v4";
+    public static final String CHANNEL_INCOMING_V5 = "auto_ai_incoming_calls_v5";
+    public static final String CHANNEL_INCOMING = "auto_ai_incoming_calls_v6";
     public static final String CHANNEL_ACTIVE = "auto_ai_active_calls";
     public static final String EXTRA_CALL_ID = "call_id";
     public static final String EXTRA_CALLER_ID = "caller_id";
@@ -75,7 +81,7 @@ public final class CallNotificationManager {
             return;
         }
         if (isEventSeen(context, eventId) || callId.equals(pendingCallId(context))) {
-            Log.i(TAG, "Incoming call FCM duplicate ignored callId=" + callId);
+            diagnostic(context, "FCM_DUPLICATE_IGNORED", data, "DUPLICATE");
             return;
         }
         if (!"audio".equals(callType) && !"video".equals(callType)) {
@@ -83,7 +89,7 @@ public final class CallNotificationManager {
             return;
         }
         if (expiresAt <= System.currentTimeMillis()) {
-            Log.i(TAG, "Incoming call FCM ignored callId=" + callId + " reason=expired");
+            diagnostic(context, "FCM_EXPIRED", data, "EXPIRED");
             return;
         }
         if (!acceptRevision(context, callId, revision)) {
@@ -91,7 +97,7 @@ public final class CallNotificationManager {
             return;
         }
         if (!canPostNotifications(context)) {
-            Log.w(TAG, "Incoming call FCM ignored callId=" + callId + " reason=post_notifications_denied");
+            diagnostic(context, "NOTIFICATION_PERMISSION_DENIED", data, "POST_NOTIFICATIONS_DENIED");
             return;
         }
         // Firebase invokes onMessageReceived on the application main thread. Never block
@@ -105,7 +111,7 @@ public final class CallNotificationManager {
         Log.i(TAG, "INCOMING_PRESENTED callId=" + callId);
         savePending(context, callId, null, expiresAt);
         createChannels(context);
-        boolean telecomReported = AutoAiTelecomBridge.reportIncomingCall(context, data);
+        TelecomCallResult telecomResult = TelecomCallResult.REGISTRATION_UNAVAILABLE;
 
         Intent incomingIntent = new Intent(context, IncomingCallActivity.class);
         incomingIntent.putExtra(EXTRA_CALL_ID, callId);
@@ -117,21 +123,23 @@ public final class CallNotificationManager {
         incomingIntent.putExtra(EXTRA_EXPIRES_AT, expiresAt);
         incomingIntent.putExtra(EXTRA_ACTION_TOKEN, actionToken);
         incomingIntent.putExtra(EXTRA_CALL_REVISION, revision);
-        PendingIntent fullScreen = PendingIntent.getActivity(context, notificationId(callId), incomingIntent, pendingFlags());
+        PendingIntent fullScreen = PendingIntent.getActivity(context, requestCode(callId, "open", revision), incomingIntent, pendingFlags());
 
         Intent acceptIntent = new Intent(incomingIntent).setAction(ACTION_ACCEPT);
         acceptIntent.putExtra(EXTRA_ACTION, "accept");
-        PendingIntent accept = PendingIntent.getActivity(context, notificationId(callId) + 1, acceptIntent, pendingFlags());
+        PendingIntent accept = PendingIntent.getActivity(context, requestCode(callId, "accept", revision), acceptIntent, pendingFlags());
+        Intent audioOnlyIntent = new Intent(incomingIntent).setAction(ACTION_AUDIO_ONLY);
+        audioOnlyIntent.putExtra(EXTRA_ACTION, "audio_only");
+        PendingIntent audioOnly = PendingIntent.getActivity(context, requestCode(callId, "audio_only", revision), audioOnlyIntent, pendingFlags());
         Intent rejectIntent = new Intent(context, CallActionReceiver.class).setAction(ACTION_REJECT)
             .putExtra(EXTRA_CALL_ID, callId).putExtra(EXTRA_ACTION_TOKEN, actionToken);
-        PendingIntent reject = PendingIntent.getBroadcast(context, notificationId(callId) + 2, rejectIntent, pendingFlags());
+        PendingIntent reject = PendingIntent.getBroadcast(context, requestCode(callId, "decline", revision), rejectIntent, pendingFlags());
 
-        Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-            ? new Notification.Builder(context, CHANNEL_INCOMING)
-            : new Notification.Builder(context);
+        diagnostic(context, "CALLSTYLE_BUILD_STARTED", data, "STARTED");
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_INCOMING);
         String title = name.isEmpty() ? "Incoming Auto-AI call" : name;
         String text = (username.isEmpty() ? "" : "@" + username + " - ") + "Incoming " + ("audio".equals(callType) ? "audio" : "video") + " call";
-        builder.setSmallIcon(R.mipmap.ic_launcher)
+        builder.setSmallIcon(R.drawable.ic_stat_call)
             .setContentTitle(title)
             .setContentText(text)
             .setCategory(Notification.CATEGORY_CALL)
@@ -139,38 +147,58 @@ public final class CallNotificationManager {
             .setVisibility(Notification.VISIBILITY_PRIVATE)
             .setOngoing(true)
             .setAutoCancel(false)
+            .setOnlyAlertOnce(false)
+            .setLocalOnly(false)
             .setContentIntent(fullScreen);
         if (canUseFullScreenIntent(context)) {
             builder.setFullScreenIntent(fullScreen, true);
+            diagnostic(context, "FULL_SCREEN_PERMISSION_AVAILABLE", data, "FULL_SCREEN_ATTACHED");
+            diagnostic(context, "FULL_SCREEN_LAUNCH_REQUESTED", data, "REQUESTED");
         } else {
-            Log.w(TAG, "Full-screen incoming call intent not allowed; using heads-up notification callId=" + callId);
+            diagnostic(context, "FULL_SCREEN_PERMISSION_DENIED", data, "HEADS_UP_REQUIRED");
+            diagnostic(context, "HEADS_UP_FALLBACK_USED", data, "POSTED_WITHOUT_FULL_SCREEN");
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            builder.setTimeoutAfter(Math.max(1000, expiresAt - System.currentTimeMillis()));
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            Person person = new Person.Builder().setName(name.isEmpty() ? "Auto-AI user" : name).setIcon(Icon.createWithResource(context, R.mipmap.ic_launcher)).setImportant(true).build();
-            builder.setStyle(Notification.CallStyle.forIncomingCall(person, reject, accept));
-        } else {
-            builder.addAction(new Notification.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel, "Reject", reject).build());
-            builder.addAction(new Notification.Action.Builder(android.R.drawable.sym_action_call, "Accept", accept).build());
-        }
+        builder.setTimeoutAfter(Math.max(1000, expiresAt - System.currentTimeMillis()));
+        Person person = new Person.Builder().setName(name.isEmpty() ? "Auto-AI user" : name).setImportant(true).build();
+        builder.setStyle(NotificationCompat.CallStyle.forIncomingCall(person, reject, accept));
+        if ("video".equals(callType)) builder.addAction(new NotificationCompat.Action(android.R.drawable.sym_action_call, "Audio only", audioOnly));
+        diagnostic(context, "CALLSTYLE_BUILD_COMPLETED", data, "ANSWER_REJECT_ATTACHED");
         if (silent) {
             builder.setSound(null);
             builder.setVibrate(new long[] {0L});
         }
         NotificationManager manager = manager(context);
         if (manager != null) {
-            manager.notify(notificationId(callId), builder.build());
-            markEventSeen(context, eventId);
-            Log.i(TAG, "Incoming call notification shown callId=" + callId + " silent=" + silent + " telecom=" + telecomReported);
-            acknowledgeRinging(context, callId);
+            try {
+                diagnostic(context, "NATIVE_NOTIFICATION_CREATED", data, "CREATED");
+                Notification notification = builder.build();
+                int incomingNotificationId = notificationId(callId);
+                // Remove only the degraded Google Play Services fallback identity.
+                manager.cancel(notificationTag(callId), 0);
+                manager.notify(incomingNotificationId, notification);
+                markEventSeen(context, eventId);
+                diagnostic(context, "NATIVE_NOTIFICATION_POSTED", data, "POSTED");
+                diagnostic(context, "CALLSTYLE_NOTIFICATION_POSTED", data, "PRIMARY_NATIVE_CALLSTYLE_DELIVERED");
+                CallDeliveryAckWorker.schedule(context, data, "callstyle_posted", "", "");
+                acknowledgeRinging(context, callId);
+                IncomingCallRingingService.start(context, callId, expiresAt, notification, data);
+                telecomResult = AutoAiTelecomBridge.reportIncomingCall(context, data);
+                if (!telecomResult.isReported()) {
+                    Log.w(TAG, "Incoming Telecom presentation degraded callId=" + callId + " result=" + telecomResult);
+                }
+                Log.i(TAG, "Incoming call notification shown callId=" + callId + " silent=" + silent
+                    + " telecom=" + telecomResult.isReported());
+            } catch (RuntimeException notificationError) {
+                diagnostic(context, "NOTIFICATION_POST_FAILED", data, "NOTIFICATION_POST_FAILED");
+                Log.e(TAG, "Incoming call notification post failed callId=" + callId, notificationError);
+            }
         } else {
             Log.w(TAG, "Incoming call notification not shown callId=" + callId + " reason=no_notification_manager");
         }
     }
 
     public static void cancel(Context context, String callId) {
+        IncomingCallRingingService.stop(context, callId);
         cancelNotification(context, callId);
         AutoAiTelecomBridge.disconnectLocal(context, callId);
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
@@ -179,7 +207,11 @@ public final class CallNotificationManager {
 
     public static void cancelNotification(Context context, String callId) {
         NotificationManager manager = manager(context);
-        if (manager != null && callId != null) manager.cancel(notificationId(callId));
+        if (manager != null && callId != null) {
+            manager.cancel(notificationId(callId));
+            manager.cancel(notificationTag(callId), 0);
+            manager.cancel(legacyNotificationId(callId));
+        }
     }
 
     public static void cancelIncomingPresentation(Context context, String callId) {
@@ -209,7 +241,7 @@ public final class CallNotificationManager {
         cancel(context, callId);
         NotificationManager notificationManager = manager(context);
         if (notificationManager != null && callId != null) {
-            notificationManager.cancel(notificationId(callId) + 100000);
+            notificationManager.cancel(legacyNotificationId(callId));
         }
         if (AutoAiCallsPlugin.isActiveCall(context, callId)) {
             context.stopService(new Intent(context, CallForegroundService.class));
@@ -258,6 +290,19 @@ public final class CallNotificationManager {
         return 3000 + Math.abs(callId.hashCode() % 100000);
     }
 
+    public static int legacyNotificationId(String callId) {
+        return notificationId(callId) + 100000;
+    }
+
+    public static String notificationTag(String callId) {
+        return "autoai_call_" + callId;
+    }
+
+    static int requestCode(String callId, String action, long revision) {
+        String identity = String.valueOf(callId) + ":" + action + ":" + revision;
+        return 200000 + Math.abs(identity.hashCode() % 800000);
+    }
+
     public static void createChannels(Context context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationManager manager = manager(context);
@@ -266,6 +311,8 @@ public final class CallNotificationManager {
         incoming.setDescription("Incoming Auto-AI audio and video calls");
         incoming.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
         incoming.enableVibration(true);
+        incoming.setVibrationPattern(new long[] {0L, 500L, 250L, 500L, 250L, 700L});
+        incoming.setShowBadge(false);
         Uri ringtone = Settings.System.DEFAULT_RINGTONE_URI;
         incoming.setSound(ringtone, new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE).build());
         NotificationChannel active = new NotificationChannel(CHANNEL_ACTIVE, "Active calls", NotificationManager.IMPORTANCE_LOW);
@@ -359,5 +406,20 @@ public final class CallNotificationManager {
     private static long parseLong(String value) {
         try { return Long.parseLong(value == null ? "0" : value); }
         catch (NumberFormatException ignored) { return 0L; }
+    }
+
+    static void diagnostic(Context context, String event, Map<String, String> data, String resultCode) {
+        String installation = PushTokenRegistrar.deviceId(context, "auto_ai_call_device", "fallback_device_id");
+        String installationHash = "unknown";
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(installation.getBytes(StandardCharsets.UTF_8));
+            StringBuilder value = new StringBuilder();
+            for (int index = 0; index < 8; index++) value.append(String.format("%02x", digest[index]));
+            installationHash = value.toString();
+        } catch (Exception ignored) { }
+        Log.i(TAG, event + " call_id=" + value(data, "call_id") + " trace_id=" + value(data, "trace_id")
+            + " event_id=" + value(data, "event_id") + " installation_hash=" + installationHash
+            + " sdk=" + Build.VERSION.SDK_INT + " manufacturer=" + Build.MANUFACTURER
+            + " app_version=" + BuildConfig.VERSION_NAME + " result=" + resultCode + " timestamp=" + System.currentTimeMillis());
     }
 }

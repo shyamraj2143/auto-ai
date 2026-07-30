@@ -105,6 +105,10 @@ class ApkService:
             filename=release.file_name,
             sha256=release.sha256,
             min_android_version=release.min_android_version,
+            minimum_android_sdk=release.minimum_android_sdk,
+            minimum_supported_version_code=release.minimum_supported_version_code,
+            package_name=release.package_name,
+            release_id=release.id,
             release_notes=[str(item) for item in (release.release_notes or [])],
             download_url=download_url,
         )
@@ -301,10 +305,12 @@ class ApkService:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="APK version name already exists.")
         if db.scalar(select(ApkRelease).where(ApkRelease.version_code == next_version_code)):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="APK version code already exists.")
+        if highest and next_version_code <= highest.version_code:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="APK version code must be higher than every published release.")
 
         filename = self.versioned_filename(next_version, next_version_code)
         path = self.storage_dir() / filename
-        max_bytes = settings.MAX_UPLOAD_MB * 1024 * 1024
+        max_bytes = settings.MAX_APK_UPLOAD_MB * 1024 * 1024
         bytes_written = 0
 
         with path.open("wb") as output:
@@ -315,7 +321,7 @@ class ApkService:
                     path.unlink(missing_ok=True)
                     raise HTTPException(
                         status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                        detail=f"APK upload exceeds {settings.MAX_UPLOAD_MB} MB.",
+                        detail=f"APK upload exceeds {settings.MAX_APK_UPLOAD_MB} MB.",
                     )
                 output.write(chunk)
 
@@ -339,6 +345,9 @@ class ApkService:
             file_size=path.stat().st_size,
             sha256=checksum,
             min_android_version=min_android_version or settings.APK_MIN_ANDROID_VERSION,
+            minimum_android_sdk=24,
+            minimum_supported_version_code=1,
+            package_name="com.autoai.app",
             release_notes=self.parse_release_notes(release_notes),
             changelog=changelog or f"Version {next_version}",
             force_update=force_update,
@@ -370,11 +379,13 @@ class ApkService:
         apk_url: str | None = None,
         file_name: str | None = None,
         file_size: int | None = None,
+        sha256: str | None = None,
         changelog: str | None = None,
         force_update: bool | None = None,
         release_notes: list[str] | None = None,
         is_active: bool | None = None,
         released_at: datetime | None = None,
+        minimum_supported_version_code: int | None = None,
     ) -> ApkRelease:
         release = db.get(ApkRelease, release_id)
         if not release:
@@ -397,10 +408,14 @@ class ApkService:
             self.set_release_file_name(release, file_name.strip() or self.file_name_from_url(release.apk_url))
         if file_size is not None:
             release.file_size = file_size
+        if sha256 is not None:
+            release.sha256 = sha256.lower()
         if changelog is not None:
             release.changelog = changelog
         if force_update is not None:
             release.force_update = force_update
+        if minimum_supported_version_code is not None:
+            release.minimum_supported_version_code = minimum_supported_version_code
         if release_notes is not None:
             release.release_notes = [item.strip() for item in release_notes if item.strip()]
         if released_at is not None:
@@ -429,6 +444,7 @@ class ApkService:
         apk_url: str,
         file_name: str | None,
         file_size: int,
+        sha256: str,
         changelog: str,
         force_update: bool,
         is_active: bool,
@@ -451,6 +467,7 @@ class ApkService:
                 apk_url=apk_url,
                 file_name=file_name or self.file_name_from_url(apk_url),
                 file_size=file_size,
+                sha256=sha256,
                 changelog=changelog,
                 force_update=force_update,
                 release_notes=release_notes,
@@ -462,15 +479,16 @@ class ApkService:
             db.execute(update(ApkRelease).values(is_active=False))
         now = datetime.utcnow()
         release_time = self._db_datetime(released_at) if released_at else now
+        resolved_file_name = file_name or self.file_name_from_url(apk_url)
         release = ApkRelease(
             version_code=version_code,
             version_name=version_name,
             apk_url=apk_url,
-            file_name=file_name or self.file_name_from_url(apk_url),
-            filename=file_name or self.file_name_from_url(apk_url),
-            file_path="",
+            file_name=resolved_file_name,
+            filename=resolved_file_name,
+            file_path=str(self.storage_dir() / resolved_file_name),
             file_size=file_size,
-            sha256="",
+            sha256=sha256.lower(),
             min_android_version=min_android_version,
             release_notes=[item.strip() for item in release_notes if item.strip()],
             changelog=changelog,

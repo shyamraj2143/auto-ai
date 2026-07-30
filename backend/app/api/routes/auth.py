@@ -49,6 +49,7 @@ from app.services.google_auth import (
     verify_google_id_token,
 )
 from app.services.user_identity import generate_username
+from app.services.user_avatar import public_avatar
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -155,7 +156,8 @@ def issue_session(db: Session, user: User, request: Request, response: Response)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to create login session.") from exc
     db.refresh(user)
     set_auth_cookies(response, request, access_token, refresh_token)
-    return Token(access_token=access_token, refresh_token=refresh_token, user=UserRead.model_validate(user))
+    serialized_user = UserRead.model_validate(user).model_copy(update={"avatar": public_avatar(user) or None})
+    return Token(access_token=access_token, refresh_token=refresh_token, user=serialized_user)
 
 
 def revoke_refresh_token(db: Session, refresh_token: str | None) -> None:

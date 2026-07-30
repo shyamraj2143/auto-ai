@@ -13,6 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_FRONTEND_URL = "https://autoai.site.je"
 DEFAULT_BACKEND_URL = "http://localhost:8000"
 DEFAULT_RAZORPAY_CHECKOUT_CONFIG_ID = "config_T9uIbVgLBfz7ko"
+DEFAULT_UPLOAD_DIR = str(PROJECT_ROOT / "backend" / "uploads")
 
 
 class Settings(BaseSettings):
@@ -78,7 +79,8 @@ class Settings(BaseSettings):
     METERED_TURN_API_KEY: SecretStr | None = None
     METERED_TURN_TIMEOUT_SECONDS: float = 5.0
     CALL_RING_TIMEOUT_SECONDS: int = 30
-    CALL_NOTIFICATION_TTL_SECONDS: int = 45
+    CALL_SYSTEM_FALLBACK_DELAY_SECONDS: int = 7
+    CALL_NOTIFICATION_TTL_SECONDS: int = 30
     CALL_RECONNECT_GRACE_SECONDS: int = 18
     CALL_MAX_ATTEMPTS_PER_MINUTE: int = 8
     CALL_SEARCH_MAX_PER_MINUTE: int = 30
@@ -124,7 +126,7 @@ class Settings(BaseSettings):
     GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai"
 
     BEDROCK_API_KEY: str | None = None
-    BEDROCK_REGION: str = "us-south-1"
+    BEDROCK_REGION: str = "us-east-1"
     BEDROCK_MODEL: str = "openai.gpt-oss-120b"
     BEDROCK_BASE_URL: str | None = None
     BEDROCK_AUTH_MODE: str = "auto"
@@ -168,6 +170,34 @@ class Settings(BaseSettings):
     DEEP_RESEARCH_GROQ_TPM_BUDGET: int = 7600
     DEEP_RESEARCH_JUDGE_PROVIDER: str = "groq"
     DEEP_RESEARCH_JUDGE_MODEL: str | None = None
+    ORCHESTRATION_GROQ_MODELS: list[str] = [
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+        "qwen/qwen3-32b",
+        "meta-llama/llama-4-scout-17b-16e-instruct",
+    ]
+    ORCHESTRATION_BEDROCK_MODELS: list[str] = [
+        "amazon.nova-pro-v1:0",
+        "amazon.nova-lite-v1:0",
+        "anthropic.claude-3-haiku-20240307-v1:0",
+    ]
+    ORCHESTRATION_INSTANT_FALLBACKS: list[str] = [
+        "openai/gpt-oss-20b",
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+    ]
+    ORCHESTRATION_MAX_MODELS_MEDIUM: int = 3
+    ORCHESTRATION_MAX_MODELS_HIGH: int = 5
+    ORCHESTRATION_MAX_PARALLEL: int = 4
+    ORCHESTRATION_MAX_RETRIES: int = 1
+    ORCHESTRATION_TOTAL_TIMEOUT_SECONDS: int = 90
+    ORCHESTRATION_HEALTH_TTL_SECONDS: int = 300
+    ORCHESTRATION_CIRCUIT_FAILURE_THRESHOLD: int = 3
+    ORCHESTRATION_CIRCUIT_COOLDOWN_SECONDS: int = 120
+    ORCHESTRATION_MAX_OUTPUT_TOKENS: int = 1600
+    ORCHESTRATION_MAX_EVENTS_PER_GENERATION: int = 500
 
     TAVILY_API_KEY: str | None = None
     SERPER_API_KEY: str | None = None
@@ -177,12 +207,13 @@ class Settings(BaseSettings):
     SEARCH_COUNTRY: str = "us"
     SEARCH_LANGUAGE: str = "en"
 
-    UPLOAD_DIR: str = str(PROJECT_ROOT / "backend" / "uploads")
+    UPLOAD_DIR: str = DEFAULT_UPLOAD_DIR
     APK_STORAGE_DIR: str = str(PROJECT_ROOT / "public" / "downloads")
     APK_FILENAME: str = "auto-ai.apk"
     APK_DEFAULT_VERSION: str = "1.0.18"
     APK_DEFAULT_VERSION_CODE: int = 19
     APK_MIN_ANDROID_VERSION: str = "Android 7.0"
+    MAX_APK_UPLOAD_MB: int = 100
     MAX_UPLOAD_MB: int = 20
     ALLOWED_DOCUMENT_EXTENSIONS: set[str] = {".pdf", ".txt", ".docx"}
     ALLOWED_IMAGE_EXTENSIONS: set[str] = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
@@ -257,7 +288,16 @@ class Settings(BaseSettings):
             for label in labels
         )
 
-    @field_validator("GROQ_RESEARCH_MODELS", "BEDROCK_RESEARCH_MODELS", "OPENAI_RESEARCH_MODELS", "GEMINI_RESEARCH_MODELS", mode="before")
+    @field_validator(
+        "GROQ_RESEARCH_MODELS",
+        "BEDROCK_RESEARCH_MODELS",
+        "OPENAI_RESEARCH_MODELS",
+        "GEMINI_RESEARCH_MODELS",
+        "ORCHESTRATION_GROQ_MODELS",
+        "ORCHESTRATION_BEDROCK_MODELS",
+        "ORCHESTRATION_INSTANT_FALLBACKS",
+        mode="before",
+    )
     @classmethod
     def parse_model_list(cls, value: Any) -> list[str] | Any:
         if isinstance(value, str):
@@ -273,6 +313,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_payment_urls(self) -> "Settings":
+        if (
+            self.is_production
+            and self.UPLOAD_DIR == DEFAULT_UPLOAD_DIR
+            and self.SQLITE_PATH.strip().replace("\\", "/") == "/data/auto_ai.db"
+        ):
+            self.UPLOAD_DIR = "/data/uploads"
         if self.is_production:
             for name, value in (
                 ("FRONTEND_URL", self.frontend_url),

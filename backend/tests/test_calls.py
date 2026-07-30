@@ -14,7 +14,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.routes.calls import call_health, discoverable_users_query, register_call_device, ringing_call, search_users
 from app.core.config import settings
 from app.db.base import Base
-from app.models.call import BlockedUser, Call, UserCallSettings, UserDevice
+from app.models.call import BlockedUser, Call, CallDelivery, UserCallSettings, UserDevice
 from app.models.social import SocialFollow
 from app.models.user import User
 from app.schemas.call import CallActionRequest, DeviceRegisterRequest, PublicCallUser, SignalEvent
@@ -178,11 +178,13 @@ def test_incoming_call_fcm_payload_has_event_id_and_high_priority_path(
 
         def send_call_data(self, token: str, data: dict[str, str], ttl_seconds: int):
             assert token == "callee-fcm-token"
-            assert ttl_seconds == settings.CALL_NOTIFICATION_TTL_SECONDS
+            assert 20 <= ttl_seconds <= 40
             sent_payloads.append(data)
             return type("Result", (), {"ok": True, "inactive": False, "detail": ""})()
 
     monkeypatch.setattr("app.services.call_notification_service.firebase_notification_service", FakeFirebase())
+    scheduled: list[str] = []
+    monkeypatch.setattr("app.services.call_notification_service.schedule_fallback", lambda delivery_id, due_at: scheduled.append(delivery_id) or True)
 
     sent = send_incoming_call_notifications(db, call, caller, UserCallSettings(user_id=callee.id), silent=False)
 
@@ -190,6 +192,10 @@ def test_incoming_call_fcm_payload_has_event_id_and_high_priority_path(
     assert sent_payloads[0]["type"] == "incoming_call"
     assert sent_payloads[0]["call_id"] == call.id
     assert sent_payloads[0]["event_id"]
+    assert sent_payloads[0]["delivery_mode"] == "native_primary"
+    delivery = db.query(CallDelivery).one()
+    assert delivery.primary_fcm_result == "PRIMARY_ACCEPTED"
+    assert delivery.id == scheduled[0]
     claims = jwt.decode(
         sent_payloads[0]["action_token"], settings.jwt_secret_key, algorithms=[settings.JWT_ALGORITHM]
     )
@@ -523,6 +529,30 @@ async def test_accepting_call_sends_dismiss_push_for_other_devices(db: Session, 
     assert accepted.status == "accepted"
     assert accepted.callee_device_id == "callee-android"
     assert dismisses == [(call.id, "call_accepted")]
+
+
+@pytest.mark.asyncio
+async def test_end_remains_successful_and_attempts_dismiss_when_realtime_publish_fails(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    caller = create_user(db, "caller_end_delivery", "Caller")
+    callee = create_user(db, "callee_end_delivery", "Callee")
+    call = Call(caller_id=caller.id, callee_id=callee.id, call_type="audio", status="active")
+    db.add(call)
+    db.commit()
+    dismisses: list[tuple[str, str]] = []
+    monkeypatch.setattr(global_presence_service, "publish", AsyncMock(side_effect=RuntimeError("redis unavailable")))
+    monkeypatch.setattr(global_presence_service, "release_call_locks", AsyncMock(side_effect=RuntimeError("redis unavailable")))
+    monkeypatch.setattr(
+        "app.services.call_service.send_call_dismiss_notifications",
+        lambda _db, next_call, event_type: dismisses.append((next_call.id, event_type)) or 1,
+    )
+
+    ended = await CallService().end(db, call.id, caller.id)
+
+    assert ended.status == "ended"
+    assert dismisses == [(call.id, "call_ended")]
+    assert db.get(Call, call.id).status == "ended"
 
 
 @pytest.mark.asyncio

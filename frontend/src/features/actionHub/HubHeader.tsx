@@ -1,8 +1,10 @@
-import { Bell, Home, LogOut, Search, Settings2, TimerReset } from "lucide-react";
+import { Bell, Download, Home, LogOut, Search, Settings2, TimerReset } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { resolveApiAssetUrl } from "../../api/client";
 import type { User } from "../../types";
 import { LogoIcon } from "../../components/brand/LogoIcon";
+import { isNativeAndroid, NativeUpdate, shouldShowUpdate, updateButtonBusy, updateButtonLabel, type NativeUpdateState } from "./nativeUpdate";
 
 function userAvatar(user: User) {
   return resolveApiAssetUrl(user.picture || user.avatar);
@@ -21,13 +23,56 @@ export function HubHeader({
 }) {
   const avatar = userAvatar(user);
   const initial = user.name.trim().slice(0, 1).toUpperCase() || "A";
+  const [updateState, setUpdateState] = useState<NativeUpdateState | null>(null);
+
+  useEffect(() => {
+    if (!isNativeAndroid()) return;
+    let active = true;
+    let listener: { remove: () => Promise<void> } | undefined;
+    const apply = (state: NativeUpdateState) => {
+      if (active) setUpdateState(state);
+    };
+    const refresh = () => {
+      void NativeUpdate.getState().then(apply).catch(() => undefined);
+      void NativeUpdate.checkForUpdate().then(apply).catch(() => undefined);
+    };
+    void NativeUpdate.addListener("stateChanged", apply).then((handle) => {
+      if (active) listener = handle;
+      else void handle.remove();
+    });
+    refresh();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      void listener?.remove();
+    };
+  }, []);
+
+  const startUpdate = async () => {
+    if (updateButtonBusy(updateState)) return;
+    setUpdateState(await NativeUpdate.startDirectUpdate());
+  };
 
   return (
     <header className="hub-header">
-      <Link className="hub-brand" to="/hub" aria-label="AutoAI Action Hub">
-        <LogoIcon loading="eager" />
-        <strong>AutoAI</strong>
-      </Link>
+      <div className="hub-brand-row">
+        <Link className="hub-brand" to="/hub" aria-label="AutoAI Action Hub">
+          <LogoIcon loading="eager" />
+          <strong>AutoAI</strong>
+        </Link>
+        {shouldShowUpdate(updateState) && (
+          <button className={`hub-update-button hub-update-${updateState?.state.toLowerCase() ?? "available"}`} type="button" disabled={updateButtonBusy(updateState)} onClick={() => void startUpdate()} aria-label={updateState?.message || updateButtonLabel(updateState)} title={updateState?.state === "FAILED" ? updateState.message : undefined}>
+            <Download size={15} /><span>{updateButtonLabel(updateState)}</span><i aria-hidden="true" />
+            {updateState?.state === "DOWNLOADING" && <b aria-hidden="true" style={{ width: `${updateState.progress ?? 0}%` }} />}
+          </button>
+        )}
+      </div>
 
       <nav className="hub-desktop-nav" aria-label="Action Hub navigation">
         <NavLink to="/hub"><Home size={15} /> Home</NavLink>
@@ -41,7 +86,7 @@ export function HubHeader({
       </button>
 
       <div className="hub-header-actions">
-        <Link className="hub-header-icon" to="/calls?view=notifications" aria-label="Open notifications">
+        <Link className="hub-header-icon" to="/call-hub/alerts" aria-label="Open notifications">
           <Bell size={19} />
           {unreadNotifications > 0 && <span>{unreadNotifications > 9 ? "9+" : unreadNotifications}</span>}
         </Link>

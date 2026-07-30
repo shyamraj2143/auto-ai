@@ -1,4 +1,4 @@
-import { MessageCircle, MonitorUp, Phone, Sparkles, Zap } from "lucide-react";
+import { Activity, CheckCircle2, MessageCircle, MonitorUp, Phone, UsersRound, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
@@ -7,9 +7,7 @@ import { useScreenShare } from "../screenShare/useScreenShare";
 import { callApi } from "../calls/services/callApi";
 import { socialApi } from "../calls/services/socialApi";
 import type { CallRecord } from "../calls/types";
-import { LogoIcon } from "../../components/brand/LogoIcon";
 import { FeatureCard } from "./FeatureCard";
-import { HubBottomNav } from "./HubBottomNav";
 import { HubHeader } from "./HubHeader";
 import { QuickConnect, type QuickConnectAction } from "./QuickConnect";
 import { RecentActivity, type HubActivityItem } from "./RecentActivity";
@@ -133,33 +131,50 @@ export function ActionHubPage() {
         ) : (
           <>
             <section className="hub-welcome" aria-labelledby="hub-title">
-              <p>Your AutoAI workspace</p>
+              <p>Your AI Control Center</p>
               <h1 id="hub-title">{greeting()}, {firstName}</h1>
-              <span>What would you like to do?</span>
+              <span>Choose a workspace and get things done.</span>
             </section>
 
             <section className="hub-feature-stage" aria-label="Primary AutoAI actions">
-              <div className="hub-stage-orbit" aria-hidden="true" />
               <div className="hub-card-position hub-card-ai">
-                <FeatureCard tone="ai" icon={MessageCircle} title="AI Chat" description="Ask, create, and explore" details="Voice · Images · Files · Models" primaryAction={{ label: "Start chat", onClick: () => navigate("/chat") }} secondaryAction={chats[0] ? { label: "Continue", onClick: () => navigate(`/chat/${encodeURIComponent(chats[0].id)}`) } : undefined} />
+                <FeatureCard tone="ai" icon={MessageCircle} title="AI Chat" description="Intelligent conversations that get things done." details="Voice · Images · Files · Models" primaryAction={{ label: "Start Chat", onClick: () => navigate("/chat") }} secondaryAction={chats[0] ? { label: "Continue", onClick: () => navigate(`/chat/${encodeURIComponent(chats[0].id)}`) } : undefined} />
               </div>
               <div className="hub-card-position hub-card-screen">
-                <FeatureCard tone="screen" icon={MonitorUp} title="Screen Share" description="Present or join securely" details={`${screenShare.canShareScreen ? "Ready to share" : "Join supported"} · ${screenShare.networkQuality === "unknown" ? "secure relay" : `${screenShare.networkQuality} network`}`} primaryAction={{ label: "Share screen", onClick: screenShare.requestInviteShare }} secondaryAction={{ label: "Join code", onClick: () => openQuick("screen") }} />
+                <FeatureCard tone="screen" icon={MonitorUp} title="Screen Sharing" description="Share, collaborate and solve problems together." details={`${screenShare.canShareScreen ? "Ready to share" : "Join supported"} · ${screenShare.networkQuality === "unknown" ? "secure relay" : `${screenShare.networkQuality} network`}`} primaryAction={{ label: "Share Screen", onClick: () => navigate("/screen-share") }} secondaryAction={{ label: "Join code", onClick: () => openQuick("screen") }} />
               </div>
-              <div className="hub-core-orb" aria-hidden="true"><span><LogoIcon loading="eager" /></span></div>
               <div className="hub-card-position hub-card-call">
-                <FeatureCard tone="call" icon={Phone} title="Call" description="Voice or video calling" details="Contacts · Recent calls" primaryAction={{ label: "Voice call", onClick: () => navigate("/calls?view=search&type=audio") }} secondaryAction={{ label: "Video", onClick: () => navigate("/calls?view=search&type=video") }} />
+                <FeatureCard tone="call" icon={Phone} title="Audio / Video Call" description="Crystal clear calls with contacts and teams." details="Contacts · Recent calls · Alerts" primaryAction={{ label: "Start Call", onClick: () => navigate("/call-hub/search") }} secondaryAction={{ label: "History", onClick: () => navigate("/call-hub/calls") }} />
               </div>
             </section>
 
-            <RecentActivity items={recentItems} loading={loadingChats || activityLoading} error={activityError} />
+            <section className="hub-metric-grid" aria-label="Workspace metrics">
+              <article><span><Activity size={16} /> AI conversations</span><strong>{chats.length}</strong><small>Available chat threads</small></article>
+              <article><span><MonitorUp size={16} /> Screen sharing</span><strong>{isActiveScreenShareState(screenShare.uiState) ? "Live" : "Ready"}</strong><small>{screenShare.networkQuality === "unknown" ? "Secure relay" : `${screenShare.networkQuality} network`}</small></article>
+              <article><span><Phone size={16} /> Call history</span><strong>{calls.length}</strong><small>Recent call records</small></article>
+              <article><span><UsersRound size={16} /> Services</span><strong>Online</strong><small>Realtime workspace</small></article>
+            </section>
+
+            <section className="hub-dashboard-lower">
+              <RecentActivity items={recentItems} loading={loadingChats || activityLoading} error={activityError} />
+              <aside className="hub-system-status">
+                <header><span>Workspace Status</span><small>Live app state</small></header>
+                {[
+                  ["AI Chat", loadingChats ? "Checking" : "Ready"],
+                  ["Calling Service", activityError ? "Unavailable" : activityLoading ? "Checking" : "Connected"],
+                  ["Screen Sharing", screenShare.networkQuality === "reconnecting" ? "Reconnecting" : "Operational"],
+                  ["Network", navigator.onLine ? "Online" : "Offline"],
+                ].map(([label, status]) => (
+                  <div key={label}><span><CheckCircle2 size={15} /> {label}</span><small>{status}<i /></small></div>
+                ))}
+              </aside>
+            </section>
             <div className="hub-quick-launch-wrap">
               <button type="button" className="hub-quick-launch" onClick={() => openQuick("ai")}><Zap /> Quick Connect</button>
             </div>
           </>
         )}
       </main>
-      <HubBottomNav />
       <QuickConnect
         open={quickOpen}
         initialAction={quickAction}

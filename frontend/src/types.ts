@@ -15,6 +15,7 @@ export type User = {
   is_admin: boolean;
   role: UserRole;
   subscription_status: string;
+  intelligence_mode?: IntelligenceMode;
   created_at: string;
   updated_at: string;
   profile_updated_at?: string | null;
@@ -30,7 +31,8 @@ export type UsernameAvailability = {
 export type UserRole = "user" | "admin" | "super_admin" | "content_admin" | "content_editor" | "content_viewer";
 
 export type SearchMode = "off" | "auto" | "web" | "news" | "research" | "deep";
-export type ChatMode = "normal" | "deep_research" | "multi_model";
+export type IntelligenceMode = "instant" | "medium" | "high" | "deep_research";
+export type ChatMode = IntelligenceMode | "normal" | "multi_model";
 export type AiProvider = "openai" | "groq" | "bedrock" | "gemini";
 export type ResearchProvider = "groq" | "bedrock" | "openai" | "gemini";
 
@@ -199,9 +201,69 @@ export type ChatGeneration = {
   error?: string | null;
   user_message?: Message | null;
   assistant_message?: Message | null;
+  mode?: IntelligenceMode;
+  activity?: OrchestrationActivityEvent[];
+  activity_summary?: OrchestrationActivitySummary;
   created_at: string;
   updated_at: string;
   completed_at?: string | null;
+};
+
+export type IntelligenceConfig = {
+  modes: Record<IntelligenceMode, {
+    available: boolean;
+    description: string;
+    fallback_message?: string | null;
+  }>;
+  models: Array<{
+    provider: string;
+    display_name: string;
+    healthy: boolean;
+    supported_modes: IntelligenceMode[];
+  }>;
+  refreshed: boolean;
+};
+
+export type OrchestrationTaskStatus =
+  | "queued"
+  | "working"
+  | "completed"
+  | "skipped"
+  | "timed_out"
+  | "cancelled"
+  | "failed";
+
+export type OrchestrationActivityEvent = {
+  sequence: number;
+  event: string;
+  request_id: string;
+  mode?: IntelligenceMode;
+  stage?: string;
+  task_id?: string;
+  provider_display_name?: string;
+  model_display_name?: string;
+  role?: string;
+  activity_label?: string;
+  status?: OrchestrationTaskStatus;
+  started_at?: string;
+  occurred_at?: string;
+  duration_ms?: number;
+  contributed_to_final_answer?: boolean;
+  models_attempted?: number;
+  models_completed?: number;
+  models_contributed?: number;
+  verified_sources?: number;
+  fallback_used?: boolean;
+};
+
+export type OrchestrationActivitySummary = {
+  tasks: OrchestrationActivityEvent[];
+  models_attempted: number;
+  models_completed: number;
+  models_contributed: number;
+  duration_ms?: number | null;
+  verified_sources: number;
+  fallback_used: boolean;
 };
 
 export type ApkRelease = {

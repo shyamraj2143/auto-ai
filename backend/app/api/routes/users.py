@@ -14,6 +14,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.auth import UserProfileUpdate, UserRead, UsernameAvailability
 from app.services.user_identity import normalize_username, username_error
+from app.services.user_avatar import public_avatar
 
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -84,7 +85,8 @@ def normalize_phone(phone_number: str | None, phone_country_code: str | None) ->
 
 
 def serialize_user(user: User) -> UserRead:
-    return UserRead.model_validate(user)
+    serialized = UserRead.model_validate(user)
+    return serialized.model_copy(update={"avatar": public_avatar(user) or None})
 
 
 @router.get("/me", response_model=UserRead)

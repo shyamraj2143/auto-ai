@@ -47,6 +47,7 @@ public class IncomingCallActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        Log.i(TAG, "INCOMING_ACTIVITY_CREATED sdk=" + Build.VERSION.SDK_INT + " app_version=" + BuildConfig.VERSION_NAME + " timestamp=" + System.currentTimeMillis());
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true);
             setTurnScreenOn(true);
@@ -97,7 +98,7 @@ public class IncomingCallActivity extends Activity {
         root.setBackground(gradient(GradientDrawable.Orientation.TL_BR, Color.rgb(8, 13, 35), Color.rgb(28, 18, 61), Color.rgb(2, 6, 23), 0));
 
         ImageView avatar = new ImageView(this);
-        avatar.setImageResource(R.mipmap.ic_launcher);
+        avatar.setImageBitmap(initialAvatar(callerName));
         avatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
         root.addView(avatar, new LinearLayout.LayoutParams(dp(116), dp(116)));
         loadAvatar(avatarUrl, avatar);
@@ -169,10 +170,11 @@ public class IncomingCallActivity extends Activity {
         CallAcceptCoordinator.accept(this, callId, audioOnly, new CallAcceptCoordinator.Listener() {
             @Override public void onAcceptCommitted() { runOnUiThread(() -> setStatus("Preparing secure call…", Color.rgb(34, 211, 238))); }
             @Override public void onServiceStarting() { runOnUiThread(() -> setStatus("Starting call service…", Color.rgb(34, 211, 238))); }
-            @Override public void onServiceReady() { runOnUiThread(() -> setStatus("Opening call…", Color.rgb(34, 197, 94))); }
+            @Override public void onServiceReady() { runOnUiThread(() -> setStatus("Opening call…", Color.rgb(34, 211, 238))); }
             @Override public void onFailure(String code) {
                 runOnUiThread(() -> {
-                    setStatus("Unable to start call: " + (code == null ? "unknown error" : code), Color.rgb(239, 68, 68));
+                    setStatus("Calling service could not start\nAutoAI could not prepare the call. Please retry.", Color.rgb(239, 68, 68));
+                    acceptButton.setText("Retry");
                     setActionsEnabled(true);
                     actionRunning.set(false);
                 });
@@ -219,6 +221,24 @@ public class IncomingCallActivity extends Activity {
                 if (connection != null) connection.disconnect();
             }
         });
+    }
+
+    private Bitmap initialAvatar(String name) {
+        int size = dp(116);
+        Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
+        android.graphics.Paint background = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        background.setColor(Color.rgb(49, 46, 129));
+        canvas.drawCircle(size / 2f, size / 2f, size / 2f, background);
+        android.graphics.Paint letter = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        letter.setColor(Color.WHITE);
+        letter.setTextAlign(android.graphics.Paint.Align.CENTER);
+        letter.setTypeface(Typeface.DEFAULT_BOLD);
+        letter.setTextSize(size * 0.42f);
+        String initial = name == null || name.trim().isEmpty() ? "A" : name.trim().substring(0, 1).toUpperCase(java.util.Locale.US);
+        android.graphics.Paint.FontMetrics metrics = letter.getFontMetrics();
+        canvas.drawText(initial, size / 2f, size / 2f - (metrics.ascent + metrics.descent) / 2f, letter);
+        return bitmap;
     }
 
     private TextView label(String text, int size, int color) {

@@ -1,10 +1,18 @@
+from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import pytest
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from starlette.datastructures import UploadFile
 
 from app.api.routes import download as download_routes
+from app.core.config import settings
+from app.db.base import Base
+from app.services.apk_service import apk_service
 
 
 def test_download_streams_github_apk_when_railway_file_is_missing(monkeypatch) -> None:
@@ -43,3 +51,59 @@ def test_github_repository_is_not_legacy_repository() -> None:
     from app.services.github_apk_release import GITHUB_REPO
 
     assert GITHUB_REPO != "robinmaker123-ai/auto-ai"
+
+
+def test_metadata_release_keeps_checksum_and_uses_missing_storage_path(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(settings, "APK_STORAGE_DIR", str(tmp_path))
+    checksum = "a" * 64
+
+    with Session(engine) as db:
+        release = apk_service.upsert_version(
+            db,
+            release_id=None,
+            version_code=101461,
+            version_name="1.0.101461",
+            apk_url="/api/download/apk/github/latest?version=1.0.101461",
+            file_name="auto-ai.apk",
+            file_size=55_374_476,
+            sha256=checksum,
+            changelog="GitHub release",
+            force_update=False,
+            is_active=True,
+            released_at=None,
+            min_android_version="Android 7.0",
+            release_notes=["GitHub release"],
+        )
+
+        assert release.sha256 == checksum
+        assert release.file_path == str(tmp_path / "auto-ai.apk")
+        assert not (tmp_path / "auto-ai.apk").exists()
+        assert apk_service.release_read(release).download_url.endswith("version=1.0.101461")
+
+
+@pytest.mark.asyncio
+async def test_apk_upload_uses_dedicated_size_limit(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(settings, "APK_STORAGE_DIR", str(tmp_path))
+    monkeypatch.setattr(settings, "MAX_APK_UPLOAD_MB", 1)
+    monkeypatch.setattr(settings, "MAX_UPLOAD_MB", 50)
+    upload = UploadFile(filename="auto-ai.apk", file=BytesIO(b"x" * (1024 * 1024 + 1)))
+
+    with Session(engine) as db, pytest.raises(HTTPException) as error:
+        await apk_service.save_upload(
+            db,
+            upload,
+            version_name="1.0.999",
+            version_code=999,
+            min_android_version="Android 7.0",
+            release_notes="test",
+            changelog="test",
+            force_update=False,
+        )
+
+    assert error.value.status_code == 413
+    assert error.value.detail == "APK upload exceeds 1 MB."
+    assert list(tmp_path.iterdir()) == []

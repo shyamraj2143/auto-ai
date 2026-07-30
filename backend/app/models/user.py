@@ -31,6 +31,7 @@ class User(Base):
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     role: Mapped[str] = mapped_column(String(32), default="user", index=True, nullable=False)
     subscription_status: Mapped[str] = mapped_column(String(32), default="free", index=True, nullable=False)
+    intelligence_mode: Mapped[str] = mapped_column(String(32), default="instant", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow

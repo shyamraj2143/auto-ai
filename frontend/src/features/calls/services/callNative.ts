@@ -39,9 +39,36 @@ type NativeCallPlugin = {
   setSpeaker(options: { enabled: boolean }): Promise<void>;
   setAudioRoute(options: { route: "earpiece" | "speaker" | "wired" | "bluetooth" }): Promise<void>;
   checkFullScreenIntentPermission(): Promise<{ required: boolean; granted: boolean }>;
+  getCallReadiness(): Promise<NativeCallReadiness>;
+  getCallingSetupState(): Promise<NativeCallReadiness>;
+  refreshCallingSetupState(): Promise<NativeCallReadiness>;
+  startCallingSetup(): Promise<void>;
+  openRequiredSetting(options: { item: string }): Promise<void>;
+  openBackgroundActivitySettings(): Promise<void>;
   openAppSettings(): Promise<void>;
   openAppNotificationSettings(): Promise<void>;
   openFullScreenIntentSettings(): Promise<void>;
+  openIncomingCallChannelSettings(): Promise<void>;
+  openBatteryOptimizationSettings(): Promise<void>;
+};
+
+export type NativeCallReadiness = {
+  status: "READY" | "LIMITED" | "BLOCKED";
+  versionCode: number;
+  onboardingCompleted: boolean;
+  items: {
+    notifications: NativeCallingSetupItem;
+    incomingChannel: NativeCallingSetupItem;
+    microphone: NativeCallingSetupItem;
+    camera: NativeCallingSetupItem;
+    bluetooth: NativeCallingSetupItem;
+    fullScreen: NativeCallingSetupItem;
+    backgroundActivity: NativeCallingSetupItem;
+  };
+};
+
+export type NativeCallingSetupItem = {
+  state: "GRANTED" | "LIMITED" | "NOT_REQUIRED" | "PROMPT_AVAILABLE" | "DENIED" | "PERMANENTLY_DENIED" | "SPECIAL_ACCESS_REQUIRED" | "CHANNEL_DISABLED" | "UNAVAILABLE";
 };
 
 const NativeCalls = registerPlugin<NativeCallPlugin>("AutoAiCalls");
@@ -85,9 +112,22 @@ export const callNative = {
   setSpeaker: (enabled: boolean) => Capacitor.getPlatform() === "android" ? NativeCalls.setSpeaker({ enabled }) : Promise.resolve(),
   setAudioRoute: (route: "earpiece" | "speaker" | "wired" | "bluetooth") => Capacitor.getPlatform() === "android" ? NativeCalls.setAudioRoute({ route }) : Promise.resolve(),
   checkFullScreenIntentPermission: () => Capacitor.getPlatform() === "android" ? NativeCalls.checkFullScreenIntentPermission() : Promise.resolve({ required: false, granted: true }),
+  getCallReadiness: () => Capacitor.getPlatform() === "android" ? NativeCalls.getCallReadiness() : Promise.resolve(null),
+  getCallingSetupState: () => Capacitor.getPlatform() === "android" ? NativeCalls.getCallingSetupState() : Promise.resolve(null),
+  refreshCallingSetupState: () => Capacitor.getPlatform() === "android" ? NativeCalls.refreshCallingSetupState() : Promise.resolve(null),
+  startCallingSetup: () => Capacitor.getPlatform() === "android" ? NativeCalls.startCallingSetup() : Promise.resolve(),
+  async startCallingSetupIfNeeded() {
+    if (Capacitor.getPlatform() !== "android") return;
+    const state = await NativeCalls.getCallingSetupState();
+    if (!state.onboardingCompleted) await NativeCalls.startCallingSetup();
+  },
+  openRequiredSetting: (item: string) => Capacitor.getPlatform() === "android" ? NativeCalls.openRequiredSetting({ item }) : Promise.resolve(),
+  openBackgroundActivitySettings: () => Capacitor.getPlatform() === "android" ? NativeCalls.openBackgroundActivitySettings() : Promise.resolve(),
   openAppSettings: () => Capacitor.getPlatform() === "android" ? NativeCalls.openAppSettings() : Promise.resolve(),
   openAppNotificationSettings: () => Capacitor.getPlatform() === "android" ? NativeCalls.openAppNotificationSettings() : Promise.resolve(),
   openFullScreenIntentSettings: () => Capacitor.getPlatform() === "android" ? NativeCalls.openFullScreenIntentSettings() : Promise.resolve(),
+  openIncomingCallChannelSettings: () => Capacitor.getPlatform() === "android" ? NativeCalls.openIncomingCallChannelSettings() : Promise.resolve(),
+  openBatteryOptimizationSettings: () => Capacitor.getPlatform() === "android" ? NativeCalls.openBatteryOptimizationSettings() : Promise.resolve(),
 };
 
 function defaultPermission(): NativePermissionState {

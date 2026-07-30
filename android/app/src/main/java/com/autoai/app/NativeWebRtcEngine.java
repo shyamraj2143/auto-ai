@@ -8,6 +8,7 @@ import org.webrtc.AudioTrack;
 import org.webrtc.Camera1Enumerator;
 import org.webrtc.Camera2Enumerator;
 import org.webrtc.CameraEnumerator;
+import org.webrtc.CameraVideoCapturer;
 import org.webrtc.DataChannel;
 import org.webrtc.DefaultVideoDecoderFactory;
 import org.webrtc.DefaultVideoEncoderFactory;
@@ -121,6 +122,11 @@ final class NativeWebRtcEngine {
 
     void setMuted(boolean muted) { if (localAudioTrack != null) localAudioTrack.setEnabled(!muted); }
     void setCameraEnabled(boolean enabled) { if (localVideoTrack != null) localVideoTrack.setEnabled(enabled); }
+    void switchCamera() {
+        if (videoCapturer instanceof CameraVideoCapturer) {
+            ((CameraVideoCapturer) videoCapturer).switchCamera(null);
+        }
+    }
 
     void attachRenderers(SurfaceViewRenderer local, SurfaceViewRenderer remote) {
         localRenderer = local;

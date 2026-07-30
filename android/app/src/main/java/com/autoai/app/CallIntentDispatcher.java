@@ -33,6 +33,7 @@ public final class CallIntentDispatcher {
         if (call == null || !call.isUsable()) { callback.onFailure("CALL_STATE_CONFLICT"); return; }
         Context app = context.getApplicationContext();
         ActiveCallStore.update(app, call.callId, ActiveCallStore.State.SERVICE_STARTING);
+        Log.i(TAG, "FOREGROUND_SERVICE_STARTING callId=" + call.callId);
         callback.onServiceStarting();
         Handler handler = new Handler(Looper.getMainLooper());
         BroadcastReceiver receiver = new BroadcastReceiver() {
@@ -47,6 +48,7 @@ public final class CallIntentDispatcher {
                 if (!call.callId.equals(result.getStringExtra(CallNotificationManager.EXTRA_CALL_ID))) return;
                 String status = result.getStringExtra(CallForegroundService.EXTRA_SERVICE_STATUS);
                 if (CallForegroundService.SERVICE_READY.equals(status)) {
+                    Log.i(TAG, "FOREGROUND_SERVICE_READY callId=" + call.callId);
                     finish(); callback.onServiceReady(); launchActive(context, ActiveCallStore.get(app, call.callId));
                 } else if (CallForegroundService.SERVICE_FAILED.equals(status)) {
                     finish(); callback.onFailure(result.getStringExtra(CallForegroundService.EXTRA_ERROR_CODE));
@@ -83,7 +85,7 @@ public final class CallIntentDispatcher {
             .putExtra(CallNotificationManager.EXTRA_CALLER_AVATAR, call.peerAvatar)
             .putExtra(CallNotificationManager.EXTRA_ACTION, "resume_call");
         context.startActivity(intent);
-        Log.i(TAG, "ACTIVE_UI_STARTING callId=" + call.callId);
+        Log.i(TAG, "ACTIVE_CALL_ACTIVITY_OPENED callId=" + call.callId);
     }
 
     public static void dispatchMainFallback(Context context, Intent intent) {

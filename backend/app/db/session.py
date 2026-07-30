@@ -128,6 +128,8 @@ def ensure_runtime_schema() -> None:
             add_column("users", "role", "VARCHAR(32) NOT NULL DEFAULT 'user'")
         if "subscription_status" not in user_columns:
             add_column("users", "subscription_status", "VARCHAR(32) NOT NULL DEFAULT 'free'")
+        if "intelligence_mode" not in user_columns:
+            add_column("users", "intelligence_mode", "VARCHAR(32) NOT NULL DEFAULT 'instant'")
         if "created_at" not in user_columns:
             add_column("users", "created_at", "datetime")
         if "updated_at" not in user_columns:
@@ -181,8 +183,18 @@ def ensure_runtime_schema() -> None:
         if "os_version" not in device_columns:
             add_column("user_devices", "os_version", "VARCHAR(80)")
         extra_device_columns = {
+            "legacy_device_id": "VARCHAR(128)",
             "manufacturer": "VARCHAR(80)",
             "model": "VARCHAR(80)",
+            "android_sdk": "INTEGER",
+            "last_fcm_send_result": "VARCHAR(40)",
+            "last_fcm_failure_code": "VARCHAR(64)",
+            "last_fcm_received_at": "datetime",
+            "last_notification_displayed_at": "datetime",
+            "firebase_installation_id_ciphertext": "TEXT",
+            "firebase_installation_id_hash": "VARCHAR(64)",
+            "installation_rotation_status": "VARCHAR(48)",
+            "push_provider": "VARCHAR(32) NOT NULL DEFAULT 'fcm'",
             "battery_level": "INTEGER",
             "charging": "BOOLEAN",
             "network_type": "VARCHAR(80)",
@@ -206,6 +218,18 @@ def ensure_runtime_schema() -> None:
             add_column("calls", "trace_id", "VARCHAR(36) NOT NULL DEFAULT ''")
         if "failure_code" not in call_columns:
             add_column("calls", "failure_code", "VARCHAR(32)")
+
+    if "call_deliveries" in table_names:
+        delivery_columns = {column["name"] for column in inspector.get_columns("call_deliveries")}
+        delivery_diagnostics = {
+            "original_priority": "VARCHAR(40)",
+            "delivered_priority": "VARCHAR(40)",
+            "firebase_service_started_at": "datetime",
+            "ringtone_started_at": "datetime",
+        }
+        for column_name, definition in delivery_diagnostics.items():
+            if column_name not in delivery_columns:
+                add_column("call_deliveries", column_name, definition)
 
     if "user_device_activities" in table_names:
         activity_columns = {column["name"] for column in inspector.get_columns("user_device_activities")}
@@ -344,6 +368,9 @@ def ensure_runtime_schema() -> None:
             "file_path": "VARCHAR(500) NOT NULL DEFAULT ''",
             "sha256": "VARCHAR(64) NOT NULL DEFAULT ''",
             "min_android_version": "VARCHAR(40) NOT NULL DEFAULT 'Android 7.0'",
+            "minimum_android_sdk": "INTEGER NOT NULL DEFAULT 24",
+            "minimum_supported_version_code": "INTEGER NOT NULL DEFAULT 1",
+            "package_name": "VARCHAR(120) NOT NULL DEFAULT 'com.autoai.app'",
             "release_notes": "json",
             "is_active": "BOOLEAN NOT NULL DEFAULT TRUE",
             "created_at": "datetime",

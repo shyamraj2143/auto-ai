@@ -118,6 +118,7 @@ public final class NativeCallSessionController {
     public synchronized boolean isMuted() { return muted; }
     public synchronized void setCameraEnabled(boolean value) { cameraEnabled = value; if (engine != null) engine.setCameraEnabled(value); }
     public synchronized boolean isCameraEnabled() { return cameraEnabled; }
+    public synchronized void switchCamera() { if (engine != null) engine.switchCamera(); }
 
     public void end(String reason) {
         final String endingCallId = callId;

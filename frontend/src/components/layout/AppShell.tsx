@@ -3,8 +3,8 @@ import { PanelLeftOpen } from "lucide-react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ChatProvider } from "../../contexts/ChatContext";
 import { useShell } from "../../contexts/ShellContext";
-import { Header } from "./Header";
 import { Sidebar } from "./Sidebar";
+import { WorkspaceMobileNavigation, WorkspaceNavigation } from "./WorkspaceNavigation";
 import { CallProvider } from "../../features/calls/CallProvider";
 import { CallOverlay } from "../../features/calls/CallOverlay";
 import { AndroidBackHandler } from "./AndroidBackHandler";
@@ -22,7 +22,7 @@ export function AppShell() {
     isSidebarCollapsed
   } = useShell();
   const fullCanvasAdmin = location.pathname.startsWith("/admin/live-pages");
-  const fullCanvasHub = location.pathname === "/hub" || location.pathname === "/activity";
+  const isChatWorkspace = location.pathname.startsWith("/chat");
 
   useEffect(() => {
     closeSidebar();
@@ -52,8 +52,9 @@ export function AppShell() {
           <ChatProvider>
           <AndroidBackHandler />
           <div className="app-shell">
-            {!fullCanvasAdmin && !fullCanvasHub && <Sidebar />}
-            {!fullCanvasAdmin && !fullCanvasHub && isSidebarCollapsed && (
+            {!fullCanvasAdmin && <WorkspaceNavigation />}
+            {!fullCanvasAdmin && isChatWorkspace && <Sidebar />}
+            {!fullCanvasAdmin && isChatWorkspace && isSidebarCollapsed && (
               <button
                 className="sidebar-restore-button hidden md:inline-flex"
                 onClick={expandSidebar}
@@ -70,11 +71,11 @@ export function AppShell() {
                   <button type="button" onClick={disableSafeMode}>Exit Safe Mode</button>
                 </div>
               )}
-              {!fullCanvasAdmin && !fullCanvasHub && <Header />}
               <div className="route-transition-stage" key={`${location.pathname}${location.search}`}>
                 <Outlet />
               </div>
             </main>
+            {!fullCanvasAdmin && <WorkspaceMobileNavigation />}
             <CallOverlay />
           </div>
           </ChatProvider>

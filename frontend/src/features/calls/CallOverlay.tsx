@@ -1,4 +1,4 @@
-import { Camera, CameraOff, Mic, MicOff, Minimize2, Phone, PhoneOff, RefreshCw, Settings, SwitchCamera, Volume2, VolumeX, Wifi } from "lucide-react";
+import { AlertTriangle, Camera, CameraOff, Copy, Mic, MicOff, Minimize2, Phone, PhoneOff, RefreshCw, Settings, SwitchCamera, Volume2, VolumeX, Wifi } from "lucide-react";
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { resolveApiAssetUrl } from "../../api/client";
 import { useCallSession } from "./hooks/useCallSession";
@@ -6,6 +6,8 @@ import { callNative } from "./services/callNative";
 import { CrystalAvatarRing } from "../../components/crystal/Crystal";
 import type { CrystalCallState } from "../../crystal/tokens";
 import { callStatusPresentation } from "./callStatus";
+import { callFailurePresentation } from "./callFailures";
+import { CallAvatar } from "./CallAvatar";
 
 function VideoSurface({ stream, muted, className }: { stream: MediaStream | null; muted?: boolean; className: string }) {
   const ref = useRef<HTMLVideoElement | null>(null);
@@ -57,10 +59,9 @@ export function RemoteAudioSurface({ stream, callId, traceId, role, active }: { 
 }
 
 function Avatar({ name, url, ringState }: { name: string; url?: string | null; ringState: CrystalCallState }) {
-  const avatarUrl = resolveApiAssetUrl(url);
   return (
     <CrystalAvatarRing state={ringState}>
-      <span className="call-screen-avatar">{avatarUrl ? <img src={avatarUrl} alt="" /> : name.slice(0, 1).toUpperCase()}</span>
+      <CallAvatar className="call-screen-avatar" name={name} avatarUrl={url} />
     </CrystalAvatarRing>
   );
 }
@@ -71,6 +72,7 @@ export function CallOverlay() {
   const [seconds, setSeconds] = useState(0);
   const [pipPosition, setPipPosition] = useState({ x: 0, y: 0 });
   const [incomingActionPending, setIncomingActionPending] = useState(false);
+  const [controlPending, setControlPending] = useState(false);
   const [minimized, setMinimized] = useState(false);
   const dragRef = useRef<{ x: number; y: number; originX: number; originY: number } | null>(null);
 
@@ -115,6 +117,7 @@ export function CallOverlay() {
   const time = `${Math.floor(seconds / 60).toString().padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
   const incoming = sessionState === "incoming";
   const status = callStatusPresentation(sessionState);
+  const failure = error ? callFailurePresentation(error, import.meta.env.DEV) : null;
   const activeLike = ["connecting", "active", "reconnecting", "ending"].includes(sessionState);
   const avatarUrl = resolveApiAssetUrl(peer.avatar_url);
   const hasRemoteVideo = Boolean(remoteStream?.getVideoTracks().some((track) => track.readyState === "live"));
@@ -159,6 +162,28 @@ export function CallOverlay() {
     void action().catch(() => setIncomingActionPending(false));
   }
 
+  function runControl(action: () => void | Promise<void>) {
+    if (controlPending) return;
+    setControlPending(true);
+    try {
+      void Promise.resolve(action()).finally(() => window.setTimeout(() => setControlPending(false), 350));
+    } catch {
+      window.setTimeout(() => setControlPending(false), 350);
+    }
+  }
+
+  function FailureNotice({ floating = false }: { floating?: boolean }) {
+    if (!failure) return null;
+    return (
+      <div className={`call-screen-error${floating ? " floating" : ""}`} role="alert">
+        <AlertTriangle size={18} aria-hidden="true" />
+        <span><strong>{failure.title}</strong><small>{failure.message}</small></span>
+        {failure.permissionRelated && callNative.isAndroid() && <button type="button" onClick={() => void callNative.openAppSettings()}><Settings size={14} /> Settings</button>}
+        {failure.diagnostic && <button type="button" onClick={() => void navigator.clipboard?.writeText(failure.diagnostic || "")}><Copy size={14} /> Copy diagnostics</button>}
+      </div>
+    );
+  }
+
   if (incoming) {
     return (
       <div className="incoming-call-screen neural-call-screen" data-call-semantic={status.semantic} role="dialog" aria-modal="true" aria-label={`Incoming call from ${peer.display_name}`}>
@@ -170,11 +195,11 @@ export function CallOverlay() {
           <h2>{peer.display_name}</h2>
           <span>@{peer.username}</span>
           <small className="call-privacy-note">Your email and mobile number remain private.</small>
-          {error && <div className="call-screen-error">{error}</div>}
+          <FailureNotice />
           <div className="incoming-call-actions">
             <button type="button" className="reject" disabled={incomingActionPending} onClick={(event) => runIncomingAction(event, callSession.rejectCall)} aria-label="Reject call"><PhoneOff size={23} /><span>Reject</span></button>
-            {call?.call_type === "video" && <button type="button" className="audio-only" disabled={incomingActionPending} onClick={(event) => runIncomingAction(event, () => callSession.acceptCall(true))} aria-label="Accept as audio only"><Mic size={22} /><span>Audio only</span></button>}
-            <button type="button" className="accept" disabled={incomingActionPending} onClick={(event) => runIncomingAction(event, () => callSession.acceptCall(false))} aria-label="Accept call"><Phone size={23} /><span>Accept</span></button>
+            {!failure && call?.call_type === "video" && <button type="button" className="audio-only" disabled={incomingActionPending} onClick={(event) => runIncomingAction(event, () => callSession.acceptCall(true))} aria-label="Accept as audio only"><Mic size={22} /><span>Audio only</span></button>}
+            <button type="button" className="accept" disabled={incomingActionPending} onClick={(event) => runIncomingAction(event, () => callSession.acceptCall(false))} aria-label={failure ? "Retry accepting call" : "Accept call"}>{failure ? <RefreshCw size={23} /> : <Phone size={23} />}<span>{failure ? "Retry" : "Accept"}</span></button>
           </div>
         </div>
       </div>
@@ -195,8 +220,8 @@ export function CallOverlay() {
           <small className={`call-quality ${networkQuality}`}><Wifi size={14} /> {signalingState === "connected" ? (networkQuality === "unknown" ? "Signaling connected" : `${networkQuality} network`) : signalingState === "connecting" ? "Connecting signaling" : "Signaling unavailable"}</small>
         </section>
         {localStream && call?.call_type === "video" && <div className="outgoing-local-preview"><VideoSurface stream={localStream} muted className="local-call-video" /></div>}
-        {error && <div className="call-screen-error floating"><span>{error}</span></div>}
-        <button type="button" className="outgoing-cancel-call" onClick={() => void callSession.endCall()} aria-label="Cancel call"><PhoneOff size={22} /><span>Cancel Call</span></button>
+        <FailureNotice floating />
+        <button type="button" className="outgoing-cancel-call" disabled={controlPending} onClick={() => runControl(callSession.endCall)} aria-label="Cancel call"><PhoneOff size={22} /><span>Cancel Call</span></button>
       </div>
     );
   }
@@ -220,15 +245,14 @@ export function CallOverlay() {
           onPointerCancel={() => { dragRef.current = null; }}
         ><VideoSurface stream={localStream} muted className="local-call-video" /></div>
       )}
-      {error && <div className="call-screen-error floating"><span>{error}</span>{callNative.isAndroid() && /permission/i.test(error) && <button type="button" onClick={() => void callNative.openAppSettings()}><Settings size={14} /> Settings</button>}</div>}
+      <FailureNotice floating />
       <nav className="active-call-controls" aria-label="Call controls">
         <button type="button" onClick={() => setMinimized(true)} aria-label="Minimize call"><Minimize2 size={21} /><span>Min</span></button>
-        <button type="button" className={muted ? "inactive" : ""} onClick={callSession.toggleMute} aria-label={muted ? "Unmute microphone" : "Mute microphone"}>{muted ? <MicOff size={21} /> : <Mic size={21} />}<span>{muted ? "Unmute" : "Mute"}</span></button>
-        {call?.call_type === "video" && <button type="button" className={!cameraEnabled ? "inactive" : ""} onClick={() => void callSession.toggleCamera()} aria-label={cameraEnabled ? "Turn camera off" : "Turn camera on"}>{cameraEnabled ? <Camera size={21} /> : <CameraOff size={21} />}<span>Camera</span></button>}
-        {call?.call_type === "video" && <button type="button" disabled={!cameraEnabled} onClick={() => void callSession.switchCamera()} aria-label="Switch camera"><SwitchCamera size={21} /><span>Flip</span></button>}
-        <button type="button" className={!speakerEnabled ? "inactive" : ""} onClick={() => void callSession.toggleSpeaker()} aria-label={speakerEnabled ? "Use earpiece" : "Use speaker"}>{speakerEnabled ? <Volume2 size={21} /> : <VolumeX size={21} />}<span>Audio</span></button>
-        {sessionState === "failed" && <button type="button" onClick={() => void callSession.endCall()} aria-label="Close failed call"><RefreshCw size={21} /><span>Close</span></button>}
-        <button type="button" className="hangup" onClick={() => void callSession.endCall()} aria-label="End call"><PhoneOff size={23} /><span>End</span></button>
+        <button type="button" disabled={controlPending} className={muted ? "inactive" : ""} onClick={() => runControl(callSession.toggleMute)} aria-label={muted ? "Unmute microphone" : "Mute microphone"}>{muted ? <MicOff size={21} /> : <Mic size={21} />}<span>{muted ? "Unmute" : "Mute"}</span></button>
+        {call?.call_type === "video" && <button type="button" disabled={controlPending} className={!cameraEnabled ? "inactive" : ""} onClick={() => runControl(callSession.toggleCamera)} aria-label={cameraEnabled ? "Turn camera off" : "Turn camera on"}>{cameraEnabled ? <Camera size={21} /> : <CameraOff size={21} />}<span>Camera</span></button>}
+        {call?.call_type === "video" && <button type="button" disabled={controlPending || !cameraEnabled} onClick={() => runControl(callSession.switchCamera)} aria-label="Switch camera"><SwitchCamera size={21} /><span>Flip</span></button>}
+        <button type="button" disabled={controlPending} className={!speakerEnabled ? "inactive" : ""} onClick={() => runControl(callSession.toggleSpeaker)} aria-label={speakerEnabled ? "Use earpiece" : "Use speaker"}>{speakerEnabled ? <Volume2 size={21} /> : <VolumeX size={21} />}<span>Audio</span></button>
+        <button type="button" disabled={controlPending} className="hangup" onClick={() => runControl(callSession.endCall)} aria-label="End call"><PhoneOff size={23} /><span>End</span></button>
       </nav>
     </div>
   );

@@ -6,11 +6,12 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useShell } from "../../contexts/ShellContext";
 import { useCallSession } from "../../features/calls/hooks/useCallSession";
 import { isAdminPanelRole } from "../../utils/roles";
+import { NavigationHistoryController } from "./navigationHistory";
 
 const BACK_EVENT = "auto-ai-android-back";
+const NATIVE_BACK_EVENT = "auto-ai-native-back";
 const MINIMIZE_CALL_EVENT = "auto-ai-minimize-call-overlay";
 const EXIT_CONFIRM_MS = 2000;
-const MAX_STACK = 32;
 const STACK_KEY = "auto-ai-android-route-stack";
 const AUTH_OR_EXTERNAL_ROUTES = [
   "/login",
@@ -44,7 +45,7 @@ function routePath(route: string) {
 function isSafeAuthenticatedRoute(route: string) {
   const path = routePath(route);
   if (AUTH_OR_EXTERNAL_ROUTES.includes(path)) return false;
-  return path === "/hub" || path === "/activity" || path === "/chat" || path.startsWith("/chat/") || path === "/settings" || path === "/messages" || path.startsWith("/messages/") || path === "/calls" || path.startsWith("/calls/active/") || path === "/admin";
+  return path === "/hub" || path === "/activity" || path === "/chat" || path.startsWith("/chat/") || path === "/settings" || path === "/messages" || path.startsWith("/messages/") || path === "/calls" || path.startsWith("/call-hub/") || path.startsWith("/calls/active/") || path === "/admin";
 }
 
 function isEditableFocused() {
@@ -61,6 +62,12 @@ function settingsParentRoute(route: string) {
   return query.has("section") ? "/settings" : "";
 }
 
+export function messageBackDestination(route: string) {
+  const path = routePath(route);
+  if (path.startsWith("/messages/")) return "/messages";
+  return "";
+}
+
 export function AndroidBackHandler() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -68,14 +75,7 @@ export function AndroidBackHandler() {
   const { isSidebarOpen, closeSidebar } = useShell();
   const callSession = useCallSession();
   const [toastVisible, setToastVisible] = useState(false);
-  const stackRef = useRef<string[]>((() => {
-    try {
-      const saved = JSON.parse(sessionStorage.getItem(STACK_KEY) || "[]");
-      return Array.isArray(saved) ? saved.filter((route): route is string => typeof route === "string").slice(-MAX_STACK) : [];
-    } catch {
-      return [];
-    }
-  })());
+  const historyRef = useRef(new NavigationHistoryController(sessionStorage, STACK_KEY));
   const stateRef = useRef({
     route: routeFromLocation(location),
     isSidebarOpen,
@@ -97,17 +97,18 @@ export function AndroidBackHandler() {
   }, [callSession.call?.call_type, callSession.sessionState, isSidebarOpen, location, user?.role]);
 
   useEffect(() => {
+    lastExitPressRef.current = 0;
+    setToastVisible(false);
+  }, [location.pathname, location.search]);
+
+  useEffect(() => {
     if (!user) {
-      stackRef.current = [];
-      sessionStorage.removeItem(STACK_KEY);
+      historyRef.current.clear();
       return;
     }
     const route = routeFromLocation(location);
     if (!isSafeAuthenticatedRoute(route)) return;
-    const stack = stackRef.current;
-    if (stack[stack.length - 1] !== route) stack.push(route);
-    if (stack.length > MAX_STACK) stack.splice(0, stack.length - MAX_STACK);
-    sessionStorage.setItem(STACK_KEY, JSON.stringify(stack));
+    historyRef.current.record(location.pathname, location.search, location.key);
   }, [location, user]);
 
   const showExitToast = useCallback(() => {
@@ -117,16 +118,10 @@ export function AndroidBackHandler() {
   }, []);
 
   const navigatePreviousSafeRoute = useCallback((currentRoute: string) => {
-    const stack = stackRef.current;
-    while (stack.length && stack[stack.length - 1] === currentRoute) stack.pop();
-    while (stack.length) {
-      const previous = stack.pop();
-      if (previous && isSafeAuthenticatedRoute(previous)) {
-        navigate(previous, { replace: true });
-        return true;
-      }
-    }
-    return false;
+    const previous = historyRef.current.previous(currentRoute, isSafeAuthenticatedRoute);
+    if (!previous) return false;
+    navigate(previous, { replace: true });
+    return true;
   }, [navigate]);
 
   const handleRootExit = useCallback(() => {
@@ -157,9 +152,25 @@ export function AndroidBackHandler() {
       return;
     }
 
+    const messageParent = messageBackDestination(currentRoute);
+    if (messageParent) {
+      navigate(messageParent, { replace: true });
+      return;
+    }
+
+    if (routePath(currentRoute) === "/messages") {
+      if (!navigatePreviousSafeRoute(currentRoute)) navigate("/hub", { replace: true });
+      return;
+    }
+
     const settingsParent = settingsParentRoute(currentRoute);
     if (settingsParent) {
       navigate(settingsParent, { replace: true });
+      return;
+    }
+
+    if (routePath(currentRoute).startsWith("/call-hub/")) {
+      if (!navigatePreviousSafeRoute(currentRoute)) navigate("/hub", { replace: true });
       return;
     }
 
@@ -185,20 +196,12 @@ export function AndroidBackHandler() {
 
   useEffect(() => {
     if (!isAndroidCapacitor()) return;
-    let handle: Awaited<ReturnType<typeof App.addListener>> | undefined;
-    let disposed = false;
-    void App.addListener("backButton", handleBack).then((result) => {
-      if (disposed) {
-        void result?.remove?.();
-        return;
-      }
-      handle = result;
-    });
-    return () => {
-      disposed = true;
-      window.clearTimeout(toastTimerRef.current);
-      void handle?.remove?.();
+    const onNativeBack = (event: Event) => {
+      event.preventDefault();
+      handleBack();
     };
+    window.addEventListener(NATIVE_BACK_EVENT, onNativeBack);
+    return () => window.removeEventListener(NATIVE_BACK_EVENT, onNativeBack);
   }, [handleBack]);
 
   if (!toastVisible) return null;

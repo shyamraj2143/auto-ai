@@ -8,6 +8,7 @@ def production_settings(**overrides: object) -> Settings:
     values: dict[str, object] = {
         "ENVIRONMENT": "production",
         "FRONTEND_URL": "https://example.com",
+        "BACKEND_URL": "https://api.example.com",
         "DB_BACKEND": "sqlite",
         "SQLITE_PATH": "/data/auto_ai.db",
     }
@@ -55,3 +56,22 @@ def test_development_backend_url_preserves_localhost() -> None:
     )
 
     assert configured.backend_url == "http://localhost:8000"
+
+
+def test_production_sqlite_uploads_share_the_persistent_volume() -> None:
+    configured = production_settings()
+
+    assert configured.UPLOAD_DIR == "/data/uploads"
+
+
+def test_explicit_production_upload_directory_is_preserved() -> None:
+    configured = production_settings(UPLOAD_DIR="/mnt/media")
+
+    assert configured.UPLOAD_DIR == "/mnt/media"
+
+
+def test_apk_upload_limit_is_separate_from_document_limit() -> None:
+    configured = production_settings()
+
+    assert configured.MAX_APK_UPLOAD_MB == 100
+    assert configured.MAX_UPLOAD_MB == 20

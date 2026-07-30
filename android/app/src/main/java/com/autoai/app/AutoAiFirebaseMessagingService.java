@@ -10,6 +10,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.os.PowerManager;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -22,7 +23,7 @@ import java.util.Map;
 public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
     private static final String TAG = "AutoAiFcm";
     private static final int UPDATE_NOTIFICATION_ID = 1001;
-    private static final String UPDATE_NOTIFICATION_CHANNEL_ID = "auto_ai_updates";
+    private static final String UPDATE_NOTIFICATION_CHANNEL_ID = "app_updates";
     private static final String CHAT_NOTIFICATION_CHANNEL_ID = "auto_ai_messages";
     private static final String MISSED_CALL_CHANNEL_ID = "auto_ai_missed_calls";
     private static final String SOCIAL_CHANNEL_ID = "auto_ai_social";
@@ -37,6 +38,19 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
     }
 
     @Override
+    public void onRegistered(@NonNull String installationId) {
+        super.onRegistered(installationId);
+        Log.i(TAG, "FCM installation registered fid_hash=" + PushTokenRegistrar.sha256Prefix(installationId));
+        PushTokenRegistrar.registerInstallationAsync(this, installationId);
+    }
+
+    @Override
+    public void onUnregistered(@NonNull String installationId) {
+        super.onUnregistered(installationId);
+        Log.i(TAG, "FCM installation unregistered fid_hash=" + PushTokenRegistrar.sha256Prefix(installationId));
+    }
+
+    @Override
     public void onMessageReceived(@NonNull RemoteMessage message) {
         super.onMessageReceived(message);
         Map<String, String> data = message.getData();
@@ -44,8 +58,36 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         String callId = data.get("call_id");
         long callRevision = parseInt(data.get("call_revision"));
         Log.i(TAG, "FCM received type=" + messageType + " callId=" + data.get("call_id"));
-        if ("incoming_call".equals(messageType)) {
-            CallNotificationManager.showIncoming(this, data);
+        if ("incoming_call".equals(messageType) || "incoming_call_fallback".equals(messageType)) {
+            String priorityResult = message.getOriginalPriority() == RemoteMessage.PRIORITY_HIGH
+                ? (message.getPriority() == RemoteMessage.PRIORITY_HIGH ? "HIGH_DELIVERED_AS_HIGH" : "HIGH_DOWNGRADED_TO_NORMAL")
+                : "ORIGINAL_PRIORITY_NOT_HIGH";
+            long ageMs = message.getSentTime() > 0 ? Math.max(0L, System.currentTimeMillis() - message.getSentTime()) : -1L;
+            PowerManager.WakeLock wakeLock = null;
+            try {
+                PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+                if (powerManager != null) {
+                    wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "autoai:incoming-call");
+                    wakeLock.acquire(10_000L);
+                }
+                String messageDiagnostic = priorityResult + ":age_ms=" + ageMs + ":message_id_hash="
+                    + PushTokenRegistrar.sha256Prefix(message.getMessageId());
+                CallNotificationManager.diagnostic(this, "FIREBASE_SERVICE_STARTED", data, messageDiagnostic);
+                CallDeliveryAckWorker.schedule(this, data, "firebase_service_started", String.valueOf(message.getOriginalPriority()), String.valueOf(message.getPriority()));
+                CallNotificationManager.diagnostic(this,
+                    "incoming_call_fallback".equals(messageType) ? "DEGRADED_SYSTEM_FALLBACK_ONLY" : "PRIMARY_DEVICE_RECEIVED",
+                    data, priorityResult);
+                if ("incoming_call".equals(messageType)) {
+                    CallNotificationManager.diagnostic(this,
+                        "HIGH_DOWNGRADED_TO_NORMAL".equals(priorityResult) ? "PRIMARY_PRIORITY_DOWNGRADED" : priorityResult,
+                        data, priorityResult);
+                    if (!"HIGH_DELIVERED_AS_HIGH".equals(priorityResult)) FcmInstallationMigrationWorker.schedule(this);
+                }
+                CallNotificationManager.showIncoming(this, data);
+                CallDeliveryAckWorker.schedule(this, data, "device_received", String.valueOf(message.getOriginalPriority()), String.valueOf(message.getPriority()));
+            } finally {
+                if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+            }
             return;
         }
         if ("call_missed".equals(messageType)) {
@@ -66,6 +108,20 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         }
         if ("chat_message".equals(messageType)) {
             showChatNotification(data, message.getNotification());
+            return;
+        }
+        if ("apk_update".equals(messageType)) {
+            // Push data is routing-only. The coordinator fetches signed release metadata from the API.
+            AppUpdateCoordinator.get(this).check(true);
+            new android.os.Handler(getMainLooper()).postDelayed(() -> {
+                AppUpdateCoordinator.Snapshot update = AppUpdateCoordinator.get(this).current();
+                if (update.metadata != null && update.metadata.versionCode > BuildConfig.VERSION_CODE) {
+                    showNotification(update.metadata.versionCode, "AutoAI " + update.metadata.versionName + " update",
+                        update.metadata.changelog == null || update.metadata.changelog.trim().isEmpty()
+                            ? "A verified AutoAI update is ready."
+                            : update.metadata.changelog.trim());
+                }
+            }, 2500L);
             return;
         }
         int versionCode = parseInt(data.get("version_code"));
@@ -90,6 +146,13 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
                 : "Version " + versionName + " is ready to install.";
         }
         showNotification(versionCode, title, body);
+    }
+
+    @Override
+    public void onDeletedMessages() {
+        super.onDeletedMessages();
+        Log.w(TAG, "FCM_DELETED_MESSAGES");
+        PushTokenRegistrar.registerStoredUserDeviceIfAuthenticated(this);
     }
 
     private void showChatNotification(Map<String, String> data, RemoteMessage.Notification notification) {
@@ -188,13 +251,16 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         }
 
         createUpdateNotificationChannel();
-        Intent intent = new Intent(this, MainActivity.class);
-        intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        Intent intent = new Intent(this, MainActivity.class)
+            .setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            .putExtra("start_app_update", true);
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             flags |= PendingIntent.FLAG_IMMUTABLE;
         }
-        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, intent, flags);
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, 1000, intent, flags);
+        Intent updateIntent = new Intent(this, MainActivity.class).setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra("start_app_update", true);
+        PendingIntent updateNow = PendingIntent.getActivity(this, 1001, updateIntent, flags);
 
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
             ? new Notification.Builder(this, UPDATE_NOTIFICATION_CHANNEL_ID)
@@ -208,6 +274,8 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
             .setAutoCancel(true)
             .setShowWhen(true)
             .setWhen(System.currentTimeMillis());
+        builder.addAction(new Notification.Action.Builder(android.R.drawable.stat_sys_download_done, "Update Now", updateNow).build());
+        builder.addAction(new Notification.Action.Builder(android.R.drawable.ic_menu_info_details, "View Details", pendingIntent).build());
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             builder.setPriority(Notification.PRIORITY_HIGH);
         }

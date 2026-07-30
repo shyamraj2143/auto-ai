@@ -46,6 +46,7 @@ class UserRead(BaseModel):
     is_admin: bool
     role: str = "user"
     subscription_status: str = "free"
+    intelligence_mode: str = "instant"
     created_at: datetime
     updated_at: datetime
     profile_updated_at: datetime | None = None

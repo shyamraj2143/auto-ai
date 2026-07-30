@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -6,7 +7,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -45,6 +46,10 @@ from app.services.groq_service import groq_service
 from app.services.chat_storage import sync_chat_history, sync_chat_message, sync_chat_session
 from app.services.human import AUTO_AI_HUMAN_MODE_PROMPT, meta_cognition_layer
 from app.services.live_context import LiveRequestContext, is_time_query
+from app.services.orchestration import intelligence_orchestrator
+from app.services.orchestration.activity_store import activity_store
+from app.services.orchestration.model_registry import model_registry
+from app.services.orchestration.schemas import IntelligenceMode
 from app.services.web_search import SearchAgent, web_search_service
 
 
@@ -396,6 +401,9 @@ def effective_provider_model(
 def generation_payload(db: Session, generation: ChatGeneration) -> dict:
     user_message = db.get(Message, generation.user_message_id) if generation.user_message_id else None
     assistant_message = db.get(Message, generation.assistant_message_id) if generation.assistant_message_id else None
+    activity_rows = activity_store.list(generation.id, generation.user_id, session=db)
+    activity = activity_store.serialize(activity_rows)
+    mode = IntelligenceMode.canonical(str((generation.request_payload or {}).get("mode") or "instant")).value
     return {
         "id": generation.id,
         "chat_id": generation.chat_id,
@@ -405,6 +413,9 @@ def generation_payload(db: Session, generation: ChatGeneration) -> dict:
         "error": generation.error,
         "user_message": user_message,
         "assistant_message": assistant_message,
+        "mode": mode,
+        "activity": activity,
+        "activity_summary": activity_store.summary(activity_rows),
         "created_at": generation.created_at,
         "updated_at": generation.updated_at,
         "completed_at": generation.completed_at,
@@ -602,7 +613,7 @@ def run_chat_generation(generation_id: str) -> None:
             )
             db.commit()
 
-            if payload.mode == "normal" and is_time_query(payload.message):
+            if payload.mode == "instant" and is_time_query(payload.message):
                 update_generation_message(
                     db,
                     generation=generation,
@@ -624,7 +635,7 @@ def run_chat_generation(generation_id: str) -> None:
                 db.commit()
                 return
 
-            if payload.mode == "normal" and is_model_identity_question(payload.message):
+            if payload.mode == "instant" and is_model_identity_question(payload.message):
                 complete_identity_generation(
                     db,
                     generation=generation,
@@ -688,11 +699,74 @@ def run_chat_generation(generation_id: str) -> None:
                 )
                 db.commit()
 
-            if payload.mode in {"deep_research", "multi_model"}:
-                research_result = deep_research_service.run(
+            if payload.mode in {"instant", "medium", "high", "deep_research"}:
+                if search_bundle:
+                    try:
+                        activity_store.emit(
+                            generation.id,
+                            generation.user_id,
+                            "model.progress",
+                            {
+                                "mode": payload.mode,
+                                "stage": "Reviewing sources",
+                                "sources_found": len(search_bundle.sources),
+                                "sources_reviewed": len(search_bundle.sources),
+                                "sources_accepted": len(search_bundle.sources),
+                            },
+                        )
+                    except Exception as activity_error:
+                        logger.warning(
+                            "orchestration_activity_write_failed request_id=%s event=model.progress error_type=%s",
+                            generation.id,
+                            type(activity_error).__name__,
+                        )
+
+                def emit_activity(event_type: str, event_payload: dict) -> None:
+                    try:
+                        activity_store.emit(generation.id, generation.user_id, event_type, event_payload)
+                    except Exception as activity_error:
+                        logger.warning(
+                            "orchestration_activity_write_failed request_id=%s event=%s error_type=%s",
+                            generation.id,
+                            event_type,
+                            type(activity_error).__name__,
+                        )
+
+                def is_cancelled() -> bool:
+                    with SessionLocal() as cancellation_db:
+                        row = cancellation_db.get(ChatGeneration, generation.id)
+                        return not row or row.status in {"cancel_requested", "cancelled"}
+
+                def persist_synthesis(content: str) -> None:
+                    update_generation_message(
+                        db,
+                        generation=generation,
+                        assistant_message=assistant_message,
+                        content=clean_model_output(content),
+                        status_value="running",
+                        metadata=search_payload(search_bundle),
+                        phase="synthesizing",
+                    )
+                    db.commit()
+
+                research_result = intelligence_orchestrator.run(
                     model_messages,
-                    payload=payload,
-                    user_id=generation.user_id,
+                    mode=payload.mode,
+                    emit=emit_activity,
+                    cancelled=is_cancelled,
+                    evidence=[
+                        source.model_dump(mode="json")
+                        for source in (search_bundle.sources if search_bundle else [])
+                    ],
+                    providers=payload.providers,
+                    requested_models=[
+                        *payload.groq_models,
+                        *payload.bedrock_models,
+                        *payload.openai_models,
+                        *payload.gemini_models,
+                    ],
+                    max_models=payload.max_models,
+                    stream_content=persist_synthesis,
                 )
                 if generation_cancel_requested(db, generation):
                     update_generation_message(
@@ -733,7 +807,7 @@ def run_chat_generation(generation_id: str) -> None:
                 record_usage(
                     db,
                     generation.user_id,
-                    "deep_research_background",
+                    f"{payload.mode}_orchestration_background",
                     research_result.selected_model,
                     usage_with_estimate(research_result.usage, messages=model_messages, output=final_content),
                 )
@@ -871,6 +945,39 @@ def research_models(_: User = Depends(get_current_user)) -> dict:
     return deep_research_service.model_options()
 
 
+@router.get("/intelligence/config")
+def intelligence_config(_: User = Depends(get_current_user)) -> dict:
+    records = model_registry.refresh()
+    healthy = [record for record in records if record.enabled and record.health_status == "healthy"]
+    groq = [record for record in healthy if record.provider == "groq"]
+    bedrock = [record for record in healthy if record.provider == "bedrock"]
+    return {
+        "modes": {
+            "instant": {"available": bool(groq), "description": "Fast single-model response"},
+            "medium": {"available": bool(groq), "description": "Balanced parallel intelligence"},
+            "high": {
+                "available": bool(groq or bedrock),
+                "description": "Advanced multi-provider reasoning",
+                "fallback_message": None if bedrock else "Continuing with available intelligence models.",
+            },
+            "deep_research": {
+                "available": bool(healthy),
+                "description": "Source-backed comprehensive research",
+            },
+        },
+        "models": [
+            {
+                "provider": "AWS Bedrock" if record.provider == "bedrock" else record.provider.title(),
+                "display_name": record.friendly_name,
+                "healthy": record.health_status == "healthy",
+                "supported_modes": sorted(mode.value for mode in record.supported_modes),
+            }
+            for record in records
+        ],
+        "refreshed": bool(records),
+    }
+
+
 def create_chat_generation(
     payload: ChatRequest,
     current_user: User,
@@ -878,6 +985,9 @@ def create_chat_generation(
     *,
     existing_user_message: Message | None = None,
 ) -> dict:
+    payload.mode = IntelligenceMode.canonical(payload.mode).value
+    if payload.mode == "deep_research" and payload.search_mode in {"off", "auto"}:
+        payload.search_mode = "deep"
     enforce_plan_and_feature_access(
         db,
         current_user,
@@ -887,6 +997,7 @@ def create_chat_generation(
         max_models=payload.max_models,
     )
     chat_row = get_or_create_chat(db, current_user, payload)
+    current_user.intelligence_mode = payload.mode
     effective_provider, effective_model = effective_provider_model(
         payload.provider,
         payload.model or chat_row.model,
@@ -1029,6 +1140,48 @@ def get_chat_generation(
     if not generation:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Generation not found")
     return generation_payload(db, generation)
+
+
+@router.get("/chat/generations/{generation_id}/events")
+async def stream_generation_events(
+    generation_id: str,
+    request: Request,
+    after: int = 0,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    generation = db.scalar(
+        select(ChatGeneration).where(
+            ChatGeneration.id == generation_id,
+            ChatGeneration.user_id == current_user.id,
+        )
+    )
+    if not generation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Generation not found")
+
+    async def event_generator():
+        cursor = max(0, after)
+        idle_ticks = 0
+        while not await request.is_disconnected():
+            events = activity_store.list(generation_id, current_user.id, after=cursor)
+            for item in activity_store.serialize(events):
+                cursor = max(cursor, int(item.get("sequence", 0)))
+                yield f"id: {cursor}\nevent: activity\ndata: {json.dumps(item, separators=(',', ':'))}\n\n"
+            with SessionLocal() as stream_db:
+                current = stream_db.get(ChatGeneration, generation_id)
+                terminal = not current or current.status in TERMINAL_GENERATION_STATUSES
+            if terminal and not events:
+                return
+            idle_ticks += 1
+            if idle_ticks % 20 == 0:
+                yield ": keep-alive\n\n"
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/chat/generations/{generation_id}/cancel", response_model=ChatGenerationRead)

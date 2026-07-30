@@ -25,6 +25,7 @@ class FcmSendResult:
     ok: bool
     inactive: bool = False
     detail: str = ""
+    failure_code: str | None = None
 
 
 class FirebaseNotificationService:
@@ -48,40 +49,25 @@ class FirebaseNotificationService:
         version_code: int,
         version_name: str,
         changelog: str | None = None,
+        release_id: str = "",
     ) -> FcmSendResult:
-        title = "Auto-AI update available"
-        body = f"Version {version_name} is ready to install."
-        if changelog:
-            body = f"{body} {changelog.strip()}"
-
         message = {
             "message": {
                 "token": token,
-                "notification": {
-                    "title": title,
-                    "body": body,
-                },
                 "data": {
                     "type": "apk_update",
-                    "title": title,
-                    "body": body,
                     "version_code": str(version_code),
-                    "version_name": version_name,
-                    "changelog": changelog or "",
+                    "release_id": release_id,
                 },
                 "android": {
                     "priority": "HIGH",
-                    "notification": {
-                        "channel_id": "auto_ai_updates",
-                        "default_sound": True,
-                        "notification_priority": "PRIORITY_HIGH",
-                    },
                 },
             }
         }
         return self._send(message)
 
     def send_call_data(self, token: str, data: dict[str, str], ttl_seconds: int) -> FcmSendResult:
+        analytics_label = "incoming_call_primary" if data.get("type") == "incoming_call" else "call_terminal"
         message = {
             "message": {
                 "token": token,
@@ -90,10 +76,35 @@ class FirebaseNotificationService:
                     "priority": "HIGH",
                     "ttl": f"{max(1, ttl_seconds)}s",
                     "direct_boot_ok": False,
+                    "restricted_package_name": "com.autoai.app",
+                    "collapse_key": f"call_{data.get('call_id', 'unknown')}",
+                    "fcm_options": {"analytics_label": analytics_label},
                 },
             }
         }
         return self._send(message)
+
+    def send_call_system_fallback(self, token: str, data: dict[str, str], title: str, body: str, ttl_seconds: int, notification_tag: str) -> FcmSendResult:
+        fallback_body = body if body.endswith("tap to answer") else f"{body} — tap to answer"
+        return self._send({"message": {
+            "token": token,
+            "notification": {"title": title[:120], "body": fallback_body[:180]},
+            "data": data,
+            "android": {
+                "priority": "HIGH",
+                "ttl": f"{max(1, ttl_seconds)}s",
+                "direct_boot_ok": False,
+                "notification": {
+                    "channel_id": "auto_ai_incoming_calls_v6",
+                    "notification_priority": "PRIORITY_MAX",
+                    "default_sound": True,
+                    "visibility": "PUBLIC",
+                    "tag": notification_tag,
+                    "click_action": "com.autoai.app.INCOMING_CALL_FALLBACK",
+                },
+                "fcm_options": {"analytics_label": "incoming_call_fallback"},
+            },
+        }})
 
     def send_chat_data(self, token: str, data: dict[str, str], title: str, body: str) -> FcmSendResult:
         message = {
@@ -141,14 +152,15 @@ class FirebaseNotificationService:
             )
         except httpx.HTTPError as exc:
             logger.warning("fcm_send_failed project_id=%s type=%s call_id=%s detail=%s", project_id, message_type, call_id, str(exc)[:160])
-            return FcmSendResult(ok=False, detail=str(exc))
+            return FcmSendResult(ok=False, detail=str(exc), failure_code="FCM_SEND_TIMEOUT" if isinstance(exc, httpx.TimeoutException) else "FCM_SEND_FAILED")
         if 200 <= response.status_code < 300:
             logger.info("fcm_send_ok project_id=%s type=%s call_id=%s", project_id, message_type, call_id)
             return FcmSendResult(ok=True)
         error_text = response.text
         inactive = response.status_code == 404 or "UNREGISTERED" in error_text or "not a valid FCM" in error_text
         logger.warning("fcm_send_http_error project_id=%s type=%s call_id=%s status=%d inactive=%s detail=%s", project_id, message_type, call_id, response.status_code, inactive, error_text[:160])
-        return FcmSendResult(ok=False, inactive=inactive, detail=error_text[:500])
+        failure_code = "FCM_TOKEN_UNREGISTERED" if inactive else "FCM_AUTH_FAILED" if response.status_code in {401, 403} else "FCM_TOKEN_PROJECT_MISMATCH" if "SENDER_ID_MISMATCH" in error_text else "FCM_REJECTED_BY_FIREBASE"
+        return FcmSendResult(ok=False, inactive=inactive, detail=error_text[:500], failure_code=failure_code)
 
     def _access_token_for(self, service_account: dict[str, Any]) -> str:
         now = int(time.time())

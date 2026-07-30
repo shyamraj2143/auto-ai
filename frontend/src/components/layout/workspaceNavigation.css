@@ -1,0 +1,143 @@
+.autoai-workspace-nav {
+  position: relative;
+  z-index: 55;
+  display: flex;
+  width: 220px;
+  min-width: 220px;
+  height: 100dvh;
+  flex-direction: column;
+  padding: 20px 14px 16px;
+  color: #dce9ff;
+  border-right: 1px solid rgba(100, 146, 226, .16);
+  background: linear-gradient(180deg, rgba(4, 13, 31, .98), rgba(3, 10, 24, .96));
+  box-shadow: 18px 0 70px rgba(0, 0, 0, .2);
+}
+
+.autoai-workspace-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 0 10px;
+  color: #fff;
+  text-decoration: none;
+  font-size: 21px;
+  letter-spacing: -.04em;
+}
+
+.autoai-workspace-brand .app-logo {
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 14px rgba(58, 155, 255, .45));
+}
+
+.autoai-workspace-nav > nav {
+  display: grid;
+  gap: 5px;
+  margin-top: 22px;
+}
+
+.autoai-workspace-nav > nav a {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 13px;
+  color: #8fa2bf;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 650;
+  transition: color .18s ease, border-color .18s ease, background .18s ease, transform .18s ease;
+}
+
+.autoai-workspace-nav > nav a:hover {
+  color: #eaf4ff;
+  background: rgba(72, 120, 215, .08);
+  transform: translateX(2px);
+}
+
+.autoai-workspace-nav > nav a.active {
+  color: #f7fbff;
+  border-color: rgba(64, 146, 255, .36);
+  background: linear-gradient(100deg, rgba(27, 111, 255, .32), rgba(76, 54, 210, .14));
+  box-shadow: inset 2px 0 #37a5ff, 0 8px 24px rgba(6, 70, 175, .12);
+}
+
+.autoai-workspace-profile {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 9px;
+  margin-top: auto;
+  padding: 10px;
+  border: 1px solid rgba(121, 164, 230, .18);
+  border-radius: 13px;
+  background: rgba(17, 35, 67, .5);
+}
+
+.autoai-workspace-avatar {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  overflow: hidden;
+  color: #fff;
+  border: 1px solid rgba(109, 209, 255, .55);
+  border-radius: 50%;
+  background: linear-gradient(145deg, #1768b8, #6f3fd7);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.autoai-workspace-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.autoai-workspace-profile > span:nth-child(2) { min-width: 0; }
+.autoai-workspace-profile strong,
+.autoai-workspace-profile small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.autoai-workspace-profile strong { color: #fff; font-size: 11px; }
+.autoai-workspace-profile small { margin-top: 2px; color: #7f91ac; font-size: 9px; }
+.autoai-workspace-profile button { display: grid; width: 30px; height: 30px; place-items: center; color: #8294af; border: 0; border-radius: 8px; background: transparent; }
+.autoai-workspace-profile button:hover { color: #ff8a9c; background: rgba(255, 72, 105, .1); }
+
+.autoai-mobile-nav { display: none; }
+
+@media (max-width: 767px) {
+  .autoai-workspace-nav { display: none; }
+  .autoai-mobile-nav {
+    position: fixed;
+    right: 10px;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    left: 10px;
+    z-index: 80;
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    min-height: 62px;
+    padding: 7px 5px 6px;
+    border: 1px solid rgba(102, 145, 220, .24);
+    border-radius: 22px;
+    background: rgba(4, 13, 31, .93);
+    box-shadow: 0 18px 55px rgba(0, 0, 0, .48), inset 0 1px rgba(255,255,255,.04);
+    backdrop-filter: blur(22px);
+  }
+  .autoai-mobile-nav a {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 3px;
+    color: #7e8ca3;
+    border-radius: 14px;
+    text-decoration: none;
+    font-size: 8px;
+    font-weight: 700;
+  }
+  .autoai-mobile-nav a.active {
+    color: #45b7ff;
+    background: radial-gradient(circle at 50% 20%, rgba(45, 129, 255, .22), transparent 72%);
+    text-shadow: 0 0 12px rgba(40, 146, 255, .62);
+  }
+  .autoai-mobile-nav a.active svg { filter: drop-shadow(0 0 7px rgba(41, 154, 255, .75)); }
+}

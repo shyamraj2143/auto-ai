@@ -50,6 +50,7 @@ public class CallForegroundService extends Service implements NativeCallSessionC
     private String activeDisplayName;
     private String activeCallType;
     private int activeNotificationId;
+    private TelecomMode telecomMode = TelecomMode.UNAVAILABLE;
 
     @Override
     public void onCreate() {
@@ -119,9 +120,16 @@ public class CallForegroundService extends Service implements NativeCallSessionC
             failStart(activeCallId, "AUDIO_FOCUS_FAILED");
             return START_NOT_STICKY;
         }
-        if (!AutoAiTelecomBridge.ensureRegistered(this)) {
-            failStart(activeCallId, "TELECOM_REGISTRATION_FAILED");
-            return START_NOT_STICKY;
+        TelecomRegistrationResult telecomResult = AutoAiTelecomBridge.ensureRegisteredDetailed(this);
+        if (telecomResult.isRegistered()) {
+            telecomMode = TelecomMode.ENABLED;
+            AutoAiTelecomBridge.markActive(this, activeCallId);
+        } else {
+            telecomMode = telecomResult == TelecomRegistrationResult.UNSUPPORTED
+                || telecomResult == TelecomRegistrationResult.TELECOM_UNAVAILABLE
+                ? TelecomMode.UNAVAILABLE : TelecomMode.DEGRADED;
+            Log.w(TAG, "Telecom integration degraded callId=" + activeCallId + " result=" + telecomResult
+                + " telecomMode=" + telecomMode + "; continuing native WebRTC");
         }
         try {
             AutoAiCallsPlugin.saveActiveCall(this, activeCallId, callType);
@@ -136,7 +144,7 @@ public class CallForegroundService extends Service implements NativeCallSessionC
         AcceptedCallHandoffStore.setState(this, activeCallId, AcceptedCallHandoffStore.State.SERVICE_READY);
         CallNotificationManager.showOngoingCall(this, activeCallId);
         broadcastStatus(activeCallId, SERVICE_READY, null);
-        Log.i(TAG, "SERVICE_READY callId=" + activeCallId + " recovery=" + recovery);
+        Log.i(TAG, "SERVICE_READY callId=" + activeCallId + " recovery=" + recovery + " telecomMode=" + telecomMode);
         if (recovery) reconcileRecoveredCall(activeCallId);
         Log.i(TAG, "Foreground call service running callId=" + activeCallId + " type=" + callType);
         return START_STICKY;
@@ -187,7 +195,7 @@ public class CallForegroundService extends Service implements NativeCallSessionC
             : new Notification.Builder(this);
         return builder.setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(displayName == null ? "Auto-AI call" : displayName)
-            .setContentText("Connecting call…")
+            .setContentText(telecomMode == TelecomMode.ENABLED ? "Connecting call…" : "Connecting through AutoAI secure calling…")
             .setContentIntent(open)
             .setCategory(Notification.CATEGORY_CALL)
             .setOngoing(true)
