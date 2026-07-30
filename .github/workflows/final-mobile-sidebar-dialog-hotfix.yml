@@ -35,6 +35,7 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
 
           def replace_once(path: str, old: str, new: str, label: str) -> None:
               target = Path(path)
@@ -116,28 +117,29 @@ jobs:
                   public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {'''
           replace_once(main_path, chrome_old, chrome_new, "WebChromeClient confirm fallback")
 
-          shell_path = "frontend/src/components/layout/AppShell.tsx"
-          replace_once(
-              shell_path,
-              '''  const {
-                  closeSidebar,
-                  expandSidebar,
-                  isSidebarCollapsed
-                } = useShell();''',
-              '''  const {
-                  closeSidebar,
-                  expandSidebar,
-                  isSidebarCollapsed,
-                  isSidebarOpen
-                } = useShell();''',
-              "AppShell sidebar state",
+          shell_path = Path("frontend/src/components/layout/AppShell.tsx")
+          shell = shell_path.read_text(encoding="utf-8")
+          shell_pattern = re.compile(
+              r"  const \{\s*closeSidebar,\s*expandSidebar,\s*isSidebarCollapsed\s*\} = useShell\(\);",
+              re.MULTILINE,
           )
-          replace_once(
-              shell_path,
+          shell_replacement = '''  const {
+              closeSidebar,
+              expandSidebar,
+              isSidebarCollapsed,
+              isSidebarOpen
+            } = useShell();'''
+          shell, count = shell_pattern.subn(shell_replacement, shell, count=1)
+          if count != 1:
+              raise RuntimeError(f"AppShell sidebar state: expected one regex match, found {count}")
+          if shell.count('<div className="app-shell">') != 1:
+              raise RuntimeError("AppShell open class insertion point was not found exactly once")
+          shell = shell.replace(
               '<div className="app-shell">',
               '<div className={`app-shell${isSidebarOpen ? " sidebar-open" : ""}`}>',
-              "AppShell open class",
+              1,
           )
+          shell_path.write_text(shell, encoding="utf-8")
 
           css_path = Path("frontend/src/styles/index.css")
           css = css_path.read_text(encoding="utf-8")
