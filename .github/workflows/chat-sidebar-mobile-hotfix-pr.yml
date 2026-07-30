@@ -1,0 +1,240 @@
+name: Validate mobile chat sidebar hotfix
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Apply deterministic UI patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              target = Path(path)
+              text = target.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise RuntimeError(f"Expected exactly one match in {path}, found {count}: {old[:120]!r}")
+              target.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          sidebar_path = "frontend/src/components/layout/Sidebar.tsx"
+
+          replace_once(
+              sidebar_path,
+              '  const [query, setQuery] = useState("");\n  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);',
+              '  const [query, setQuery] = useState("");\n  const [pendingDeleteChat, setPendingDeleteChat] = useState<{ id: string; title: string } | null>(null);\n  const [deletingChat, setDeletingChat] = useState(false);\n  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);'
+          )
+
+          replace_once(
+              sidebar_path,
+              '''  async function removeChat(id: string) {
+              if (window.confirm("Delete this chat?")) {
+                await deleteChat(id);
+              }
+            }''',
+              '''  function removeChat(id: string, title: string) {
+              setPendingDeleteChat({ id, title });
+            }
+
+            async function confirmRemoveChat() {
+              if (!pendingDeleteChat || deletingChat) return;
+              setDeletingChat(true);
+              try {
+                await deleteChat(pendingDeleteChat.id);
+                setPendingDeleteChat(null);
+              } finally {
+                setDeletingChat(false);
+              }
+            }'''
+          )
+
+          replace_once(
+              sidebar_path,
+              'onClick={() => removeChat(chat.id)}',
+              'onClick={() => removeChat(chat.id, chat.title)}'
+          )
+
+          replace_once(
+              sidebar_path,
+              '''      </aside>
+            </>''',
+              '''      </aside>
+              {pendingDeleteChat && (
+                <div
+                  className="chat-delete-dialog-backdrop"
+                  role="presentation"
+                  onMouseDown={(event) => {
+                    if (event.target === event.currentTarget && !deletingChat) setPendingDeleteChat(null);
+                  }}
+                >
+                  <section
+                    className="chat-delete-dialog"
+                    role="alertdialog"
+                    aria-modal="true"
+                    aria-labelledby="chat-delete-dialog-title"
+                    aria-describedby="chat-delete-dialog-description"
+                  >
+                    <span className="chat-delete-dialog-icon" aria-hidden="true">
+                      <Trash2 size={20} />
+                    </span>
+                    <div className="min-w-0">
+                      <h2 id="chat-delete-dialog-title">Delete chat?</h2>
+                      <p id="chat-delete-dialog-description">“{pendingDeleteChat.title}” will be permanently deleted.</p>
+                    </div>
+                    <div className="chat-delete-dialog-actions">
+                      <button
+                        className="chat-delete-dialog-cancel"
+                        disabled={deletingChat}
+                        onClick={() => setPendingDeleteChat(null)}
+                        type="button"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="chat-delete-dialog-confirm"
+                        disabled={deletingChat}
+                        onClick={() => void confirmRemoveChat()}
+                        type="button"
+                      >
+                        {deletingChat ? "Deleting…" : "Delete chat"}
+                      </button>
+                    </div>
+                  </section>
+                </div>
+              )}
+            </>'''
+          )
+
+          css_path = Path("frontend/src/styles/index.css")
+          css = css_path.read_text(encoding="utf-8")
+          marker = "/* CHAT_SIDEBAR_MOBILE_HOTFIX */"
+          if marker not in css:
+              css += r'''
+
+          /* CHAT_SIDEBAR_MOBILE_HOTFIX */
+          @media (max-width: 767px) {
+            .workspace-sidebar {
+              bottom: calc(var(--mobile-nav-height) + var(--safe-bottom) + 10px) !important;
+              height: auto !important;
+              max-height: calc(100dvh - var(--mobile-nav-height) - var(--safe-bottom) - 10px);
+              border-bottom-right-radius: 20px;
+            }
+          }
+
+          .chat-delete-dialog-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 140;
+            display: grid;
+            place-items: center;
+            padding: max(18px, var(--safe-top)) max(18px, var(--safe-right)) max(18px, var(--safe-bottom)) max(18px, var(--safe-left));
+            background: rgba(1, 7, 20, 0.76);
+            backdrop-filter: blur(14px);
+          }
+
+          .chat-delete-dialog {
+            display: grid;
+            width: min(100%, 360px);
+            grid-template-columns: 44px minmax(0, 1fr);
+            gap: 12px;
+            padding: 18px;
+            color: #f8fbff;
+            border: 1px solid rgba(255, 103, 126, 0.34);
+            border-radius: 18px;
+            background: linear-gradient(145deg, rgba(22, 20, 48, 0.98), rgba(5, 15, 34, 0.98));
+            box-shadow: 0 24px 70px rgba(0, 0, 0, 0.58), 0 0 32px rgba(255, 77, 103, 0.1);
+          }
+
+          .chat-delete-dialog-icon {
+            display: grid;
+            width: 44px;
+            height: 44px;
+            place-items: center;
+            color: #ff8093;
+            border: 1px solid rgba(255, 103, 126, 0.3);
+            border-radius: 13px;
+            background: rgba(255, 77, 103, 0.11);
+          }
+
+          .chat-delete-dialog h2 {
+            margin: 1px 0 6px;
+            font-size: 16px;
+            font-weight: 750;
+          }
+
+          .chat-delete-dialog p {
+            margin: 0;
+            overflow-wrap: anywhere;
+            color: #aebed4;
+            font-size: 13px;
+            line-height: 1.5;
+          }
+
+          .chat-delete-dialog-actions {
+            grid-column: 1 / -1;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 6px;
+          }
+
+          .chat-delete-dialog-actions button {
+            min-height: 42px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 750;
+          }
+
+          .chat-delete-dialog-cancel {
+            color: #c9d6e8;
+            border: 1px solid rgba(143, 166, 202, 0.25);
+            background: rgba(255, 255, 255, 0.05);
+          }
+
+          .chat-delete-dialog-confirm {
+            color: #fff;
+            border: 1px solid rgba(255, 122, 143, 0.38);
+            background: linear-gradient(135deg, #c82f4a, #ff4d67);
+            box-shadow: 0 9px 24px rgba(255, 77, 103, 0.2);
+          }
+          '''
+              css_path.write_text(css, encoding="utf-8")
+          PY
+
+      - name: Validate frontend build
+        shell: bash
+        run: |
+          npm ci
+          npm ci --prefix frontend
+          npm run build
+
+      - name: Commit validated fix to main
+        shell: bash
+        run: |
+          rm -f .github/workflows/chat-sidebar-mobile-hotfix-pr.yml
+          git config user.name "AutoAI UI Hotfix Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: keep chat sidebar above mobile navigation"
+          git push origin HEAD:main
