@@ -20,7 +20,8 @@ export function AppShell() {
   const {
     closeSidebar,
     expandSidebar,
-    isSidebarCollapsed
+    isSidebarCollapsed,
+    isSidebarOpen
   } = useShell();
   const fullCanvasAdmin = location.pathname.startsWith("/admin/live-pages");
   const isChatWorkspace = location.pathname.startsWith("/chat");
@@ -80,7 +81,7 @@ export function AppShell() {
       <CallProvider>
           <ChatProvider>
           <AndroidBackHandler />
-          <div className="app-shell">
+          <div className={`app-shell${isSidebarOpen ? " sidebar-open" : ""}`}>
             {!fullCanvasAdmin && <WorkspaceNavigation />}
             {!fullCanvasAdmin && isChatWorkspace && <Sidebar />}
             {!fullCanvasAdmin && isChatWorkspace && isSidebarCollapsed && (

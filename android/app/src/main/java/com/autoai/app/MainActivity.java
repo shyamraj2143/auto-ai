@@ -22,6 +22,7 @@ import android.provider.Settings;
 import android.util.Rational;
 import android.view.View;
 import android.webkit.CookieManager;
+import android.webkit.JsResult;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -514,6 +515,29 @@ public class MainActivity extends BridgeActivity {
     private class AutoAiWebChromeClient extends BridgeWebChromeClient {
         AutoAiWebChromeClient(Bridge bridge) {
             super(bridge);
+        }
+
+        @Override
+        public boolean onJsConfirm(WebView view, String url, String message, JsResult result) {
+            AtomicBoolean resolved = new AtomicBoolean(false);
+            AlertDialog dialog = new AlertDialog.Builder(MainActivity.this, R.style.AutoAiWebDialogTheme)
+                .setTitle("Auto-AI")
+                .setMessage(message == null ? "" : message)
+                .setPositiveButton(android.R.string.ok, (currentDialog, which) -> {
+                    if (resolved.compareAndSet(false, true)) result.confirm();
+                })
+                .setNegativeButton(android.R.string.cancel, (currentDialog, which) -> {
+                    if (resolved.compareAndSet(false, true)) result.cancel();
+                })
+                .setOnCancelListener(currentDialog -> {
+                    if (resolved.compareAndSet(false, true)) result.cancel();
+                })
+                .create();
+            dialog.setOnDismissListener(currentDialog -> {
+                if (resolved.compareAndSet(false, true)) result.cancel();
+            });
+            dialog.show();
+            return true;
         }
 
         @Override

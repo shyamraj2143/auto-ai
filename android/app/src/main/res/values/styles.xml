@@ -25,6 +25,18 @@
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="android:background">@drawable/splash</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
+    </style>
+
+    <!-- Native fallback for any remaining JavaScript confirm. Never inherit the splash drawable. -->
+    <style name="AutoAiWebDialogTheme" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:windowBackground">@color/autoai_window_background</item>
+        <item name="android:background">@color/autoai_window_background</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowIsFloating">true</item>
+        <item name="android:colorAccent">@color/colorAccent</item>
+        <item name="android:textColorPrimary">@android:color/white</item>
+        <item name="android:textColorSecondary">#B7C5D9</item>
     </style>
 
     <!-- Isolates updater views from the splash theme's full-screen background drawable. -->

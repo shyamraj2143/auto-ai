@@ -9416,3 +9416,38 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
   background: linear-gradient(135deg, #c82f4a, #ff4d67);
   box-shadow: 0 9px 24px rgba(255, 77, 103, 0.2);
 }
+
+
+/* FINAL_MOBILE_SIDEBAR_LAYER_FIX */
+@media (max-width: 767px) {
+  .app-shell.sidebar-open .workspace-sidebar[data-open="true"] {
+    position: fixed !important;
+    inset: 0 auto 0 0 !important;
+    z-index: 2147483000 !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    transform: translate3d(0, 0, 0) !important;
+    isolation: isolate;
+    overflow: hidden;
+  }
+
+  .app-shell.sidebar-open .workspace-sidebar[data-open="true"] > nav {
+    min-height: 0 !important;
+    flex: 1 1 auto !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+  }
+
+  .app-shell.sidebar-open .workspace-sidebar[data-open="true"] > div:last-child {
+    position: relative;
+    z-index: 4;
+    flex: 0 0 auto;
+    padding-bottom: max(12px, calc(var(--safe-bottom) + 8px));
+  }
+
+  .app-shell.sidebar-open .autoai-mobile-nav {
+    z-index: 80 !important;
+    pointer-events: none !important;
+    user-select: none;
+  }
+}
