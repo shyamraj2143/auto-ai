@@ -14,7 +14,27 @@ ROLE_LABELS = {
     "facts": ("Fact checker", "Checking facts and consistency"),
     "structure": ("Response organizer", "Organizing the response"),
     "research": ("Research analyst", "Reviewing research sources"),
+    "alternative": ("Alternative solution analyst", "Comparing possible solutions"),
+    "logic": ("Logic reviewer", "Checking reasoning consistency"),
+    "tone": ("Tone and clarity reviewer", "Matching language and clarity"),
+    "evidence": ("Evidence reviewer", "Checking supporting evidence"),
+    "counterpoint": ("Counterargument reviewer", "Checking conflicting findings"),
+    "citations": ("Citation verifier", "Verifying citations"),
 }
+
+MEDIUM_ROLES = ["primary", "technical", "facts", "alternative", "structure", "tone"]
+HIGH_ROLES = ["primary", "technical", "facts", "logic", "alternative", "evidence", "research", "structure", "tone"]
+DEEP_RESEARCH_ROLES = [
+    "research",
+    "evidence",
+    "technical",
+    "facts",
+    "counterpoint",
+    "logic",
+    "citations",
+    "primary",
+    "structure",
+]
 
 
 class TaskPlanner:
@@ -55,18 +75,27 @@ class TaskPlanner:
             limit = len(records)
         elif mode == IntelligenceMode.MEDIUM:
             records = [record for record in records if record.provider == "groq"]
-            roles = ["primary", "technical", "structure"] if analysis.complexity == "high" else ["primary", "technical"]
-            limit = min(len(roles), max_models or settings.ORCHESTRATION_MAX_MODELS_MEDIUM)
+            roles = MEDIUM_ROLES
+            limit = min(len(records), max_models or settings.ORCHESTRATION_MAX_MODELS_MEDIUM)
         elif mode == IntelligenceMode.HIGH:
             records.sort(key=lambda item: (item.provider != "bedrock", item.priority))
-            roles = ["primary", "technical", "facts", "structure", "research"]
-            limit = min(max_models or settings.ORCHESTRATION_MAX_MODELS_HIGH, settings.ORCHESTRATION_MAX_MODELS_HIGH)
+            roles = HIGH_ROLES
+            limit = min(
+                len(records),
+                max_models or settings.ORCHESTRATION_MAX_MODELS_HIGH,
+                settings.ORCHESTRATION_MAX_MODELS_HIGH,
+            )
         else:
-            roles = ["research", "technical", "facts", "primary", "structure"]
-            limit = min(max_models or settings.DEEP_RESEARCH_MAX_MODELS, settings.DEEP_RESEARCH_MAX_MODELS)
+            roles = DEEP_RESEARCH_ROLES
+            limit = min(
+                len(records),
+                max_models or settings.DEEP_RESEARCH_MAX_MODELS,
+                settings.DEEP_RESEARCH_MAX_MODELS,
+            )
 
         tasks: list[ModelTask] = []
-        for record, role_key in zip(records[:limit], roles):
+        for index, record in enumerate(records[:limit]):
+            role_key = roles[index % len(roles)]
             role, label = ROLE_LABELS[role_key]
             role_prompt = {
                 "role": "system",

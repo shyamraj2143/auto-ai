@@ -172,11 +172,21 @@ class IntelligenceOrchestrator:
             selected_model=f"orchestration:{selected_model}",
             metadata={
                 "mode": canonical.value,
+                "models_attempted": len(results),
+                "models_completed": len(successes),
+                "models_contributed": len(successes),
                 "models_consulted": [
                     {
                         "provider": result.task.model.provider,
+                        "provider_display_name": (
+                            "AWS Bedrock"
+                            if result.task.model.provider == "bedrock"
+                            else result.task.model.provider.title()
+                        ),
                         "display_name": result.task.model.friendly_name,
                         "role": result.task.role,
+                        "activity_label": result.task.activity_label,
+                        "status": result.status.value,
                         "latency_ms": result.duration_ms,
                         "contributed": result.contributed,
                     }

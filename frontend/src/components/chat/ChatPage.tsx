@@ -657,19 +657,27 @@ export function ChatPage() {
 
   function requestOptionsPayload(options: ComposerOptions, documentIds = selectedDocumentIds) {
     const modelSelection = selectedModelPayload(options.provider, options.model);
+    const ensembleMode = options.chatMode !== "instant";
+    const deepResearchMode = options.chatMode === "deep_research";
+    const presetProviders: ComposerOptions["researchProviders"] =
+      options.chatMode === "medium"
+        ? ["groq"]
+        : options.chatMode === "high"
+          ? ["groq", "bedrock"]
+          : options.researchProviders;
     return {
       provider: modelSelection.provider,
       model: modelSelection.model,
       mode: options.chatMode,
-      providers: options.chatMode === "instant" ? undefined : options.researchProviders,
-      max_models: options.chatMode === "instant" ? undefined : options.maxModels,
-      all_models: options.chatMode === "instant" ? undefined : options.allModels,
-      timeout_seconds: options.chatMode === "instant" ? undefined : options.timeoutSeconds,
-      groq_models: options.chatMode === "instant" ? undefined : options.groqModels,
-      bedrock_models: options.chatMode === "instant" ? undefined : options.bedrockModels,
-      openai_models: options.chatMode === "instant" ? undefined : options.openaiModels,
-      gemini_models: options.chatMode === "instant" ? undefined : options.geminiModels,
-      final_judge_model: options.chatMode === "instant" ? undefined : options.finalJudgeModel,
+      providers: ensembleMode ? presetProviders : undefined,
+      max_models: deepResearchMode && !options.allModels ? options.maxModels : undefined,
+      all_models: ensembleMode ? (deepResearchMode ? options.allModels : true) : undefined,
+      timeout_seconds: ensembleMode ? options.timeoutSeconds : undefined,
+      groq_models: deepResearchMode && !options.allModels ? options.groqModels : undefined,
+      bedrock_models: deepResearchMode && !options.allModels ? options.bedrockModels : undefined,
+      openai_models: deepResearchMode && !options.allModels ? options.openaiModels : undefined,
+      gemini_models: deepResearchMode && !options.allModels ? options.geminiModels : undefined,
+      final_judge_model: deepResearchMode ? options.finalJudgeModel : undefined,
       web_search: options.searchMode !== "off" && options.searchMode !== "auto",
       search_mode: options.searchMode,
       reasoning: options.reasoning,

@@ -100,6 +100,8 @@ export type Message = {
   message_metadata?: {
     search?: SearchResultBundle;
     model?: ResponseModelInfo;
+    orchestration?: OrchestrationAudit;
+    deep_research?: OrchestrationAudit;
     attachments?: ChatAttachment[];
     client_message_id?: string;
     internal_context?: MessageInternalContext;
@@ -264,6 +266,30 @@ export type OrchestrationActivitySummary = {
   duration_ms?: number | null;
   verified_sources: number;
   fallback_used: boolean;
+};
+
+export type OrchestrationModelAudit = {
+  provider?: string;
+  provider_display_name?: string;
+  display_name?: string;
+  model?: string;
+  role?: string;
+  activity_label?: string;
+  status?: OrchestrationTaskStatus | "recorded";
+  latency_ms?: number;
+  contributed?: boolean;
+};
+
+export type OrchestrationAudit = {
+  mode?: IntelligenceMode | string;
+  models_attempted?: number;
+  models_completed?: number;
+  models_contributed?: number;
+  models_consulted?: OrchestrationModelAudit[];
+  verified_sources?: number;
+  duration_ms?: number;
+  fallback_used?: boolean;
+  confidence?: string;
 };
 
 export type ApkRelease = {

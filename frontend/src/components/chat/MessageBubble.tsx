@@ -17,6 +17,7 @@ import type { ChatAttachment, Message, ResponseModelInfo } from "../../types";
 import { coerceTextContent } from "../../utils/text";
 import { MarkdownMessage } from "./MarkdownMessage";
 import { SourceCards } from "./SourceCards";
+import { ResponseGeneratedBy } from "./ResponseGeneratedBy";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import { useMotionMode } from "../../motion/MotionProvider";
 import { StreamingPulse } from "../../motion/primitives";
@@ -164,10 +165,8 @@ function MessageBubbleComponent({
   const attachments = attachmentsOf(message);
   const isEmptyStreaming = isAssistant && isStreaming && !content && !isSearchingWeb && !isFailedAssistant;
   const search = message.message_metadata?.search;
-  const deepResearch = message.message_metadata?.deep_research as
-    | { models_consulted?: Array<{ provider?: string; model?: string }>; confidence?: string }
-    | undefined;
-  const consultedModels = deepResearch?.models_consulted ?? [];
+  const orchestrationAudit =
+    message.message_metadata?.orchestration ?? message.message_metadata?.deep_research;
   const normalizedTimestamp = normalizedApiTimestamp(message.created_at);
   void fallbackModel;
 
@@ -226,15 +225,7 @@ function MessageBubbleComponent({
           </>
         )}
         {isAssistant && <SourceCards search={search} />}
-        {isAssistant && consultedModels.length > 0 && (
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-400">
-            <span className="rounded-md border border-cyan-200/15 bg-cyan-200/10 px-2 py-1 font-semibold text-cyan-100">
-              Multi-model
-            </span>
-            <span>{consultedModels.length} models consulted</span>
-            {deepResearch?.confidence && <span>Confidence: {deepResearch.confidence}</span>}
-          </div>
-        )}
+        {isAssistant && !isStreaming && <ResponseGeneratedBy audit={orchestrationAudit} />}
         {normalizedTimestamp && (
           <time className="message-timestamp" dateTime={normalizedTimestamp} title={formatMessageDateTimeTitle(message.created_at)}>
             {formatMessageTimestamp(message.created_at)}
