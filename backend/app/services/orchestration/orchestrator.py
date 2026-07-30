@@ -40,6 +40,11 @@ class IntelligenceOrchestrator:
     ) -> OrchestrationResult:
         started = perf_counter()
         canonical = IntelligenceMode.canonical(mode)
+        if canonical == IntelligenceMode.DEEP_RESEARCH and not evidence:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Deep Research requires verified web source context.",
+            )
         emit("orchestration.started", {"mode": canonical.value, "stage": "Understanding your request"})
         emit("request.analysis.started", {"mode": canonical.value, "stage": "Understanding your request"})
         user_message = next((item["content"] for item in reversed(messages) if item.get("role") == "user"), "")
@@ -117,10 +122,13 @@ class IntelligenceOrchestrator:
                     "task_id": result.task.task_id,
                     "provider_display_name": "AWS Bedrock" if result.task.model.provider == "bedrock" else result.task.model.provider.title(),
                     "model_display_name": result.task.model.friendly_name,
+                    "actual_model_id": result.task.model.actual_model_id,
                     "role": result.task.role,
                     "activity_label": result.task.activity_label,
                     "status": "completed",
                     "duration_ms": result.duration_ms,
+                    "started_at": result.started_at,
+                    "completed_at": result.completed_at,
                     "contributed_to_final_answer": True,
                 },
             )
@@ -184,10 +192,14 @@ class IntelligenceOrchestrator:
                             else result.task.model.provider.title()
                         ),
                         "display_name": result.task.model.friendly_name,
+                        "actual_model_id": result.task.model.actual_model_id,
                         "role": result.task.role,
                         "activity_label": result.task.activity_label,
                         "status": result.status.value,
                         "latency_ms": result.duration_ms,
+                        "started_at": result.started_at,
+                        "completed_at": result.completed_at,
+                        "failure_reason": result.error_classification,
                         "contributed": result.contributed,
                     }
                     for result in results

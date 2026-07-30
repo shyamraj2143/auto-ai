@@ -12,7 +12,6 @@ from fastapi import HTTPException, status
 from app.core.config import settings
 from app.schemas.chat import ChatRequest
 from app.services.groq_service import groq_service
-from app.services.orchestration.limits import MAX_PARTICIPATING_MODELS, participating_model_limit
 
 
 logger = logging.getLogger(__name__)
@@ -167,11 +166,11 @@ class DeepResearchService:
                 provider_calls = [ResearchModelCall(provider=provider, model=model) for model in valid_models]
             grouped_calls[provider] = provider_calls
 
-        limit = MAX_PARTICIPATING_MODELS if payload.all_models else self._max_models(payload)
+        limit = sum(len(provider_calls) for provider_calls in grouped_calls.values())
         calls = self._balanced_model_calls(
             grouped_calls,
             providers,
-            participating_model_limit(limit),
+            limit,
         )
         if not calls:
             raise HTTPException(
@@ -201,7 +200,10 @@ class DeepResearchService:
                 },
             },
             "defaults": {
-                "max_models": participating_model_limit(settings.DEEP_RESEARCH_DEFAULT_MAX_MODELS),
+                "max_models": sum(
+                    len(self._configured_models(provider))
+                    for provider in ("groq", "bedrock")
+                ),
                 "timeout_seconds": settings.DEEP_RESEARCH_PER_MODEL_TIMEOUT_SECONDS,
                 "final_judge_model": settings.DEEP_RESEARCH_JUDGE_MODEL,
             },
@@ -274,7 +276,7 @@ class DeepResearchService:
     @staticmethod
     def _max_models(payload: ChatRequest) -> int:
         configured = payload.max_models or settings.DEEP_RESEARCH_DEFAULT_MAX_MODELS
-        return participating_model_limit(configured)
+        return max(1, configured)
 
     @staticmethod
     def _timeout_seconds(payload: ChatRequest) -> int:

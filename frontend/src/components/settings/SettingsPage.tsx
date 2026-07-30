@@ -32,15 +32,10 @@ import {
 } from "lucide-react";
 import { api } from "../../api/client";
 import { AppSelect, type AppSelectOption } from "../common/AppSelect";
-import {
-  PROVIDER_MODELS,
-  useAppSettings,
-  type AppLanguage
-} from "../../contexts/AppSettingsContext";
+import { useAppSettings, type AppLanguage } from "../../contexts/AppSettingsContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
 import { useTheme } from "../../contexts/ThemeContext";
-import type { AiProvider, ResearchProvider } from "../../types";
 import { SubscriptionBillingCenter } from "./SubscriptionBillingCenter";
 import { CallSettings } from "../../features/calls/CallSettings";
 import { useScreenShare } from "../../features/screenShare/useScreenShare";
@@ -75,13 +70,6 @@ const MOTION_OPTIONS: Array<{ value: MotionPreference; label: string }> = [
   { value: "balanced", label: "Balanced" },
   { value: "reduced", label: "Reduced" }
 ];
-
-const PROVIDER_LABELS: Record<AiProvider, string> = {
-  openai: "OpenAI",
-  groq: "Groq",
-  bedrock: "AWS Bedrock",
-  gemini: "Gemini"
-};
 
 type SettingsSection = "main" | "general" | "ai" | "screen-share" | "visual" | "subscription" | "privacy" | "calls" | "chat";
 type Accent = "cyan" | "violet" | "amber" | "green" | "rose" | "red";
@@ -260,18 +248,12 @@ export function SettingsPage() {
   } = useMotionMode();
   const {
     settings,
-    setDefaultProvider,
-    setDefaultModel,
     setMemoryEnabled,
     setFeedbackLearningEnabled,
     setStreamingEnabled,
     setVoiceEnabled,
     setNotificationsEnabled,
     setLanguage,
-    setDeepResearchProviders,
-    setDeepResearchMaxModels,
-    setDeepResearchAllModels,
-    setDeepResearchTimeoutSeconds,
     setVisualEffectsLevel,
     setCrystalOrb,
     setCrystalSurfaces,
@@ -289,11 +271,6 @@ export function SettingsPage() {
     return current === "general" || current === "ai" || current === "screen-share" || current === "visual" || current === "subscription" || current === "privacy" || current === "calls" || current === "chat" ? current : "main";
   }, [location.search]);
 
-  const providerModels = useMemo(
-    () => PROVIDER_MODELS[settings.defaultProvider],
-    [settings.defaultProvider]
-  );
-  const selectedModelLabel = providerModels.find((item) => item.value === settings.defaultModel)?.label ?? settings.defaultModel;
   const sectionTitle = section === "general" ? "General" : section === "ai" ? "AI Chat" : section === "screen-share" ? "Screen Share" : section === "visual" ? "Visual Effects" : section === "subscription" ? "Subscription" : section === "privacy" ? "Privacy & Security" : section === "calls" ? "Calls" : section === "chat" ? "Messages" : "Settings";
 
   useEffect(() => {
@@ -452,20 +429,6 @@ export function SettingsPage() {
     }
     console.warn("[Auto-AI Notifications] Notification permission was not granted.");
     setNotificationsEnabled(false);
-  }
-
-  function toggleResearchProvider(provider: ResearchProvider) {
-    const current = settings.deepResearchProviders;
-    const next = current.includes(provider)
-      ? current.filter((item) => item !== provider)
-      : [...current, provider];
-    if (next.length) setDeepResearchProviders(next);
-  }
-
-  function updateProvider(value: string) {
-    if (value === "openai" || value === "groq" || value === "bedrock" || value === "gemini") {
-      setDefaultProvider(value);
-    }
   }
 
   function restartInSafeMode() {
@@ -704,15 +667,6 @@ export function SettingsPage() {
     return (
       <div className="grid gap-3">
         <SettingsCard>
-          <SettingsRow
-            icon={BrainCircuit}
-            accent="cyan"
-            title="AI Model Preferences"
-            description={`${PROVIDER_LABELS[settings.defaultProvider]} - ${selectedModelLabel}`}
-          >
-            <Select value={settings.defaultProvider} options={Object.entries(PROVIDER_LABELS).map(([value, label]) => ({ value, label }))} onChange={updateProvider} label="Default AI provider" />
-            <Select value={settings.defaultModel} options={providerModels} onChange={setDefaultModel} label="Default AI model" />
-          </SettingsRow>
           <SettingsRow icon={Shield} title="Personalization memory" description="Pause new long-term memories while keeping existing preferences available to manage">
             <Toggle checked={settings.memoryEnabled} onChange={(checked) => void updatePersonalizationSetting("memory_enabled", checked)} />
           </SettingsRow>
@@ -735,25 +689,6 @@ export function SettingsPage() {
             AutoAI uses your approved preferences to personalize your account. Your private chats are not used as another user&apos;s personal memory.
             {memoryNotice && <p className="mt-1 text-cyan-200" role="status">{memoryNotice}</p>}
           </div>
-        </SettingsCard>
-        <SettingsCard>
-          <SettingsRow
-            icon={SlidersHorizontal}
-            accent="green"
-            title="Deep Research Settings"
-            description={`${settings.deepResearchAllModels ? "All models" : `${settings.deepResearchMaxModels} model limit`} - ${settings.deepResearchTimeoutSeconds}s timeout`}
-          >
-            <div className="flex w-full flex-wrap items-center gap-1 sm:w-auto">
-              {(["groq", "bedrock", "openai", "gemini"] as ResearchProvider[]).map((provider) => (
-                <button key={provider} type="button" onClick={() => toggleResearchProvider(provider)} className={clsx("h-8 rounded-md border px-2 text-[11px] font-semibold transition", settings.deepResearchProviders.includes(provider) ? "border-cyan-200/35 bg-cyan-200/12 text-cyan-50" : "border-white/10 bg-white/5 text-slate-400")}>{PROVIDER_LABELS[provider]}</button>
-              ))}
-            </div>
-            <Select value={settings.deepResearchMaxModels} options={[1, 2, 3, 4, 5, 6].map((value) => ({ value: String(value), label: `Up to ${value}` }))} onChange={(value) => setDeepResearchMaxModels(Number(value))} disabled={settings.deepResearchAllModels} label="Maximum deep research models" />
-            <Select value={settings.deepResearchTimeoutSeconds} options={[20, 35, 45, 60, 90, 120].map((value) => ({ value: String(value), label: `${value}s` }))} onChange={(value) => setDeepResearchTimeoutSeconds(Number(value))} label="Deep research timeout" />
-          </SettingsRow>
-          <SettingsRow icon={Sparkles} accent="violet" title="Use all available models" description="Uses up to six participating models">
-            <Toggle checked={settings.deepResearchAllModels} onChange={setDeepResearchAllModels} />
-          </SettingsRow>
         </SettingsCard>
       </div>
     );

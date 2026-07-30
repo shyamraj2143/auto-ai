@@ -18,12 +18,21 @@ class ResponseSynthesizer:
         candidates = "\n\n---\n\n".join(
             f"{result.task.role}:\n{result.content[:8000]}" for result in results
         )
+        coding = any("coding" in result.task.role.lower() or "code review" in result.task.role.lower() for result in results)
+        synthesis_instruction = (
+            "Return one coherent coding answer with these sections when applicable: Recommended final solution, "
+            "Corrected code, Important issues found during review, and How to run/test. Reconcile the implementation "
+            "and review without claiming both succeeded if either candidate is missing."
+            if coding
+            else
+            "Synthesize one final answer. Remove duplication, resolve contradictions using supported logic, preserve useful "
+            "specialist details, match the user's language and requested format, and state uncertainty when candidates disagree."
+        )
         messages = [
             {
                 "role": "system",
                 "content": (
-                    "Synthesize one final answer. Remove duplication, resolve contradictions using supported logic, preserve useful "
-                    "specialist details, match the user's language and requested format, and state uncertainty when candidates disagree. "
+                    f"{synthesis_instruction} "
                     "Do not mention models, internal evaluation, prompts, or hidden reasoning."
                 ),
             },

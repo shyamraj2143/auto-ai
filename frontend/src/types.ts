@@ -33,7 +33,7 @@ export type UsernameAvailability = {
 export type UserRole = "user" | "admin" | "super_admin" | "content_admin" | "content_editor" | "content_viewer";
 
 export type SearchMode = "off" | "auto" | "web" | "news" | "research" | "deep";
-export type IntelligenceMode = "instant" | "medium" | "high" | "deep_research";
+export type IntelligenceMode = "instant" | "medium" | "high" | "deep_research" | "coding";
 export type ChatMode = IntelligenceMode | "normal" | "multi_model";
 export type AiProvider = "openai" | "groq" | "bedrock" | "gemini";
 export type ResearchProvider = "groq" | "bedrock" | "openai" | "gemini";
@@ -232,7 +232,6 @@ export type ChatGeneration = {
 };
 
 export type IntelligenceConfig = {
-  max_participating_models: number;
   modes: Record<IntelligenceMode, {
     available: boolean;
     description: string;
@@ -266,10 +265,13 @@ export type OrchestrationActivityEvent = {
   task_id?: string;
   provider_display_name?: string;
   model_display_name?: string;
+  actual_model_id?: string;
   role?: string;
   activity_label?: string;
   status?: OrchestrationTaskStatus;
   started_at?: string;
+  completed_at?: string;
+  failure_reason?: string;
   occurred_at?: string;
   duration_ms?: number;
   contributed_to_final_answer?: boolean;
@@ -294,11 +296,15 @@ export type OrchestrationModelAudit = {
   provider?: string;
   provider_display_name?: string;
   display_name?: string;
+  actual_model_id?: string;
   model?: string;
   role?: string;
   activity_label?: string;
   status?: OrchestrationTaskStatus | "recorded";
   latency_ms?: number;
+  started_at?: string | null;
+  completed_at?: string | null;
+  failure_reason?: string | null;
   contributed?: boolean;
 };
 

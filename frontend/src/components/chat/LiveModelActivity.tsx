@@ -7,7 +7,8 @@ const MODE_LABELS: Record<string, string> = {
   instant: "Instant Intelligence",
   medium: "Medium Intelligence",
   high: "High Intelligence",
-  deep_research: "Deep Research"
+  deep_research: "Deep Research",
+  coding: "Coding"
 };
 
 export function modelActivityCards(events: OrchestrationActivityEvent[]) {
@@ -99,6 +100,7 @@ export function LiveModelActivity({
               </div>
               <dl>
                 <div><dt>Provider</dt><dd>{task.provider_display_name}</dd></div>
+                {task.actual_model_id && <div><dt>Model ID</dt><dd>{task.actual_model_id}</dd></div>}
                 <div><dt>Role</dt><dd>{task.role}</dd></div>
                 <div><dt>Activity</dt><dd>{task.activity_label}</dd></div>
                 {typeof task.duration_ms === "number" && (
@@ -106,6 +108,7 @@ export function LiveModelActivity({
                 )}
               </dl>
               {task.contributed_to_final_answer && <span className="model-contributed-badge">Used in final answer</span>}
+              {task.failure_reason && <span className="model-activity-fallback">{task.failure_reason}</span>}
             </article>
           ))}
           {!tasks.length && running && <div className="model-activity-empty">Preparing intelligence tasks…</div>}

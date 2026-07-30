@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 import threading
 import time
-from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError, as_completed
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from time import perf_counter
 
 from app.core.config import settings
@@ -25,7 +25,9 @@ class ParallelExecutor:
     ) -> list[ModelResult]:
         if not tasks:
             return []
-        workers = min(len(tasks), max(1, settings.ORCHESTRATION_MAX_PARALLEL))
+        # Every planned model is submitted immediately. Provider adapters and
+        # resilience controls remain responsible for provider-specific backoff.
+        workers = len(tasks)
         results: list[ModelResult] = []
         pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="orchestration")
         invalidated: set[str] = set()
@@ -47,13 +49,19 @@ class ParallelExecutor:
                         invalidation_lock,
                     )
                 ] = task
-            try:
-                for future in as_completed(futures, timeout=total_timeout):
+            pending = set(futures)
+            deadline = time.monotonic() + total_timeout
+            while pending and not cancelled():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                done, pending = wait(
+                    pending,
+                    timeout=min(0.25, remaining),
+                    return_when=FIRST_COMPLETED,
+                )
+                for future in done:
                     results.append(future.result())
-                    if cancelled():
-                        break
-            except TimeoutError:
-                pass
             for future, task in futures.items():
                 if future.done():
                     continue
@@ -61,7 +69,12 @@ class ParallelExecutor:
                 status = TaskStatus.CANCELLED if cancelled() else TaskStatus.TIMED_OUT
                 with invalidation_lock:
                     invalidated.add(task.task_id)
-                result = ModelResult(task=task, status=status, error_classification=status.value)
+                result = ModelResult(
+                    task=task,
+                    status=status,
+                    error_classification=status.value,
+                    completed_at=utc_iso(),
+                )
                 results.append(result)
                 emit(f"model.{status.value}", self._payload(task, status))
         finally:
@@ -87,7 +100,8 @@ class ParallelExecutor:
             emit("model.cancelled", self._payload(task, result.status))
             return result
         start = perf_counter()
-        emit("model.started", {**self._payload(task, TaskStatus.WORKING), "started_at": utc_iso()})
+        started_at = utc_iso()
+        emit("model.started", {**self._payload(task, TaskStatus.WORKING), "started_at": started_at})
         last_exc: Exception | None = None
         for attempt in range(settings.ORCHESTRATION_MAX_RETRIES + 1):
             if cancelled():
@@ -97,6 +111,8 @@ class ParallelExecutor:
             try:
                 result = provider_adapter.complete(task, max_tokens=max_tokens)
                 result.duration_ms = int((perf_counter() - start) * 1000)
+                result.started_at = started_at
+                result.completed_at = utc_iso()
                 with invalidation_lock:
                     if task.task_id in invalidated:
                         return ModelResult(
@@ -107,7 +123,12 @@ class ParallelExecutor:
                         )
                 resilience_manager.success(key)
                 model_registry.mark_result(task.model.provider, task.model.actual_model_id, success=True)
-                emit("model.completed", {**self._payload(task, result.status), "duration_ms": result.duration_ms})
+                emit("model.completed", {
+                    **self._payload(task, result.status),
+                    "started_at": result.started_at,
+                    "completed_at": result.completed_at,
+                    "duration_ms": result.duration_ms,
+                })
                 return result
             except Exception as exc:
                 last_exc = exc
@@ -131,8 +152,16 @@ class ParallelExecutor:
             status=status,
             duration_ms=int((perf_counter() - start) * 1000),
             error_classification=classification,
+            started_at=started_at,
+            completed_at=utc_iso(),
         )
-        emit(f"model.{status.value}", {**self._payload(task, status), "duration_ms": result.duration_ms})
+        emit(f"model.{status.value}", {
+            **self._payload(task, status),
+            "started_at": result.started_at,
+            "completed_at": result.completed_at,
+            "duration_ms": result.duration_ms,
+            "failure_reason": classification,
+        })
         return result
 
     @staticmethod
@@ -141,6 +170,7 @@ class ParallelExecutor:
             "task_id": task.task_id,
             "provider_display_name": "AWS Bedrock" if task.model.provider == "bedrock" else task.model.provider.title(),
             "model_display_name": task.model.friendly_name,
+            "actual_model_id": task.model.actual_model_id,
             "role": task.role,
             "activity_label": task.activity_label,
             "status": status.value,

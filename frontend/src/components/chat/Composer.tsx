@@ -1,36 +1,19 @@
-import { type ChangeEvent, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Box, BrainCircuit, Camera, Check, ChevronDown, FileImage, FileText, Plus, Search, SendHorizonal, Sparkles, Square, Timer, Trash2, X } from "lucide-react";
+import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from "react";
+import { Camera, Check, ChevronDown, Code2, FileImage, FileText, Plus, SendHorizonal, Sparkles, Square, Trash2, X } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import clsx from "clsx";
 import { api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
-import type { AiProvider, ChatMode, DocumentItem, IntelligenceConfig, ResearchModelOptions, ResearchProvider, SearchMode } from "../../types";
-import { PROVIDER_MODELS, useAppSettings } from "../../contexts/AppSettingsContext";
+import type { ChatMode, DocumentItem, IntelligenceConfig } from "../../types";
+import { useAppSettings } from "../../contexts/AppSettingsContext";
 import { useCrystalEffects } from "../../crystal/useCrystalEffects";
 import { VoiceButton } from "./VoiceButton";
 import { usePublishedUiText } from "../../hooks/useCmsContent";
-import { AppSelect } from "../common/AppSelect";
 import { COMPOSER_MODE_OPTIONS, composerModeOption, composerModeValue } from "./composerSelection";
 import { ComposerPopover } from "./ComposerPopover";
-import { MAX_PARTICIPATING_MODELS, clampParticipatingModels } from "../../intelligence/limits";
-
-type Provider = AiProvider;
 
 export type ComposerOptions = {
-  searchMode: SearchMode;
   chatMode: ChatMode;
-  researchProviders: ResearchProvider[];
-  maxModels: number;
-  allModels: boolean;
-  timeoutSeconds: number;
-  groqModels: string[];
-  bedrockModels: string[];
-  openaiModels: string[];
-  geminiModels: string[];
-  finalJudgeModel: string | null;
-  reasoning: boolean;
-  provider: Provider;
-  model: string;
 };
 
 export type UploadTask = {
@@ -49,138 +32,7 @@ type ImageAttachment = {
 
 const DOCUMENT_EXTENSIONS = new Set([".pdf", ".docx", ".txt"]);
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
-const PROVIDER_LABELS: Record<Provider, string> = {
-  openai: "OpenAI",
-  groq: "Groq",
-  bedrock: "Bedrock",
-  gemini: "Gemini"
-};
-
-type ModelOption = { value: string; label: string };
-type ComposerOpenMenu = "attachments" | "mode" | "model" | "research-model" | null;
-
-function readableModelLabel(value: string) {
-  for (const options of Object.values(PROVIDER_MODELS)) {
-    const found = options.find((option) => option.value === value);
-    if (found) return found.label;
-  }
-  return value
-    .replace(/^amazon\./, "Amazon ")
-    .replace(/^anthropic\./, "Claude ")
-    .replace(/^gemini-/, "Gemini ")
-    .replace(/^openai[/.]/, "GPT ")
-    .replace(/^llama-/, "Llama ")
-    .replace(/^meta-/, "Meta ")
-    .replace(/[:/_-]+/g, " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function modelOptionsFor(provider: Provider, configured?: string[]): ModelOption[] {
-  const configuredModels = configured?.filter(Boolean) ?? [];
-  const values = configuredModels.length ? configuredModels : PROVIDER_MODELS[provider].map((option) => option.value);
-  return values.map((value) => ({ value, label: readableModelLabel(value) }));
-}
-
-function researchOptionsFor(provider: ResearchProvider, config: ResearchModelOptions | null): ModelOption[] {
-  return modelOptionsFor(provider, config?.providers[provider]?.models);
-}
-
-function ModelMenu({
-  provider,
-  model,
-  open,
-  onToggle,
-  onClose,
-  onSelect
-}: {
-  provider: Provider;
-  model: string;
-  open: boolean;
-  onToggle: () => void;
-  onClose: () => void;
-  onSelect: (provider: Provider, model: string) => void;
-}) {
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const [activeProvider, setActiveProvider] = useState<Provider>(provider);
-  const [query, setQuery] = useState("");
-  const triggerLabel = readableModelLabel(model);
-  const options = modelOptionsFor(activeProvider);
-  const filteredOptions = options.filter((option) => option.label.toLowerCase().includes(query.trim().toLowerCase()));
-
-  useEffect(() => setActiveProvider(provider), [provider]);
-  useEffect(() => {
-    if (!open) setQuery("");
-  }, [open]);
-
-  return (
-    <div className="model-menu">
-      <button
-        ref={triggerRef}
-        className={clsx("composer-pill model-menu-trigger", provider !== "groq" && "composer-pill-active")}
-        type="button"
-        onClick={() => {
-          setActiveProvider(provider);
-          onToggle();
-        }}
-        title="Choose intelligence and model"
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        aria-controls="composer-model-popover"
-      >
-        <BrainCircuit size={18} />
-        <span className="min-w-0 truncate">{triggerLabel}</span>
-        <ChevronDown size={15} />
-      </button>
-      <ComposerPopover open={open} triggerRef={triggerRef} onClose={onClose} ariaLabel="Choose AI model" preferredWidth={420} maxWidth={420} placement="top-end" className="composer-model-popover" backdrop="model">
-        <div id="composer-model-popover" className="composer-model-panel">
-          <div className="composer-popover-header">
-            <span>AI model</span>
-            <small>{triggerLabel}</small>
-          </div>
-          <div className="composer-model-provider-tabs" role="tablist" aria-label="Model providers">
-          {(["groq", "bedrock", "openai", "gemini"] as Provider[]).map((item) => (
-            <button
-              key={item}
-              className={clsx(activeProvider === item && "composer-popover-option-active")}
-              type="button"
-              role="tab"
-              aria-selected={activeProvider === item}
-              onClick={() => setActiveProvider(item)}
-              onFocus={() => setActiveProvider(item)}
-            >
-              <span>{PROVIDER_LABELS[item]}</span>
-            </button>
-          ))}
-          </div>
-          {options.length > 8 && (
-            <label className="composer-model-search">
-              <Search size={15} />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search models" aria-label="Search models" />
-            </label>
-          )}
-          <div className="composer-popover-list composer-model-list" role="listbox" aria-label={`${PROVIDER_LABELS[activeProvider]} models`}>
-            {filteredOptions.map((option) => (
-              <button
-                key={option.value}
-                className={clsx("composer-popover-option", provider === activeProvider && model === option.value && "composer-popover-option-active")}
-                type="button"
-                role="option"
-                aria-selected={provider === activeProvider && model === option.value}
-                onClick={() => {
-                  onSelect(activeProvider, option.value);
-                  onClose();
-                }}
-              >
-                <span><strong>{option.label}</strong><small>{PROVIDER_LABELS[activeProvider]}</small></span>
-                {provider === activeProvider && model === option.value && <Check size={14} />}
-              </button>
-            ))}
-          </div>
-        </div>
-      </ComposerPopover>
-    </div>
-  );
-}
+type ComposerOpenMenu = "attachments" | "mode" | null;
 
 function ModeMenu({
   value,
@@ -203,7 +55,8 @@ function ModeMenu({
     instant: "Fast single-model response",
     medium: "Balanced parallel intelligence",
     high: "Advanced multi-provider reasoning",
-    deep_research: "Source-backed comprehensive research"
+    deep_research: "Source-backed comprehensive research",
+    coding: "Two Qwen Coder models collaborate on coding tasks."
   };
 
   return (
@@ -241,6 +94,7 @@ function ModeMenu({
               }}
             >
               <span>
+                {option.value === "coding" && <Code2 size={16} />}
                 <strong>{option.label}</strong>
                 <small>
                   {config?.modes[option.value]?.available === false
@@ -251,103 +105,6 @@ function ModeMenu({
               {option.value === selected.value && <Check size={14} />}
             </button>
           ))}
-          </div>
-        </div>
-      </ComposerPopover>
-    </div>
-  );
-}
-
-function ResearchModelMenu({
-  config,
-  selectedGroqModels,
-  selectedBedrockModels,
-  selectedOpenAiModels,
-  selectedGeminiModels,
-  open,
-  onToggleMenu,
-  onClose,
-  onToggle
-}: {
-  config: ResearchModelOptions | null;
-  selectedGroqModels: string[];
-  selectedBedrockModels: string[];
-  selectedOpenAiModels: string[];
-  selectedGeminiModels: string[];
-  open: boolean;
-  onToggleMenu: () => void;
-  onClose: () => void;
-  onToggle: (provider: ResearchProvider, model: string) => void;
-}) {
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const [activeProvider, setActiveProvider] = useState<ResearchProvider>("groq");
-  const providerOptions = {
-    groq: researchOptionsFor("groq", config),
-    bedrock: researchOptionsFor("bedrock", config),
-    openai: researchOptionsFor("openai", config),
-    gemini: researchOptionsFor("gemini", config)
-  };
-  const selectedByProvider = {
-    groq: selectedGroqModels,
-    bedrock: selectedBedrockModels,
-    openai: selectedOpenAiModels,
-    gemini: selectedGeminiModels
-  };
-  const selectedCount = selectedGroqModels.length + selectedBedrockModels.length + selectedOpenAiModels.length + selectedGeminiModels.length;
-
-  return (
-    <div className="model-menu model-menu-research">
-      <button ref={triggerRef} className="chip-dark model-menu-compact-trigger" type="button" onClick={onToggleMenu} aria-expanded={open} aria-haspopup="dialog" aria-controls="composer-research-model-popover">
-        <Box size={13} />
-        Models {selectedCount ? `(${selectedCount})` : ""}
-        <ChevronDown size={13} />
-      </button>
-      <ComposerPopover open={open} triggerRef={triggerRef} onClose={onClose} ariaLabel="Research models" preferredWidth={380} maxWidth={420} placement="top-end" className="composer-research-model-popover" backdrop="model">
-        <div id="composer-research-model-popover" className="composer-model-panel">
-          <div className="composer-popover-header">Research models</div>
-          <div className="composer-model-provider-tabs" role="tablist" aria-label="Research model providers">
-          {(["groq", "bedrock", "openai", "gemini"] as ResearchProvider[]).map((item) => {
-            const enabled = !config || config.providers[item]?.enabled;
-            const optionCount = providerOptions[item].length;
-            return (
-              <button
-                key={item}
-                className={clsx(
-                  activeProvider === item && "composer-popover-option-active",
-                  (!enabled || optionCount === 0) && "model-menu-item-disabled"
-                )}
-                type="button"
-                role="tab"
-                aria-selected={activeProvider === item}
-                disabled={!enabled || optionCount === 0}
-                onClick={() => setActiveProvider(item)}
-                onFocus={() => setActiveProvider(item)}
-              >
-                <span>{PROVIDER_LABELS[item]}</span>
-                <span className="model-menu-muted">
-                  {enabled ? selectedByProvider[item].length || "Auto" : "Off"}
-                </span>
-              </button>
-            );
-          })}
-          </div>
-          <div className="composer-popover-list composer-model-list" role="listbox" aria-label={`${PROVIDER_LABELS[activeProvider]} research models`}>
-            {providerOptions[activeProvider].map((option) => {
-              const checked = selectedByProvider[activeProvider].includes(option.value);
-              return (
-                <button
-                  key={option.value}
-                  className={clsx("composer-popover-option", checked && "composer-popover-option-active")}
-                  type="button"
-                  role="option"
-                  aria-selected={checked}
-                  onClick={() => onToggle(activeProvider, option.value)}
-                >
-                  <span><strong>{option.label}</strong><small>{PROVIDER_LABELS[activeProvider]}</small></span>
-                  {checked && <Check size={14} />}
-                </button>
-              );
-            })}
           </div>
         </div>
       </ComposerPopover>
@@ -388,7 +145,7 @@ export function Composer({
   uploadTasks: UploadTask[];
   onRemoveDocument: (id: string) => void;
   onDeleteDocument: (id: string) => Promise<void>;
-  onUploadDocuments: (files: File[], provider: Provider) => Promise<void>;
+  onUploadDocuments: (files: File[]) => Promise<void>;
   onSend: (text: string, options: ComposerOptions, imageFiles: File[]) => Promise<void | boolean>;
   onStop?: () => Promise<void> | void;
   onOpenLiveMode: () => void;
@@ -407,46 +164,20 @@ export function Composer({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const imageAttachmentsRef = useRef<ImageAttachment[]>([]);
   const [draft, setDraft] = useState("");
-  const [searchMode, setSearchMode] = useState<SearchMode>("auto");
   const [chatMode, setChatMode] = useState<ChatMode>(() => {
     const stored = typeof window !== "undefined" ? window.localStorage.getItem("autoai-intelligence-mode") : null;
     return composerModeOption(stored || "instant").chatMode;
   });
-  const [researchProviders, setResearchProviders] = useState<ResearchProvider[]>(settings.deepResearchProviders);
-  const [maxModels, setMaxModels] = useState(settings.deepResearchMaxModels);
-  const [allModels, setAllModels] = useState(settings.deepResearchAllModels);
-  const [timeoutSeconds, setTimeoutSeconds] = useState(settings.deepResearchTimeoutSeconds);
-  const [researchModelOptions, setResearchModelOptions] = useState<ResearchModelOptions | null>(null);
   const [intelligenceConfig, setIntelligenceConfig] = useState<IntelligenceConfig | null>(null);
-  const [groqModels, setGroqModels] = useState<string[]>([]);
-  const [bedrockModels, setBedrockModels] = useState<string[]>([]);
-  const [openaiModels, setOpenaiModels] = useState<string[]>([]);
-  const [geminiModels, setGeminiModels] = useState<string[]>([]);
-  const [finalJudgeModel, setFinalJudgeModel] = useState<string | null>(null);
-  const [reasoning] = useState(false);
-  const [provider, setProvider] = useState<Provider>(settings.defaultProvider);
-  const [model, setModel] = useState<string>(settings.defaultModel);
   const [sending, setSending] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [openMenu, setOpenMenu] = useState<ComposerOpenMenu>(null);
-  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const [imageAttachments, setImageAttachments] = useState<ImageAttachment[]>([]);
   const [error, setError] = useState("");
   const appliedInitialDraftRef = useRef("");
 
   const uploading = uploadTasks.some((task) => task.status === "uploading" || task.status === "processing");
   const canSend = Boolean(draft.trim() || imageAttachments.length) && !disabled && !sending && !uploading;
-  const enabledResearchProviders = useMemo(
-    () =>
-      (["groq", "bedrock", "openai", "gemini"] as ResearchProvider[]).filter(
-        (item) => !researchModelOptions || researchModelOptions.providers[item]?.enabled
-      ),
-    [researchModelOptions]
-  );
-  const effectiveResearchProviders = useMemo(() => {
-    const selected = researchProviders.filter((item) => enabledResearchProviders.includes(item));
-    return selected.length ? selected : enabledResearchProviders;
-  }, [enabledResearchProviders, researchProviders]);
 
   useEffect(() => {
     imageAttachmentsRef.current = imageAttachments;
@@ -485,50 +216,12 @@ export function Composer({
   }, []);
 
   useEffect(() => {
-    setProvider(settings.defaultProvider);
-    setModel(settings.defaultModel);
-  }, [settings.defaultModel, settings.defaultProvider]);
-
-  useEffect(() => {
     const preferred = conversationMode || user?.intelligence_mode;
     if (!preferred) return;
     const option = composerModeOption(preferred);
     setChatMode(option.chatMode);
-    setSearchMode(option.searchMode);
     window.localStorage.setItem("autoai-intelligence-mode", option.value);
   }, [conversationMode, user?.intelligence_mode]);
-
-  useEffect(() => {
-    setResearchProviders(settings.deepResearchProviders);
-    setMaxModels(clampParticipatingModels(settings.deepResearchMaxModels));
-    setAllModels(settings.deepResearchAllModels);
-    setTimeoutSeconds(settings.deepResearchTimeoutSeconds);
-  }, [
-    settings.deepResearchAllModels,
-    settings.deepResearchMaxModels,
-    settings.deepResearchProviders,
-    settings.deepResearchTimeoutSeconds
-  ]);
-
-  useEffect(() => {
-    if (!token) return;
-    let active = true;
-    api.researchModels(token)
-      .then((options) => {
-        if (!active) return;
-        setResearchModelOptions(options);
-        setMaxModels((current) => clampParticipatingModels(current, options.defaults.max_models));
-        setFinalJudgeModel(options.defaults.final_judge_model ?? null);
-        const enabled = (["groq", "bedrock", "openai", "gemini"] as ResearchProvider[]).filter((item) => options.providers[item]?.enabled);
-        if (enabled.length) setResearchProviders((current) => current.filter((item) => enabled.includes(item)).concat(enabled.filter((item) => !current.includes(item))));
-      })
-      .catch(() => {
-        if (active) setResearchModelOptions(null);
-      });
-    return () => {
-      active = false;
-    };
-  }, [token]);
 
   useEffect(() => {
     if (!token) return;
@@ -582,7 +275,7 @@ export function Composer({
       });
     }
     if (documentFiles.length) {
-      await onUploadDocuments(documentFiles, provider);
+      await onUploadDocuments(documentFiles);
     }
     if (unsupported.length) {
       setError(`Unsupported file: ${unsupported.join(", ")}`);
@@ -603,22 +296,7 @@ export function Composer({
     try {
       const result = await onSend(
         text,
-        {
-          searchMode,
-          chatMode,
-          researchProviders: effectiveResearchProviders,
-          maxModels,
-          allModels,
-          timeoutSeconds,
-          groqModels,
-          bedrockModels,
-          openaiModels,
-          geminiModels,
-          finalJudgeModel,
-          reasoning,
-          provider,
-          model
-        },
+        { chatMode },
         files
       );
       accepted = result !== false;
@@ -672,55 +350,14 @@ export function Composer({
     cameraInputRef.current?.click();
   }
 
-  const researchModeActive = chatMode !== "instant";
-  const selectedResearchModelCount = groqModels.length + bedrockModels.length + openaiModels.length + geminiModels.length;
-
-  function toggleResearchProvider(nextProvider: ResearchProvider) {
-    if (researchModelOptions && !researchModelOptions.providers[nextProvider]?.enabled) return;
-    setResearchProviders((current) => {
-      if (current.includes(nextProvider)) {
-        return current.length === 1 ? current : current.filter((item) => item !== nextProvider);
-      }
-      return [...current, nextProvider];
-    });
-  }
-
-  function toggleResearchModel(nextProvider: ResearchProvider, nextModel: string) {
-    const setter =
-      nextProvider === "groq"
-        ? setGroqModels
-        : nextProvider === "bedrock"
-          ? setBedrockModels
-          : nextProvider === "openai"
-            ? setOpenaiModels
-            : setGeminiModels;
-    setter((current) => {
-      if (current.includes(nextModel)) return current.filter((item) => item !== nextModel);
-      if (selectedResearchModelCount >= MAX_PARTICIPATING_MODELS) {
-        setError(`A maximum of ${MAX_PARTICIPATING_MODELS} models can participate.`);
-        return current;
-      }
-      setError("");
-      return [...current, nextModel];
-    });
-    setResearchProviders((current) => (current.includes(nextProvider) ? current : [...current, nextProvider]));
-  }
-
-  function selectModelProvider(nextProvider: Provider, nextModel: string) {
-    setProvider(nextProvider);
-    setModel(nextModel);
-  }
-
   function updateCombinedMode(value: string) {
     const option = composerModeOption(value);
-    setSearchMode(option.searchMode);
     setChatMode(option.chatMode);
-    setAdvancedSettingsOpen(false);
     setOpenMenu(null);
     window.localStorage.setItem("autoai-intelligence-mode", option.value);
   }
 
-  const selectedModeValue = composerModeValue(searchMode, chatMode);
+  const selectedModeValue = composerModeValue("auto", chatMode);
 
   return (
     <form
@@ -842,87 +479,7 @@ export function Composer({
             </ComposerPopover>
           </div>
           <ModeMenu value={selectedModeValue} config={intelligenceConfig} open={openMenu === "mode"} onToggle={() => setOpenMenu((current) => current === "mode" ? null : "mode")} onClose={() => setOpenMenu(null)} onSelect={updateCombinedMode} />
-          <span className="composer-divider" />
-          <ModelMenu provider={provider} model={model} open={openMenu === "model"} onToggle={() => setOpenMenu((current) => current === "model" ? null : "model")} onClose={() => setOpenMenu(null)} onSelect={selectModelProvider} />
         </div>
-
-        {researchModeActive && (
-          <button
-            type="button"
-            className="composer-advanced-trigger"
-            aria-expanded={advancedSettingsOpen}
-            aria-controls="composer-advanced-settings"
-            onClick={() => setAdvancedSettingsOpen((current) => !current)}
-          >
-            <BrainCircuit size={14} />
-            <span>Configure models · Up to {MAX_PARTICIPATING_MODELS}</span>
-            <ChevronDown size={14} className={advancedSettingsOpen ? "rotate-180" : ""} />
-          </button>
-        )}
-
-        <AnimatePresence>
-          {researchModeActive && advancedSettingsOpen && (
-            <motion.div
-              id="composer-advanced-settings"
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              className="composer-advanced-settings mt-2 overflow-auto"
-            >
-              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-cyan-200/15 bg-cyan-200/[0.06] px-3 py-2 text-xs text-cyan-50">
-                <span className="inline-flex items-center gap-1 font-semibold text-cyan-100">
-                  <BrainCircuit size={14} />
-                  Multi-model reasoning active
-                </span>
-                {(["groq", "bedrock", "openai", "gemini"] as ResearchProvider[]).map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    disabled={researchModelOptions ? !researchModelOptions.providers[item]?.enabled : false}
-                    className={clsx(
-                      "inline-flex h-7 items-center gap-1 rounded-md border px-2 font-semibold transition",
-                      researchProviders.includes(item)
-                        ? "border-cyan-200/35 bg-cyan-200/12 text-cyan-50"
-                        : "border-white/10 bg-white/5 text-slate-400",
-                      researchModelOptions && !researchModelOptions.providers[item]?.enabled && "opacity-40"
-                    )}
-                    onClick={() => toggleResearchProvider(item)}
-                  >
-                    {researchProviders.includes(item) && <Check size={12} />}
-                    {PROVIDER_LABELS[item]}
-                  </button>
-                ))}
-                <ResearchModelMenu
-                  config={researchModelOptions}
-                  selectedGroqModels={groqModels}
-                  selectedBedrockModels={bedrockModels}
-                  selectedOpenAiModels={openaiModels}
-                  selectedGeminiModels={geminiModels}
-                  open={openMenu === "research-model"}
-                  onToggleMenu={() => setOpenMenu((current) => current === "research-model" ? null : "research-model")}
-                  onClose={() => setOpenMenu(null)}
-                  onToggle={toggleResearchModel}
-                />
-                <label className="inline-flex h-7 items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2">
-                  <Box size={13} />
-                  <AppSelect label="Maximum research models" value={maxModels} disabled={allModels} onChange={(value) => setMaxModels(clampParticipatingModels(value))} options={[1,2,3,4,5,6].map((value) => ({value:String(value),label:`Up to ${value}`}))} />
-                </label>
-                <label className="inline-flex h-7 items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 font-semibold">
-                  <input
-                    type="checkbox"
-                    checked={allModels}
-                    onChange={(event) => setAllModels(event.target.checked)}
-                  />
-                  All available (up to 6)
-                </label>
-                <label className="inline-flex h-7 items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2">
-                  <Timer size={13} />
-                  <AppSelect label="Research timeout" value={timeoutSeconds} onChange={(value) => setTimeoutSeconds(Number(value))} options={[20,35,45,60].map((value) => ({value:String(value),label:`${value}s`}))} />
-                </label>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         <div className="composer-input-row">
           <textarea

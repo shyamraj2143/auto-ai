@@ -17,6 +17,7 @@ deploy_htdocs_clean/
 .tsbuild/
 *.tsbuildinfo
 *.log
+output/playwright/test-results/
 database/*.db
 database/*.db-*
 backend/uploads/*

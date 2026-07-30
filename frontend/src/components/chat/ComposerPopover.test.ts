@@ -64,13 +64,15 @@ describe("composer popover contracts", () => {
     expect(composer).toContain("openDocumentPicker");
   });
 
-  it("uses one menu state and no right-opening model subpanel", () => {
+  it("uses one menu state with preset-only intelligence controls", () => {
     expect(composer).toContain("const [openMenu, setOpenMenu]");
     expect(composer).not.toContain('className="model-menu-subpanel"');
     expect(composer).toContain('openMenu === "attachments"');
     expect(composer).toContain('openMenu === "mode"');
-    expect(composer).toContain('openMenu === "model"');
-    expect(composer).toContain('openMenu === "research-model"');
+    expect(composer).not.toContain('openMenu === "model"');
+    expect(composer).not.toContain('openMenu === "research-model"');
+    expect(composer).not.toContain("Configure models");
+    expect(composer).not.toContain("Up to 6");
   });
 
   it("supports Escape, outside pointer, focus restoration, and centralized Android Back", () => {
@@ -80,12 +82,12 @@ describe("composer popover contracts", () => {
     expect(popover).toContain("focus({ preventScroll: true })");
   });
 
-  it("keeps existing mode/model selection and upload/send contracts", () => {
+  it("keeps preset selection and upload/send contracts without manual model state", () => {
     expect(composer).toContain("composerModeOption(value)");
-    expect(composer).toContain("setSearchMode(option.searchMode)");
     expect(composer).toContain("setChatMode(option.chatMode)");
-    expect(composer).toContain("selectModelProvider");
-    expect(composer).toContain("onUploadDocuments(documentFiles, provider)");
+    expect(composer).not.toContain("selectModelProvider");
+    expect(composer).toContain("onUploadDocuments(documentFiles)");
     expect(composer).toContain("onSend(");
+    expect(composer).toContain('coding: "Two Qwen Coder models collaborate on coding tasks."');
   });
 });

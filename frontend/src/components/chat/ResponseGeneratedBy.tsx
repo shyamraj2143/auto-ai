@@ -11,7 +11,8 @@ const MODE_LABELS: Record<string, string> = {
   instant: "Instant Intelligence",
   medium: "Medium Intelligence",
   high: "High Intelligence",
-  deep_research: "Deep Research"
+  deep_research: "Deep Research",
+  coding: "Coding"
 };
 
 type AuditRow = {
@@ -22,6 +23,8 @@ type AuditRow = {
   activity: string;
   status: OrchestrationTaskStatus | "recorded";
   latencyMs?: number;
+  actualModelId?: string;
+  failureReason?: string;
   contributed: boolean;
 };
 
@@ -49,6 +52,8 @@ export function responseAuditRows(audit?: OrchestrationAudit | null): AuditRow[]
         activity: model.activity_label || model.role || "Prepared part of the response",
         status: safeStatus(model),
         latencyMs: typeof model.latency_ms === "number" ? model.latency_ms : undefined,
+        actualModelId: model.actual_model_id,
+        failureReason: model.failure_reason || undefined,
         contributed: Boolean(model.contributed)
       });
       return rows;
@@ -117,7 +122,7 @@ export function ResponseGeneratedBy({ audit }: { audit?: OrchestrationAudit | nu
                   <span className="response-audit-status"><StatusIcon status={row.status} /></span>
                   <span>
                     <strong>{row.model}</strong>
-                    <small>{row.provider}</small>
+                    <small>{row.provider}{row.actualModelId ? ` · ${row.actualModelId}` : ""}</small>
                   </span>
                   <span className="response-audit-state">{statusLabel(row.status)}</span>
                 </div>
@@ -128,6 +133,7 @@ export function ResponseGeneratedBy({ audit }: { audit?: OrchestrationAudit | nu
                 <div className="response-audit-result">
                   {typeof row.latencyMs === "number" && <span>{(row.latencyMs / 1000).toFixed(1)}s</span>}
                   {row.contributed && <strong>Used in final response</strong>}
+                  {row.failureReason && <span>{row.failureReason}</span>}
                 </div>
               </article>
             ))}

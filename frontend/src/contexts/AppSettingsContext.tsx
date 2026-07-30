@@ -1,8 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState } from "react";
-import type { AiProvider, ResearchProvider } from "../types";
+import type { AiProvider } from "../types";
 import { crystalFailureThreshold, crystalUiEnabled, type CrystalEffectsLevel } from "../crystal/tokens";
 import { useMotionMode } from "../motion/MotionProvider";
-import { MAX_PARTICIPATING_MODELS, clampParticipatingModels } from "../intelligence/limits";
 export type AppLanguage = "system" | "en" | "hi" | "hinglish";
 
 export type AppSettings = {
@@ -14,10 +13,6 @@ export type AppSettings = {
   voiceEnabled: boolean;
   notificationsEnabled: boolean;
   language: AppLanguage;
-  deepResearchProviders: ResearchProvider[];
-  deepResearchMaxModels: number;
-  deepResearchAllModels: boolean;
-  deepResearchTimeoutSeconds: number;
   visualEffectsLevel: CrystalEffectsLevel;
   crystalOrb: boolean;
   crystalSurfaces: boolean;
@@ -35,10 +30,6 @@ type AppSettingsContextValue = {
   setVoiceEnabled: (enabled: boolean) => void;
   setNotificationsEnabled: (enabled: boolean) => void;
   setLanguage: (language: AppLanguage) => void;
-  setDeepResearchProviders: (providers: ResearchProvider[]) => void;
-  setDeepResearchMaxModels: (maxModels: number) => void;
-  setDeepResearchAllModels: (enabled: boolean) => void;
-  setDeepResearchTimeoutSeconds: (seconds: number) => void;
   setVisualEffectsLevel: (level: CrystalEffectsLevel) => void;
   setCrystalOrb: (enabled: boolean) => void;
   setCrystalSurfaces: (enabled: boolean) => void;
@@ -93,10 +84,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   voiceEnabled: true,
   notificationsEnabled: false,
   language: "system",
-  deepResearchProviders: ["groq", "bedrock"],
-  deepResearchMaxModels: MAX_PARTICIPATING_MODELS,
-  deepResearchAllModels: true,
-  deepResearchTimeoutSeconds: 45,
   visualEffectsLevel: "reduced",
   crystalOrb: true,
   crystalSurfaces: true,
@@ -105,18 +92,6 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 const LANGUAGE_VALUES = new Set<AppLanguage>(["system", "en", "hi", "hinglish"]);
-function clampNumber(value: unknown, fallback: number, min: number, max: number) {
-  const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(max, Math.max(min, Math.round(parsed)));
-}
-
-function normalizeResearchProviders(value: unknown) {
-  if (!Array.isArray(value)) return DEFAULT_SETTINGS.deepResearchProviders;
-  const providers = value.filter((item): item is ResearchProvider => item === "groq" || item === "bedrock" || item === "openai" || item === "gemini");
-  return providers.length ? Array.from(new Set(providers)) : DEFAULT_SETTINGS.deepResearchProviders;
-}
-
 function normalizeSettings(payload: unknown): AppSettings {
   if (!payload || typeof payload !== "object") return DEFAULT_SETTINGS;
   const raw = payload as Partial<AppSettings>;
@@ -127,9 +102,6 @@ function normalizeSettings(payload: unknown): AppSettings {
   const model = raw.defaultModel && validModels.includes(raw.defaultModel)
     ? raw.defaultModel
     : PROVIDER_MODELS[provider][0].value;
-  const hasLegacyResearchDefaults =
-    raw.deepResearchMaxModels === 3 && raw.deepResearchAllModels === false;
-
   return {
     defaultProvider: provider,
     defaultModel: model,
@@ -139,19 +111,6 @@ function normalizeSettings(payload: unknown): AppSettings {
     voiceEnabled: raw.voiceEnabled ?? DEFAULT_SETTINGS.voiceEnabled,
     notificationsEnabled: raw.notificationsEnabled ?? DEFAULT_SETTINGS.notificationsEnabled,
     language: raw.language && LANGUAGE_VALUES.has(raw.language) ? raw.language : DEFAULT_SETTINGS.language,
-    deepResearchProviders: normalizeResearchProviders(raw.deepResearchProviders),
-    deepResearchMaxModels: hasLegacyResearchDefaults
-      ? DEFAULT_SETTINGS.deepResearchMaxModels
-      : clampParticipatingModels(raw.deepResearchMaxModels, DEFAULT_SETTINGS.deepResearchMaxModels),
-    deepResearchAllModels: hasLegacyResearchDefaults
-      ? DEFAULT_SETTINGS.deepResearchAllModels
-      : raw.deepResearchAllModels ?? DEFAULT_SETTINGS.deepResearchAllModels,
-    deepResearchTimeoutSeconds: clampNumber(
-      raw.deepResearchTimeoutSeconds,
-      DEFAULT_SETTINGS.deepResearchTimeoutSeconds,
-      20,
-      120
-    ),
     visualEffectsLevel: raw.visualEffectsLevel === "off" || raw.visualEffectsLevel === "reduced" || raw.visualEffectsLevel === "full"
       ? raw.visualEffectsLevel
       : DEFAULT_SETTINGS.visualEffectsLevel,
@@ -270,18 +229,6 @@ export function AppSettingsProvider({ children }: { children: React.ReactNode })
       },
       setLanguage: (language) => {
         updateSettings((current) => ({ ...current, language }));
-      },
-      setDeepResearchProviders: (providers) => {
-        updateSettings((current) => ({ ...current, deepResearchProviders: providers }));
-      },
-      setDeepResearchMaxModels: (maxModels) => {
-        updateSettings((current) => ({ ...current, deepResearchMaxModels: maxModels }));
-      },
-      setDeepResearchAllModels: (enabled) => {
-        updateSettings((current) => ({ ...current, deepResearchAllModels: enabled }));
-      },
-      setDeepResearchTimeoutSeconds: (seconds) => {
-        updateSettings((current) => ({ ...current, deepResearchTimeoutSeconds: seconds }));
       },
       setVisualEffectsLevel: (level) => {
         updateSettings((current) => ({ ...current, visualEffectsLevel: level }));

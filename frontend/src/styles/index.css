@@ -8150,6 +8150,36 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
   .composer-popover { animation: none; }
 }
 
+/* Preset-only composer: keep the selector compact like a chat mode menu. */
+.composer-top-row > .mode-menu {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: min(220px, calc(100vw - 80px));
+}
+
+.composer-top-row > .mode-menu .composer-mode-pill {
+  width: auto;
+  min-width: 112px;
+  max-width: 100%;
+  justify-content: flex-start;
+  padding-inline: 10px;
+}
+
+.composer-top-row > .mode-menu .composer-mode-label {
+  flex: 0 1 auto;
+}
+
+@media (max-width: 389px) {
+  .composer-top-row {
+    flex-wrap: nowrap;
+  }
+
+  .composer-top-row > .mode-menu {
+    flex: 0 0 auto;
+    width: auto;
+  }
+}
+
 /* Compact Crystal messages: scoped to the existing AI chat. */
 .message-content-stack {
   display: flex;

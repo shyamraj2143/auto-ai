@@ -45,12 +45,12 @@ async function installAuthenticatedFixtures(page: Page) {
       defaults: { max_models: 6, timeout_seconds: 45, final_judge_model: null },
     });
     if (path.endsWith("/ai/intelligence/config")) return json(route, {
-      max_participating_models: 6,
       modes: {
         instant: { available: true, description: "Fast single-model response" },
         medium: { available: true, description: "Balanced parallel intelligence" },
         high: { available: true, description: "Advanced multi-provider reasoning" },
         deep_research: { available: true, description: "Source-backed comprehensive research" },
+        coding: { available: true, description: "Two Qwen Coder models collaborate on coding tasks." },
       },
       models: [],
       refreshed: true,
@@ -119,19 +119,17 @@ for (const viewport of viewports) {
   }
 }
 
-test("mode selection stays collapsed and advanced controls cap models at six", async ({ page }) => {
+test("preset selection stays collapsed without manual model controls", async ({ page }) => {
   await page.setViewportSize({ width: 393, height: 873 });
   await installAuthenticatedFixtures(page);
   await openRoute(page, "/chat");
-  await page.getByRole("button", { name: "Instant", exact: true }).click();
-  await page.getByRole("menuitemradio", { name: /Medium/ }).click();
-  await expect(page.locator("#composer-advanced-settings")).toHaveCount(0);
-  const configure = page.getByRole("button", { name: /Configure models · Up to 6/i });
-  await expect(configure).toHaveAttribute("aria-expanded", "false");
-  await configure.click();
-  await expect(page.locator("#composer-advanced-settings")).toBeVisible();
-  await expect(page.getByLabel("Maximum research models")).toBeVisible();
-  await expect(page.getByText("Up to 7", { exact: true })).toHaveCount(0);
+  for (const preset of ["Medium", "High", "Deep Research", "Coding"]) {
+    await page.getByRole("button", { name: /^(Instant|Medium|High|Deep Research|Coding)$/ }).click();
+    await page.getByRole("menuitemradio", { name: new RegExp(`^${preset}`) }).click();
+    await expect(page.locator("#composer-mode-popover")).toHaveCount(0);
+  }
+  await expect(page.getByText(/Configure models/i)).toHaveCount(0);
+  await expect(page.getByText(/Up to 6/i)).toHaveCount(0);
   await assertNoFunctionalOverflow(page);
 });
 

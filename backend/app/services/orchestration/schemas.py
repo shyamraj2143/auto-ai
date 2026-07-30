@@ -11,6 +11,7 @@ class IntelligenceMode(StrEnum):
     MEDIUM = "medium"
     HIGH = "high"
     DEEP_RESEARCH = "deep_research"
+    CODING = "coding"
 
     @classmethod
     def canonical(cls, value: str | None) -> "IntelligenceMode":
@@ -84,6 +85,8 @@ class ModelResult:
     duration_ms: int = 0
     error_classification: str | None = None
     contributed: bool = False
+    started_at: str | None = None
+    completed_at: str | None = None
 
 
 @dataclass

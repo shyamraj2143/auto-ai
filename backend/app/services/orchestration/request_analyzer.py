@@ -11,7 +11,7 @@ class RequestAnalyzer:
         math = bool(re.search(r"\b(calculate|equation|proof|integral|probability)\b|[=∑√]", lowered))
         recent = bool(re.search(r"\b(today|latest|current|recent|news|202[5-9])\b", lowered))
         long_request = len(message) > 1200 or message.count("\n") > 12
-        complexity = "high" if long_request or code or math or mode in {IntelligenceMode.HIGH, IntelligenceMode.DEEP_RESEARCH} else "medium"
+        complexity = "high" if long_request or code or math or mode in {IntelligenceMode.HIGH, IntelligenceMode.DEEP_RESEARCH, IntelligenceMode.CODING} else "medium"
         language = "Hindi" if re.search(r"[\u0900-\u097f]|\b(kya|kaise|hai|hindi)\b", lowered) else "user's language"
         return RequestAnalysis(
             intent="code" if code else "mathematics" if math else "research" if recent else "general",

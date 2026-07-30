@@ -50,8 +50,8 @@ from app.services.live_context import LiveRequestContext, is_time_query
 from app.services.orchestration import intelligence_orchestrator
 from app.services.orchestration.activity_store import activity_store
 from app.services.orchestration.model_registry import model_registry
+from app.services.orchestration.preset_policy import coding_configuration_status
 from app.services.orchestration.schemas import IntelligenceMode
-from app.services.orchestration.limits import MAX_PARTICIPATING_MODELS
 from app.services.web_search import SearchAgent, web_search_service
 
 
@@ -652,8 +652,13 @@ def run_chat_generation(generation_id: str) -> None:
                 return
 
             search_bundle: SearchResultBundle | None = None
-            search_mode = SearchAgent.effective_mode(payload.search_mode, payload.web_search)
+            search_mode = (
+                "deep"
+                if payload.mode == "deep_research"
+                else SearchAgent.effective_mode(payload.search_mode, payload.web_search)
+            )
             should_search, _ = SearchAgent.should_search(payload.message, search_mode)
+            should_search = should_search or payload.mode == "deep_research"
             if should_search:
                 if generation_cancel_requested(db, generation):
                     update_generation_message(
@@ -684,6 +689,11 @@ def run_chat_generation(generation_id: str) -> None:
                     chat_id=generation.chat_id,
                     message_id=generation.user_message_id,
                 )
+                if payload.mode == "deep_research" and not search_bundle.sources:
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail="Deep Research could not retrieve any verified web sources. Check the configured search provider and retry.",
+                    )
                 search_context = web_search_service.build_model_context(search_bundle)
                 if search_context:
                     model_messages = [
@@ -701,7 +711,7 @@ def run_chat_generation(generation_id: str) -> None:
                 )
                 db.commit()
 
-            if payload.mode in {"instant", "medium", "high", "deep_research"}:
+            if payload.mode in {"instant", "medium", "high", "deep_research", "coding"}:
                 if search_bundle:
                     try:
                         activity_store.emit(
@@ -956,9 +966,20 @@ def intelligence_config(
     healthy = [record for record in records if record.enabled and record.health_status == "healthy"]
     groq = [record for record in healthy if record.provider == "groq"]
     bedrock = [record for record in healthy if record.provider == "bedrock"]
-    def mode_config(mode: str, provider_available: bool, description: str, **extra: object) -> dict:
+    coding_available, coding_reason = coding_configuration_status(records)
+
+    def mode_config(
+        mode: str,
+        provider_available: bool,
+        description: str,
+        *,
+        provider_reason: str | None = None,
+        **extra: object,
+    ) -> dict:
         entitled, reason = intelligence_mode_access(db, current_user, mode)
-        unavailable_reason = reason if not entitled else (None if provider_available else "No healthy model is currently available.")
+        unavailable_reason = reason if not entitled else (
+            None if provider_available else provider_reason or "No healthy model is currently available."
+        )
         return {
             "available": provider_available and entitled,
             "description": description,
@@ -967,7 +988,6 @@ def intelligence_config(
         }
 
     return {
-        "max_participating_models": MAX_PARTICIPATING_MODELS,
         "modes": {
             "instant": mode_config("instant", bool(groq), "Fast single-model response"),
             "medium": mode_config("medium", bool(groq), "Balanced parallel intelligence"),
@@ -979,8 +999,14 @@ def intelligence_config(
             ),
             "deep_research": mode_config(
                 "deep_research",
-                bool(healthy),
+                bool(groq or bedrock) and bool(settings.TAVILY_API_KEY or settings.SERPER_API_KEY),
                 "Source-backed comprehensive research",
+            ),
+            "coding": mode_config(
+                "coding",
+                coding_available,
+                "Two Qwen Coder models collaborate on coding tasks.",
+                provider_reason=coding_reason,
             ),
         },
         "models": [

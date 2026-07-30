@@ -3,8 +3,8 @@ from __future__ import annotations
 import uuid
 
 from app.core.config import settings
-from app.services.orchestration.limits import MAX_PARTICIPATING_MODELS, participating_model_limit
 from app.services.orchestration.model_registry import model_registry
+from app.services.orchestration.preset_policy import coding_configuration_status, coding_model_ids
 from app.services.orchestration.schemas import IntelligenceMode, ModelTask, RequestAnalysis
 
 
@@ -36,6 +36,10 @@ DEEP_RESEARCH_ROLES = [
     "primary",
     "structure",
 ]
+CODING_ROLES = [
+    ("Coding implementation specialist", "Preparing the primary implementation"),
+    ("Code review and security specialist", "Reviewing bugs, security, and corrections"),
+]
 
 
 class TaskPlanner:
@@ -49,15 +53,10 @@ class TaskPlanner:
         requested_models: list[str] | None = None,
         max_models: int | None = None,
     ) -> list[ModelTask]:
+        # Legacy manual selections are intentionally ignored. Presets are authoritative.
+        del providers, requested_models, max_models
         records = model_registry.eligible(mode)
         records = list({(record.provider, record.actual_model_id): record for record in records}.values())
-        if providers:
-            records = [record for record in records if record.provider in set(providers)]
-        if requested_models:
-            requested = set(requested_models)
-            selected = [record for record in records if record.actual_model_id in requested]
-            if selected:
-                records = selected
         if mode == IntelligenceMode.INSTANT:
             primary_id = settings.GROQ_MODEL
             fallback_order = {model_id: index for index, model_id in enumerate(settings.ORCHESTRATION_INSTANT_FALLBACKS)}
@@ -78,30 +77,38 @@ class TaskPlanner:
         elif mode == IntelligenceMode.MEDIUM:
             records = [record for record in records if record.provider == "groq"]
             roles = MEDIUM_ROLES
-            limit = min(
-                len(records),
-                participating_model_limit(max_models, default=settings.ORCHESTRATION_MAX_MODELS_MEDIUM),
-            )
+            limit = len(records)
         elif mode == IntelligenceMode.HIGH:
-            records.sort(key=lambda item: (item.provider != "bedrock", item.priority))
+            records = [record for record in records if record.provider in {"groq", "bedrock"}]
             roles = HIGH_ROLES
-            limit = min(
-                len(records),
-                participating_model_limit(max_models, default=settings.ORCHESTRATION_MAX_MODELS_HIGH),
-                MAX_PARTICIPATING_MODELS,
-            )
-        else:
+            limit = len(records)
+        elif mode == IntelligenceMode.DEEP_RESEARCH:
+            records = [record for record in records if record.provider in {"groq", "bedrock"}]
             roles = DEEP_RESEARCH_ROLES
-            limit = min(
-                len(records),
-                participating_model_limit(max_models, default=settings.DEEP_RESEARCH_MAX_MODELS),
-                MAX_PARTICIPATING_MODELS,
-            )
+            limit = len(records)
+        else:
+            all_records = model_registry.refresh()
+            available, reason = coding_configuration_status(all_records)
+            if not available:
+                from fastapi import HTTPException, status
+                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=reason)
+            groq_model, bedrock_model = coding_model_ids()
+            records = [
+                record
+                for provider, model_id in (("groq", groq_model), ("bedrock", bedrock_model))
+                for record in records
+                if record.provider == provider and record.actual_model_id == model_id
+            ]
+            roles = [role for role, _ in CODING_ROLES]
+            limit = 2
 
         tasks: list[ModelTask] = []
         for index, record in enumerate(records[:limit]):
             role_key = roles[index % len(roles)]
-            role, label = ROLE_LABELS[role_key]
+            if mode == IntelligenceMode.CODING:
+                role, label = CODING_ROLES[index]
+            else:
+                role, label = ROLE_LABELS[role_key]
             role_prompt = {
                 "role": "system",
                 "content": (

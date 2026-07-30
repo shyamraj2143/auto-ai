@@ -25,10 +25,37 @@ DISPLAY_NAMES = {
     "amazon.nova-lite-v1:0": "Amazon Nova Lite",
     "anthropic.claude-3-haiku-20240307-v1:0": "Claude 3 Haiku",
 }
+INCOMPATIBLE_TEXT_MODEL_MARKERS = (
+    "whisper",
+    "speech",
+    "tts",
+    "orpheus",
+    "voxtral",
+    "embedding",
+    "embed-",
+    "moderation",
+    "guard",
+    "rerank",
+    "image",
+    "vision",
+    "-vl-",
+)
 
 
 def _display_name(model_id: str) -> str:
     return DISPLAY_NAMES.get(model_id, model_id.replace("/", " ").replace(".", " ").replace("-", " ").title())
+
+
+def _capabilities(model_id: str) -> frozenset[str]:
+    value = model_id.lower()
+    if any(marker in value for marker in INCOMPATIBLE_TEXT_MODEL_MARKERS):
+        return frozenset({"non_chat"})
+    capabilities = {"text", "chat"}
+    if "coder" in value:
+        capabilities.add("coding")
+    if "vision" in value or "scout" in value or "-vl-" in value:
+        capabilities.add("vision")
+    return frozenset(capabilities)
 
 
 class ModelRegistry:
@@ -47,28 +74,52 @@ class ModelRegistry:
             }
             now = datetime.now(timezone.utc)
             records: dict[tuple[str, str], ModelRecord] = {}
-            for provider, configured in (
-                ("groq", settings.ORCHESTRATION_GROQ_MODELS),
-                ("bedrock", settings.ORCHESTRATION_BEDROCK_MODELS),
+            for provider, configured_defaults in (
+                (
+                    "groq",
+                    [*settings.ORCHESTRATION_GROQ_MODELS, settings.ORCHESTRATION_GROQ_CODING_MODEL],
+                ),
+                (
+                    "bedrock",
+                    [*settings.ORCHESTRATION_BEDROCK_MODELS, settings.ORCHESTRATION_BEDROCK_CODING_MODEL],
+                ),
             ):
                 available = discovered[provider]
+                configured = (
+                    [*sorted(available), *configured_defaults]
+                    if settings.ORCHESTRATION_INCLUDE_ALL_AVAILABLE_MODELS
+                    else configured_defaults
+                )
                 for index, model_id in enumerate(dict.fromkeys(configured)):
                     if not model_id:
                         continue
                     is_available = model_id in available
-                    modes = (
-                        frozenset(IntelligenceMode)
+                    modes = {
+                        IntelligenceMode.INSTANT,
+                        IntelligenceMode.MEDIUM,
+                        IntelligenceMode.HIGH,
+                        IntelligenceMode.DEEP_RESEARCH,
+                    } if provider == "groq" else {
+                        IntelligenceMode.HIGH,
+                        IntelligenceMode.DEEP_RESEARCH,
+                    }
+                    coding_model = (
+                        settings.ORCHESTRATION_GROQ_CODING_MODEL
                         if provider == "groq"
-                        else frozenset({IntelligenceMode.HIGH, IntelligenceMode.DEEP_RESEARCH})
+                        else settings.ORCHESTRATION_BEDROCK_CODING_MODEL
                     )
+                    if coding_model and model_id == coding_model:
+                        modes.add(IntelligenceMode.CODING)
+                    capabilities = _capabilities(model_id)
                     records[(provider, model_id)] = ModelRecord(
                         provider=provider,
                         friendly_name=_display_name(model_id),
                         actual_model_id=model_id,
                         enabled=is_available,
-                        supported_modes=modes,
+                        supported_modes=frozenset(modes),
+                        capabilities=capabilities,
                         supports_streaming=provider == "groq",
-                        supports_vision="vision" in model_id or "scout" in model_id,
+                        supports_vision="vision" in capabilities,
                         priority=index,
                         latency_weight=0.6 if "instant" in model_id or "20b" in model_id or "lite" in model_id else 1.0,
                         quality_weight=1.4 if "120b" in model_id or "70b" in model_id or "pro" in model_id else 1.0,
@@ -94,6 +145,7 @@ class ModelRegistry:
                 for record in records
                 if record.enabled
                 and record.health_status == "healthy"
+                and {"text", "chat"}.issubset(record.capabilities)
                 and mode in record.supported_modes
                 and (provider is None or record.provider == provider)
             ),

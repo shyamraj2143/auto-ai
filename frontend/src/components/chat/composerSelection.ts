@@ -1,7 +1,7 @@
-import type { AiProvider, ChatMode, SearchMode } from "../../types";
+import type { ChatMode, SearchMode } from "../../types";
 
 export type ComposerModeOption = {
-  value: "instant" | "medium" | "high" | "deep_research";
+  value: "instant" | "medium" | "high" | "deep_research" | "coding";
   label: string;
   searchMode: SearchMode;
   chatMode: ChatMode;
@@ -11,7 +11,8 @@ export const COMPOSER_MODE_OPTIONS: readonly ComposerModeOption[] = [
   { value: "instant", label: "Instant", searchMode: "auto", chatMode: "instant" },
   { value: "medium", label: "Medium", searchMode: "auto", chatMode: "medium" },
   { value: "high", label: "High", searchMode: "auto", chatMode: "high" },
-  { value: "deep_research", label: "Deep Research", searchMode: "deep", chatMode: "deep_research" }
+  { value: "deep_research", label: "Deep Research", searchMode: "deep", chatMode: "deep_research" },
+  { value: "coding", label: "Coding", searchMode: "auto", chatMode: "coding" }
 ];
 
 export function composerModeOption(value: string) {
@@ -29,8 +30,4 @@ export function composerModeValue(searchMode: SearchMode, chatMode: ChatMode) {
   return COMPOSER_MODE_OPTIONS.find(
     (option) => option.searchMode === searchMode && option.chatMode === chatMode
   )?.value ?? composerModeOption(chatMode).value;
-}
-
-export function selectedModelPayload(provider: AiProvider, model: string) {
-  return { provider, model };
 }

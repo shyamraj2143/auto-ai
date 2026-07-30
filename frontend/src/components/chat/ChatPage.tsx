@@ -33,23 +33,8 @@ import {
   mergeChatMessages,
   upsertChatMessage
 } from "./chatState";
-import { selectedModelPayload } from "./composerSelection";
-
 const DEFAULT_OPTIONS: ComposerOptions = {
-  searchMode: "auto",
-  chatMode: "instant",
-  researchProviders: ["groq", "bedrock"],
-  maxModels: 6,
-  allModels: true,
-  timeoutSeconds: 45,
-  groqModels: [],
-  bedrockModels: [],
-  openaiModels: [],
-  geminiModels: [],
-  finalJudgeModel: null,
-  reasoning: false,
-  provider: "groq",
-  model: "openai/gpt-oss-120b"
+  chatMode: "instant"
 };
 
 type LocalRetryRequest = {
@@ -130,7 +115,7 @@ function serializableAttachments(attachments: ChatAttachment[]): ChatAttachment[
 }
 
 function thinkingPhase(options: ComposerOptions, attachments: ChatAttachment[], documentIds: string[]) {
-  if (options.chatMode !== "instant" || options.searchMode === "deep" || options.searchMode === "research") return "researching";
+  if (options.chatMode !== "instant") return "researching";
   if (attachments.some((attachment) => attachment.type === "image")) return "analyzing_image";
   if (attachments.some((attachment) => attachment.type === "file") || documentIds.length) return "reading_file";
   return "thinking";
@@ -600,7 +585,7 @@ export function ChatPage() {
     }
   }
 
-  async function uploadDocuments(files: File[], provider: ComposerOptions["provider"]) {
+  async function uploadDocuments(files: File[]) {
     if (!token) return;
     await Promise.all(
       files.map(async (file) => {
@@ -612,7 +597,6 @@ export function ChatPage() {
         const formData = new FormData();
         formData.append("file", file);
         formData.append("summarize", "true");
-        formData.append("provider", provider);
         if (activeChat?.id) formData.append("chat_id", activeChat.id);
 
         try {
@@ -684,31 +668,8 @@ export function ChatPage() {
   }
 
   function requestOptionsPayload(options: ComposerOptions, documentIds = selectedDocumentIds) {
-    const modelSelection = selectedModelPayload(options.provider, options.model);
-    const ensembleMode = options.chatMode !== "instant";
-    const deepResearchMode = options.chatMode === "deep_research";
-    const presetProviders: ComposerOptions["researchProviders"] =
-      options.chatMode === "medium"
-        ? ["groq"]
-        : options.chatMode === "high"
-          ? ["groq", "bedrock"]
-          : options.researchProviders;
     return {
-      provider: modelSelection.provider,
-      model: modelSelection.model,
       mode: options.chatMode,
-      providers: ensembleMode ? presetProviders : undefined,
-      max_models: deepResearchMode && !options.allModels ? options.maxModels : undefined,
-      all_models: ensembleMode ? (deepResearchMode ? options.allModels : true) : undefined,
-      timeout_seconds: ensembleMode ? options.timeoutSeconds : undefined,
-      groq_models: deepResearchMode && !options.allModels ? options.groqModels : undefined,
-      bedrock_models: deepResearchMode && !options.allModels ? options.bedrockModels : undefined,
-      openai_models: deepResearchMode && !options.allModels ? options.openaiModels : undefined,
-      gemini_models: deepResearchMode && !options.allModels ? options.geminiModels : undefined,
-      final_judge_model: deepResearchMode ? options.finalJudgeModel : undefined,
-      web_search: options.searchMode !== "off" && options.searchMode !== "auto",
-      search_mode: options.searchMode,
-      reasoning: options.reasoning,
       document_ids: settings.memoryEnabled ? documentIds : [],
       user_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
       user_locale: navigator.language || "en"

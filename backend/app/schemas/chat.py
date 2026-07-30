@@ -6,12 +6,11 @@ from pydantic import BaseModel, Field, field_serializer
 from app.schemas.search import SearchMode
 from app.schemas.feedback import MessageFeedbackRead
 from app.utils.datetime import to_rfc3339_utc
-from app.services.orchestration.limits import MAX_PARTICIPATING_MODELS
 
 
 ProviderName = Literal["openai", "groq", "bedrock", "gemini"]
 ResearchProviderName = Literal["groq", "bedrock", "openai", "gemini"]
-IntelligenceMode = Literal["instant", "medium", "high", "deep_research", "normal", "multi_model"]
+IntelligenceMode = Literal["instant", "medium", "high", "deep_research", "coding", "normal", "multi_model"]
 
 
 class MessageRead(BaseModel):
@@ -94,7 +93,7 @@ class ChatRequest(BaseModel):
     system_prompt: str | None = Field(default=None, max_length=8000)
     mode: IntelligenceMode = "instant"
     providers: list[ResearchProviderName] = Field(default_factory=lambda: ["groq", "bedrock"])
-    max_models: int | None = Field(default=None, ge=1, le=MAX_PARTICIPATING_MODELS)
+    max_models: int | None = Field(default=None, ge=1)
     all_models: bool = False
     timeout_seconds: int | None = Field(default=None, ge=5, le=120)
     groq_models: list[str] = Field(default_factory=list)
@@ -173,7 +172,7 @@ class ChatRegenerateRequest(BaseModel):
     message_id: str | None = None
     mode: IntelligenceMode = "instant"
     providers: list[ResearchProviderName] = Field(default_factory=lambda: ["groq", "bedrock"])
-    max_models: int | None = Field(default=None, ge=1, le=MAX_PARTICIPATING_MODELS)
+    max_models: int | None = Field(default=None, ge=1)
     all_models: bool = False
     timeout_seconds: int | None = Field(default=None, ge=5, le=120)
     groq_models: list[str] = Field(default_factory=list)

@@ -22,14 +22,46 @@ from app.services.orchestration.schemas import (
     TaskStatus,
 )
 from app.services.orchestration.task_planner import task_planner
+from app.services.orchestration.model_registry import ModelRegistry
+from app.services.web_search import web_search_service
 
 
 MESSAGES = [{"role": "user", "content": "Explain the safest production design."}]
 
 
-def test_chat_request_rejects_more_than_six_participating_models():
-    with pytest.raises(ValueError):
-        ChatRequest(message="test", max_models=7)
+def test_chat_request_accepts_legacy_max_models_without_enforcing_old_cap():
+    assert ChatRequest(message="test", max_models=20).max_models == 20
+
+
+def test_registry_includes_all_available_chat_models_and_excludes_incompatible(monkeypatch):
+    registry = ModelRegistry()
+    monkeypatch.setattr(settings, "ORCHESTRATION_INCLUDE_ALL_AVAILABLE_MODELS", True)
+    monkeypatch.setattr(registry, "_discover_groq", lambda: {"groq-chat-a", "audio-whisper"})
+    monkeypatch.setattr(registry, "_discover_bedrock", lambda: {"bedrock-chat-a", "mistral.voxtral-audio"})
+    registry.refresh(force=True)
+    assert {(item.provider, item.actual_model_id) for item in registry.eligible(IntelligenceMode.HIGH)} == {
+        ("groq", "groq-chat-a"),
+        ("bedrock", "bedrock-chat-a"),
+    }
+
+
+def test_serper_sends_required_q_parameter(monkeypatch):
+    captured = {}
+
+    class Response:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"organic": []}
+
+    monkeypatch.setattr(settings, "SERPER_API_KEY", "test-only")
+    monkeypatch.setattr(
+        "app.services.web_search.httpx.post",
+        lambda _url, **kwargs: captured.update(kwargs) or Response(),
+    )
+    web_search_service._search_serper("verified query", "deep")
+    assert captured["json"]["q"] == "verified query"
 
 
 def record(model_id: str, provider: str = "groq", quality: float = 1.0) -> ModelRecord:
@@ -167,7 +199,7 @@ def test_high_combines_actual_groq_and_bedrock_tasks(monkeypatch):
     assert providers == {"groq", "bedrock"}
 
 
-def test_high_never_plans_more_than_six_healthy_models(monkeypatch):
+def test_high_plans_every_healthy_model_without_six_model_cap(monkeypatch):
     records = [
         *[record(f"groq-{index}", "groq") for index in range(6)],
         *[record(f"bedrock-{index}", "bedrock") for index in range(3)],
@@ -181,8 +213,53 @@ def test_high_never_plans_more_than_six_healthy_models(monkeypatch):
         type("Analysis", (), {"complexity": "high"})(),
         MESSAGES,
     )
-    assert len(planned) == 6
+    assert len(planned) == 9
     assert {item.model.provider for item in planned} == {"groq", "bedrock"}
+
+
+def test_coding_plans_exact_configured_qwen_coder_pair(monkeypatch):
+    groq_id = "qwen/qwen-coder-test"
+    bedrock_id = "qwen.qwen-coder-test"
+    records = [
+        ModelRecord(
+            **{
+                **record(groq_id, "groq").__dict__,
+                "capabilities": frozenset({"text", "chat", "coding"}),
+            }
+        ),
+        ModelRecord(
+            **{
+                **record(bedrock_id, "bedrock").__dict__,
+                "capabilities": frozenset({"text", "chat", "coding"}),
+            }
+        ),
+        record("unrelated-model", "groq"),
+    ]
+    monkeypatch.setattr(settings, "ORCHESTRATION_GROQ_CODING_MODEL", groq_id)
+    monkeypatch.setattr(settings, "ORCHESTRATION_BEDROCK_CODING_MODEL", bedrock_id)
+    monkeypatch.setattr(
+        "app.services.orchestration.task_planner.model_registry.refresh",
+        lambda: records,
+    )
+    monkeypatch.setattr(
+        "app.services.orchestration.task_planner.model_registry.eligible",
+        lambda _mode: records[:2],
+    )
+    planned = task_planner.plan(
+        IntelligenceMode.CODING,
+        type("Analysis", (), {"complexity": "high"})(),
+        MESSAGES,
+    )
+    assert [(item.model.provider, item.model.actual_model_id) for item in planned] == [
+        ("groq", groq_id),
+        ("bedrock", bedrock_id),
+    ]
+
+
+def test_deep_research_requires_verified_web_context():
+    with pytest.raises(Exception) as exc:
+        run("deep_research", [])
+    assert "verified web source context" in str(exc.value)
 
 
 def test_instant_plans_primary_and_only_one_fallback(monkeypatch):

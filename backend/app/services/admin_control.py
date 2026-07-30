@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 
 from app.models.admin_control import AuditLog, FeatureFlag, PlanLimit, UsageLog, UserSubscription
 from app.models.user import User
-from app.services.orchestration.limits import MAX_PARTICIPATING_MODELS
 
 
 PLAN_NAMES = {"free", "pro", "premium", "ultra", "pro-plus", "admin"}
@@ -135,7 +134,7 @@ DEFAULT_PLAN_LIMITS: dict[str, dict[str, int | bool]] = {
         "monthly_prompt_limit": 100000,
         "daily_token_limit": 1000000,
         "monthly_token_limit": 1000000,
-        "max_models": MAX_PARTICIPATING_MODELS,
+        "max_models": 0,
         "allow_deep_research": True,
         "allow_multi_model": True,
         "allow_web_search": True,
@@ -157,7 +156,7 @@ DEFAULT_PLAN_LIMITS: dict[str, dict[str, int | bool]] = {
         "monthly_prompt_limit": 0,
         "daily_token_limit": 0,
         "monthly_token_limit": 0,
-        "max_models": MAX_PARTICIPATING_MODELS,
+        "max_models": 0,
         "allow_deep_research": True,
         "allow_multi_model": True,
         "allow_web_search": True,
@@ -305,9 +304,6 @@ def ensure_admin_defaults(db: Session) -> None:
     for plan, defaults in DEFAULT_PLAN_LIMITS.items():
         existing = db.scalar(select(PlanLimit).where(PlanLimit.plan == plan))
         if existing:
-            if existing.max_models > MAX_PARTICIPATING_MODELS:
-                existing.max_models = MAX_PARTICIPATING_MODELS
-                changed = True
             default_price = int(defaults.get("price_paise", 0))
             if default_price > 0 and existing.price_paise == 0:
                 existing.price_paise = default_price
@@ -506,7 +502,7 @@ def intelligence_mode_access(db: Session, user: User, mode: str) -> tuple[bool, 
             return False, "Deep Research is not enabled for this plan."
         if not is_feature_enabled(db, "deep_research", user.id):
             return False, "Deep Research is disabled for this account."
-    elif canonical_mode in {"medium", "high"}:
+    elif canonical_mode in {"medium", "high", "coding"}:
         if not subscription_is_active or not limits or not limits.allow_multi_model:
             return False, "Multi-Model routing is not enabled for this plan."
         if not is_feature_enabled(db, "multi_model_routing", user.id):
@@ -540,21 +536,11 @@ def enforce_plan_and_feature_access(
         if not is_feature_enabled(db, "deep_research", user.id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Deep Research is disabled for this account.")
 
-    if mode in {"multi_model", "medium", "high"}:
+    if mode in {"multi_model", "medium", "high", "coding"}:
         if not subscription_is_active or not limits or not limits.allow_multi_model:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Multi-Model routing is not enabled for this plan.")
         if not is_feature_enabled(db, "multi_model_routing", user.id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Multi-Model routing is disabled for this account.")
-
-    effective_model_limit = min(
-        limits.max_models if limits and limits.max_models > 0 else MAX_PARTICIPATING_MODELS,
-        MAX_PARTICIPATING_MODELS,
-    )
-    if max_models and max_models > effective_model_limit:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"This plan allows up to {effective_model_limit} models per request.",
-        )
 
     search_requested = bool(web_search) or (search_mode not in {None, "off", "auto"})
     if search_requested:
