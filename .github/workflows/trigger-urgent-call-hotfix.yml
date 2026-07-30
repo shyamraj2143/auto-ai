@@ -21,6 +21,12 @@ jobs:
           ref: main
           fetch-depth: 0
 
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
       - name: Execute deterministic patch embedded on main
         shell: bash
         run: |
