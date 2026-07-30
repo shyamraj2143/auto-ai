@@ -13,6 +13,7 @@ from app.services.orchestration.activity_store import _sanitize, activity_store
 from app.services.orchestration.citation_verifier import citation_verifier
 from app.services.orchestration.orchestrator import intelligence_orchestrator
 from app.services.orchestration.parallel_executor import parallel_executor
+from app.services.orchestration.preset_policy import coding_configuration_status, coding_model_ids
 from app.services.orchestration.provider_adapters import provider_adapter
 from app.services.orchestration.schemas import (
     IntelligenceMode,
@@ -254,6 +255,78 @@ def test_coding_plans_exact_configured_qwen_coder_pair(monkeypatch):
         ("groq", groq_id),
         ("bedrock", bedrock_id),
     ]
+
+
+def test_coding_uses_healthy_qwen_pair_when_exact_models_are_not_configured(monkeypatch):
+    records = [
+        ModelRecord(
+            **{
+                **record("qwen/qwen3.6-27b", "groq").__dict__,
+                "capabilities": frozenset({"text", "chat"}),
+            }
+        ),
+        ModelRecord(
+            **{
+                **record("openai/gpt-oss-120b", "groq", quality=2.0).__dict__,
+                "capabilities": frozenset({"text", "chat"}),
+            }
+        ),
+        ModelRecord(
+            **{
+                **record("qwen.qwen3-coder-30b-a3b-instruct", "bedrock", quality=2.0).__dict__,
+                "capabilities": frozenset({"text", "chat", "coding"}),
+            }
+        ),
+        ModelRecord(
+            **{
+                **record("qwen.qwen3-coder-480b-a35b-instruct", "bedrock").__dict__,
+                "capabilities": frozenset({"text", "chat", "coding"}),
+            }
+        ),
+    ]
+    monkeypatch.setattr(settings, "ORCHESTRATION_GROQ_CODING_MODEL", None)
+    monkeypatch.setattr(settings, "ORCHESTRATION_BEDROCK_CODING_MODEL", None)
+    monkeypatch.setattr(
+        "app.services.orchestration.task_planner.model_registry.refresh",
+        lambda: records,
+    )
+    monkeypatch.setattr(
+        "app.services.orchestration.task_planner.model_registry.eligible",
+        lambda _mode: [],
+    )
+
+    assert coding_configuration_status(records) == (True, None)
+    assert coding_model_ids(records) == (
+        "qwen/qwen3.6-27b",
+        "qwen.qwen3-coder-480b-a35b-instruct",
+    )
+    planned = task_planner.plan(
+        IntelligenceMode.CODING,
+        type("Analysis", (), {"complexity": "high"})(),
+        MESSAGES,
+    )
+    assert [(item.model.provider, item.model.actual_model_id) for item in planned] == [
+        ("groq", "qwen/qwen3.6-27b"),
+        ("bedrock", "qwen.qwen3-coder-480b-a35b-instruct"),
+    ]
+    assert [item.role for item in planned] == [
+        "Coding implementation specialist",
+        "Code review and security specialist",
+    ]
+
+
+def test_coding_stays_unavailable_without_qwen_on_both_providers():
+    groq_only = [
+        ModelRecord(
+            **{
+                **record("qwen/qwen3.6-27b", "groq").__dict__,
+                "capabilities": frozenset({"text", "chat"}),
+            }
+        )
+    ]
+    available, reason = coding_configuration_status(groq_only)
+    assert available is False
+    assert reason == "No healthy Amazon Bedrock Qwen model is available for coding."
 
 
 def test_deep_research_requires_verified_web_context():

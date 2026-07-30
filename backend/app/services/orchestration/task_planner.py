@@ -92,12 +92,16 @@ class TaskPlanner:
             if not available:
                 from fastapi import HTTPException, status
                 raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=reason)
-            groq_model, bedrock_model = coding_model_ids()
+            groq_model, bedrock_model = coding_model_ids(all_records)
             records = [
                 record
                 for provider, model_id in (("groq", groq_model), ("bedrock", bedrock_model))
-                for record in records
-                if record.provider == provider and record.actual_model_id == model_id
+                for record in all_records
+                if record.provider == provider
+                and record.actual_model_id == model_id
+                and record.enabled
+                and record.health_status == "healthy"
+                and {"text", "chat"}.issubset(record.capabilities)
             ]
             roles = [role for role, _ in CODING_ROLES]
             limit = 2

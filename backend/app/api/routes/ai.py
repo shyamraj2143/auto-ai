@@ -50,7 +50,7 @@ from app.services.live_context import LiveRequestContext, is_time_query
 from app.services.orchestration import intelligence_orchestrator
 from app.services.orchestration.activity_store import activity_store
 from app.services.orchestration.model_registry import model_registry
-from app.services.orchestration.preset_policy import coding_configuration_status
+from app.services.orchestration.preset_policy import coding_configuration_status, coding_model_ids
 from app.services.orchestration.schemas import IntelligenceMode
 from app.services.web_search import SearchAgent, web_search_service
 
@@ -967,6 +967,7 @@ def intelligence_config(
     groq = [record for record in healthy if record.provider == "groq"]
     bedrock = [record for record in healthy if record.provider == "bedrock"]
     coding_available, coding_reason = coding_configuration_status(records)
+    groq_coding_model, bedrock_coding_model = coding_model_ids(records)
 
     def mode_config(
         mode: str,
@@ -1005,8 +1006,13 @@ def intelligence_config(
             "coding": mode_config(
                 "coding",
                 coding_available,
-                "Two Qwen Coder models collaborate on coding tasks.",
+                "Groq Qwen implements while Amazon Bedrock Qwen Coder reviews and corrects.",
                 provider_reason=coding_reason,
+                fallback_message=(
+                    f"Groq: {groq_coding_model} · Bedrock: {bedrock_coding_model}"
+                    if coding_available
+                    else None
+                ),
             ),
         },
         "models": [

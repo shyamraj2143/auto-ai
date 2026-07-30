@@ -88,6 +88,6 @@ describe("composer popover contracts", () => {
     expect(composer).not.toContain("selectModelProvider");
     expect(composer).toContain("onUploadDocuments(documentFiles)");
     expect(composer).toContain("onSend(");
-    expect(composer).toContain('coding: "Two Qwen Coder models collaborate on coding tasks."');
+    expect(composer).toContain('coding: "Groq Qwen implements while Bedrock Qwen Coder reviews and corrects."');
   });
 });

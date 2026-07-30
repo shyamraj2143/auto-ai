@@ -36,28 +36,58 @@ def is_qwen_coder(model_id: str | None) -> bool:
     return "qwen" in value and "coder" in value
 
 
-def coding_configuration_status(records: list[ModelRecord]) -> tuple[bool, str | None]:
+def _coding_rank(record: ModelRecord, configured_model: str | None) -> tuple[int, int, float, int]:
+    model_id = record.actual_model_id.lower()
+    if configured_model and record.actual_model_id == configured_model and is_qwen_coder(model_id):
+        family_rank = 0
+    elif is_qwen_coder(model_id):
+        family_rank = 1
+    elif "qwen" in model_id:
+        family_rank = 2
+    else:
+        family_rank = 3
+    variant_rank = (
+        0 if "coder-480b" in model_id
+        else 1 if "coder-next" in model_id
+        else 2 if "coder" in model_id
+        else 3
+    )
+    return family_rank, variant_rank, -record.quality_weight, record.priority
+
+
+def coding_model_records(records: list[ModelRecord]) -> tuple[ModelRecord | None, ModelRecord | None]:
     configured = {
         "groq": settings.ORCHESTRATION_GROQ_CODING_MODEL,
         "bedrock": settings.ORCHESTRATION_BEDROCK_CODING_MODEL,
     }
-    labels = {"groq": "Groq", "bedrock": "Amazon Bedrock"}
+    selected: list[ModelRecord | None] = []
     for provider in ("groq", "bedrock"):
-        model_id = configured[provider]
-        if not model_id:
-            return False, f"{labels[provider]} Qwen Coder model is not configured."
-        if not is_qwen_coder(model_id):
-            return False, f"Configured {labels[provider]} coding model is not a Qwen Coder model."
-        record = next(
-            (item for item in records if item.provider == provider and item.actual_model_id == model_id),
-            None,
-        )
-        if not record or not record.enabled or record.health_status != "healthy":
-            return False, f"Configured {labels[provider]} Qwen Coder model is unavailable."
-        if not {"text", "chat", "coding"}.issubset(record.capabilities):
-            return False, f"Configured {labels[provider]} Qwen Coder model is not text-chat compatible."
+        candidates = [
+            record
+            for record in records
+            if record.provider == provider
+            and record.enabled
+            and record.health_status == "healthy"
+            and {"text", "chat"}.issubset(record.capabilities)
+            and "qwen" in record.actual_model_id.lower()
+        ]
+        candidates.sort(key=lambda record: _coding_rank(record, configured[provider]))
+        selected.append(candidates[0] if candidates else None)
+    return selected[0], selected[1]
+
+
+def coding_configuration_status(records: list[ModelRecord]) -> tuple[bool, str | None]:
+    groq_model, bedrock_model = coding_model_records(records)
+    if not groq_model:
+        return False, "No healthy Groq Qwen text-chat model is available for coding."
+    if not bedrock_model:
+        return False, "No healthy Amazon Bedrock Qwen model is available for coding."
     return True, None
 
 
-def coding_model_ids() -> tuple[str | None, str | None]:
-    return settings.ORCHESTRATION_GROQ_CODING_MODEL, settings.ORCHESTRATION_BEDROCK_CODING_MODEL
+def coding_model_ids(records: list[ModelRecord]) -> tuple[str | None, str | None]:
+    groq_model, bedrock_model = coding_model_records(records)
+    return (
+        groq_model.actual_model_id if groq_model else None,
+        bedrock_model.actual_model_id if bedrock_model else None,
+    )

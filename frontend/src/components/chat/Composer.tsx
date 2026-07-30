@@ -56,7 +56,7 @@ function ModeMenu({
     medium: "Balanced parallel intelligence",
     high: "Advanced multi-provider reasoning",
     deep_research: "Source-backed comprehensive research",
-    coding: "Two Qwen Coder models collaborate on coding tasks."
+    coding: "Groq Qwen implements while Bedrock Qwen Coder reviews and corrects."
   };
 
   return (
