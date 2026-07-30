@@ -8422,6 +8422,7 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
   .message-row-user .message-content-stack { max-width: 84%; }
   .message-card { padding: 12px 12px 23px; }
   .message-card-user { padding: 9px 11px 20px; }
+  .message-actions { opacity: .78 !important; }
   .message-action { min-width: 36px; min-height: 36px; }
 }
 /* Compact chooser: never inherits application branding or hero-card sizing. */

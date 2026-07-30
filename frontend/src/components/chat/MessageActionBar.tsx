@@ -144,7 +144,10 @@ export function MessageActionBar({
         initialReason={feedback?.rating === -1 ? feedback.reason : null}
         initialComment={feedback?.rating === -1 ? feedback.comment : null}
         returnFocusRef={dislikeRef}
-        onCancel={() => setDialogOpen(false)}
+        onCancel={() => {
+          setDialogOpen(false);
+          window.setTimeout(() => dislikeRef.current?.focus(), 0);
+        }}
         onSubmit={(reason, comment) => void persist(-1, reason, comment)}
       />
     </>

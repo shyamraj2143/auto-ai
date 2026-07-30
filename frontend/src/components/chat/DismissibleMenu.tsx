@@ -72,13 +72,19 @@ export function DismissibleMenu({
     document.addEventListener("pointerdown", onPointerDown, true);
     document.addEventListener("keydown", onKeyDown);
     window.addEventListener("popstate", onPopState);
+    let disposed = false;
     let nativeListener: { remove: () => Promise<void> } | undefined;
     if (Capacitor.isNativePlatform()) {
       void App.addListener("backButton", () => onClose(true)).then((listener) => {
-        nativeListener = listener;
+        if (disposed) {
+          void listener.remove();
+        } else {
+          nativeListener = listener;
+        }
       });
     }
     return () => {
+      disposed = true;
       window.clearTimeout(focusTimer);
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("keydown", onKeyDown);

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.base import Base
 from app.models.chat import Chat
-from app.models.human import UserMemory
+from app.models.human import UserInteractionProfile, UserMemory
 from app.models.message import Message
 from app.models.message_feedback import MessageFeedback
 from app.models.user import User
@@ -116,6 +116,25 @@ def test_dislike_reason_and_comment_are_validated() -> None:
         MessageFeedbackWrite(rating=1, reason="incorrect")
     with pytest.raises(ValidationError):
         MessageFeedbackWrite(rating=-1, reason="other", comment="x" * 501)
+
+
+def test_disabling_feedback_learning_stores_rating_without_updating_preferences(db: Session) -> None:
+    user, chat, _user_message, assistant = add_user_chat(db, "feedback-paused")
+    user.feedback_learning_enabled = False
+    db.commit()
+    feedback = message_feedback_service.put(
+        db,
+        user=user,
+        chat_id=chat.id,
+        message_id=assistant.id,
+        rating=-1,
+        reason="not_helpful",
+        comment=None,
+    )
+    assert feedback.rating == -1
+    assert db.scalar(
+        select(UserInteractionProfile).where(UserInteractionProfile.user_id == user.id)
+    ) is None
 
 
 def test_memories_are_never_retrieved_across_accounts(db: Session) -> None:
