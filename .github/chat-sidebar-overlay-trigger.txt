@@ -1,0 +1,1 @@
+Apply and validate the confirmed AI Chat sidebar overlay layout.
