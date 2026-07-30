@@ -1,0 +1,64 @@
+name: Trigger urgent call hotfix
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply-main-hotfix:
+    runs-on: ubuntu-latest
+    env:
+      VITE_API_URL: https://auto-ai-production-a6ef.up.railway.app/api/v1
+      AUTO_AI_GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.AUTO_AI_GOOGLE_SERVICES_JSON_BASE64 }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Execute deterministic patch embedded on main
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/urgent-call-hotfix.yml').read_text(encoding='utf-8')
+          start_marker = "          python - <<'PY'\n"
+          end_marker = "\n          PY\n\n      - name: Prepare optional Firebase config"
+          if start_marker not in workflow or end_marker not in workflow:
+              raise RuntimeError('Unable to locate embedded patch script')
+          embedded = workflow.split(start_marker, 1)[1].split(end_marker, 1)[0]
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in embedded.splitlines())
+          exec(compile(script, 'urgent_call_hotfix.py', 'exec'), {'__name__': '__main__'})
+          PY
+
+      - name: Prepare optional Firebase config
+        shell: bash
+        run: |
+          if [ -n "${AUTO_AI_GOOGLE_SERVICES_JSON_BASE64:-}" ]; then
+            printf '%s' "$AUTO_AI_GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > android/app/google-services.json
+          fi
+
+      - name: Validate frontend and Android compilation
+        shell: bash
+        run: |
+          npm ci
+          npm ci --prefix frontend
+          VITE_API_URL="$VITE_API_URL" npm run build
+          chmod +x android/gradlew
+          ./android/gradlew -p android compileDebugJavaWithJavac
+
+      - name: Commit validated fixes to main
+        shell: bash
+        run: |
+          rm -f .github/workflows/urgent-call-hotfix.yml
+          git config user.name "AutoAI Hotfix Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: stabilize Android audio and video calls"
+          git push origin HEAD:main
