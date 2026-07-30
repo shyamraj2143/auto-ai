@@ -1,0 +1,1 @@
+Trigger the validated mobile chat sidebar and delete-dialog hotfix.
