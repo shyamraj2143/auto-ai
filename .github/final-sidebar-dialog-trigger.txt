@@ -1,1 +1,1 @@
-Trigger the final validated sidebar layering and Android dialog-theme repair.
+Trigger the whitespace-safe final sidebar layering and Android dialog-theme repair.
