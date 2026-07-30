@@ -75,12 +75,32 @@ jobs:
       - name: Install root dependencies
         run: npm ci
 
-      - name: Build Android APK
+      - name: Build and verify Android APK
         shell: bash
         run: |
           npm ci --prefix frontend
           AUTO_AI_SKIP_COMPRESSION=1 VITE_API_URL="$AUTO_AI_API_BASE_URL" VITE_GOOGLE_WEB_CLIENT_ID="$AUTO_AI_GOOGLE_WEB_CLIENT_ID" npm run build
+
+          test -f frontend/dist/index.html
+          grep -R -q --include='*.js' --include='*.css' 'chat-delete-dialog-backdrop' frontend/dist/assets
+          grep -R -q --include='*.js' 'Delete chat?' frontend/dist/assets
+          grep -R -q --include='*.css' 'z-index:95' frontend/dist/assets
+          if grep -R -q --include='*.js' 'Delete this chat?' frontend/dist/assets; then
+            echo 'Stale native delete confirmation is still present in the web bundle.' >&2
+            exit 1
+          fi
+
           npx cap sync android
+
+          test -f android/app/src/main/assets/public/index.html
+          grep -R -q --include='*.js' --include='*.css' 'chat-delete-dialog-backdrop' android/app/src/main/assets/public/assets
+          grep -R -q --include='*.js' 'Delete chat?' android/app/src/main/assets/public/assets
+          grep -R -q --include='*.css' 'z-index:95' android/app/src/main/assets/public/assets
+          if grep -R -q --include='*.js' 'Delete this chat?' android/app/src/main/assets/public/assets; then
+            echo 'Capacitor copied stale delete-confirmation assets.' >&2
+            exit 1
+          fi
+
           chmod +x android/gradlew
           ./android/gradlew -p android assembleRelease
           test -f android/app/build/outputs/apk/release/app-release.apk
@@ -100,9 +120,9 @@ jobs:
             echo "Version-Code: ${AUTO_AI_ANDROID_VERSION_CODE}"
             echo "Version-Name: ${AUTO_AI_ANDROID_VERSION_NAME}"
             echo "SHA256: ${sha256}"
-            echo "Changelog: GitHub push ${GITHUB_SHA::7}"
+            echo "Changelog: AI Chat sidebar overlay and custom delete dialog hotfix"
             echo
-            echo "Auto update from GitHub push ${GITHUB_SHA::7}"
+            echo "Verified Android assets from GitHub push ${GITHUB_SHA::7}"
           } > "$notes"
           gh release create "$tag" "$apk_path" \
             --title "Auto-AI Android ${AUTO_AI_ANDROID_VERSION_NAME}" \
@@ -114,7 +134,8 @@ jobs:
         shell: bash
         run: |
           args=()
-          if [ "${AUTO_AI_APK_FORCE_UPDATE,,}" = "true" ]; then
+          commit_message="$(git log -1 --pretty=%B)"
+          if [ "${AUTO_AI_APK_FORCE_UPDATE,,}" = "true" ] || [[ "$commit_message" == *"[force-update]"* ]]; then
             args+=(--force-update)
           fi
           python scripts/publish_android_release.py \
@@ -122,8 +143,8 @@ jobs:
             --apk output/android/auto-ai.apk \
             --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
             --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
-            --changelog "GitHub push ${GITHUB_SHA::7}" \
-            --release-notes "Auto update from GitHub push ${GITHUB_SHA::7}" \
+            --changelog "AI Chat sidebar overlay and custom delete dialog hotfix" \
+            --release-notes "Verified Android assets from GitHub push ${GITHUB_SHA::7}" \
             --metadata-only \
             "${args[@]}"
 
@@ -135,7 +156,7 @@ jobs:
             --api-url "$AUTO_AI_API_BASE_URL" \
             --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
             --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
-            --changelog "GitHub push ${GITHUB_SHA::7}"
+            --changelog "AI Chat sidebar overlay and custom delete dialog hotfix"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
