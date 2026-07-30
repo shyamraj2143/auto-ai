@@ -59,6 +59,7 @@ jobs:
           if original_helper not in script:
               raise RuntimeError('Unable to replace patch helper')
           script = script.replace(original_helper, tolerant_helper, 1)
+          script = script.replace(r'Calling service could not start\nAutoAI', r'Calling service could not start\\nAutoAI')
           exec(compile(script, 'urgent_call_hotfix.py', 'exec'), {'__name__': '__main__'})
           PY
 
