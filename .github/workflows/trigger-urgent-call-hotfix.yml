@@ -81,6 +81,7 @@ jobs:
           npm ci
           npm ci --prefix frontend
           VITE_API_URL="$VITE_API_URL" npm run build
+          npx cap sync android
           chmod +x android/gradlew
           ./android/gradlew -p android compileDebugJavaWithJavac
 
