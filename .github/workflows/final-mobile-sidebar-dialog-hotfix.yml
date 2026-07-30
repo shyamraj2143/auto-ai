@@ -191,7 +191,8 @@ jobs:
           npm ci --prefix frontend
           AUTO_AI_SKIP_COMPRESSION=1 npm run build
           test -f frontend/dist/index.html
-          grep -R -q --include='*.js' --include='*.css' 'FINAL_MOBILE_SIDEBAR_LAYER_FIX' frontend/dist/assets
+          grep -R -q --include='*.css' 'app-shell.sidebar-open' frontend/dist/assets
+          grep -R -q --include='*.css' 'z-index:2147483000' frontend/dist/assets
           grep -R -q --include='*.js' --include='*.css' 'chat-delete-dialog-backdrop' frontend/dist/assets
           grep -R -q --include='*.js' 'Delete chat?' frontend/dist/assets
           if grep -R -q --include='*.js' 'Delete this chat?' frontend/dist/assets; then
@@ -199,7 +200,8 @@ jobs:
             exit 1
           fi
           npx cap sync android
-          grep -R -q --include='*.js' --include='*.css' 'FINAL_MOBILE_SIDEBAR_LAYER_FIX' android/app/src/main/assets/public/assets
+          grep -R -q --include='*.css' 'app-shell.sidebar-open' android/app/src/main/assets/public/assets
+          grep -R -q --include='*.css' 'z-index:2147483000' android/app/src/main/assets/public/assets
           grep -R -q --include='*.js' --include='*.css' 'chat-delete-dialog-backdrop' android/app/src/main/assets/public/assets
           grep -R -q 'postSplashScreenTheme' android/app/src/main/res/values/styles.xml
           grep -R -q 'AutoAiWebDialogTheme' android/app/src/main/res/values/styles.xml
