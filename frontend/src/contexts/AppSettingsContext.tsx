@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import type { AiProvider, ResearchProvider } from "../types";
 import { crystalFailureThreshold, crystalUiEnabled, type CrystalEffectsLevel } from "../crystal/tokens";
 import { useMotionMode } from "../motion/MotionProvider";
+import { MAX_PARTICIPATING_MODELS, clampParticipatingModels } from "../intelligence/limits";
 export type AppLanguage = "system" | "en" | "hi" | "hinglish";
 
 export type AppSettings = {
@@ -93,7 +94,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   notificationsEnabled: false,
   language: "system",
   deepResearchProviders: ["groq", "bedrock"],
-  deepResearchMaxModels: 9,
+  deepResearchMaxModels: MAX_PARTICIPATING_MODELS,
   deepResearchAllModels: true,
   deepResearchTimeoutSeconds: 45,
   visualEffectsLevel: "reduced",
@@ -141,7 +142,7 @@ function normalizeSettings(payload: unknown): AppSettings {
     deepResearchProviders: normalizeResearchProviders(raw.deepResearchProviders),
     deepResearchMaxModels: hasLegacyResearchDefaults
       ? DEFAULT_SETTINGS.deepResearchMaxModels
-      : clampNumber(raw.deepResearchMaxModels, DEFAULT_SETTINGS.deepResearchMaxModels, 1, 9),
+      : clampParticipatingModels(raw.deepResearchMaxModels, DEFAULT_SETTINGS.deepResearchMaxModels),
     deepResearchAllModels: hasLegacyResearchDefaults
       ? DEFAULT_SETTINGS.deepResearchAllModels
       : raw.deepResearchAllModels ?? DEFAULT_SETTINGS.deepResearchAllModels,

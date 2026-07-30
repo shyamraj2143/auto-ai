@@ -37,6 +37,7 @@ from app.services.admin_control import (
     enforce_plan_and_feature_access,
     enforce_user_quota,
     infer_provider_from_model,
+    intelligence_mode_access,
     record_usage_log,
     track_quota_usage,
 )
@@ -50,6 +51,7 @@ from app.services.orchestration import intelligence_orchestrator
 from app.services.orchestration.activity_store import activity_store
 from app.services.orchestration.model_registry import model_registry
 from app.services.orchestration.schemas import IntelligenceMode
+from app.services.orchestration.limits import MAX_PARTICIPATING_MODELS
 from app.services.web_search import SearchAgent, web_search_service
 
 
@@ -946,24 +948,40 @@ def research_models(_: User = Depends(get_current_user)) -> dict:
 
 
 @router.get("/intelligence/config")
-def intelligence_config(_: User = Depends(get_current_user)) -> dict:
+def intelligence_config(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
     records = model_registry.refresh()
     healthy = [record for record in records if record.enabled and record.health_status == "healthy"]
     groq = [record for record in healthy if record.provider == "groq"]
     bedrock = [record for record in healthy if record.provider == "bedrock"]
+    def mode_config(mode: str, provider_available: bool, description: str, **extra: object) -> dict:
+        entitled, reason = intelligence_mode_access(db, current_user, mode)
+        unavailable_reason = reason if not entitled else (None if provider_available else "No healthy model is currently available.")
+        return {
+            "available": provider_available and entitled,
+            "description": description,
+            "unavailable_reason": unavailable_reason,
+            **extra,
+        }
+
     return {
+        "max_participating_models": MAX_PARTICIPATING_MODELS,
         "modes": {
-            "instant": {"available": bool(groq), "description": "Fast single-model response"},
-            "medium": {"available": bool(groq), "description": "Balanced parallel intelligence"},
-            "high": {
-                "available": bool(groq or bedrock),
-                "description": "Advanced multi-provider reasoning",
-                "fallback_message": None if bedrock else "Continuing with available intelligence models.",
-            },
-            "deep_research": {
-                "available": bool(healthy),
-                "description": "Source-backed comprehensive research",
-            },
+            "instant": mode_config("instant", bool(groq), "Fast single-model response"),
+            "medium": mode_config("medium", bool(groq), "Balanced parallel intelligence"),
+            "high": mode_config(
+                "high",
+                bool(groq or bedrock),
+                "Advanced multi-provider reasoning",
+                fallback_message=None if bedrock else "Continuing with available intelligence models.",
+            ),
+            "deep_research": mode_config(
+                "deep_research",
+                bool(healthy),
+                "Source-backed comprehensive research",
+            ),
         },
         "models": [
             {
@@ -1213,6 +1231,7 @@ def chat(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ChatResponse:
+    payload.mode = IntelligenceMode.canonical(payload.mode).value
     enforce_plan_and_feature_access(
         db,
         current_user,
@@ -1414,6 +1433,7 @@ def stream_chat(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
+    payload.mode = IntelligenceMode.canonical(payload.mode).value
     enforce_plan_and_feature_access(
         db,
         current_user,

@@ -10,6 +10,7 @@ import { formatMessageDateTimeTitle, formatMessageTime, normalizedApiTimestamp }
 import type { ChatPublicUser, ChatRealtimeEvent, UserMessage, UserThread } from "./types";
 import { UserMessageSocket, userMessagesApi } from "./userMessagesApi";
 import { failOptimisticMessage, messageSendError, replaceOptimisticMessage } from "./messageDelivery";
+import { AppNotice } from "../../components/common/AppNotice";
 import "./userMessages.css";
 
 const filters = ["all", "unread", "favourites", "archived"] as const;
@@ -651,7 +652,7 @@ export function UserMessagesPage() {
           {filters.map((item) => <button type="button" key={item} className={filter === item ? "active" : ""} onClick={() => setFilter(item)}>{item === "favourites" ? "Favourites" : item[0].toUpperCase() + item.slice(1)}</button>)}
           <button type="button" className="new" onClick={() => setQuery("@")}>+ New Chat</button>
         </div>
-        {!chatIsOpen && error && <div className="um-list-error"><span>{error}</span><button type="button" onClick={() => setError("")}><X size={14} /></button></div>}
+        {!chatIsOpen && error && <AppNotice kind="error" message={error} onDismiss={() => setError("")} />}
         {searchResults.length > 0 && (
           <div className="um-search-results">
             {searchResults.map((peer) => (
@@ -738,7 +739,7 @@ export function UserMessagesPage() {
                 <ArrowDown size={16} />
               </button>
             )}
-            {error && <div className="um-error"><span>{error}</span>{showRetry && <button type="button" className="um-retry" onClick={() => void retryPendingTextMessages()}>Retry</button>}<button type="button" onClick={() => { setError(""); setShowRetry(false); }}><X size={14} /></button></div>}
+            {error && <AppNotice kind="error" message={error} onRetry={showRetry ? () => void retryPendingTextMessages() : undefined} onDismiss={() => { setError(""); setShowRetry(false); }} />}
             {displayedThread.restricted_reason && <div className="um-error"><span>{displayedThread.restricted_reason}</span></div>}
             {attachment && <div className="um-attachment-preview">{attachment.type.startsWith("image/") ? <Image size={16} /> : <FileText size={16} />}<span>{attachment.name}</span><button type="button" onClick={() => setAttachment(null)}><X size={14} /></button></div>}
             <form className="um-composer" onSubmit={sendMessage}>

@@ -232,10 +232,12 @@ export type ChatGeneration = {
 };
 
 export type IntelligenceConfig = {
+  max_participating_models: number;
   modes: Record<IntelligenceMode, {
     available: boolean;
     description: string;
     fallback_message?: string | null;
+    unavailable_reason?: string | null;
   }>;
   models: Array<{
     provider: string;

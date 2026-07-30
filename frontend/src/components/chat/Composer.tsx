@@ -12,6 +12,7 @@ import { usePublishedUiText } from "../../hooks/useCmsContent";
 import { AppSelect } from "../common/AppSelect";
 import { COMPOSER_MODE_OPTIONS, composerModeOption, composerModeValue } from "./composerSelection";
 import { ComposerPopover } from "./ComposerPopover";
+import { MAX_PARTICIPATING_MODELS, clampParticipatingModels } from "../../intelligence/limits";
 
 type Provider = AiProvider;
 
@@ -243,7 +244,7 @@ function ModeMenu({
                 <strong>{option.label}</strong>
                 <small>
                   {config?.modes[option.value]?.available === false
-                    ? "Temporarily unavailable"
+                    ? config.modes[option.value]?.unavailable_reason || "Temporarily unavailable"
                     : config?.modes[option.value]?.fallback_message || descriptions[option.value] || "Choose this intelligence preset"}
                 </small>
               </span>
@@ -428,6 +429,7 @@ export function Composer({
   const [sending, setSending] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [openMenu, setOpenMenu] = useState<ComposerOpenMenu>(null);
+  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const [imageAttachments, setImageAttachments] = useState<ImageAttachment[]>([]);
   const [error, setError] = useState("");
   const appliedInitialDraftRef = useRef("");
@@ -498,7 +500,7 @@ export function Composer({
 
   useEffect(() => {
     setResearchProviders(settings.deepResearchProviders);
-    setMaxModels(settings.deepResearchMaxModels);
+    setMaxModels(clampParticipatingModels(settings.deepResearchMaxModels));
     setAllModels(settings.deepResearchAllModels);
     setTimeoutSeconds(settings.deepResearchTimeoutSeconds);
   }, [
@@ -515,6 +517,7 @@ export function Composer({
       .then((options) => {
         if (!active) return;
         setResearchModelOptions(options);
+        setMaxModels((current) => clampParticipatingModels(current, options.defaults.max_models));
         setFinalJudgeModel(options.defaults.final_judge_model ?? null);
         const enabled = (["groq", "bedrock", "openai", "gemini"] as ResearchProvider[]).filter((item) => options.providers[item]?.enabled);
         if (enabled.length) setResearchProviders((current) => current.filter((item) => enabled.includes(item)).concat(enabled.filter((item) => !current.includes(item))));
@@ -670,6 +673,7 @@ export function Composer({
   }
 
   const researchModeActive = chatMode !== "instant";
+  const selectedResearchModelCount = groqModels.length + bedrockModels.length + openaiModels.length + geminiModels.length;
 
   function toggleResearchProvider(nextProvider: ResearchProvider) {
     if (researchModelOptions && !researchModelOptions.providers[nextProvider]?.enabled) return;
@@ -692,6 +696,11 @@ export function Composer({
             : setGeminiModels;
     setter((current) => {
       if (current.includes(nextModel)) return current.filter((item) => item !== nextModel);
+      if (selectedResearchModelCount >= MAX_PARTICIPATING_MODELS) {
+        setError(`A maximum of ${MAX_PARTICIPATING_MODELS} models can participate.`);
+        return current;
+      }
+      setError("");
       return [...current, nextModel];
     });
     setResearchProviders((current) => (current.includes(nextProvider) ? current : [...current, nextProvider]));
@@ -706,6 +715,8 @@ export function Composer({
     const option = composerModeOption(value);
     setSearchMode(option.searchMode);
     setChatMode(option.chatMode);
+    setAdvancedSettingsOpen(false);
+    setOpenMenu(null);
     window.localStorage.setItem("autoai-intelligence-mode", option.value);
   }
 
@@ -835,13 +846,28 @@ export function Composer({
           <ModelMenu provider={provider} model={model} open={openMenu === "model"} onToggle={() => setOpenMenu((current) => current === "model" ? null : "model")} onClose={() => setOpenMenu(null)} onSelect={selectModelProvider} />
         </div>
 
+        {researchModeActive && (
+          <button
+            type="button"
+            className="composer-advanced-trigger"
+            aria-expanded={advancedSettingsOpen}
+            aria-controls="composer-advanced-settings"
+            onClick={() => setAdvancedSettingsOpen((current) => !current)}
+          >
+            <BrainCircuit size={14} />
+            <span>Configure models · Up to {MAX_PARTICIPATING_MODELS}</span>
+            <ChevronDown size={14} className={advancedSettingsOpen ? "rotate-180" : ""} />
+          </button>
+        )}
+
         <AnimatePresence>
-          {researchModeActive && (
+          {researchModeActive && advancedSettingsOpen && (
             <motion.div
+              id="composer-advanced-settings"
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              className="mt-3 overflow-visible"
+              className="composer-advanced-settings mt-2 overflow-auto"
             >
               <div className="flex flex-wrap items-center gap-2 rounded-lg border border-cyan-200/15 bg-cyan-200/[0.06] px-3 py-2 text-xs text-cyan-50">
                 <span className="inline-flex items-center gap-1 font-semibold text-cyan-100">
@@ -879,7 +905,7 @@ export function Composer({
                 />
                 <label className="inline-flex h-7 items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2">
                   <Box size={13} />
-                  <AppSelect label="Max research models" value={maxModels} disabled={allModels} onChange={(value) => setMaxModels(Number(value))} options={[1,2,3,4,5,6,7,8,9].map((value) => ({value:String(value),label:`Max ${value}`}))} />
+                  <AppSelect label="Maximum research models" value={maxModels} disabled={allModels} onChange={(value) => setMaxModels(clampParticipatingModels(value))} options={[1,2,3,4,5,6].map((value) => ({value:String(value),label:`Up to ${value}`}))} />
                 </label>
                 <label className="inline-flex h-7 items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 font-semibold">
                   <input
@@ -887,7 +913,7 @@ export function Composer({
                     checked={allModels}
                     onChange={(event) => setAllModels(event.target.checked)}
                   />
-                  All models
+                  All available (up to 6)
                 </label>
                 <label className="inline-flex h-7 items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2">
                   <Timer size={13} />

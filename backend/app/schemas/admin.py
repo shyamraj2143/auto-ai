@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
+from app.services.orchestration.limits import MAX_PARTICIPATING_MODELS
 
 
 class AdminSubscriptionSummary(BaseModel):
@@ -241,7 +242,7 @@ class AdminPlanLimitUpdate(BaseModel):
     monthly_prompt_limit: int | None = Field(default=None, ge=0)
     daily_token_limit: int | None = Field(default=None, ge=0)
     monthly_token_limit: int | None = Field(default=None, ge=0)
-    max_models: int | None = Field(default=None, ge=0, le=50)
+    max_models: int | None = Field(default=None, ge=0, le=MAX_PARTICIPATING_MODELS)
     allow_deep_research: bool | None = None
     allow_multi_model: bool | None = None
     allow_web_search: bool | None = None

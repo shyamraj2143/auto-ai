@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models.admin_control import AuditLog, FeatureFlag, PlanLimit, UsageLog, UserSubscription
 from app.models.user import User
+from app.services.orchestration.limits import MAX_PARTICIPATING_MODELS
 
 
 PLAN_NAMES = {"free", "pro", "premium", "ultra", "pro-plus", "admin"}
@@ -134,7 +135,7 @@ DEFAULT_PLAN_LIMITS: dict[str, dict[str, int | bool]] = {
         "monthly_prompt_limit": 100000,
         "daily_token_limit": 1000000,
         "monthly_token_limit": 1000000,
-        "max_models": 8,
+        "max_models": MAX_PARTICIPATING_MODELS,
         "allow_deep_research": True,
         "allow_multi_model": True,
         "allow_web_search": True,
@@ -156,7 +157,7 @@ DEFAULT_PLAN_LIMITS: dict[str, dict[str, int | bool]] = {
         "monthly_prompt_limit": 0,
         "daily_token_limit": 0,
         "monthly_token_limit": 0,
-        "max_models": 12,
+        "max_models": MAX_PARTICIPATING_MODELS,
         "allow_deep_research": True,
         "allow_multi_model": True,
         "allow_web_search": True,
@@ -304,6 +305,9 @@ def ensure_admin_defaults(db: Session) -> None:
     for plan, defaults in DEFAULT_PLAN_LIMITS.items():
         existing = db.scalar(select(PlanLimit).where(PlanLimit.plan == plan))
         if existing:
+            if existing.max_models > MAX_PARTICIPATING_MODELS:
+                existing.max_models = MAX_PARTICIPATING_MODELS
+                changed = True
             default_price = int(defaults.get("price_paise", 0))
             if default_price > 0 and existing.price_paise == 0:
                 existing.price_paise = default_price
@@ -483,6 +487,33 @@ def is_feature_enabled(db: Session, key: str, user_id: str | None = None) -> boo
     return True if global_flag is None else bool(global_flag.enabled)
 
 
+def intelligence_mode_access(db: Session, user: User, mode: str) -> tuple[bool, str | None]:
+    canonical_mode = {"normal": "instant", "multi_model": "medium"}.get(mode, mode)
+    if canonical_mode == "instant":
+        return True, None
+    if user.role in {"admin", "super_admin", "content_admin", "content_editor", "content_viewer"}:
+        return True, None
+
+    subscription = ensure_user_subscription(db, user)
+    subscription_is_active = active_subscription(subscription)
+    plan_name = subscription.plan if subscription_is_active else "free"
+    limits = db.scalar(select(PlanLimit).where(PlanLimit.plan == plan_name))
+    if not limits:
+        limits = db.scalar(select(PlanLimit).where(PlanLimit.plan == "free"))
+
+    if canonical_mode == "deep_research":
+        if not subscription_is_active or not limits or not limits.allow_deep_research:
+            return False, "Deep Research is not enabled for this plan."
+        if not is_feature_enabled(db, "deep_research", user.id):
+            return False, "Deep Research is disabled for this account."
+    elif canonical_mode in {"medium", "high"}:
+        if not subscription_is_active or not limits or not limits.allow_multi_model:
+            return False, "Multi-Model routing is not enabled for this plan."
+        if not is_feature_enabled(db, "multi_model_routing", user.id):
+            return False, "Multi-Model routing is disabled for this account."
+    return True, None
+
+
 def enforce_plan_and_feature_access(
     db: Session,
     user: User,
@@ -515,10 +546,14 @@ def enforce_plan_and_feature_access(
         if not is_feature_enabled(db, "multi_model_routing", user.id):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Multi-Model routing is disabled for this account.")
 
-    if max_models and limits and limits.max_models > 0 and max_models > limits.max_models:
+    effective_model_limit = min(
+        limits.max_models if limits and limits.max_models > 0 else MAX_PARTICIPATING_MODELS,
+        MAX_PARTICIPATING_MODELS,
+    )
+    if max_models and max_models > effective_model_limit:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"This plan allows up to {limits.max_models} models per request.",
+            detail=f"This plan allows up to {effective_model_limit} models per request.",
         )
 
     search_requested = bool(web_search) or (search_mode not in {None, "off", "auto"})

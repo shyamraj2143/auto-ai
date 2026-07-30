@@ -30,6 +30,26 @@ export function AppShell() {
   }, [closeSidebar, location.pathname]);
 
   useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const updateKeyboardState = () => {
+      if (document.documentElement.dataset.nativeInsets === "true") return;
+      const keyboardOpen = window.innerHeight - viewport.height > 150;
+      document.documentElement.classList.toggle("autoai-keyboard-open", keyboardOpen);
+    };
+    updateKeyboardState();
+    viewport.addEventListener("resize", updateKeyboardState);
+    viewport.addEventListener("scroll", updateKeyboardState);
+    return () => {
+      viewport.removeEventListener("resize", updateKeyboardState);
+      viewport.removeEventListener("scroll", updateKeyboardState);
+      if (document.documentElement.dataset.nativeInsets !== "true") {
+        document.documentElement.classList.remove("autoai-keyboard-open");
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     const openDestination = (event: Event) => {
       const destination = parseNotificationDestination(event instanceof CustomEvent ? event.detail : null);
       if (!destination || consumedDestinationIds.current.has(destination.eventId)) return;

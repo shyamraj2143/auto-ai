@@ -7,6 +7,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.PictureInPictureParams;
+import android.graphics.Color;
 import android.content.Context;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
@@ -19,6 +20,7 @@ import android.os.Looper;
 import android.os.Message;
 import android.provider.Settings;
 import android.util.Rational;
+import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -31,6 +33,10 @@ import android.widget.Toast;
 
 import androidx.core.content.FileProvider;
 import androidx.activity.OnBackPressedCallback;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
@@ -122,6 +128,9 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(AutoAiCallsPlugin.class);
         registerPlugin(AutoAiUpdatePlugin.class);
         super.onCreate(savedInstanceState);
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        getWindow().setStatusBarColor(Color.TRANSPARENT);
+        getWindow().setNavigationBarColor(Color.TRANSPARENT);
 
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
@@ -131,6 +140,15 @@ public class MainActivity extends BridgeActivity {
         });
 
         WebView webView = getBridge().getWebView();
+        ViewCompat.setOnApplyWindowInsetsListener(webView, (view, windowInsets) -> {
+            Insets safeInsets = windowInsets.getInsets(
+                WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout()
+            );
+            boolean keyboardOpen = windowInsets.isVisible(WindowInsetsCompat.Type.ime());
+            syncWebInsets(webView, safeInsets, keyboardOpen);
+            return windowInsets;
+        });
+        ViewCompat.requestApplyInsets(webView);
         webView.setNestedScrollingEnabled(true);
         webView.setVerticalScrollBarEnabled(false);
         webView.setOverScrollMode(WebView.OVER_SCROLL_NEVER);
@@ -157,6 +175,17 @@ public class MainActivity extends BridgeActivity {
         syncPushDeviceIfAuthenticated();
         dispatchIncomingCallIntent(getIntent());
         dispatchNotificationDestination(getIntent());
+    }
+
+    private void syncWebInsets(WebView webView, Insets insets, boolean keyboardOpen) {
+        float density = getResources().getDisplayMetrics().density;
+        String script = "(function(){var r=document.documentElement;r.dataset.nativeInsets='true';r.style.setProperty('--native-safe-top','"
+            + (insets.top / density) + "px');r.style.setProperty('--native-safe-right','"
+            + (insets.right / density) + "px');r.style.setProperty('--native-safe-bottom','"
+            + (insets.bottom / density) + "px');r.style.setProperty('--native-safe-left','"
+            + (insets.left / density) + "px');r.classList.toggle('autoai-keyboard-open',"
+            + keyboardOpen + ");})()";
+        webView.post(() -> webView.evaluateJavascript(script, null));
     }
 
     private void dispatchNativeBack() {

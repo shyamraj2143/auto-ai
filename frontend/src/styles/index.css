@@ -22,10 +22,15 @@
   --mint: #86efac;
   --rose: #fda4af;
   --amber: #fcd34d;
-  --safe-top: env(safe-area-inset-top, 0px);
-  --safe-right: env(safe-area-inset-right, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --safe-left: env(safe-area-inset-left, 0px);
+  --native-safe-top: 0px;
+  --native-safe-right: 0px;
+  --native-safe-bottom: 0px;
+  --native-safe-left: 0px;
+  --safe-top: max(env(safe-area-inset-top, 0px), var(--native-safe-top));
+  --safe-right: max(env(safe-area-inset-right, 0px), var(--native-safe-right));
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--native-safe-bottom));
+  --safe-left: max(env(safe-area-inset-left, 0px), var(--native-safe-left));
+  --mobile-nav-height: 70px;
   --page-padding-mobile: 12px;
   --page-padding-tablet: 18px;
   --page-padding-desktop: 24px;
@@ -87,6 +92,8 @@ body {
   overflow-x: hidden;
   overscroll-behavior: none;
   touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   background:
     linear-gradient(135deg, rgba(8, 47, 73, 0.38), transparent 34%),
     linear-gradient(235deg, rgba(76, 29, 149, 0.26), transparent 38%),
@@ -7662,7 +7669,7 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
 .message-timestamp { color: #8293ad; font-size: 10px; letter-spacing: .015em; }
 .message-actions { border-top: 1px solid rgba(129, 159, 204, .1); padding-top: 7px; }
 .composer-shell {
-  padding-bottom: max(10px, env(safe-area-inset-bottom));
+  padding-bottom: 10px;
   background: linear-gradient(to top, #050914 55%, transparent);
 }
 .composer-card {
@@ -8425,6 +8432,40 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
   .message-actions { opacity: .78 !important; }
   .message-action { min-width: 36px; min-height: 36px; }
 }
+.composer-advanced-trigger {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  border: 1px solid rgba(103, 232, 249, .2);
+  border-radius: 9px;
+  background: rgba(34, 211, 238, .07);
+  padding: 6px 10px;
+  color: #cffafe;
+  font-size: 11px;
+  font-weight: 700;
+}
+.composer-advanced-settings { max-height: min(320px, 38dvh); overscroll-behavior: contain; }
+.composer-textarea { max-height: min(132px, 22dvh); overflow-y: auto; resize: none; }
+.app-notice {
+  display: flex;
+  width: min(100%, 920px);
+  min-height: 38px;
+  align-items: center;
+  gap: 8px;
+  margin-inline: auto;
+  border: 1px solid rgba(125, 211, 252, .22);
+  border-radius: 9px;
+  background: rgba(8, 47, 73, .78);
+  padding: 8px 10px;
+  color: #e0f2fe;
+  font-size: 12px;
+}
+.app-notice-error { border-color: rgba(248, 113, 113, .3); background: rgba(69, 10, 10, .82); color: #fee2e2; }
+.app-notice span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.app-notice button { min-height: 30px; border-radius: 7px; padding: 4px 9px; color: inherit; font-weight: 700; }
+.app-notice-dismiss { display: grid; width: 30px; padding: 0 !important; place-items: center; }
 /* Compact chooser: never inherits application branding or hero-card sizing. */
 .app-select-root { position: relative; width: min(100%, 240px); flex: 0 1 240px; }
 .app-select, .app-select-menu, .app-select-option { background-image: none !important; }
@@ -8453,6 +8494,24 @@ html[data-auto-ai-safe-mode="true"] .final-cta-section {
   .app-select-backdrop { display:block; position:fixed; z-index:1199; inset:0; background:rgba(0,4,14,.7); }
   .app-select-menu { position:fixed; top:auto; right:12px; bottom:max(12px, env(safe-area-inset-bottom)); left:12px; width:auto; max-height:min(70dvh, 520px); }
   .app-select-options { max-height:calc(min(70dvh, 520px) - 44px - max(12px, env(safe-area-inset-bottom))); }
+}
+
+@media (max-width: 767px) {
+  .route-transition-stage {
+    padding-top: var(--safe-top);
+  }
+  .app-shell > main {
+    padding-bottom: calc(var(--mobile-nav-height) + var(--safe-bottom) + 8px);
+  }
+  .autoai-keyboard-open .app-shell > main {
+    padding-bottom: 0;
+  }
+  .autoai-keyboard-open .autoai-mobile-nav {
+    display: none;
+  }
+  .autoai-keyboard-open .route-transition-stage {
+    padding-top: 0;
+  }
 }
 
 /* Settings reference system: compact neon glass groups with persistent category tabs. */

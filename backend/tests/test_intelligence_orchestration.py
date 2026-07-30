@@ -5,8 +5,10 @@ import uuid
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
+from app.core.config import settings
 
 from app.models.chat_generation import OrchestrationEvent
+from app.schemas.chat import ChatRequest
 from app.services.orchestration.activity_store import _sanitize, activity_store
 from app.services.orchestration.citation_verifier import citation_verifier
 from app.services.orchestration.orchestrator import intelligence_orchestrator
@@ -23,6 +25,11 @@ from app.services.orchestration.task_planner import task_planner
 
 
 MESSAGES = [{"role": "user", "content": "Explain the safest production design."}]
+
+
+def test_chat_request_rejects_more_than_six_participating_models():
+    with pytest.raises(ValueError):
+        ChatRequest(message="test", max_models=7)
 
 
 def record(model_id: str, provider: str = "groq", quality: float = 1.0) -> ModelRecord:
@@ -160,7 +167,7 @@ def test_high_combines_actual_groq_and_bedrock_tasks(monkeypatch):
     assert providers == {"groq", "bedrock"}
 
 
-def test_high_plans_every_healthy_configured_groq_and_bedrock_model(monkeypatch):
+def test_high_never_plans_more_than_six_healthy_models(monkeypatch):
     records = [
         *[record(f"groq-{index}", "groq") for index in range(6)],
         *[record(f"bedrock-{index}", "bedrock") for index in range(3)],
@@ -174,8 +181,26 @@ def test_high_plans_every_healthy_configured_groq_and_bedrock_model(monkeypatch)
         type("Analysis", (), {"complexity": "high"})(),
         MESSAGES,
     )
-    assert len(planned) == 9
+    assert len(planned) == 6
     assert {item.model.provider for item in planned} == {"groq", "bedrock"}
+
+
+def test_instant_plans_primary_and_only_one_fallback(monkeypatch):
+    records = [
+        record(settings.GROQ_MODEL),
+        *[record(model_id) for model_id in settings.ORCHESTRATION_INSTANT_FALLBACKS[:3]],
+    ]
+    monkeypatch.setattr(
+        "app.services.orchestration.task_planner.model_registry.eligible",
+        lambda _mode: records,
+    )
+    planned = task_planner.plan(
+        IntelligenceMode.INSTANT,
+        type("Analysis", (), {"complexity": "low"})(),
+        MESSAGES,
+    )
+    assert len(planned) <= 2
+    assert planned[0].model.actual_model_id == settings.GROQ_MODEL
 
 
 def test_activity_working_and_completed_events_match_real_calls(monkeypatch):

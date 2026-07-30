@@ -748,10 +748,10 @@ export function SettingsPage() {
                 <button key={provider} type="button" onClick={() => toggleResearchProvider(provider)} className={clsx("h-8 rounded-md border px-2 text-[11px] font-semibold transition", settings.deepResearchProviders.includes(provider) ? "border-cyan-200/35 bg-cyan-200/12 text-cyan-50" : "border-white/10 bg-white/5 text-slate-400")}>{PROVIDER_LABELS[provider]}</button>
               ))}
             </div>
-            <Select value={settings.deepResearchMaxModels} options={[1, 2, 3, 4, 5, 6, 7, 8, 9].map((value) => ({ value: String(value), label: `Max ${value}` }))} onChange={(value) => setDeepResearchMaxModels(Number(value))} disabled={settings.deepResearchAllModels} label="Max deep research models" />
+            <Select value={settings.deepResearchMaxModels} options={[1, 2, 3, 4, 5, 6].map((value) => ({ value: String(value), label: `Up to ${value}` }))} onChange={(value) => setDeepResearchMaxModels(Number(value))} disabled={settings.deepResearchAllModels} label="Maximum deep research models" />
             <Select value={settings.deepResearchTimeoutSeconds} options={[20, 35, 45, 60, 90, 120].map((value) => ({ value: String(value), label: `${value}s` }))} onChange={(value) => setDeepResearchTimeoutSeconds(Number(value))} label="Deep research timeout" />
           </SettingsRow>
-          <SettingsRow icon={Sparkles} accent="violet" title="Use all deep research models" description="Overrides max model limit">
+          <SettingsRow icon={Sparkles} accent="violet" title="Use all available models" description="Uses up to six participating models">
             <Toggle checked={settings.deepResearchAllModels} onChange={setDeepResearchAllModels} />
           </SettingsRow>
         </SettingsCard>

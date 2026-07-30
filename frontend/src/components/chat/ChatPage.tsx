@@ -22,6 +22,7 @@ import { mediaResourceCoordinator } from "../../features/calls/services/mediaRes
 import { CrystalAiOrb, CrystalErrorBoundary } from "../crystal/Crystal";
 import type { CrystalOrbState } from "../../crystal/tokens";
 import { usePublishedUiText } from "../../hooks/useCmsContent";
+import { AppNotice } from "../common/AppNotice";
 import {
   appendOptimisticMessages,
   clientMessageIdOf,
@@ -38,7 +39,7 @@ const DEFAULT_OPTIONS: ComposerOptions = {
   searchMode: "auto",
   chatMode: "instant",
   researchProviders: ["groq", "bedrock"],
-  maxModels: 9,
+  maxModels: 6,
   allModels: true,
   timeoutSeconds: 45,
   groqModels: [],
@@ -1187,14 +1188,7 @@ export function ChatPage() {
           </AnimatePresence>
         </div>
 
-        {chatNotice && (
-          <div className="chat-notice" role="status">
-            <span className="min-w-0 flex-1">{chatNotice}</span>
-            <button className="chat-notice-close" onClick={() => setChatNotice("")} type="button">
-              Dismiss
-            </button>
-          </div>
-        )}
+        {chatNotice && <AppNotice message={chatNotice} onDismiss={() => setChatNotice("")} />}
 
         {!isPinnedToBottom && messages.length > 0 && (
           <button

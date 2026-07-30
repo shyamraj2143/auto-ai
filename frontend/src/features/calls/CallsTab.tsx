@@ -22,6 +22,7 @@ import { ChatsPanel } from "./ChatsPanel";
 import { PeopleSearchPanel } from "./PeopleSearchPanel";
 import { ProfilePreviewSheet } from "./ProfilePreviewSheet";
 import { RequestsPanel } from "./RequestsPanel";
+import { AppNotice } from "../../components/common/AppNotice";
 
 type CallsTabProps = {
   refreshRequestId: number;
@@ -290,7 +291,9 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
       if (notificationResult.status === "fulfilled") setUnread(notificationResult.value.unread_count);
       if (incomingResult.status === "fulfilled") setIncoming(incomingResult.value.items);
       if (threadsResult.status === "fulfilled") setThreads(threadsResult.value.items);
-      if (realtimeResult.status === "rejected" && notifyOnError) showToast("Realtime calling is temporarily unavailable.");
+      if (realtimeResult.status === "rejected" && notifyOnError) {
+        setMessage(errorText(realtimeResult.reason, "Realtime calling is temporarily unavailable."));
+      }
     } finally {
       onRefreshingChange(false);
     }
@@ -563,9 +566,7 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
 
   const featureEnabled = config?.enabled !== false;
   const readiness = !featureEnabled || !config?.realtime_configured ? "unavailable" : config?.limitations?.length || !config.turn_configured ? "limited" : "ready";
-  const readinessDetails = import.meta.env.DEV
-    ? [config?.diagnostic, ...(config?.limitations || [])].filter((item): item is string => Boolean(item))
-    : [];
+  const readinessDetails = [config?.diagnostic, ...(config?.limitations || [])].filter((item): item is string => Boolean(item));
   const missedCount = history.filter((item) => item.status === "missed").length;
   const unreadChatCount = threads.reduce((sum, thread) => sum + thread.unread_count, 0);
   const visibleThreads = threads.filter((thread) => {
@@ -590,7 +591,7 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
       header={<CallHubHeader view={view} ready={readiness} refreshing={loading} onRefresh={() => void refresh(true)} onSettings={() => navigate("/settings?section=calls")} />}
       status={<CallHubStatusBanner state={readiness} details={readinessDetails} />}
     >
-      {message && <div className="calls-inline-alert" role="alert"><ShieldAlert size={14} /><span>{message}</span><button type="button" onClick={() => void refresh(true)}>Retry</button></div>}
+      {message && <AppNotice kind="error" message={message} onRetry={() => void refresh(true)} onDismiss={() => setMessage("")} />}
 
       {view === "chats" && (
         <ChatsPanel>

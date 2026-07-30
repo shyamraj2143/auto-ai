@@ -551,7 +551,7 @@ function createHttpError(
   const message = authFailed
     ? status === 401
       ? "Your session expired. Please sign in again."
-      : "You do not have permission for this action."
+      : detail || "You do not have permission for this action."
     : `Request failed (${status}): ${detail}`;
   const error = new ApiClientError(message, {
     kind: authFailed ? "authentication_failed" : "http_error",

@@ -33,6 +33,28 @@ async function installAuthenticatedFixtures(page: Page) {
     if (path.includes("/content/public/announcements")) return json(route, []);
     if (path.endsWith("/auth/me") || path.endsWith("/users/me")) return json(route, user);
     if (path.endsWith("/chat/sessions")) return json(route, []);
+    if (path.endsWith("/documents")) return json(route, []);
+    if (path.endsWith("/ai/generations/active")) return json(route, []);
+    if (path.endsWith("/ai/research-models")) return json(route, {
+      providers: {
+        groq: { enabled: true, models: ["llama-3.3-70b-versatile", "openai/gpt-oss-120b"] },
+        bedrock: { enabled: true, models: ["amazon.nova-pro-v1:0"] },
+        openai: { enabled: true, models: ["gpt-5"] },
+        gemini: { enabled: true, models: ["gemini-2.5-pro"] },
+      },
+      defaults: { max_models: 6, timeout_seconds: 45, final_judge_model: null },
+    });
+    if (path.endsWith("/ai/intelligence/config")) return json(route, {
+      max_participating_models: 6,
+      modes: {
+        instant: { available: true, description: "Fast single-model response" },
+        medium: { available: true, description: "Balanced parallel intelligence" },
+        high: { available: true, description: "Advanced multi-provider reasoning" },
+        deep_research: { available: true, description: "Source-backed comprehensive research" },
+      },
+      models: [],
+      refreshed: true,
+    });
     if (path.endsWith("/calls/config")) return json(route, { enabled: false, realtime_configured: false, turn_configured: false, firebase_configured: false, ring_timeout_seconds: 30, reconnect_grace_seconds: 10 });
     if (path.endsWith("/calls/history")) return json(route, { items: [{ id: "call-1", caller_id: "user-2", callee_id: "user-1", call_type: "audio", status: "missed", created_at: now, duration_seconds: 0, direction: "incoming", peer }], page: 1, limit: 20, has_more: false });
     if (path.includes("/social/requests/incoming")) return json(route, { items: [{ id: "request-1", status: "pending", requested_at: now, user: peer }], page: 1, limit: 30, has_more: false });
@@ -79,12 +101,46 @@ for (const viewport of viewports) {
   });
 }
 
+for (const viewport of viewports) {
+  for (const surface of [
+    { name: "AI Chat", route: "/chat", locator: ".composer-shell" },
+    { name: "Messages", route: "/messages", locator: ".um-page" },
+  ]) {
+    test(`${surface.name} has no overflow at ${viewport.name}`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await installAuthenticatedFixtures(page);
+      await openRoute(page, surface.route);
+      await expect(page.locator(surface.locator)).toBeVisible();
+      await assertNoFunctionalOverflow(page);
+      if (viewport.name === "393x873") {
+        await page.screenshot({ path: `../output/playwright/responsive-${surface.name.toLowerCase().replace(" ", "-")}-393x873.png`, fullPage: true });
+      }
+    });
+  }
+}
+
+test("mode selection stays collapsed and advanced controls cap models at six", async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 873 });
+  await installAuthenticatedFixtures(page);
+  await openRoute(page, "/chat");
+  await page.getByRole("button", { name: "Instant", exact: true }).click();
+  await page.getByRole("menuitemradio", { name: /Medium/ }).click();
+  await expect(page.locator("#composer-advanced-settings")).toHaveCount(0);
+  const configure = page.getByRole("button", { name: /Configure models · Up to 6/i });
+  await expect(configure).toHaveAttribute("aria-expanded", "false");
+  await configure.click();
+  await expect(page.locator("#composer-advanced-settings")).toBeVisible();
+  await expect(page.getByLabel("Maximum research models")).toBeVisible();
+  await expect(page.getByText("Up to 7", { exact: true })).toHaveCount(0);
+  await assertNoFunctionalOverflow(page);
+});
+
 for (const section of sections) {
   test(`Call Hub ${section} section is responsive`, async ({ page }) => {
     await page.setViewportSize({ width: 393, height: 873 });
     await installAuthenticatedFixtures(page);
     await openRoute(page, `/call-hub/${section}`);
-    await expect(page.locator(`[aria-current="page"]`).filter({ hasText: new RegExp(section, "i") })).toBeVisible();
+    await expect(page.locator(".pulse-connect-nav [aria-current='page']").filter({ hasText: new RegExp(section, "i") })).toBeVisible();
     await page.waitForTimeout(500);
     await assertNoFunctionalOverflow(page);
     await page.screenshot({ path: `../output/playwright/call-hub-${section}-393x873.png`, fullPage: true });

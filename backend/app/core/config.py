@@ -161,8 +161,8 @@ class Settings(BaseSettings):
         "gemini-2.5-pro",
         "gemini-2.0-flash",
     ]
-    DEEP_RESEARCH_DEFAULT_MAX_MODELS: int = 9
-    DEEP_RESEARCH_MAX_MODELS: int = 9
+    DEEP_RESEARCH_DEFAULT_MAX_MODELS: int = 6
+    DEEP_RESEARCH_MAX_MODELS: int = 6
     DEEP_RESEARCH_MAX_INPUT_TOKENS: int = 6000
     DEEP_RESEARCH_MAX_OUTPUT_TOKENS: int = 1200
     DEEP_RESEARCH_PER_MODEL_TIMEOUT_SECONDS: int = 45
@@ -189,7 +189,7 @@ class Settings(BaseSettings):
         "llama-3.1-8b-instant",
     ]
     ORCHESTRATION_MAX_MODELS_MEDIUM: int = 6
-    ORCHESTRATION_MAX_MODELS_HIGH: int = 9
+    ORCHESTRATION_MAX_MODELS_HIGH: int = 6
     ORCHESTRATION_MAX_PARALLEL: int = 9
     ORCHESTRATION_MAX_RETRIES: int = 1
     ORCHESTRATION_TOTAL_TIMEOUT_SECONDS: int = 90

@@ -28,7 +28,7 @@ describe("user message timestamps", () => {
   });
 
   it("keeps mobile navigation clearance owned by the app shell only", () => {
-    expect(workspaceSurfaces).toContain(".app-shell > main { height: 100vh; height: 100dvh; padding-bottom: 77px; }");
+    expect(workspaceSurfaces).toContain("padding-bottom: calc(var(--mobile-nav-height) + var(--safe-bottom) + 8px)");
     expect(workspaceSurfaces).toContain(".um-page { padding-bottom: 0; }");
     expect(workspaceSurfaces).not.toContain(".calls-workspace-page, .um-page { padding-bottom: 76px; }");
   });

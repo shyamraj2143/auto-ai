@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 
 from app.core.config import settings
+from app.services.orchestration.limits import MAX_PARTICIPATING_MODELS, participating_model_limit
 from app.services.orchestration.model_registry import model_registry
 from app.services.orchestration.schemas import IntelligenceMode, ModelTask, RequestAnalysis
 
@@ -49,6 +50,7 @@ class TaskPlanner:
         max_models: int | None = None,
     ) -> list[ModelTask]:
         records = model_registry.eligible(mode)
+        records = list({(record.provider, record.actual_model_id): record for record in records}.values())
         if providers:
             records = [record for record in records if record.provider in set(providers)]
         if requested_models:
@@ -72,25 +74,28 @@ class TaskPlanner:
                 )
             )
             roles = ["quick"] * len(records)
-            limit = len(records)
+            limit = min(len(records), 2)
         elif mode == IntelligenceMode.MEDIUM:
             records = [record for record in records if record.provider == "groq"]
             roles = MEDIUM_ROLES
-            limit = min(len(records), max_models or settings.ORCHESTRATION_MAX_MODELS_MEDIUM)
+            limit = min(
+                len(records),
+                participating_model_limit(max_models, default=settings.ORCHESTRATION_MAX_MODELS_MEDIUM),
+            )
         elif mode == IntelligenceMode.HIGH:
             records.sort(key=lambda item: (item.provider != "bedrock", item.priority))
             roles = HIGH_ROLES
             limit = min(
                 len(records),
-                max_models or settings.ORCHESTRATION_MAX_MODELS_HIGH,
-                settings.ORCHESTRATION_MAX_MODELS_HIGH,
+                participating_model_limit(max_models, default=settings.ORCHESTRATION_MAX_MODELS_HIGH),
+                MAX_PARTICIPATING_MODELS,
             )
         else:
             roles = DEEP_RESEARCH_ROLES
             limit = min(
                 len(records),
-                max_models or settings.DEEP_RESEARCH_MAX_MODELS,
-                settings.DEEP_RESEARCH_MAX_MODELS,
+                participating_model_limit(max_models, default=settings.DEEP_RESEARCH_MAX_MODELS),
+                MAX_PARTICIPATING_MODELS,
             )
 
         tasks: list[ModelTask] = []

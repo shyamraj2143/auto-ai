@@ -398,7 +398,7 @@
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  padding: 10px max(12px, env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  padding: 10px max(12px, var(--safe-right)) 10px max(12px, var(--safe-left));
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(2, 6, 23, 0.92);
 }
@@ -619,4 +619,7 @@
   .um-bubble { max-width: 90%; }
   .um-attachment-preview { max-width:calc(100dvw - 24px); }
   .um-composer textarea { max-width:100%; }
+  .um-filters { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); overflow:visible; gap:6px; }
+  .um-filters button { min-width:0; padding-inline:6px; white-space:normal; }
+  .um-filters button.new { grid-column:span 2; }
 }

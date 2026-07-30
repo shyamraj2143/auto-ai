@@ -87,7 +87,7 @@ class PlanLimit(Base):
     monthly_prompt_limit: Mapped[int] = mapped_column(Integer, default=1000)
     daily_token_limit: Mapped[int] = mapped_column(Integer, default=50000)
     monthly_token_limit: Mapped[int] = mapped_column(Integer, default=500000)
-    max_models: Mapped[int] = mapped_column(Integer, default=3)
+    max_models: Mapped[int] = mapped_column(Integer, default=6)
     allow_deep_research: Mapped[bool] = mapped_column(Boolean, default=False)
     allow_multi_model: Mapped[bool] = mapped_column(Boolean, default=False)
     allow_web_search: Mapped[bool] = mapped_column(Boolean, default=True)

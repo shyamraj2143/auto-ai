@@ -29,7 +29,7 @@ describe("Call Hub navigation", () => {
     expect(styles).toContain("-webkit-overflow-scrolling:touch");
     expect(styles).toContain(".route-transition-stage:has(>.calls-workspace-page){overflow:hidden}");
     expect(styles).toContain(".calls-workspace-content>.pulse-connect-shell{height:100%;min-height:0;flex:1}");
-    expect(styles).toContain(".pulse-connect-content>.calls-list{padding-bottom:calc(18px + env(safe-area-inset-bottom))");
+    expect(styles).toContain(".pulse-connect-content>.calls-list{padding-bottom:18px");
     expect(styles).toContain(".calls-workspace-page{height:100%;min-height:0;padding-bottom:0}");
     expect(workspaceSurfaces).toContain("height: 100vh; height: 100dvh");
     expect(workspaceSurfaces).toContain(".calls-workspace-page { height: 100%; min-height: 0; padding-bottom: 0; }");
@@ -76,11 +76,12 @@ describe("Call Hub navigation", () => {
     expect(source).toContain("clearAllAlerts");
     expect(source).toContain("Loading conversations");
     expect(source).toContain("Loading call history");
-    expect(source).toContain(">Retry</button>");
+    expect(source).toContain('onRetry={() => void refresh(true)}');
   });
 
-  it("keeps raw readiness diagnostics development-only", () => {
-    expect(source).toContain("import.meta.env.DEV");
+  it("shows safe readiness diagnostics to users", () => {
+    expect(source).toContain("[config?.diagnostic, ...(config?.limitations || [])]");
+    expect(source).not.toContain("import.meta.env.DEV");
     expect(source).toContain("CallHubStatusBanner");
   });
 

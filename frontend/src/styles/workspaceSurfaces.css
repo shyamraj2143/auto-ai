@@ -231,7 +231,7 @@
 }
 
 @media (max-width: 767px) {
-  .app-shell > main { height: 100vh; height: 100dvh; padding-bottom: 77px; }
+  .app-shell > main { height: 100vh; height: 100dvh; padding-bottom: calc(var(--mobile-nav-height) + var(--safe-bottom) + 8px); }
   .route-transition-stage { overflow: visible; }
   .autoai-feature-page { padding: 22px 15px 94px; }
   .autoai-feature-header { align-items: flex-start; }

@@ -107,14 +107,14 @@
   .autoai-workspace-nav { display: none; }
   .autoai-mobile-nav {
     position: fixed;
-    right: 10px;
-    bottom: max(8px, env(safe-area-inset-bottom));
-    left: 10px;
+    right: max(10px, var(--safe-right));
+    bottom: 0;
+    left: max(10px, var(--safe-left));
     z-index: 80;
     display: grid;
     grid-template-columns: repeat(6, minmax(0, 1fr));
-    min-height: 62px;
-    padding: 7px 5px 6px;
+    min-height: calc(var(--mobile-nav-height) + var(--safe-bottom));
+    padding: 7px 5px max(6px, var(--safe-bottom));
     border: 1px solid rgba(102, 145, 220, .24);
     border-radius: 22px;
     background: rgba(4, 13, 31, .93);
