@@ -52,9 +52,15 @@ class DocumentService:
 
         extraction = self.extract_text(data, extension)
         if not extraction.text:
+            detail = (
+                "This scanned PDF contains no embedded text, and OCR could not read its pages. "
+                "Upload a clearer scan or image, or retry when vision OCR is available."
+                if extension == ".pdf"
+                else "No readable text was found in the document."
+            )
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="No readable text was found in the document.",
+                detail=detail,
             )
 
         safe_name = self.safe_filename(filename)
@@ -116,19 +122,56 @@ class DocumentService:
 
         pages: list[str] = []
         failed_pages: list[int] = []
+        ocr_pages: list[int] = []
+        ocr_failed_pages: list[int] = []
         for index, page in enumerate(reader.pages, start=1):
             try:
-                pages.append(page.extract_text() or "")
+                text = page.extract_text() or ""
             except Exception:
                 failed_pages.append(index)
-                pages.append("")
+                text = ""
+            if not self.normalize_text(text) and index <= settings.DOCUMENT_OCR_MAX_PAGES:
+                text = self._ocr_pdf_page(page, index)
+                if text:
+                    ocr_pages.append(index)
+                else:
+                    ocr_failed_pages.append(index)
+            pages.append(text)
 
         return self._build_extraction(
             "\n\n".join(pages),
-            parser="pypdf",
+            parser="pypdf+vision-ocr" if ocr_pages else "pypdf",
             page_count=len(reader.pages),
             failed_pages=failed_pages,
+            ocr_pages=ocr_pages,
+            ocr_failed_pages=ocr_failed_pages,
+            ocr_page_limit=settings.DOCUMENT_OCR_MAX_PAGES,
         )
+
+    @staticmethod
+    def _ocr_pdf_page(page: Any, page_number: int) -> str:
+        try:
+            images = list(page.images)
+        except Exception:
+            return ""
+        if not images:
+            return ""
+        image = max(images, key=lambda item: len(item.data or b""))
+        if not image.data:
+            return ""
+        prompt = (
+            f"Perform exact OCR for scanned document page {page_number}. Transcribe every readable word and number in natural "
+            "reading order. Preserve labels and line breaks. Do not summarize, infer, translate, or invent missing text. "
+            "For unclear characters write [unclear]. Return only the transcription."
+        )
+        try:
+            return groq_service.analyze_image(
+                image.data,
+                image.name or f"page-{page_number}.png",
+                prompt,
+            ).strip()
+        except HTTPException:
+            return ""
 
     def _extract_docx(self, data: bytes) -> DocumentExtraction:
         doc = DocxDocument(BytesIO(data))

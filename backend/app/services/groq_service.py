@@ -950,26 +950,45 @@ class GroqService:
         suffix = Path(filename).suffix.lower().replace(".", "") or "png"
         mime = "jpeg" if suffix == "jpg" else suffix
         encoded = base64.b64encode(image_bytes).decode("ascii")
-        try:
-            completion = self._client().chat.completions.create(
-                model=settings.GROQ_VISION_MODEL,
-                messages=[
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
                     {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": f"data:image/{mime};base64,{encoded}"},
-                            },
-                        ],
-                    }
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/{mime};base64,{encoded}"},
+                    },
                 ],
+            }
+        ]
+        last_error: HTTPException | None = None
+        try:
+            content, _, _ = self._complete_groq(
+                messages,
+                model=settings.GROQ_VISION_MODEL,
                 max_tokens=settings.GROQ_MAX_TOKENS,
+                request_timeout=60,
             )
-        except GroqError as exc:
-            self._handle_groq_error(exc)
-        return self._content_to_text(completion.choices[0].message.content)
+            return content
+        except HTTPException as exc:
+            last_error = exc
+        if settings.BEDROCK_VISION_MODEL:
+            try:
+                content, _, _ = self._complete_bedrock(
+                    messages,
+                    model=settings.BEDROCK_VISION_MODEL,
+                    max_tokens=settings.GROQ_MAX_TOKENS,
+                    request_timeout=90,
+                    allow_fallback=False,
+                )
+                return content
+            except HTTPException as exc:
+                last_error = exc
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Image text recognition is temporarily unavailable.",
+        ) from last_error
 
     def transcribe_audio(self, audio_bytes: bytes, filename: str) -> str:
         suffix = Path(filename).suffix or ".webm"

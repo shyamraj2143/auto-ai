@@ -112,6 +112,7 @@ class Settings(BaseSettings):
     GROQ_MODEL: str = "openai/gpt-oss-120b"
     GROQ_SEARCH_MODEL: str = "groq/compound-mini"
     GROQ_VISION_MODEL: str = "meta-llama/llama-4-scout-17b-16e-instruct"
+    BEDROCK_VISION_MODEL: str = "qwen.qwen3-vl-235b-a22b-instruct"
     GROQ_AUDIO_MODEL: str = "whisper-large-v3-turbo"
 
     OPENAI_API_KEY: str | None = Field(
@@ -140,6 +141,7 @@ class Settings(BaseSettings):
     GROQ_MAX_TOKENS: int = 4096
     MAX_CONTEXT_MESSAGES: int = 24
     MAX_DOCUMENT_CONTEXT_CHARS: int = 24000
+    DOCUMENT_OCR_MAX_PAGES: int = 12
 
     GROQ_RESEARCH_MODELS: list[str] = [
         "llama-3.1-8b-instant",
