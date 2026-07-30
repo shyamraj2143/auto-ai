@@ -128,6 +128,8 @@ def ensure_runtime_schema() -> None:
             add_column("users", "role", "VARCHAR(32) NOT NULL DEFAULT 'user'")
         if "subscription_status" not in user_columns:
             add_column("users", "subscription_status", "VARCHAR(32) NOT NULL DEFAULT 'free'")
+        if "intelligence_mode" not in user_columns:
+            add_column("users", "intelligence_mode", "VARCHAR(32) NOT NULL DEFAULT 'instant'")
         if "created_at" not in user_columns:
             add_column("users", "created_at", "datetime")
         if "updated_at" not in user_columns:

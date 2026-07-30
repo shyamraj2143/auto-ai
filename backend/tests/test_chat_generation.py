@@ -74,3 +74,27 @@ def test_chat_generation_reuses_completed_generation_for_duplicate_client_id(db,
     assert db.scalar(select(func.count()).select_from(Message).where(Message.chat_id == chat.id, Message.role == "user")) == 1
     assert db.scalar(select(func.count()).select_from(Message).where(Message.chat_id == chat.id, Message.role == "assistant")) == 1
     assert db.scalar(select(func.count()).select_from(ChatGeneration).where(ChatGeneration.chat_id == chat.id)) == 1
+
+
+def test_intelligence_mode_persists_for_user_and_conversation(db, monkeypatch):
+    monkeypatch.setattr("app.api.routes.ai.enforce_plan_and_feature_access", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.api.routes.ai.submit_chat_generation", lambda generation_id: None)
+    user = User(
+        id="mode-user",
+        email="mode-user@example.test",
+        name="Mode User",
+        username="mode-user",
+        hashed_password="unused",
+        is_active=True,
+    )
+    db.add(user)
+    db.commit()
+    result = create_chat_generation(
+        ChatRequest(message="Investigate this", mode="high", client_message_id="mode-client"),
+        user,
+        db,
+    )
+    db.refresh(user)
+    chat = db.get(Chat, result["chat_id"])
+    assert user.intelligence_mode == "high"
+    assert chat is not None and chat.mode == "high"

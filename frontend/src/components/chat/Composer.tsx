@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import clsx from "clsx";
 import { api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
-import type { AiProvider, ChatMode, DocumentItem, ResearchModelOptions, ResearchProvider, SearchMode } from "../../types";
+import type { AiProvider, ChatMode, DocumentItem, IntelligenceConfig, ResearchModelOptions, ResearchProvider, SearchMode } from "../../types";
 import { PROVIDER_MODELS, useAppSettings } from "../../contexts/AppSettingsContext";
 import { useCrystalEffects } from "../../crystal/useCrystalEffects";
 import { VoiceButton } from "./VoiceButton";
@@ -58,12 +58,6 @@ const PROVIDER_LABELS: Record<Provider, string> = {
 type ModelOption = { value: string; label: string };
 type ComposerOpenMenu = "attachments" | "mode" | "model" | "research-model" | null;
 
-const INTELLIGENCE_PRESETS: Array<{ value: string; label: string; provider: Provider; model: string }> = [
-  { value: "instant", label: "Instant", provider: "groq", model: "llama-3.1-8b-instant" },
-  { value: "medium", label: "Medium", provider: "groq", model: "openai/gpt-oss-20b" },
-  { value: "high", label: "High", provider: "groq", model: "openai/gpt-oss-120b" }
-];
-
 function readableModelLabel(value: string) {
   for (const options of Object.values(PROVIDER_MODELS)) {
     const found = options.find((option) => option.value === value);
@@ -108,8 +102,7 @@ function ModelMenu({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const [activeProvider, setActiveProvider] = useState<Provider>(provider);
   const [query, setQuery] = useState("");
-  const preset = INTELLIGENCE_PRESETS.find((item) => item.provider === provider && item.model === model);
-  const triggerLabel = preset?.label ?? readableModelLabel(model);
+  const triggerLabel = readableModelLabel(model);
   const options = modelOptionsFor(activeProvider);
   const filteredOptions = options.filter((option) => option.label.toLowerCase().includes(query.trim().toLowerCase()));
 
@@ -122,7 +115,7 @@ function ModelMenu({
     <div className="model-menu">
       <button
         ref={triggerRef}
-        className={clsx("composer-pill model-menu-trigger", provider !== "groq" || preset ? "composer-pill-active" : "")}
+        className={clsx("composer-pill model-menu-trigger", provider !== "groq" && "composer-pill-active")}
         type="button"
         onClick={() => {
           setActiveProvider(provider);
@@ -142,25 +135,6 @@ function ModelMenu({
           <div className="composer-popover-header">
             <span>AI model</span>
             <small>{triggerLabel}</small>
-          </div>
-          <div className="model-menu-title">Intelligence presets</div>
-          <div className="composer-intelligence-presets">
-          {INTELLIGENCE_PRESETS.map((item) => (
-            <button
-              key={item.value}
-              className={clsx("model-menu-item", provider === item.provider && model === item.model && "composer-popover-option-active")}
-              type="button"
-              role="menuitemradio"
-              aria-checked={provider === item.provider && model === item.model}
-              onClick={() => {
-                onSelect(item.provider, item.model);
-                onClose();
-              }}
-            >
-              <span>{item.label}</span>
-              {provider === item.provider && model === item.model && <Check size={14} />}
-            </button>
-          ))}
           </div>
           <div className="composer-model-provider-tabs" role="tablist" aria-label="Model providers">
           {(["groq", "bedrock", "openai", "gemini"] as Provider[]).map((item) => (
@@ -209,12 +183,14 @@ function ModelMenu({
 
 function ModeMenu({
   value,
+  config,
   open,
   onToggle,
   onClose,
   onSelect
 }: {
   value: string;
+  config: IntelligenceConfig | null;
   open: boolean;
   onToggle: () => void;
   onClose: () => void;
@@ -223,9 +199,10 @@ function ModeMenu({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const selected = composerModeOption(value);
   const descriptions: Record<string, string> = {
-    normal: "Fast everyday conversation",
-    deep: "Search current information in greater depth",
-    research: "Use multiple models for deeper analysis"
+    instant: "Fast single-model response",
+    medium: "Balanced parallel intelligence",
+    high: "Advanced multi-provider reasoning",
+    deep_research: "Source-backed comprehensive research"
   };
 
   return (
@@ -238,15 +215,15 @@ function ModeMenu({
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-controls="composer-mode-popover"
-        title="Choose chat mode"
+        title="Choose intelligence preset"
       >
         <Sparkles size={18} />
         <span className="composer-mode-label">{selected.label}</span>
         <ChevronDown size={15} />
       </button>
-      <ComposerPopover open={open} triggerRef={triggerRef} onClose={onClose} ariaLabel="Choose chat mode" preferredWidth={300} maxWidth={320}>
+      <ComposerPopover open={open} triggerRef={triggerRef} onClose={onClose} ariaLabel="Choose intelligence preset" preferredWidth={360} maxWidth={380}>
         <div id="composer-mode-popover">
-          <div className="composer-popover-header">Chat mode</div>
+          <div className="composer-popover-header">Intelligence preset</div>
           <div className="composer-popover-list" role="menu">
           {COMPOSER_MODE_OPTIONS.map((option) => (
             <button
@@ -254,13 +231,22 @@ function ModeMenu({
               type="button"
               role="menuitemradio"
               aria-checked={option.value === selected.value}
+              aria-disabled={config?.modes[option.value]?.available === false}
+              disabled={config?.modes[option.value]?.available === false}
               className={clsx("composer-popover-option", option.value === selected.value && "composer-popover-option-active")}
               onClick={() => {
                 onSelect(option.value);
                 onClose();
               }}
             >
-              <span><strong>{option.label}</strong><small>{descriptions[option.value] ?? "Choose this chat mode"}</small></span>
+              <span>
+                <strong>{option.label}</strong>
+                <small>
+                  {config?.modes[option.value]?.available === false
+                    ? "Temporarily unavailable"
+                    : config?.modes[option.value]?.fallback_message || descriptions[option.value] || "Choose this intelligence preset"}
+                </small>
+              </span>
               {option.value === selected.value && <Check size={14} />}
             </button>
           ))}
@@ -393,7 +379,8 @@ export function Composer({
   onStop,
   onOpenLiveMode,
   focusKey,
-  initialDraft = ""
+  initialDraft = "",
+  conversationMode
 }: {
   disabled?: boolean;
   selectedDocuments: DocumentItem[];
@@ -406,9 +393,10 @@ export function Composer({
   onOpenLiveMode: () => void;
   focusKey?: string;
   initialDraft?: string;
+  conversationMode?: string;
 }) {
   const uiText = usePublishedUiText();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { settings } = useAppSettings();
   const crystalEffects = useCrystalEffects();
   const attachmentTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -419,12 +407,16 @@ export function Composer({
   const imageAttachmentsRef = useRef<ImageAttachment[]>([]);
   const [draft, setDraft] = useState("");
   const [searchMode, setSearchMode] = useState<SearchMode>("auto");
-  const [chatMode, setChatMode] = useState<ChatMode>("normal");
+  const [chatMode, setChatMode] = useState<ChatMode>(() => {
+    const stored = typeof window !== "undefined" ? window.localStorage.getItem("autoai-intelligence-mode") : null;
+    return composerModeOption(stored || "instant").chatMode;
+  });
   const [researchProviders, setResearchProviders] = useState<ResearchProvider[]>(settings.deepResearchProviders);
   const [maxModels, setMaxModels] = useState(settings.deepResearchMaxModels);
   const [allModels, setAllModels] = useState(settings.deepResearchAllModels);
   const [timeoutSeconds, setTimeoutSeconds] = useState(settings.deepResearchTimeoutSeconds);
   const [researchModelOptions, setResearchModelOptions] = useState<ResearchModelOptions | null>(null);
+  const [intelligenceConfig, setIntelligenceConfig] = useState<IntelligenceConfig | null>(null);
   const [groqModels, setGroqModels] = useState<string[]>([]);
   const [bedrockModels, setBedrockModels] = useState<string[]>([]);
   const [openaiModels, setOpenaiModels] = useState<string[]>([]);
@@ -496,6 +488,15 @@ export function Composer({
   }, [settings.defaultModel, settings.defaultProvider]);
 
   useEffect(() => {
+    const preferred = conversationMode || user?.intelligence_mode;
+    if (!preferred) return;
+    const option = composerModeOption(preferred);
+    setChatMode(option.chatMode);
+    setSearchMode(option.searchMode);
+    window.localStorage.setItem("autoai-intelligence-mode", option.value);
+  }, [conversationMode, user?.intelligence_mode]);
+
+  useEffect(() => {
     setResearchProviders(settings.deepResearchProviders);
     setMaxModels(settings.deepResearchMaxModels);
     setAllModels(settings.deepResearchAllModels);
@@ -520,6 +521,21 @@ export function Composer({
       })
       .catch(() => {
         if (active) setResearchModelOptions(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    let active = true;
+    api.intelligenceConfig(token)
+      .then((config) => {
+        if (active) setIntelligenceConfig(config);
+      })
+      .catch(() => {
+        if (active) setIntelligenceConfig(null);
       });
     return () => {
       active = false;
@@ -653,7 +669,7 @@ export function Composer({
     cameraInputRef.current?.click();
   }
 
-  const researchModeActive = chatMode !== "normal";
+  const researchModeActive = chatMode !== "instant";
 
   function toggleResearchProvider(nextProvider: ResearchProvider) {
     if (researchModelOptions && !researchModelOptions.providers[nextProvider]?.enabled) return;
@@ -690,6 +706,7 @@ export function Composer({
     const option = composerModeOption(value);
     setSearchMode(option.searchMode);
     setChatMode(option.chatMode);
+    window.localStorage.setItem("autoai-intelligence-mode", option.value);
   }
 
   const selectedModeValue = composerModeValue(searchMode, chatMode);
@@ -813,7 +830,7 @@ export function Composer({
               </div>
             </ComposerPopover>
           </div>
-          <ModeMenu value={selectedModeValue} open={openMenu === "mode"} onToggle={() => setOpenMenu((current) => current === "mode" ? null : "mode")} onClose={() => setOpenMenu(null)} onSelect={updateCombinedMode} />
+          <ModeMenu value={selectedModeValue} config={intelligenceConfig} open={openMenu === "mode"} onToggle={() => setOpenMenu((current) => current === "mode" ? null : "mode")} onClose={() => setOpenMenu(null)} onSelect={updateCombinedMode} />
           <span className="composer-divider" />
           <ModelMenu provider={provider} model={model} open={openMenu === "model"} onToggle={() => setOpenMenu((current) => current === "model" ? null : "model")} onClose={() => setOpenMenu(null)} onSelect={selectModelProvider} />
         </div>

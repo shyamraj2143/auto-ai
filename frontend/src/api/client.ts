@@ -22,9 +22,11 @@ import type {
   DocumentItem,
   HumanState,
   InteractionProfile,
+  IntelligenceConfig,
   FaceMemoryStatus,
   LiveMessageResponse,
   LiveSessionStart,
+  OrchestrationActivityEvent,
   PaymentConfig,
   PaymentHistoryPage,
   PaymentSession,
@@ -1059,6 +1061,7 @@ export const api = {
     }),
 
   researchModels: (token: string) => apiFetch<ResearchModelOptions>("/ai/research-models", { token, operation: "ai.researchModels" }),
+  intelligenceConfig: (token: string) => apiFetch<IntelligenceConfig>("/ai/intelligence/config", { token, operation: "ai.intelligenceConfig" }),
   startChatGeneration: (token: string, payload: ChatRequest, signal?: AbortSignal) =>
     apiFetch<ChatGeneration>(payload.chat_id ? `/chat/sessions/${payload.chat_id}/messages` : "/ai/chat/generations", {
       method: "POST",
@@ -1334,6 +1337,53 @@ export async function streamChat(
       if (!dataLine) continue;
       const parsedEvent = normalizeStreamEvent(JSON.parse(dataLine.replace(/^data:\s*/, "")));
       if (parsedEvent) onEvent(parsedEvent);
+    }
+  }
+}
+
+export async function streamGenerationActivity(
+  token: string,
+  generationId: string,
+  onEvent: (event: OrchestrationActivityEvent) => void,
+  options: { after?: number; signal?: AbortSignal } = {}
+) {
+  const path = `/ai/chat/generations/${encodeURIComponent(generationId)}/events?after=${Math.max(0, options.after ?? 0)}`;
+  const response = await fetchWithNetworkMessage(
+    joinApiUrl(API_BASE_URL, path),
+    {
+      headers: { Authorization: `Bearer ${token}`, Accept: "text/event-stream" },
+      signal: options.signal
+    },
+    { path, method: "GET", operation: "ai.chat.generations.events" }
+  );
+  if (!response.ok || !response.body) {
+    const errorPayload = await readErrorPayload(response);
+    throw createHttpError(
+      response.status,
+      response.statusText,
+      errorPayload,
+      response.url,
+      response.headers.get("x-request-id"),
+      { path, method: "GET", operation: "ai.chat.generations.events" }
+    );
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) return;
+    buffer += decoder.decode(value, { stream: true });
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() ?? "";
+    for (const frame of frames) {
+      const data = frame
+        .split("\n")
+        .find((line) => line.startsWith("data:"))
+        ?.replace(/^data:\s*/, "");
+      if (!data) continue;
+      const parsed = JSON.parse(data) as OrchestrationActivityEvent;
+      if (parsed.event && parsed.request_id) onEvent(parsed);
     }
   }
 }

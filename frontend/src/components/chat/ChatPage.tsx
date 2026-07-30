@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { AnimatePresence, motion } from "framer-motion";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowDown, Brain, Menu, MessageSquarePlus, MoreHorizontal, Search, Settings, Sparkles, Square, Trash2, Pencil, Eraser } from "lucide-react";
-import { ApiClientError, api } from "../../api/client";
+import { ApiClientError, api, streamGenerationActivity } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
@@ -10,6 +10,7 @@ import type { ChatAttachment, ChatGeneration, ChatRequest, DocumentItem, Message
 import { coerceTextContent } from "../../utils/text";
 import { dateSeparatorFlags, formatMessageDate, formatMessageDateLabel } from "../../utils/dateTime";
 import { Composer, type ComposerOptions, type UploadTask } from "./Composer";
+import { LiveModelActivity } from "./LiveModelActivity";
 import { ContextPanel } from "./ContextPanel";
 import { MessageBubble } from "./MessageBubble";
 import { useAppSettings } from "../../contexts/AppSettingsContext";
@@ -34,7 +35,7 @@ import { selectedModelPayload } from "./composerSelection";
 
 const DEFAULT_OPTIONS: ComposerOptions = {
   searchMode: "auto",
-  chatMode: "normal",
+  chatMode: "instant",
   researchProviders: ["groq", "bedrock"],
   maxModels: 3,
   allModels: false,
@@ -69,6 +70,9 @@ function splitDelta(delta: unknown) {
 
 function responseModelFallback(model?: string | null): ResponseModelInfo | null {
   if (!model) return null;
+  if (model.startsWith("orchestration:")) {
+    return { provider: "autoai", provider_label: "AutoAI Intelligence", model: "Orchestrated response" };
+  }
   if (model.startsWith("deep_research:")) {
     return {
       provider: "deep_research",
@@ -124,7 +128,7 @@ function serializableAttachments(attachments: ChatAttachment[]): ChatAttachment[
 }
 
 function thinkingPhase(options: ComposerOptions, attachments: ChatAttachment[], documentIds: string[]) {
-  if (options.chatMode !== "normal" || options.searchMode === "deep" || options.searchMode === "research") return "researching";
+  if (options.chatMode !== "instant" || options.searchMode === "deep" || options.searchMode === "research") return "researching";
   if (attachments.some((attachment) => attachment.type === "image")) return "analyzing_image";
   if (attachments.some((attachment) => attachment.type === "file") || documentIds.length) return "reading_file";
   return "thinking";
@@ -166,6 +170,7 @@ export function ChatPage() {
   const deltaResolversRef = useRef<Array<() => void>>([]);
   const queuedContentRef = useRef<Record<string, string>>({});
   const generationPollTimerRef = useRef<number | null>(null);
+  const activityStreamControllerRef = useRef<AbortController | null>(null);
   const lastOptionsRef = useRef<ComposerOptions>(DEFAULT_OPTIONS);
   const localRetryRef = useRef<Record<string, LocalRetryRequest>>({});
   const activeRequestRef = useRef<ActiveChatRequest | null>(null);
@@ -223,6 +228,31 @@ export function ChatPage() {
   }, [activeGeneration]);
 
   useEffect(() => {
+    activityStreamControllerRef.current?.abort();
+    if (!token || !activeGeneration?.id || !isRunningGenerationStatus(activeGeneration.status)) return;
+    const controller = new AbortController();
+    activityStreamControllerRef.current = controller;
+    const after = Math.max(0, ...(activeGeneration.activity ?? []).map((event) => event.sequence || 0));
+    void streamGenerationActivity(
+      token,
+      activeGeneration.id,
+      (event) => {
+        setActiveGeneration((current) => {
+          if (!current || current.id !== activeGeneration.id) return current;
+          if ((current.activity ?? []).some((item) => item.sequence === event.sequence)) return current;
+          return { ...current, activity: [...(current.activity ?? []), event] };
+        });
+      },
+      { after, signal: controller.signal }
+    ).catch((error) => {
+      if (!controller.signal.aborted) {
+        console.warn("[Auto-AI Activity] Live activity stream disconnected; polling remains active.", error);
+      }
+    });
+    return () => controller.abort();
+  }, [activeGeneration?.id, token]);
+
+  useEffect(() => {
     const handleToggle = () => setIsContextOpen((prev) => !prev);
     const handleOpen = () => setIsContextOpen(true);
     window.addEventListener("toggle-context-panel", handleToggle);
@@ -251,6 +281,7 @@ export function ChatPage() {
     return () => {
       if (deltaTimerRef.current) window.cancelAnimationFrame(deltaTimerRef.current);
       if (generationPollTimerRef.current) window.clearTimeout(generationPollTimerRef.current);
+      activityStreamControllerRef.current?.abort();
     };
   }, []);
 
@@ -630,15 +661,15 @@ export function ChatPage() {
       provider: modelSelection.provider,
       model: modelSelection.model,
       mode: options.chatMode,
-      providers: options.chatMode === "normal" ? undefined : options.researchProviders,
-      max_models: options.chatMode === "normal" ? undefined : options.maxModels,
-      all_models: options.chatMode === "normal" ? undefined : options.allModels,
-      timeout_seconds: options.chatMode === "normal" ? undefined : options.timeoutSeconds,
-      groq_models: options.chatMode === "normal" ? undefined : options.groqModels,
-      bedrock_models: options.chatMode === "normal" ? undefined : options.bedrockModels,
-      openai_models: options.chatMode === "normal" ? undefined : options.openaiModels,
-      gemini_models: options.chatMode === "normal" ? undefined : options.geminiModels,
-      final_judge_model: options.chatMode === "normal" ? undefined : options.finalJudgeModel,
+      providers: options.chatMode === "instant" ? undefined : options.researchProviders,
+      max_models: options.chatMode === "instant" ? undefined : options.maxModels,
+      all_models: options.chatMode === "instant" ? undefined : options.allModels,
+      timeout_seconds: options.chatMode === "instant" ? undefined : options.timeoutSeconds,
+      groq_models: options.chatMode === "instant" ? undefined : options.groqModels,
+      bedrock_models: options.chatMode === "instant" ? undefined : options.bedrockModels,
+      openai_models: options.chatMode === "instant" ? undefined : options.openaiModels,
+      gemini_models: options.chatMode === "instant" ? undefined : options.geminiModels,
+      final_judge_model: options.chatMode === "instant" ? undefined : options.finalJudgeModel,
       web_search: options.searchMode !== "off" && options.searchMode !== "auto",
       search_mode: options.searchMode,
       reasoning: options.reasoning,
@@ -981,21 +1012,6 @@ export function ChatPage() {
     window.setTimeout(() => window.dispatchEvent(new CustomEvent("focus-chat-search")), 50);
   }
 
-  const generationStatusLabel =
-    visibleGeneration?.status === "cancel_requested"
-      ? "Stopping..."
-      : visibleGeneration?.status === "failed"
-        ? "Generation failed"
-        : visibleGeneration?.status === "cancelled"
-          ? "Generation stopped"
-          : "Generating...";
-  const generationErrorDetail =
-    visibleGeneration?.status === "failed" && visibleGeneration.error
-      ? coerceTextContent(visibleGeneration.error)
-      : "";
-  const generationStatusText = generationErrorDetail
-    ? `${generationStatusLabel}: ${generationErrorDetail}`
-    : generationStatusLabel;
   return (
     <div className="chat-workspace">
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -1038,7 +1054,7 @@ export function ChatPage() {
               <h1 className="truncate text-sm font-semibold text-white">{activeTitle}</h1>
             </div>
             <p className="mt-0.5 truncate text-xs text-slate-500">
-              {(activeChat?.mode || lastOptionsRef.current.chatMode).replace("_", " ")} / {activeChat?.model || lastOptionsRef.current.model}
+              {(activeChat?.mode || lastOptionsRef.current.chatMode).replace(/_/g, " ")} intelligence
             </p>
           </div>
           <div className="relative flex items-center gap-2">
@@ -1150,20 +1166,18 @@ export function ChatPage() {
           </button>
         )}
 
-        {visibleGeneration && visibleGenerationRunning && (
-          <div className="generation-status-bar">
-            <span className="generation-dot" aria-hidden="true" />
-            <span className="min-w-0 flex-1 truncate" title={generationStatusText}>{generationStatusText}</span>
-            <button className="generation-action" onClick={handleStopGeneration} type="button">
-              <Square size={14} />
-              Stop
-            </button>
-          </div>
+        {visibleGeneration && (
+          <LiveModelActivity
+            generation={visibleGeneration}
+            running={visibleGenerationRunning}
+            onCancel={() => void handleStopGeneration()}
+          />
         )}
 
         <Composer
           focusKey={composerFocusKey}
           initialDraft={hubPrompt}
+          conversationMode={activeChat?.mode}
           disabled={visibleChatBusy}
           selectedDocuments={selectedDocuments}
           uploadTasks={uploadTasks}

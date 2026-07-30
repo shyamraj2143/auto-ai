@@ -126,7 +126,7 @@ class Settings(BaseSettings):
     GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai"
 
     BEDROCK_API_KEY: str | None = None
-    BEDROCK_REGION: str = "us-south-1"
+    BEDROCK_REGION: str = "us-east-1"
     BEDROCK_MODEL: str = "openai.gpt-oss-120b"
     BEDROCK_BASE_URL: str | None = None
     BEDROCK_AUTH_MODE: str = "auto"
@@ -170,6 +170,34 @@ class Settings(BaseSettings):
     DEEP_RESEARCH_GROQ_TPM_BUDGET: int = 7600
     DEEP_RESEARCH_JUDGE_PROVIDER: str = "groq"
     DEEP_RESEARCH_JUDGE_MODEL: str | None = None
+    ORCHESTRATION_GROQ_MODELS: list[str] = [
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+        "qwen/qwen3-32b",
+        "meta-llama/llama-4-scout-17b-16e-instruct",
+    ]
+    ORCHESTRATION_BEDROCK_MODELS: list[str] = [
+        "amazon.nova-pro-v1:0",
+        "amazon.nova-lite-v1:0",
+        "anthropic.claude-3-haiku-20240307-v1:0",
+    ]
+    ORCHESTRATION_INSTANT_FALLBACKS: list[str] = [
+        "openai/gpt-oss-20b",
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+    ]
+    ORCHESTRATION_MAX_MODELS_MEDIUM: int = 3
+    ORCHESTRATION_MAX_MODELS_HIGH: int = 5
+    ORCHESTRATION_MAX_PARALLEL: int = 4
+    ORCHESTRATION_MAX_RETRIES: int = 1
+    ORCHESTRATION_TOTAL_TIMEOUT_SECONDS: int = 90
+    ORCHESTRATION_HEALTH_TTL_SECONDS: int = 300
+    ORCHESTRATION_CIRCUIT_FAILURE_THRESHOLD: int = 3
+    ORCHESTRATION_CIRCUIT_COOLDOWN_SECONDS: int = 120
+    ORCHESTRATION_MAX_OUTPUT_TOKENS: int = 1600
+    ORCHESTRATION_MAX_EVENTS_PER_GENERATION: int = 500
 
     TAVILY_API_KEY: str | None = None
     SERPER_API_KEY: str | None = None
@@ -260,7 +288,16 @@ class Settings(BaseSettings):
             for label in labels
         )
 
-    @field_validator("GROQ_RESEARCH_MODELS", "BEDROCK_RESEARCH_MODELS", "OPENAI_RESEARCH_MODELS", "GEMINI_RESEARCH_MODELS", mode="before")
+    @field_validator(
+        "GROQ_RESEARCH_MODELS",
+        "BEDROCK_RESEARCH_MODELS",
+        "OPENAI_RESEARCH_MODELS",
+        "GEMINI_RESEARCH_MODELS",
+        "ORCHESTRATION_GROQ_MODELS",
+        "ORCHESTRATION_BEDROCK_MODELS",
+        "ORCHESTRATION_INSTANT_FALLBACKS",
+        mode="before",
+    )
     @classmethod
     def parse_model_list(cls, value: Any) -> list[str] | Any:
         if isinstance(value, str):

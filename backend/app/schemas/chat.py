@@ -9,6 +9,7 @@ from app.utils.datetime import to_rfc3339_utc
 
 ProviderName = Literal["openai", "groq", "bedrock", "gemini"]
 ResearchProviderName = Literal["groq", "bedrock", "openai", "gemini"]
+IntelligenceMode = Literal["instant", "medium", "high", "deep_research", "normal", "multi_model"]
 
 
 class MessageRead(BaseModel):
@@ -32,14 +33,14 @@ class ChatCreate(BaseModel):
     title: str | None = Field(default=None, max_length=160)
     system_prompt: str | None = Field(default=None, max_length=8000)
     model: str | None = Field(default=None, max_length=120)
-    mode: Literal["normal", "deep_research", "multi_model"] = "normal"
+    mode: IntelligenceMode = "instant"
 
 
 class ChatUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=160)
     system_prompt: str | None = Field(default=None, max_length=8000)
     model: str | None = Field(default=None, max_length=120)
-    mode: Literal["normal", "deep_research", "multi_model"] | None = None
+    mode: IntelligenceMode | None = None
     clear_messages: bool = False
 
 
@@ -88,7 +89,7 @@ class ChatRequest(BaseModel):
     chat_id: str | None = None
     title: str | None = Field(default=None, max_length=160)
     system_prompt: str | None = Field(default=None, max_length=8000)
-    mode: Literal["normal", "deep_research", "multi_model"] = "normal"
+    mode: IntelligenceMode = "instant"
     providers: list[ResearchProviderName] = Field(default_factory=lambda: ["groq", "bedrock"])
     max_models: int | None = Field(default=None, ge=1, le=12)
     all_models: bool = False
@@ -122,6 +123,9 @@ class ChatGenerationRead(BaseModel):
     error: str | None = None
     user_message: MessageRead | None = None
     assistant_message: MessageRead | None = None
+    mode: str = "instant"
+    activity: list[dict] = Field(default_factory=list)
+    activity_summary: dict = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
     completed_at: datetime | None = None
@@ -164,7 +168,7 @@ class CodeAssistResponse(BaseModel):
 
 class ChatRegenerateRequest(BaseModel):
     message_id: str | None = None
-    mode: Literal["normal", "deep_research", "multi_model"] = "normal"
+    mode: IntelligenceMode = "instant"
     providers: list[ResearchProviderName] = Field(default_factory=lambda: ["groq", "bedrock"])
     max_models: int | None = Field(default=None, ge=1, le=12)
     all_models: bool = False
