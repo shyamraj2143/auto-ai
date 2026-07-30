@@ -1,1 +1,1 @@
-Trigger the validated mobile chat sidebar and delete-dialog hotfix.
+Trigger the whitespace-safe validated mobile chat sidebar and delete-dialog hotfix.
