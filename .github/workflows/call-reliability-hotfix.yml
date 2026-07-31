@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "scripts/apply_call_reliability_hotfix.py"
+      - "scripts/fix_call_reliability_test_compat.py"
       - ".github/call-reliability-trigger.txt"
       - ".github/workflows/call-reliability-hotfix.yml"
   workflow_dispatch:
@@ -43,6 +44,9 @@ jobs:
           else
             python scripts/apply_call_reliability_hotfix.py
           fi
+          if test -f scripts/fix_call_reliability_test_compat.py; then
+            python scripts/fix_call_reliability_test_compat.py
+          fi
 
       - name: Assert no admin files changed
         shell: bash
@@ -60,7 +64,7 @@ jobs:
       - name: Install backend test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt pytest pytest-asyncio fakeredis
+          pip install -r backend/requirements.txt pytest pytest-asyncio 'fakeredis[lua]'
 
       - name: Compile affected backend modules
         run: |
@@ -115,6 +119,7 @@ jobs:
         run: |
           test -f backend/app/services/presence_fallback.py
           grep -q 'realtime_ready' backend/app/api/routes/calls.py
+          grep -q 'def _redis' backend/app/services/presence_fallback.py
           grep -q 'MAX_ATTEMPTS = 4' android/app/src/main/java/com/autoai/app/NativeCallApi.java
           grep -q 'pendingOutboundSignals' android/app/src/main/java/com/autoai/app/NativeCallSessionController.java
           grep -q '15_000L' android/app/src/main/java/com/autoai/app/AutoAiCallsPlugin.java
