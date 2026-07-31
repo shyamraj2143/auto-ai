@@ -1,0 +1,147 @@
+name: Verify call reliability hotfix
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "scripts/apply_call_reliability_hotfix.py"
+      - ".github/call-reliability-trigger.txt"
+      - ".github/workflows/call-reliability-hotfix.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: call-reliability-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  apply-test-and-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout hotfix branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || 'main' }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Apply targeted call reliability patch
+        shell: bash
+        run: |
+          if test -f backend/app/services/presence_fallback.py \
+            && grep -q 'MAX_SIGNAL_RECONNECT_ATTEMPTS' android/app/src/main/java/com/autoai/app/NativeCallSessionController.java; then
+            echo "Call reliability patch is already applied."
+          else
+            python scripts/apply_call_reliability_hotfix.py
+          fi
+
+      - name: Assert no admin files changed
+        shell: bash
+        run: |
+          changed="$(git diff --name-only origin/main...HEAD; git diff --name-only)"
+          echo "$changed"
+          if echo "$changed" | grep -E '(^|/)admin(/|$)|(^|/)Admin[^/]*\.(tsx|ts|jsx|js|py|java)$'; then
+            echo "Admin-related file changed. Aborting."
+            exit 1
+          fi
+
+      - name: Check patch formatting
+        run: git diff --check
+
+      - name: Install backend test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt pytest
+
+      - name: Compile affected backend modules
+        run: |
+          python -m compileall -q backend/app/services/presence_service.py
+          python -m compileall -q backend/app/services/presence_fallback.py
+          python -m compileall -q backend/app/api/routes/calls.py
+          python -m compileall -q backend/app/websockets/call_signaling.py
+
+      - name: Run backend call reliability tests
+        env:
+          PYTHONPATH: backend
+        run: |
+          pytest -q backend/tests/test_call_realtime_fallback.py
+          pytest -q backend/tests/test_calls.py
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install web dependencies
+        run: |
+          npm ci
+          npm ci --prefix frontend
+
+      - name: Run focused frontend call test
+        run: npm --prefix frontend test -- src/features/calls/callReliability.contract.test.ts
+
+      - name: Build frontend production bundle
+        env:
+          AUTO_AI_SKIP_COMPRESSION: "1"
+        run: npm run build
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Sync Capacitor Android assets
+        run: npx cap sync android
+
+      - name: Compile Android and run native call tests
+        shell: bash
+        run: |
+          chmod +x android/gradlew
+          ./android/gradlew -p android :app:compileDebugJavaWithJavac :app:testDebugUnitTest
+
+      - name: Verify call reliability contracts
+        shell: bash
+        run: |
+          test -f backend/app/services/presence_fallback.py
+          grep -q 'realtime_ready' backend/app/api/routes/calls.py
+          grep -q 'MAX_ATTEMPTS = 4' android/app/src/main/java/com/autoai/app/NativeCallApi.java
+          grep -q 'pendingOutboundSignals' android/app/src/main/java/com/autoai/app/NativeCallSessionController.java
+          grep -q '15_000L' android/app/src/main/java/com/autoai/app/AutoAiCallsPlugin.java
+          grep -q 'retryableNativeServiceCodes' frontend/src/features/calls/CallProvider.tsx
+          git diff --check
+
+      - name: Commit verified generated files to hotfix branch
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No generated changes to commit."
+            exit 0
+          fi
+          target_branch="${GITHUB_HEAD_REF:-main}"
+          git config user.name "AutoAI Call Fix Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add \
+            backend/app/services/presence_fallback.py \
+            backend/app/services/presence_service.py \
+            backend/app/api/routes/calls.py \
+            backend/tests/test_call_realtime_fallback.py \
+            android/app/src/main/java/com/autoai/app/NativeCallApi.java \
+            android/app/src/main/java/com/autoai/app/CallFailureMessages.java \
+            android/app/src/main/java/com/autoai/app/NativeCallSessionController.java \
+            android/app/src/main/java/com/autoai/app/AutoAiCallsPlugin.java \
+            android/app/src/test/java/com/autoai/app/CallReliabilityHotfixContractTest.java \
+            frontend/src/features/calls/CallProvider.tsx \
+            frontend/src/features/calls/callReliability.contract.test.ts
+          git commit -m "fix: harden native calling and realtime signaling [force-update]"
+          git push origin HEAD:"$target_branch"
