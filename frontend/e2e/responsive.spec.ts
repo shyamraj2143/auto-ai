@@ -133,17 +133,50 @@ test("preset selection stays collapsed without manual model controls", async ({ 
   await assertNoFunctionalOverflow(page);
 });
 
-test("chat direct route loads the bundled logo without a broken image", async ({ page }) => {
+test("chat direct route renders the network-independent inline logo", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 768 });
   await installAuthenticatedFixtures(page);
   await openRoute(page, "/chat");
 
-  const logo = page.locator(".workspace-sidebar .app-logo").first();
+  const logo = page.locator(".workspace-sidebar .app-logo, .autoai-workspace-brand .app-logo").first();
   await expect(logo).toBeVisible();
-  const source = await logo.getAttribute("src");
-  expect(source).toMatch(/\/(?:src\/assets\/auto-ai-logo\.svg\?no-inline|assets\/auto-ai-logo-[A-Za-z0-9_-]+\.svg)$/);
-  expect(await logo.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
-  expect((await page.request.get(source!)).status()).toBe(200);
+  expect(await logo.evaluate((element) => element.tagName.toLowerCase())).toBe("svg");
+  expect(await logo.getAttribute("data-autoai-logo")).toBe("inline");
+  expect(await logo.getAttribute("viewBox")).toBe("0 0 64 64");
+  await expect(page.locator("img.app-logo")).toHaveCount(0);
+});
+
+test("AI response card keeps a stable dark surface on pointer press", async ({ page }) => {
+  await page.setViewportSize({ width: 393, height: 873 });
+  await installAuthenticatedFixtures(page);
+  await openRoute(page, "/chat");
+
+  await page.evaluate(() => {
+    const workspace = document.querySelector(".chat-scroll");
+    if (!workspace) return;
+    const row = document.createElement("article");
+    row.className = "message-row message-row-assistant";
+    row.innerHTML = '<div class="message-content-stack"><div class="message-card message-card-ai"><p>Stable response</p></div></div>';
+    workspace.appendChild(row);
+  });
+
+  const card = page.locator(".message-card-ai", { hasText: "Stable response" });
+  await expect(card).toBeVisible();
+  const before = await card.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const after = getComputedStyle(element, "::after");
+    return { background: style.backgroundImage, shadow: style.boxShadow, after: after.content };
+  });
+  await card.dispatchEvent("pointerdown");
+  const after = await card.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const pseudo = getComputedStyle(element, "::after");
+    return { background: style.backgroundImage, shadow: style.boxShadow, after: pseudo.content };
+  });
+
+  expect(after.background).toBe(before.background);
+  expect(after.shadow).toBe(before.shadow);
+  expect(after.after === "none" || after.after === "normal").toBe(true);
 });
 
 for (const section of sections) {
