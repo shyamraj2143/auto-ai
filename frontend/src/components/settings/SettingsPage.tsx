@@ -32,6 +32,8 @@ import {
 } from "lucide-react";
 import { api } from "../../api/client";
 import { AppSelect, type AppSelectOption } from "../common/AppSelect";
+import { ToggleSwitch } from "../common/ToggleSwitch";
+const Toggle = ToggleSwitch;
 import { useAppSettings, type AppLanguage } from "../../contexts/AppSettingsContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
@@ -177,36 +179,6 @@ function SettingsRow({
   }
 
   return <div className={className}>{content}</div>;
-}
-
-function Toggle({
-  checked,
-  onChange,
-  disabled
-}: {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      className={clsx(
-        "settings-toggle relative inline-flex h-6 w-10 shrink-0 items-center rounded-full border transition disabled:opacity-50",
-        checked ? "border-cyan-200/40 bg-cyan-200/20" : "border-white/15 bg-white/10"
-      )}
-      onClick={() => onChange(!checked)}
-      disabled={disabled}
-      aria-pressed={checked}
-    >
-      <span
-        className={clsx(
-          "block h-4 w-4 rounded-full bg-white transition",
-          checked ? "translate-x-5" : "translate-x-1"
-        )}
-      />
-    </button>
-  );
 }
 
 function Select({
@@ -737,13 +709,13 @@ export function SettingsPage() {
           <Select value={current?.allow_messages_from || "everyone"} options={[{ value: "everyone", label: "Everyone" }, { value: "known_users", label: "Known users" }, { value: "nobody", label: "Nobody" }]} onChange={(value) => void updateChatSettings({ allow_messages_from: value as ChatSettings["allow_messages_from"] })} label="Allow messages from" />
         </SettingsRow>
         <SettingsRow icon={CheckCheck} accent="cyan" title="Read receipts" description="Show when you read messages">
-          <Toggle checked={current?.read_receipts_enabled ?? true} onChange={(checked) => void updateChatSettings({ read_receipts_enabled: checked })} disabled={!current} />
+          <ToggleSwitch label="Read receipts" showStatus checked={current?.read_receipts_enabled ?? true} onChange={(checked) => updateChatSettings({ read_receipts_enabled: checked })} disabled={!current} />
         </SettingsRow>
         <SettingsRow icon={Radio} accent="green" title="Typing indicator" description="Show when you are typing">
-          <Toggle checked={current?.typing_indicator_enabled ?? true} onChange={(checked) => void updateChatSettings({ typing_indicator_enabled: checked })} disabled={!current} />
+          <ToggleSwitch label="Typing indicators" showStatus checked={current?.typing_indicator_enabled ?? true} onChange={(checked) => updateChatSettings({ typing_indicator_enabled: checked })} disabled={!current} />
         </SettingsRow>
         <SettingsRow icon={Globe2} title="Last seen" description="Allow chat peers to see last seen">
-          <Toggle checked={current?.last_seen_enabled ?? true} onChange={(checked) => void updateChatSettings({ last_seen_enabled: checked })} disabled={!current} />
+          <ToggleSwitch label="Last seen" showStatus checked={current?.last_seen_enabled ?? true} onChange={(checked) => updateChatSettings({ last_seen_enabled: checked })} disabled={!current} />
         </SettingsRow>
       </SettingsCard>
     );

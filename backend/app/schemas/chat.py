@@ -11,6 +11,7 @@ from app.utils.datetime import to_rfc3339_utc
 ProviderName = Literal["openai", "groq", "bedrock", "gemini"]
 ResearchProviderName = Literal["groq", "bedrock", "openai", "gemini"]
 IntelligenceMode = Literal["instant", "medium", "high", "deep_research", "coding", "normal", "multi_model"]
+PresetMode = Literal["auto", "manual"]
 
 
 class MessageRead(BaseModel):
@@ -36,6 +37,11 @@ class ChatCreate(BaseModel):
     system_prompt: str | None = Field(default=None, max_length=8000)
     model: str | None = Field(default=None, max_length=120)
     mode: IntelligenceMode = "instant"
+    preset_mode: PresetMode = Field(default="auto", alias="presetMode")
+    selected_preset: IntelligenceMode = Field(default="instant", alias="selectedPreset")
+    manual_preset_locked: bool = Field(default=False, alias="manualPresetLocked")
+
+    model_config = {"populate_by_name": True}
 
 
 class ChatUpdate(BaseModel):
@@ -43,7 +49,12 @@ class ChatUpdate(BaseModel):
     system_prompt: str | None = Field(default=None, max_length=8000)
     model: str | None = Field(default=None, max_length=120)
     mode: IntelligenceMode | None = None
+    preset_mode: PresetMode | None = Field(default=None, alias="presetMode")
+    selected_preset: IntelligenceMode | None = Field(default=None, alias="selectedPreset")
+    manual_preset_locked: bool | None = Field(default=None, alias="manualPresetLocked")
     clear_messages: bool = False
+
+    model_config = {"populate_by_name": True}
 
 
 class ChatListItem(BaseModel):
@@ -51,6 +62,9 @@ class ChatListItem(BaseModel):
     title: str
     model: str
     mode: str = "normal"
+    preset_mode: str = "auto"
+    selected_preset: str = "instant"
+    manual_preset_locked: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -88,10 +102,16 @@ class ChatRequest(BaseModel):
     client_message_id: str | None = Field(default=None, max_length=120)
     attachments: list[ChatAttachment] = Field(default_factory=list, max_length=20)
     internal_context: MessageInternalContext | None = None
-    chat_id: str | None = None
+    chat_id: str | None = Field(default=None, alias="chatId")
+    request_id: str | None = Field(default=None, alias="requestId", max_length=120)
     title: str | None = Field(default=None, max_length=160)
     system_prompt: str | None = Field(default=None, max_length=8000)
     mode: IntelligenceMode = "instant"
+    preset_mode: PresetMode = Field(default="auto", alias="presetMode")
+    preset_source: Literal["auto", "manual"] = Field(default="auto", alias="presetSource")
+    selected_preset: IntelligenceMode | None = Field(default=None, alias="selectedPreset")
+    detected_preset: IntelligenceMode | None = Field(default=None, alias="detectedPreset")
+    manual_preset_locked: bool = Field(default=False, alias="manualPresetLocked")
     providers: list[ResearchProviderName] = Field(default_factory=lambda: ["groq", "bedrock"])
     max_models: int | None = Field(default=None, ge=1)
     all_models: bool = False
@@ -102,13 +122,16 @@ class ChatRequest(BaseModel):
     gemini_models: list[str] = Field(default_factory=list)
     final_judge_model: str | None = Field(default=None, max_length=160)
     provider: ProviderName | None = None
-    model: str | None = Field(default=None, max_length=120)
+    model: str | None = Field(default=None, alias="selectedModel", max_length=120)
     web_search: bool = False
     search_mode: SearchMode = "auto"
     reasoning: bool = False
     document_ids: list[str] = Field(default_factory=list)
+    library_asset_ids: list[str] = Field(default_factory=list, max_length=20)
     user_timezone: str | None = Field(default=None, max_length=100)
     user_locale: str | None = Field(default=None, max_length=35)
+
+    model_config = {"populate_by_name": True}
 
 
 class ChatResponse(BaseModel):

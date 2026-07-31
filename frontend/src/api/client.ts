@@ -23,6 +23,9 @@ import type {
   HumanState,
   InteractionProfile,
   IntelligenceConfig,
+  LibraryAsset,
+  LibraryAssetPage,
+  LibraryAttachment,
   FaceMemoryStatus,
   LiveMessageResponse,
   LiveSessionStart,
@@ -655,6 +658,21 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
   return response.json() as Promise<T>;
 }
 
+async function apiFetchBlob(path: string, token: string): Promise<Blob> {
+  const requestPath = normalizeApiPath(path);
+  const url = joinApiUrl(API_BASE_URL, requestPath);
+  const response = await fetchWithNetworkMessage(
+    url,
+    { credentials: "include", headers: { Authorization: `Bearer ${token}` } },
+    { path: requestPath, method: "GET", operation: "library.preview" },
+    DEFAULT_API_TIMEOUT_MS
+  );
+  if (!response.ok) {
+    throw createHttpError(response.status, response.statusText, await readErrorPayload(response), url, response.headers.get("x-request-id"));
+  }
+  return response.blob();
+}
+
 export const api = {
   health: () => apiFetch<ApiHealth>("/health", {
     operation: "system.health",
@@ -738,14 +756,54 @@ export const api = {
     apiFetch<UsernameAvailability>(`/users/username-available?username=${encodeURIComponent(username)}`, { token, operation: "users.usernameAvailable" }),
 
   listChats: (token: string) => apiFetch<ChatListItem[]>("/chat/sessions", { token, operation: "chat.sessions.list" }),
-  createChat: (token: string, payload: { title?: string; system_prompt?: string; model?: string; mode?: ChatRequest["mode"] }) =>
+  createChat: (token: string, payload: {
+    title?: string;
+    system_prompt?: string;
+    model?: string;
+    mode?: ChatRequest["mode"];
+    presetMode?: ChatRequest["presetMode"];
+    selectedPreset?: ChatRequest["selectedPreset"];
+    manualPresetLocked?: boolean;
+  }) =>
     apiFetch<Chat>("/chat/sessions", { method: "POST", token, operation: "chat.sessions.create", body: JSON.stringify(payload) }),
   getChat: (token: string, id: string) => apiFetch<Chat>(`/chat/sessions/${id}`, { token, operation: "chat.sessions.get" }),
-  updateChat: (token: string, id: string, payload: { title?: string; system_prompt?: string; model?: string; mode?: ChatRequest["mode"]; clear_messages?: boolean }) =>
+  updateChat: (token: string, id: string, payload: {
+    title?: string;
+    system_prompt?: string;
+    model?: string;
+    mode?: ChatRequest["mode"];
+    presetMode?: ChatRequest["presetMode"];
+    selectedPreset?: ChatRequest["selectedPreset"];
+    manualPresetLocked?: boolean;
+    clear_messages?: boolean;
+  }) =>
     apiFetch<Chat>(`/chat/sessions/${id}`, { method: "PATCH", token, operation: "chat.sessions.update", body: JSON.stringify(payload) }),
   deleteChat: (token: string, id: string) => apiFetch<void>(`/chat/sessions/${id}`, { method: "DELETE", token, operation: "chat.sessions.delete" }),
 
   listDocuments: (token: string) => apiFetch<DocumentItem[]>("/documents", { token, operation: "documents.list" }),
+  listLibraryAssets: (token: string, options: { query?: string; fileType?: string; sort?: string; page?: number } = {}) => {
+    const params = new URLSearchParams({
+      page: String(options.page || 1),
+      page_size: "48",
+      sort: options.sort || "newest"
+    });
+    if (options.query?.trim()) params.set("query", options.query.trim());
+    if (options.fileType) params.set("file_type", options.fileType);
+    return apiFetch<LibraryAssetPage>(`/library/assets?${params}`, { token, operation: "library.list" });
+  },
+  uploadLibraryAsset: (token: string, file: File, source: LibraryAsset["source"] = "upload") => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("source", source);
+    return apiFetch<LibraryAsset>("/library/assets", { method: "POST", token, operation: "library.upload", body: form, timeoutMs: 300000 });
+  },
+  renameLibraryAsset: (token: string, id: string, displayName: string) =>
+    apiFetch<LibraryAsset>(`/library/assets/${id}`, { method: "PATCH", token, operation: "library.rename", body: JSON.stringify({ display_name: displayName }) }),
+  deleteLibraryAsset: (token: string, id: string) =>
+    apiFetch<void>(`/library/assets/${id}`, { method: "DELETE", token, operation: "library.delete" }),
+  attachLibraryAsset: (token: string, id: string, chatId?: string) =>
+    apiFetch<LibraryAttachment>(`/library/assets/${id}/attach`, { method: "POST", token, operation: "library.attach", body: JSON.stringify({ chat_id: chatId || null }) }),
+  previewLibraryAsset: (token: string, id: string) => apiFetchBlob(`/library/assets/${id}/preview`, token),
   uploadDocument: (token: string, formData: FormData) =>
     apiFetch<DocumentItem>("/documents/upload", { method: "POST", token, operation: "documents.upload", body: formData, timeoutMs: 300000 }),
   uploadDocumentWithProgress: (

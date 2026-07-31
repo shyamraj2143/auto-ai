@@ -14,6 +14,7 @@ DEFAULT_FRONTEND_URL = "https://autoai.site.je"
 DEFAULT_BACKEND_URL = "http://localhost:8000"
 DEFAULT_RAZORPAY_CHECKOUT_CONFIG_ID = "config_T9uIbVgLBfz7ko"
 DEFAULT_UPLOAD_DIR = str(PROJECT_ROOT / "backend" / "uploads")
+DEFAULT_LIBRARY_STORAGE_DIR = str(PROJECT_ROOT / "backend" / "library_uploads")
 
 
 class Settings(BaseSettings):
@@ -211,6 +212,14 @@ class Settings(BaseSettings):
     SEARCH_LANGUAGE: str = "en"
 
     UPLOAD_DIR: str = DEFAULT_UPLOAD_DIR
+    LIBRARY_STORAGE_DIR: str = DEFAULT_LIBRARY_STORAGE_DIR
+    LIBRARY_MAX_UPLOAD_MB: int = 20
+    LIBRARY_STORAGE_BACKEND: str = "local"
+    LIBRARY_S3_BUCKET: str | None = None
+    LIBRARY_S3_ENDPOINT_URL: str | None = None
+    LIBRARY_S3_REGION: str = "us-east-1"
+    LIBRARY_S3_ACCESS_KEY_ID: str | None = None
+    LIBRARY_S3_SECRET_ACCESS_KEY: SecretStr | None = None
     APK_STORAGE_DIR: str = str(PROJECT_ROOT / "public" / "downloads")
     APK_FILENAME: str = "auto-ai.apk"
     APK_DEFAULT_VERSION: str = "1.0.18"

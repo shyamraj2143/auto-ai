@@ -111,6 +111,16 @@
   color: #fff;
 }
 
+.um-search button {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: transparent;
+}
+
 .um-filters {
   flex-shrink: 0;
   display: flex;
@@ -281,6 +291,22 @@
   background: rgba(15, 23, 42, 0.96);
   border: 1px solid rgba(255, 255, 255, 0.09);
   padding: 5px;
+}
+
+.um-search-results header {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.um-search-results header button {
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .um-search-results small {
@@ -619,7 +645,9 @@
   .um-bubble { max-width: 90%; }
   .um-attachment-preview { max-width:calc(100dvw - 24px); }
   .um-composer textarea { max-width:100%; }
-  .um-filters { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); overflow:visible; gap:6px; }
-  .um-filters button { min-width:0; padding-inline:6px; white-space:normal; }
-  .um-filters button.new { grid-column:span 2; }
+  .um-search { margin:8px 10px 6px; width:calc(100% - 20px); }
+  .um-filters { display:flex; overflow-x:auto; gap:5px; padding:0 10px 8px; scrollbar-width:none; }
+  .um-filters::-webkit-scrollbar { display:none; }
+  .um-filters button { min-width:40px; min-height:40px; padding-inline:9px; white-space:nowrap; }
+  .um-filters button.new { margin-left:auto; }
 }

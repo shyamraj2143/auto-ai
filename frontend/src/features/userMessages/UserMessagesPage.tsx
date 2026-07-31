@@ -1,4 +1,4 @@
-import { Archive, ArrowDown, ArrowLeft, Check, CheckCheck, FileText, Image, MessageCircle, Mic, MoreVertical, Paperclip, Phone, Pin, ScreenShare, Search, Send, Settings, Trash2, Video, VolumeX, X } from "lucide-react";
+import { Archive, ArrowDown, ArrowLeft, Check, CheckCheck, Clock, FileText, Image, LoaderCircle, MessageCircle, Mic, MoreVertical, Paperclip, Phone, Pin, ScreenShare, Search, Send, Settings, Trash2, Video, VolumeX, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { resolveApiAssetUrl } from "../../api/client";
@@ -14,6 +14,7 @@ import { AppNotice } from "../../components/common/AppNotice";
 import "./userMessages.css";
 
 const filters = ["all", "unread", "favourites", "archived"] as const;
+type SearchState = "IDLE" | "RECENT" | "SEARCHING" | "RESULTS" | "EMPTY" | "ERROR";
 
 function eventId() {
   return crypto.randomUUID();
@@ -61,6 +62,8 @@ export function UserMessagesPage() {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<(typeof filters)[number]>("all");
   const [searchResults, setSearchResults] = useState<ChatPublicUser[]>([]);
+  const [searchState, setSearchState] = useState<SearchState>("IDLE");
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [openingPeerId, setOpeningPeerId] = useState("");
   const [openingThreadId, setOpeningThreadId] = useState("");
   const [loadingThreadId, setLoadingThreadId] = useState("");
@@ -89,6 +92,7 @@ export function UserMessagesPage() {
   const messagesRef = useRef<UserMessage[]>([]);
   const threadsRef = useRef<UserThread[]>([]);
   const attachmentRef = useRef<File | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const openGuardRef = useRef("");
   const openRequestRef = useRef("");
   const deliveredMarkedThreadIds = useRef<Set<string>>(new Set());
@@ -351,21 +355,49 @@ export function UserMessagesPage() {
   useEffect(() => {
     if (!token) return;
     const controller = new AbortController();
-    const term = query.trim();
+    const term = query.trim().replace(/\s+/g, " ");
     if (term.length < 2) {
       setSearchResults([]);
+      setSearchState(query.length ? "IDLE" : recentSearches.length ? "RECENT" : "IDLE");
       return;
     }
+    setSearchState("SEARCHING");
     const timer = window.setTimeout(() => {
-      void userMessagesApi.searchUsers(token, term, 1, controller.signal).then((page) => setSearchResults(page.items)).catch(() => {
-        if (!controller.signal.aborted) setSearchResults([]);
+      void userMessagesApi.searchUsers(token, term, 1, controller.signal).then((page) => {
+        if (controller.signal.aborted) return;
+        setSearchResults(page.items);
+        setSearchState(page.items.length ? "RESULTS" : "EMPTY");
+        setRecentSearches((current) => {
+          const next = [term, ...current.filter((item) => item.toLocaleLowerCase() !== term.toLocaleLowerCase())].slice(0, 10);
+          if (user?.id) window.localStorage.setItem(`autoai-message-searches:${user.id}`, JSON.stringify(next));
+          return next;
+        });
+      }).catch((searchError) => {
+        if (!controller.signal.aborted) {
+          setSearchResults([]);
+          setSearchState("ERROR");
+          setError(searchError instanceof Error ? `Search could not be completed: ${searchError.message}` : "Search could not be completed.");
+        }
       });
     }, 280);
     return () => {
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [query, token]);
+  }, [query, recentSearches.length, token, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setRecentSearches([]);
+      return;
+    }
+    try {
+      const stored: unknown = JSON.parse(window.localStorage.getItem(`autoai-message-searches:${user.id}`) || "[]");
+      setRecentSearches(Array.isArray(stored) ? stored.filter((item): item is string => typeof item === "string" && item.trim().length >= 2).slice(0, 10) : []);
+    } catch {
+      setRecentSearches([]);
+    }
+  }, [user?.id]);
 
   const returnToList = useCallback(() => {
     savedListScrollRef.current = listRef.current?.scrollTop ?? savedListScrollRef.current;
@@ -647,19 +679,38 @@ export function UserMessagesPage() {
           <span><MessageCircle size={20} /><strong>Messages</strong><small>{socketState === "connected" ? "Realtime" : "Connecting"}</small></span>
           <button type="button" onClick={() => navigate("/settings?section=chat")} aria-label="Chat settings"><Settings size={18} /></button>
         </header>
-        <label className="um-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search people or chats" /></label>
+        <label className="um-search">
+          <Search size={16} />
+          <input ref={searchInputRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search people or chats" />
+          {searchState === "SEARCHING" && <LoaderCircle className="animate-spin" size={15} />}
+          {query && <button type="button" onClick={() => { setQuery(""); setSearchResults([]); searchInputRef.current?.focus(); }} aria-label="Clear search"><X size={14} /></button>}
+        </label>
         <div className="um-filters">
           {filters.map((item) => <button type="button" key={item} className={filter === item ? "active" : ""} onClick={() => setFilter(item)}>{item === "favourites" ? "Favourites" : item[0].toUpperCase() + item.slice(1)}</button>)}
-          <button type="button" className="new" onClick={() => setQuery("@")}>+ New Chat</button>
+          <button type="button" className="new" onClick={() => { setQuery(""); searchInputRef.current?.focus(); }}>+ New Chat</button>
         </div>
         {!chatIsOpen && error && <AppNotice kind="error" message={error} onDismiss={() => setError("")} />}
-        {searchResults.length > 0 && (
+        {!query.trim() && searchState === "RECENT" && (
+          <div className="um-search-results um-search-recent">
+            <header><strong>Recent searches</strong><button type="button" onClick={() => {
+              setRecentSearches([]);
+              if (user?.id) window.localStorage.removeItem(`autoai-message-searches:${user.id}`);
+              setSearchState("IDLE");
+            }}>Clear</button></header>
+            {recentSearches.map((item) => <button type="button" key={item} onClick={() => setQuery(item)}><Clock size={15} /><span>{item}</span></button>)}
+          </div>
+        )}
+        {query.trim().length >= 2 && (
           <div className="um-search-results">
+            <header><strong>People</strong></header>
             {searchResults.map((peer) => (
               <button type="button" key={peer.id} onClick={() => void startThread(peer)} disabled={openingPeerId === peer.id}>
                 <Avatar user={peer} /><span><strong>{peer.display_name}</strong><small>{openingPeerId === peer.id ? "Opening..." : `@${peer.username}`}</small></span>
               </button>
             ))}
+            {searchState === "SEARCHING" && <p className="um-empty">Searching people…</p>}
+            {searchState === "EMPTY" && <p className="um-empty">No people found.</p>}
+            {searchState === "ERROR" && <p className="um-empty">Search could not be completed.</p>}
           </div>
         )}
         <div className="um-thread-list" ref={listRef}>

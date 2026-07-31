@@ -15,6 +15,7 @@ type AuthContextValue = {
   adminLogin: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   updateUser: (user: User) => void;
+  refreshProfile: () => Promise<User>;
   logout: () => Promise<void>;
 };
 
@@ -32,6 +33,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setRefreshToken(session.refresh_token ?? null);
     setUser(session.user);
   }, []);
+
+  const refreshProfile = useCallback(async () => {
+    if (!token) throw new Error("ADMIN_ROLE_MISSING");
+    const account = await api.me(token);
+    setUser(account);
+    return account;
+  }, [token]);
 
   useEffect(() => {
     let active = true;
@@ -109,6 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await persistSession(session);
       },
       updateUser: (nextUser) => setUser(nextUser),
+      refreshProfile,
       logout: async () => {
         const activeToken = token;
         const activeRefreshToken = refreshToken;
@@ -130,7 +139,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
     }),
-    [loading, persistSession, refreshToken, token, user]
+    [loading, persistSession, refreshProfile, refreshToken, token, user]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

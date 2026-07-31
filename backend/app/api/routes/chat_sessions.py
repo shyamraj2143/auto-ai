@@ -81,6 +81,9 @@ def create_session(
         system_prompt=payload.system_prompt,
         model=payload.model or settings.default_chat_model,
         mode=payload.mode,
+        preset_mode=payload.preset_mode,
+        selected_preset=payload.selected_preset,
+        manual_preset_locked=payload.manual_preset_locked,
     )
     db.add(chat)
     db.flush()
@@ -176,7 +179,6 @@ def create_session_message(
     chat = get_session_or_404(db, session_id, current_user.id, with_messages=True)
     if not any(message.role == "user" for message in chat.messages or []) and chat.title.strip().lower() == "new chat":
         chat.title = title_from_message(payload.message)
-    chat.mode = payload.mode
     db.add(chat)
     db.flush()
     return create_chat_generation(request_for_session(session_id, payload), current_user, db)

@@ -30,7 +30,7 @@ export type UsernameAvailability = {
   message: string;
 };
 
-export type UserRole = "user" | "admin" | "super_admin" | "content_admin" | "content_editor" | "content_viewer";
+export type UserRole = "user" | "admin" | "super_admin" | "administrator" | "content_admin" | "content_editor" | "content_viewer";
 
 export type SearchMode = "off" | "auto" | "web" | "news" | "research" | "deep";
 export type IntelligenceMode = "instant" | "medium" | "high" | "deep_research" | "coding";
@@ -141,6 +141,9 @@ export type ChatListItem = {
   title: string;
   model: string;
   mode: string;
+  preset_mode?: "auto" | "manual";
+  selected_preset?: IntelligenceMode;
+  manual_preset_locked?: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -159,6 +162,40 @@ export type DocumentItem = {
   summary?: string | null;
   document_metadata: Record<string, unknown>;
   created_at: string;
+};
+
+export type LibraryAsset = {
+  id: string;
+  original_name: string;
+  display_name: string;
+  mime_type: string;
+  file_type: "image" | "document" | "code";
+  file_size: number;
+  source: "upload" | "camera" | "chat_attachment" | "screen_capture" | "import";
+  checksum: string;
+  upload_status: string;
+  metadata_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  last_used_at?: string | null;
+};
+
+export type LibraryAssetPage = {
+  items: LibraryAsset[];
+  page: number;
+  page_size: number;
+  total: number;
+  has_more: boolean;
+};
+
+export type LibraryAttachment = {
+  asset_id: string;
+  document_id?: string | null;
+  type: "image" | "file";
+  filename: string;
+  mime_type: string;
+  file_size: number;
+  url: string;
 };
 
 export type ChatAttachment = {
@@ -184,9 +221,17 @@ export type ChatRequest = {
   attachments?: ChatAttachment[];
   internal_context?: MessageInternalContext | null;
   chat_id?: string | null;
+  chatId?: string | null;
+  requestId?: string;
   title?: string | null;
   system_prompt?: string | null;
   mode?: ChatMode;
+  presetMode?: "auto" | "manual";
+  presetSource?: "auto" | "manual";
+  selectedPreset?: IntelligenceMode;
+  detectedPreset?: IntelligenceMode;
+  manualPresetLocked?: boolean;
+  selectedModel?: string | null;
   providers?: ResearchProvider[];
   max_models?: number;
   all_models?: boolean;
@@ -202,6 +247,7 @@ export type ChatRequest = {
   search_mode?: SearchMode;
   reasoning?: boolean;
     document_ids?: string[];
+    library_asset_ids?: string[];
     user_timezone?: string;
     user_locale?: string;
   };

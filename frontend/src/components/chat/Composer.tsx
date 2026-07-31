@@ -4,16 +4,22 @@ import { AnimatePresence, motion } from "framer-motion";
 import clsx from "clsx";
 import { api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
-import type { ChatMode, DocumentItem, IntelligenceConfig } from "../../types";
+import type { ChatMode, DocumentItem, IntelligenceConfig, IntelligenceMode, LibraryAttachment } from "../../types";
 import { useAppSettings } from "../../contexts/AppSettingsContext";
 import { useCrystalEffects } from "../../crystal/useCrystalEffects";
 import { VoiceButton } from "./VoiceButton";
 import { usePublishedUiText } from "../../hooks/useCmsContent";
 import { COMPOSER_MODE_OPTIONS, composerModeOption, composerModeValue } from "./composerSelection";
 import { ComposerPopover } from "./ComposerPopover";
+import { detectPreset } from "./PresetDetectionService";
 
 export type ComposerOptions = {
   chatMode: ChatMode;
+  presetMode: "auto" | "manual";
+  presetSource: "auto" | "manual";
+  selectedPreset: IntelligenceMode;
+  detectedPreset: IntelligenceMode;
+  manualPresetLocked: boolean;
 };
 
 export type UploadTask = {
@@ -52,6 +58,7 @@ function ModeMenu({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const selected = composerModeOption(value);
   const descriptions: Record<string, string> = {
+    auto: "Detect the best preset for every message",
     instant: "Fast single-model response",
     medium: "Balanced parallel intelligence",
     high: "Advanced multi-provider reasoning",
@@ -85,8 +92,8 @@ function ModeMenu({
               type="button"
               role="menuitemradio"
               aria-checked={option.value === selected.value}
-              aria-disabled={config?.modes[option.value]?.available === false}
-              disabled={config?.modes[option.value]?.available === false}
+              aria-disabled={option.value !== "auto" && config?.modes[option.value]?.available === false}
+              disabled={option.value !== "auto" && config?.modes[option.value]?.available === false}
               className={clsx("composer-popover-option", option.value === selected.value && "composer-popover-option-active")}
               onClick={() => {
                 onSelect(option.value);
@@ -97,9 +104,9 @@ function ModeMenu({
                 {option.value === "coding" && <Code2 size={16} />}
                 <strong>{option.label}</strong>
                 <small>
-                  {config?.modes[option.value]?.available === false
+                  {option.value !== "auto" && config?.modes[option.value]?.available === false
                     ? config.modes[option.value]?.unavailable_reason || "Temporarily unavailable"
-                    : config?.modes[option.value]?.fallback_message || descriptions[option.value] || "Choose this intelligence preset"}
+                    : (option.value !== "auto" ? config?.modes[option.value]?.fallback_message : null) || descriptions[option.value] || "Choose this intelligence preset"}
                 </small>
               </span>
               {option.value === selected.value && <Check size={14} />}
@@ -129,8 +136,10 @@ function isImage(file: File) {
 export function Composer({
   disabled,
   selectedDocuments,
+  selectedLibraryAttachments,
   uploadTasks,
   onRemoveDocument,
+  onRemoveLibraryAttachment,
   onDeleteDocument,
   onUploadDocuments,
   onSend,
@@ -138,12 +147,18 @@ export function Composer({
   onOpenLiveMode,
   focusKey,
   initialDraft = "",
-  conversationMode
+  conversationMode,
+  conversationPresetMode,
+  conversationSelectedPreset,
+  conversationManualPresetLocked,
+  onPresetChange
 }: {
   disabled?: boolean;
   selectedDocuments: DocumentItem[];
+  selectedLibraryAttachments: LibraryAttachment[];
   uploadTasks: UploadTask[];
   onRemoveDocument: (id: string) => void;
+  onRemoveLibraryAttachment: (id: string) => void;
   onDeleteDocument: (id: string) => Promise<void>;
   onUploadDocuments: (files: File[]) => Promise<void>;
   onSend: (text: string, options: ComposerOptions, imageFiles: File[]) => Promise<void | boolean>;
@@ -152,9 +167,17 @@ export function Composer({
   focusKey?: string;
   initialDraft?: string;
   conversationMode?: string;
+  conversationPresetMode?: "auto" | "manual";
+  conversationSelectedPreset?: string;
+  conversationManualPresetLocked?: boolean;
+  onPresetChange?: (selection: {
+    presetMode: "auto" | "manual";
+    selectedPreset: IntelligenceMode;
+    manualPresetLocked: boolean;
+  }) => Promise<void> | void;
 }) {
   const uiText = usePublishedUiText();
-  const { token, user } = useAuth();
+  const { token } = useAuth();
   const { settings } = useAppSettings();
   const crystalEffects = useCrystalEffects();
   const attachmentTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -164,10 +187,8 @@ export function Composer({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const imageAttachmentsRef = useRef<ImageAttachment[]>([]);
   const [draft, setDraft] = useState("");
-  const [chatMode, setChatMode] = useState<ChatMode>(() => {
-    const stored = typeof window !== "undefined" ? window.localStorage.getItem("autoai-intelligence-mode") : null;
-    return composerModeOption(stored || "instant").chatMode;
-  });
+  const [chatMode, setChatMode] = useState<ChatMode>("instant");
+  const [presetMode, setPresetMode] = useState<"auto" | "manual">("auto");
   const [intelligenceConfig, setIntelligenceConfig] = useState<IntelligenceConfig | null>(null);
   const [sending, setSending] = useState(false);
   const [dragActive, setDragActive] = useState(false);
@@ -177,7 +198,7 @@ export function Composer({
   const appliedInitialDraftRef = useRef("");
 
   const uploading = uploadTasks.some((task) => task.status === "uploading" || task.status === "processing");
-  const canSend = Boolean(draft.trim() || imageAttachments.length) && !disabled && !sending && !uploading;
+  const canSend = Boolean(draft.trim() || imageAttachments.length || selectedLibraryAttachments.length) && !disabled && !sending && !uploading;
 
   useEffect(() => {
     imageAttachmentsRef.current = imageAttachments;
@@ -216,12 +237,11 @@ export function Composer({
   }, []);
 
   useEffect(() => {
-    const preferred = conversationMode || user?.intelligence_mode;
-    if (!preferred) return;
+    const preferred = conversationSelectedPreset || conversationMode || "instant";
     const option = composerModeOption(preferred);
     setChatMode(option.chatMode);
-    window.localStorage.setItem("autoai-intelligence-mode", option.value);
-  }, [conversationMode, user?.intelligence_mode]);
+    setPresetMode(conversationPresetMode === "manual" || conversationManualPresetLocked ? "manual" : "auto");
+  }, [focusKey, conversationMode, conversationPresetMode, conversationSelectedPreset, conversationManualPresetLocked]);
 
   useEffect(() => {
     if (!token) return;
@@ -294,9 +314,18 @@ export function Composer({
     setSending(true);
     let accepted = false;
     try {
+      const detectedPreset = detectPreset(text, Boolean(files.length || selectedDocuments.length || selectedLibraryAttachments.length));
+      const selectedPreset = presetMode === "auto" ? detectedPreset : composerModeOption(chatMode).chatMode as IntelligenceMode;
       const result = await onSend(
         text,
-        { chatMode },
+        {
+          chatMode: selectedPreset,
+          presetMode,
+          presetSource: presetMode,
+          selectedPreset,
+          detectedPreset,
+          manualPresetLocked: presetMode === "manual"
+        },
         files
       );
       accepted = result !== false;
@@ -353,11 +382,17 @@ export function Composer({
   function updateCombinedMode(value: string) {
     const option = composerModeOption(value);
     setChatMode(option.chatMode);
+    const nextPresetMode = value === "auto" ? "auto" : "manual";
+    setPresetMode(nextPresetMode);
     setOpenMenu(null);
-    window.localStorage.setItem("autoai-intelligence-mode", option.value);
+    void onPresetChange?.({
+      presetMode: nextPresetMode,
+      selectedPreset: option.chatMode as IntelligenceMode,
+      manualPresetLocked: nextPresetMode === "manual"
+    });
   }
 
-  const selectedModeValue = composerModeValue("auto", chatMode);
+  const selectedModeValue = presetMode === "auto" ? "auto" : composerModeValue("auto", chatMode);
 
   return (
     <form
@@ -383,7 +418,7 @@ export function Composer({
     >
       <div className={clsx("composer-card compact-card crystal-surface", crystalEffects.surfaces && "is-crystal-enabled", dragActive && "composer-card-active")}>
         <AnimatePresence>
-          {(selectedDocuments.length > 0 || uploadTasks.length > 0 || imageAttachments.length > 0 || error) && (
+          {(selectedDocuments.length > 0 || selectedLibraryAttachments.length > 0 || uploadTasks.length > 0 || imageAttachments.length > 0 || error) && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
@@ -401,6 +436,15 @@ export function Composer({
                     </button>
                     <button type="button" onClick={() => onDeleteDocument(document.id)} title="Delete document">
                       <Trash2 size={13} />
+                    </button>
+                  </span>
+                ))}
+                {selectedLibraryAttachments.map((attachment) => (
+                  <span key={attachment.asset_id} className="attachment-chip">
+                    {attachment.type === "image" ? <FileImage size={14} /> : <FileText size={14} />}
+                    <span className="max-w-40 truncate">{attachment.filename}</span>
+                    <button type="button" onClick={() => onRemoveLibraryAttachment(attachment.asset_id)} title="Remove library attachment">
+                      <X size={13} />
                     </button>
                   </span>
                 ))}
@@ -479,6 +523,7 @@ export function Composer({
             </ComposerPopover>
           </div>
           <ModeMenu value={selectedModeValue} config={intelligenceConfig} open={openMenu === "mode"} onToggle={() => setOpenMenu((current) => current === "mode" ? null : "mode")} onClose={() => setOpenMenu(null)} onSelect={updateCombinedMode} />
+          <span className="preset-source-indicator">{presetMode === "auto" ? "Auto detected" : "Manual"}</span>
         </div>
 
         <div className="composer-input-row">

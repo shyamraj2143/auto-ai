@@ -278,3 +278,24 @@ html[data-auto-ai-visible="false"] .neural-call-screen * {
   .calls-workspace-content > .calls-tab { padding-block:8px; }
   .social-tabs button { min-height:44px; flex-direction:row; }
 }
+.connection-tabs {
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+.connection-tabs::-webkit-scrollbar { display: none; }
+.connection-tabs button {
+  min-width: max-content;
+  min-height: 40px;
+  flex: 0 0 auto;
+  padding: 0 10px;
+  border-radius: 999px;
+}
+.social-request-row { min-height: 56px; padding-block: 6px; }
+.social-request-row > button { min-height: 36px; white-space: nowrap; }
+@media (max-width: 390px) {
+  .social-request-row { grid-template-columns: 36px minmax(0,1fr) auto; }
+  .social-request-row > button { padding-inline: 7px; }
+}

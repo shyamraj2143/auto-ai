@@ -1,6 +1,24 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
-import type { Chat, ChatListItem, ChatMode } from "../types";
+import type { Chat, ChatListItem, ChatMode, IntelligenceMode } from "../types";
+
+type PresetState = {
+  chatMode: ChatMode;
+  presetMode: "auto" | "manual";
+  selectedPreset: IntelligenceMode;
+  manualPresetLocked: boolean;
+};
+
+type ChatUpdatePayload = {
+  title?: string;
+  system_prompt?: string;
+  model?: string;
+  mode?: ChatMode;
+  presetMode?: "auto" | "manual";
+  selectedPreset?: IntelligenceMode;
+  manualPresetLocked?: boolean;
+  clear_messages?: boolean;
+};
 import { useAuth } from "./AuthContext";
 
 type ChatContextValue = {
@@ -9,8 +27,8 @@ type ChatContextValue = {
   loadingChats: boolean;
   refreshChats: () => Promise<void>;
   openChat: (id: string) => Promise<void>;
-  createChat: (title?: string) => Promise<Chat>;
-  updateChat: (id: string, payload: { title?: string; system_prompt?: string; model?: string; mode?: ChatMode; clear_messages?: boolean }) => Promise<void>;
+  createChat: (title?: string, preset?: PresetState) => Promise<Chat>;
+  updateChat: (id: string, payload: ChatUpdatePayload) => Promise<void>;
   deleteChat: (id: string) => Promise<void>;
   setActiveChat: React.Dispatch<React.SetStateAction<Chat | null>>;
 };
@@ -43,9 +61,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   );
 
   const createChat = useCallback(
-    async (title = "New chat") => {
+    async (title = "New chat", preset?: PresetState) => {
       if (!token) throw new Error("Not authenticated");
-      const chat = await api.createChat(token, { title });
+      const chat = await api.createChat(token, {
+        title,
+        mode: preset?.chatMode,
+        presetMode: preset?.presetMode,
+        selectedPreset: preset?.selectedPreset,
+        manualPresetLocked: preset?.manualPresetLocked
+      });
       setActiveChat(chat);
       await refreshChats();
       return chat;
@@ -54,7 +78,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updateChat = useCallback(
-    async (id: string, payload: { title?: string; system_prompt?: string; model?: string; mode?: ChatMode; clear_messages?: boolean }) => {
+    async (id: string, payload: ChatUpdatePayload) => {
       if (!token) return;
       const updated = await api.updateChat(token, id, payload);
       setActiveChat((current) => (current?.id === id ? updated : current));

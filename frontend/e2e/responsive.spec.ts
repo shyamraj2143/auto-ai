@@ -124,7 +124,7 @@ test("preset selection stays collapsed without manual model controls", async ({ 
   await installAuthenticatedFixtures(page);
   await openRoute(page, "/chat");
   for (const preset of ["Medium", "High", "Deep Research", "Coding"]) {
-    await page.getByRole("button", { name: /^(Instant|Medium|High|Deep Research|Coding)$/ }).click();
+    await page.getByRole("button", { name: /^(Auto|Instant|Medium|High|Deep Research|Coding)$/ }).click();
     await page.getByRole("menuitemradio", { name: new RegExp(`^${preset}`) }).click();
     await expect(page.locator("#composer-mode-popover")).toHaveCount(0);
   }

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, type ReactNode } from "react";
+import { Suspense, lazy, useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { BrowserRouter } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
@@ -14,6 +14,7 @@ import { consumeSafeRootRedirect, markStartupStable } from "./reliability/safeMo
 import { AppSettingsProvider } from "./contexts/AppSettingsContext";
 import { AnnouncementBanner } from "./components/common/AnnouncementBanner";
 import { isAdminPanelRole } from "./utils/roles";
+import { ApiClientError } from "./api/client";
 import { ScreenShareProvider } from "./features/screenShare/ScreenShareProvider";
 import { ScreenShareOverlay } from "./features/screenShare/ScreenShareOverlay";
 import "./features/screenShare/screenShare.css";
@@ -21,7 +22,14 @@ import "./features/screenShare/screenShare.css";
 const AppShell = lazy(() => import("./components/layout/AppShell").then((module) => ({ default: module.AppShell })));
 const ChatPage = lazy(() => import("./components/chat/ChatPage").then((module) => ({ default: module.ChatPage })));
 const DownloadPage = lazy(() => import("./components/download/DownloadPage").then((module) => ({ default: module.DownloadPage })));
-const AdminDashboard = lazy(() => import("./components/admin/AdminDashboard").then((module) => ({ default: module.AdminDashboard })));
+const AdminDashboard = lazy(() =>
+  import("./components/admin/AdminDashboard")
+    .then((module) => ({ default: module.AdminDashboard }))
+    .catch((error) => {
+      console.error("ADMIN_ROUTE_LOAD_FAILED", error);
+      throw error;
+    })
+);
 const AdminLoginPage = lazy(() => import("./components/auth/AdminLoginPage").then((module) => ({ default: module.AdminLoginPage })));
 const LoginPage = lazy(() => import("./components/auth/LoginPage").then((module) => ({ default: module.LoginPage })));
 const PaymentCheckoutPage = lazy(() => import("./components/payments/PaymentCheckoutPage").then((module) => ({ default: module.PaymentCheckoutPage })));
@@ -62,11 +70,67 @@ function ProtectedRoute() {
 }
 
 function AdminRoute() {
-  const { user, loading } = useAuth();
-  if (loading) {
-    return <div className="app-loading">Loading Auto-AI...</div>;
+  const { user, token, loading, refreshProfile } = useAuth();
+  const [verification, setVerification] = useState<"idle" | "checking" | "allowed" | "forbidden" | "error">("idle");
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    if (loading) return;
+    if (!token) {
+      console.warn("ADMIN_ROLE_MISSING");
+      setVerification("forbidden");
+      return;
+    }
+    let active = true;
+    setVerification("checking");
+    refreshProfile()
+      .then((account) => {
+        if (!active) return;
+        if (isAdminPanelRole(account.role)) {
+          setVerification("allowed");
+        } else {
+          console.warn("ADMIN_ROLE_FORBIDDEN", { role: account.role });
+          setVerification("forbidden");
+        }
+      })
+      .catch((error) => {
+        if (!active) return;
+        const apiError = error instanceof ApiClientError ? error : null;
+        const code = apiError?.status === 401
+          ? "ADMIN_API_UNAUTHORIZED"
+          : apiError?.status === 403
+            ? "ADMIN_API_FORBIDDEN"
+            : "ADMIN_NETWORK_ERROR";
+        console.error(code, error);
+        setMessage(apiError?.status === 401
+          ? "Your session expired. Please sign in again."
+          : apiError?.status === 403
+            ? "Admin access is not enabled for this account."
+            : "Admin access could not be verified. Check your connection and retry.");
+        setVerification("error");
+      });
+    return () => {
+      active = false;
+    };
+  }, [loading, refreshProfile, token]);
+
+  if (loading || verification === "idle" || verification === "checking") {
+    return <div className="app-loading">Verifying admin access...</div>;
   }
-  return isAdminPanelRole(user?.role) ? <Outlet /> : <Navigate to="/admin/login" replace />;
+  if (verification === "error") {
+    return (
+      <main className="app-error-page">
+        <section className="app-error-card">
+          <h1>Admin access could not be verified</h1>
+          <p>{message}</p>
+          <button className="btn-primary" type="button" onClick={() => window.location.reload()}>Retry</button>
+        </section>
+      </main>
+    );
+  }
+  return verification === "allowed" && isAdminPanelRole(user?.role)
+    ? <Outlet />
+    : <Navigate to={token ? "/hub" : "/admin/login"} replace />;
 }
 
 function AppRoutes() {

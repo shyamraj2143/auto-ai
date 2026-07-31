@@ -268,7 +268,7 @@ export function AdminDashboard() {
   const [success, setSuccess] = useState("");
   const [quotaForms, setQuotaForms] = useState<Record<string, QuotaForm>>({});
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
-  const isFullAdmin = user?.role === "admin" || user?.role === "super_admin";
+  const isFullAdmin = user?.role === "admin" || user?.role === "super_admin" || user?.role === "administrator";
   const isAdmin = isFullAdmin || user?.role === "content_admin" || user?.role === "content_editor" || user?.role === "content_viewer";
   const isSuperAdmin = user?.role === "super_admin";
   const isLiveEditorRoute = location.pathname.startsWith("/admin/live-pages");

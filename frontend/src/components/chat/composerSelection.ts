@@ -1,13 +1,14 @@
 import type { ChatMode, SearchMode } from "../../types";
 
 export type ComposerModeOption = {
-  value: "instant" | "medium" | "high" | "deep_research" | "coding";
+  value: "auto" | "instant" | "medium" | "high" | "deep_research" | "coding";
   label: string;
   searchMode: SearchMode;
   chatMode: ChatMode;
 };
 
 export const COMPOSER_MODE_OPTIONS: readonly ComposerModeOption[] = [
+  { value: "auto", label: "Auto", searchMode: "auto", chatMode: "instant" },
   { value: "instant", label: "Instant", searchMode: "auto", chatMode: "instant" },
   { value: "medium", label: "Medium", searchMode: "auto", chatMode: "medium" },
   { value: "high", label: "High", searchMode: "auto", chatMode: "high" },
@@ -23,7 +24,7 @@ export function composerModeOption(value: string) {
     deep: "deep_research"
   };
   const canonical = aliases[value] ?? value;
-  return COMPOSER_MODE_OPTIONS.find((option) => option.value === canonical) ?? COMPOSER_MODE_OPTIONS[0];
+  return COMPOSER_MODE_OPTIONS.find((option) => option.value === canonical) ?? COMPOSER_MODE_OPTIONS[1];
 }
 
 export function composerModeValue(searchMode: SearchMode, chatMode: ChatMode) {

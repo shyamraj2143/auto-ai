@@ -64,8 +64,8 @@ function explicitFailureCode(error: unknown): string {
 
 function presentationFor(codeOrMessage: string): CallFailurePresentation | null {
   const value = codeOrMessage.toUpperCase();
-  if (/MICROPHONE_PERMISSION_DENIED|CALL_PERMISSION_REQUIRED/.test(value)) {
-    return { title: "Microphone permission required", message: "Allow microphone access in Android Settings, then retry the call.", permissionRelated: true };
+  if (/MICROPHONE_PERMISSION_DENIED|MICROPHONE PERMISSION DENIED|CALL_PERMISSION_REQUIRED/.test(value)) {
+    return { title: "Calling permission required", message: "Allow microphone access in Android Settings, then retry the call.", permissionRelated: true };
   }
   if (/CAMERA_PERMISSION_DENIED/.test(value)) {
     return { title: "Camera permission required", message: "Allow camera access for video calling, or answer using audio only.", permissionRelated: true };
@@ -92,7 +92,7 @@ function presentationFor(codeOrMessage: string): CallFailurePresentation | null 
     return { title: "Call session expired", message: "Your secure call session expired. Reopen AutoAI and retry." };
   }
   if (/SIGNALING_TIMEOUT|OFFER_NOT_RECEIVED|SIGNALING UNAVAILABLE/.test(value)) {
-    return { title: "Secure signaling unavailable", message: "AutoAI could not establish the secure call channel. Check the connection and retry." };
+    return { title: "Connection interrupted", message: "AutoAI could not establish the secure call channel. Check the connection and retry." };
   }
   if (/TURN_AUTH_FAILED|TURN_UNREACHABLE|RELAY/.test(value)) {
     return { title: "Call relay unavailable", message: "The media relay could not be reached. Retry after changing between Wi-Fi and mobile data." };
@@ -140,7 +140,8 @@ export function callFailurePresentation(error: string, includeDiagnostic = false
   if (exact) return includeDiagnostic && normalized ? { ...exact, diagnostic: normalized } : exact;
   const fallback: CallFailurePresentation = {
     title: "Calling service could not start",
-    message: normalized || "AutoAI could not prepare the call. Please retry.",
+    message: "AutoAI could not prepare the call. Please retry.",
+    permissionRelated: false,
   };
   return includeDiagnostic && normalized ? { ...fallback, diagnostic: normalized } : fallback;
 }

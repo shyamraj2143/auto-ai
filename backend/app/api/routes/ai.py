@@ -20,6 +20,7 @@ from app.models.chat import Chat
 from app.models.chat_generation import ChatGeneration
 from app.models.document import Document
 from app.models.message import Message
+from app.models.library_asset import LibraryAsset
 from app.models.search import SearchRun
 from app.models.user import User
 from app.schemas.chat import (
@@ -52,6 +53,8 @@ from app.services.orchestration.activity_store import activity_store
 from app.services.orchestration.model_registry import model_registry
 from app.services.orchestration.preset_policy import coding_configuration_status, coding_model_ids
 from app.services.orchestration.schemas import IntelligenceMode
+from app.services.preset_detection import CODING_SYSTEM_INSTRUCTION, resolve_preset
+from app.services.library_storage import library_storage
 from app.services.web_search import SearchAgent, web_search_service
 
 
@@ -149,6 +152,8 @@ def build_messages(
             "\nUse deliberate reasoning internally. Provide concise final answers and only show "
             "step-by-step reasoning when the user explicitly asks for it."
         )
+    if chat.mode == "coding":
+        base_prompt += "\n\n" + CODING_SYSTEM_INSTRUCTION
 
     messages: list[dict[str, str]] = [{"role": "system", "content": base_prompt}]
     if runtime_identity:
@@ -191,11 +196,87 @@ def build_messages(
     return messages
 
 
+def apply_preset_resolution(payload: ChatRequest, chat: Chat | None = None) -> None:
+    explicit_preset = bool(
+        {"preset_mode", "preset_source", "selected_preset", "detected_preset", "manual_preset_locked"}
+        & payload.model_fields_set
+    )
+    if not explicit_preset and "mode" in payload.model_fields_set:
+        preset_mode, selected_preset, manual_locked = "manual", payload.mode, True
+    elif not explicit_preset and chat is not None:
+        preset_mode = chat.preset_mode
+        selected_preset = chat.selected_preset
+        manual_locked = chat.manual_preset_locked
+    else:
+        preset_mode = payload.preset_mode
+        selected_preset = payload.selected_preset
+        manual_locked = payload.manual_preset_locked
+    resolution = resolve_preset(
+        message=payload.message,
+        preset_mode=preset_mode,
+        selected_preset=selected_preset,
+        manual_preset_locked=manual_locked,
+        has_attachments=bool(payload.attachments or payload.document_ids),
+    )
+    payload.preset_mode = resolution.preset_mode
+    payload.preset_source = resolution.preset_source
+    payload.selected_preset = resolution.selected_preset
+    payload.detected_preset = resolution.detected_preset
+    payload.manual_preset_locked = resolution.manual_preset_locked
+    payload.mode = resolution.selected_preset
+    if chat is not None:
+        chat.mode = resolution.selected_preset
+        chat.preset_mode = resolution.preset_mode
+        chat.selected_preset = resolution.selected_preset
+        chat.manual_preset_locked = resolution.manual_preset_locked
+    logger.info(
+        "preset_resolved presetMode=%s presetSource=%s selectedPreset=%s detectedPreset=%s "
+        "manualPresetLocked=%s selectedModel=%s chatId=%s requestId=%s",
+        payload.preset_mode, payload.preset_source, payload.selected_preset, payload.detected_preset,
+        payload.manual_preset_locked, payload.model, payload.chat_id or (chat.id if chat else None),
+        payload.request_id or payload.client_message_id,
+    )
+
+
 def user_message_fallback(hidden_attachment_context: str | None = None) -> str:
     return "Analyze the attached content." if hidden_attachment_context else "Continue."
 
 
-def request_hidden_attachment_context(payload: ChatRequest) -> str:
+def library_asset_context(db: Session, user_id: str, payload: ChatRequest) -> str:
+    if not payload.library_asset_ids:
+        return ""
+    assets = list(
+        db.scalars(
+            select(LibraryAsset).where(
+                LibraryAsset.user_id == user_id,
+                LibraryAsset.id.in_(payload.library_asset_ids),
+                LibraryAsset.is_deleted.is_(False),
+            )
+        )
+    )
+    if len(assets) != len(set(payload.library_asset_ids)):
+        raise HTTPException(status_code=404, detail="Library asset is no longer available.")
+    chunks: list[str] = []
+    for asset in assets:
+        if asset.extracted_text:
+            chunks.append(f"Library file: {asset.display_name}\n{asset.extracted_text[:settings.MAX_DOCUMENT_CONTEXT_CHARS]}")
+        elif asset.file_type == "image":
+            try:
+                summary = groq_service.analyze_image(
+                    library_storage.read(asset.storage_key),
+                    asset.display_name,
+                    "Describe this image accurately for use as context in an AI chat. Include visible text.",
+                )
+                asset.extracted_text = summary[: settings.MAX_DOCUMENT_CONTEXT_CHARS]
+                chunks.append(f"Library image: {asset.display_name}\n{asset.extracted_text}")
+            except Exception:
+                chunks.append(f"Library image attached: {asset.display_name} ({asset.mime_type})")
+        asset.last_used_at = datetime.utcnow()
+    db.flush()
+    return "\n\n".join(chunks)
+
+
+def request_hidden_attachment_context(payload: ChatRequest, library_context: str = "") -> str:
     parts: list[str] = []
     if payload.attachments:
         attachment_lines = []
@@ -212,11 +293,21 @@ def request_hidden_attachment_context(payload: ChatRequest) -> str:
             parts.append(f"OCR text:\n{context.ocr_text}")
         if context.parsed_file_text:
             parts.append(f"Parsed file text:\n{context.parsed_file_text}")
+    if library_context:
+        parts.append(library_context)
     return "\n\n".join(part.strip() for part in parts if part.strip())
 
 
 def message_metadata_for_request(payload: ChatRequest) -> dict:
-    metadata: dict = {}
+    metadata: dict = {
+        "presetMode": payload.preset_mode,
+        "presetSource": payload.preset_source,
+        "selectedPreset": payload.selected_preset,
+        "detectedPreset": payload.detected_preset,
+        "manualPresetLocked": payload.manual_preset_locked,
+        "selectedModel": payload.model,
+        "requestId": payload.request_id or payload.client_message_id,
+    }
     if payload.client_message_id:
         metadata["client_message_id"] = payload.client_message_id
     if payload.attachments:
@@ -592,7 +683,9 @@ def run_chat_generation(generation_id: str) -> None:
                 system_prompt=payload.system_prompt,
                 reasoning=payload.reasoning,
                 adaptive_context=prepared_context["prompt_context"],
-                hidden_attachment_context=request_hidden_attachment_context(payload),
+                hidden_attachment_context=request_hidden_attachment_context(
+                    payload, library_asset_context(db, generation.user_id, payload)
+                ),
                 runtime_identity=(
                     runtime_identity_prompt(effective_provider, selected_model, mode=payload.mode)
                     + "\n\n"
@@ -1036,6 +1129,8 @@ def create_chat_generation(
     existing_user_message: Message | None = None,
 ) -> dict:
     payload.mode = IntelligenceMode.canonical(payload.mode).value
+    chat_row = get_or_create_chat(db, current_user, payload)
+    apply_preset_resolution(payload, chat_row)
     if payload.mode == "deep_research" and payload.search_mode in {"off", "auto"}:
         payload.search_mode = "deep"
     enforce_plan_and_feature_access(
@@ -1046,7 +1141,6 @@ def create_chat_generation(
         search_mode=payload.search_mode,
         max_models=payload.max_models,
     )
-    chat_row = get_or_create_chat(db, current_user, payload)
     current_user.intelligence_mode = payload.mode
     effective_provider, effective_model = effective_provider_model(
         payload.provider,
@@ -1123,7 +1217,7 @@ def create_chat_generation(
         user_message_id=user_message.id,
         assistant_message_id=assistant_message.id,
         status="pending",
-        request_payload=payload.model_dump(mode="json"),
+        request_payload=payload.model_dump(mode="json", by_alias=True),
     )
     db.add(generation)
     db.flush()
@@ -1264,6 +1358,8 @@ def chat(
     db: Session = Depends(get_db),
 ) -> ChatResponse:
     payload.mode = IntelligenceMode.canonical(payload.mode).value
+    chat_row = get_or_create_chat(db, current_user, payload)
+    apply_preset_resolution(payload, chat_row)
     enforce_plan_and_feature_access(
         db,
         current_user,
@@ -1272,7 +1368,6 @@ def chat(
         search_mode=payload.search_mode,
         max_models=payload.max_models,
     )
-    chat_row = get_or_create_chat(db, current_user, payload)
     documents = load_documents(db, current_user.id, payload.document_ids)
     history = chat_row.messages[-settings.MAX_CONTEXT_MESSAGES :] if chat_row.messages else []
     prepared_context = meta_cognition_layer.prepare_context(
@@ -1303,7 +1398,9 @@ def chat(
         reasoning=payload.reasoning,
         adaptive_context=prepared_context["prompt_context"],
         search_context=web_search_service.build_model_context(search_bundle),
-        hidden_attachment_context=request_hidden_attachment_context(payload),
+        hidden_attachment_context=request_hidden_attachment_context(
+            payload, library_asset_context(db, current_user.id, payload)
+        ),
         runtime_identity=runtime_identity_prompt(effective_provider, selected_model, mode=payload.mode),
     )
     enforce_user_quota(db, current_user, estimated_input_tokens=estimate_message_tokens(messages))
@@ -1466,6 +1563,8 @@ def stream_chat(
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
     payload.mode = IntelligenceMode.canonical(payload.mode).value
+    chat_row = get_or_create_chat(db, current_user, payload)
+    apply_preset_resolution(payload, chat_row)
     enforce_plan_and_feature_access(
         db,
         current_user,
@@ -1474,7 +1573,6 @@ def stream_chat(
         search_mode=payload.search_mode,
         max_models=payload.max_models,
     )
-    chat_row = get_or_create_chat(db, current_user, payload)
     documents = load_documents(db, current_user.id, payload.document_ids)
     history = chat_row.messages[-settings.MAX_CONTEXT_MESSAGES :] if chat_row.messages else []
     prepared_context = meta_cognition_layer.prepare_context(
@@ -1510,7 +1608,9 @@ def stream_chat(
         system_prompt=payload.system_prompt,
         reasoning=payload.reasoning,
         adaptive_context=prepared_context["prompt_context"],
-        hidden_attachment_context=request_hidden_attachment_context(payload),
+        hidden_attachment_context=request_hidden_attachment_context(
+            payload, library_asset_context(db, current_user.id, payload)
+        ),
         runtime_identity=runtime_identity_prompt(effective_provider, selected_model, mode=payload.mode),
     )
     enforce_user_quota(db, current_user, estimated_input_tokens=estimate_message_tokens(messages))

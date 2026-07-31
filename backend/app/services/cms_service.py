@@ -24,9 +24,9 @@ from app.models.cms import (
 from app.models.user import User
 
 
-CMS_VIEW_ROLES = {"admin", "super_admin", "content_admin", "content_editor", "content_viewer"}
-CMS_EDIT_ROLES = {"admin", "super_admin", "content_admin", "content_editor"}
-CMS_PUBLISH_ROLES = {"admin", "super_admin", "content_admin"}
+CMS_VIEW_ROLES = {"admin", "super_admin", "administrator", "content_admin", "content_editor", "content_viewer"}
+CMS_EDIT_ROLES = {"admin", "super_admin", "administrator", "content_admin", "content_editor"}
+CMS_PUBLISH_ROLES = {"admin", "super_admin", "administrator", "content_admin"}
 CMS_SCHEMA_VERSION = 1
 
 PAGE_DEFAULTS = [

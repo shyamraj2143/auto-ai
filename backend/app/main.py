@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import admin, ai, auth, calls, chat_sessions, chats, cms, demo_chat, device_monitoring, documents, download, health, human, live, live_websocket, memory, notifications, payments, screen_share, search, social, user_messages, users, voice
+from app.api.routes import admin, ai, auth, calls, chat_sessions, chats, cms, demo_chat, device_monitoring, documents, download, health, human, library, live, live_websocket, memory, notifications, payments, screen_share, search, social, user_messages, users, voice
 from app.core.config import settings
 from app.core.rate_limit import InMemoryRateLimitMiddleware
 from app.db.session import SessionLocal, init_db
@@ -99,6 +99,7 @@ def create_app() -> FastAPI:
                 logger.warning("calling_configuration Firebase is not configured; killed Android apps cannot receive calls.")
         Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
         Path(settings.UPLOAD_DIR, "profile").mkdir(parents=True, exist_ok=True)
+        Path(settings.LIBRARY_STORAGE_DIR).mkdir(parents=True, exist_ok=True)
         Path(settings.APK_STORAGE_DIR).mkdir(parents=True, exist_ok=True)
         init_db()
         with SessionLocal() as db:
@@ -161,6 +162,7 @@ def create_app() -> FastAPI:
     app.include_router(ai.router, prefix=settings.API_V1_STR)
     app.include_router(demo_chat.router, prefix=settings.API_V1_STR)
     app.include_router(documents.router, prefix=settings.API_V1_STR)
+    app.include_router(library.router, prefix=settings.API_V1_STR)
     app.include_router(voice.router, prefix=settings.API_V1_STR)
     app.include_router(live.router, prefix=settings.API_V1_STR)
     app.include_router(live_websocket.router, prefix=settings.API_V1_STR)

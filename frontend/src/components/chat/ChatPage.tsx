@@ -1,12 +1,12 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowDown, Brain, Menu, MessageSquarePlus, MoreHorizontal, Search, Settings, Sparkles, Square, Trash2, Pencil, Eraser } from "lucide-react";
+import { ArrowDown, Brain, Library, Menu, MessageSquarePlus, MoreHorizontal, Search, Settings, Sparkles, Square, Trash2, Pencil, Eraser } from "lucide-react";
 import { ApiClientError, api, streamGenerationActivity } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
-import type { ChatAttachment, ChatGeneration, ChatRequest, DocumentItem, Message, MessageInternalContext, ResponseModelInfo } from "../../types";
+import type { ChatAttachment, ChatGeneration, ChatRequest, DocumentItem, LibraryAttachment, Message, MessageInternalContext, ResponseModelInfo } from "../../types";
 import { coerceTextContent } from "../../utils/text";
 import { dateSeparatorFlags, formatMessageDate, formatMessageDateLabel } from "../../utils/dateTime";
 import { Composer, type ComposerOptions, type UploadTask } from "./Composer";
@@ -23,6 +23,7 @@ import { CrystalAiOrb, CrystalErrorBoundary } from "../crystal/Crystal";
 import type { CrystalOrbState } from "../../crystal/tokens";
 import { usePublishedUiText } from "../../hooks/useCmsContent";
 import { AppNotice } from "../common/AppNotice";
+import { LibraryModal } from "./LibraryModal";
 import {
   appendOptimisticMessages,
   clientMessageIdOf,
@@ -34,7 +35,12 @@ import {
   upsertChatMessage
 } from "./chatState";
 const DEFAULT_OPTIONS: ComposerOptions = {
-  chatMode: "instant"
+  chatMode: "instant",
+  presetMode: "auto",
+  presetSource: "auto",
+  selectedPreset: "instant",
+  detectedPreset: "instant",
+  manualPresetLocked: false
 };
 
 type LocalRetryRequest = {
@@ -47,6 +53,7 @@ type LocalRetryRequest = {
   clientMessageId: string;
   userMessageId: string;
   documentIds: string[];
+  libraryAssetIds: string[];
   requestId: string;
 };
 
@@ -136,6 +143,7 @@ export function ChatPage() {
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [uploadTasks, setUploadTasks] = useState<UploadTask[]>([]);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
+  const [selectedLibraryAttachments, setSelectedLibraryAttachments] = useState<LibraryAttachment[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [submittingGeneration, setSubmittingGeneration] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
@@ -145,6 +153,7 @@ export function ChatPage() {
   const [isContextOpen, setIsContextOpen] = useState(false);
   const [chatNotice, setChatNotice] = useState("");
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const [liveModeOpen, setLiveModeOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -667,10 +676,16 @@ export function ChatPage() {
     return analyses.length ? { image_summary: analyses.join("\n\n---\n\n") } : null;
   }
 
-  function requestOptionsPayload(options: ComposerOptions, documentIds = selectedDocumentIds) {
+  function requestOptionsPayload(options: ComposerOptions, documentIds = selectedDocumentIds, libraryAssetIds: string[] = []) {
     return {
       mode: options.chatMode,
+      presetMode: options.presetMode,
+      presetSource: options.presetSource,
+      selectedPreset: options.selectedPreset,
+      detectedPreset: options.detectedPreset,
+      manualPresetLocked: options.manualPresetLocked,
       document_ids: settings.memoryEnabled ? documentIds : [],
+      library_asset_ids: libraryAssetIds,
       user_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
       user_locale: navigator.language || "en"
     };
@@ -683,7 +698,7 @@ export function ChatPage() {
       client_message_id: request.clientMessageId,
       attachments: serializableAttachments(request.attachments),
       internal_context: internalContext,
-      ...requestOptionsPayload(request.options, request.documentIds)
+      ...requestOptionsPayload(request.options, request.documentIds, request.libraryAssetIds)
     };
   }
 
@@ -774,7 +789,10 @@ export function ChatPage() {
     setSearchingMessageId(null);
     try {
       if (!chatId) {
-        const chat = await createChat(request.text.slice(0, 60) || request.attachments[0]?.filename || "New chat");
+        const chat = await createChat(
+          request.text.slice(0, 60) || request.attachments[0]?.filename || "New chat",
+          request.options
+        );
         chatId = chat.id;
         request.chatId = chat.id;
         activeRequestRef.current = {
@@ -835,11 +853,20 @@ export function ChatPage() {
 
   async function handleSend(text: string, options: ComposerOptions, imageFiles: File[] = []) {
     const trimmedText = text.trim();
-    if (!token || visibleChatBusy || (!trimmedText && !imageFiles.length)) return false;
+    if (!token || visibleChatBusy || (!trimmedText && !imageFiles.length && !selectedLibraryAttachments.length)) return false;
     const documentIds = settings.memoryEnabled ? [...selectedDocumentIds] : [];
     const attachments = [
       ...imageFiles.map(createImageAttachment),
-      ...createDocumentAttachments(documents, documentIds)
+      ...createDocumentAttachments(documents, documentIds),
+      ...selectedLibraryAttachments.map((item) => ({
+        id: item.asset_id,
+        type: item.type,
+        url: item.url,
+        filename: item.filename,
+        mime_type: item.mime_type,
+        file_size: item.file_size,
+        status: "uploaded"
+      } satisfies ChatAttachment))
     ];
     const request: LocalRetryRequest = {
       chatId: activeChat?.id,
@@ -851,6 +878,7 @@ export function ChatPage() {
       clientMessageId: crypto.randomUUID(),
       userMessageId: "",
       documentIds,
+      libraryAssetIds: selectedLibraryAttachments.map((item) => item.asset_id),
       requestId: crypto.randomUUID()
     };
     const assistantId = `local-assistant-${request.clientMessageId}`;
@@ -874,6 +902,7 @@ export function ChatPage() {
     setRequestState("saving_user_message");
     window.requestAnimationFrame(scrollToBottom);
     await startGenerationForLocalAssistant(request, assistantId);
+    setSelectedLibraryAttachments([]);
     return true;
   }
 
@@ -1080,6 +1109,7 @@ export function ChatPage() {
             <button role="menuitem" type="button" onClick={renameCurrentChat} disabled={!activeChat}><Pencil size={15} />Rename conversation</button>
             <button role="menuitem" type="button" onClick={clearCurrentChat} disabled={!activeChat}><Eraser size={15} />Clear conversation</button>
             <button role="menuitem" type="button" onClick={() => { setChatMenuOpen(false); openSettings(); }}><Settings size={15} />Chat settings</button>
+            <button role="menuitem" type="button" onClick={() => { setChatMenuOpen(false); setLibraryOpen(true); }}><Library size={15} />Library</button>
             <button className="is-danger" role="menuitem" type="button" onClick={deleteCurrentChat} disabled={!activeChat}><Trash2 size={15} />Delete conversation</button>
         </DismissibleMenu>
 
@@ -1176,12 +1206,26 @@ export function ChatPage() {
           focusKey={composerFocusKey}
           initialDraft={hubPrompt}
           conversationMode={activeChat?.mode}
+          conversationPresetMode={activeChat?.preset_mode}
+          conversationSelectedPreset={activeChat?.selected_preset}
+          conversationManualPresetLocked={activeChat?.manual_preset_locked}
+          onPresetChange={async (selection) => {
+            if (!activeChat) return;
+            await updateChat(activeChat.id, {
+              mode: selection.selectedPreset,
+              presetMode: selection.presetMode,
+              selectedPreset: selection.selectedPreset,
+              manualPresetLocked: selection.manualPresetLocked
+            });
+          }}
           disabled={visibleChatBusy}
           selectedDocuments={selectedDocuments}
+          selectedLibraryAttachments={selectedLibraryAttachments}
           uploadTasks={uploadTasks}
           onRemoveDocument={(id) =>
             setSelectedDocumentIds((current) => current.filter((documentId) => documentId !== id))
           }
+          onRemoveLibraryAttachment={(id) => setSelectedLibraryAttachments((current) => current.filter((item) => item.asset_id !== id))}
           onDeleteDocument={handleDeleteDocument}
           onUploadDocuments={uploadDocuments}
           onSend={handleSend}
@@ -1201,6 +1245,18 @@ export function ChatPage() {
         onClose={() => setIsContextOpen(false)}
       />
       {liveModeOpen && <LiveCallMode onClose={() => setLiveModeOpen(false)} />}
+      {token && (
+        <LibraryModal
+          open={libraryOpen}
+          token={token}
+          chatId={activeChat?.id}
+          onClose={() => setLibraryOpen(false)}
+          onAttach={(items) => setSelectedLibraryAttachments((current) => [
+            ...current.filter((item) => !items.some((next) => next.asset_id === item.asset_id)),
+            ...items
+          ])}
+        />
+      )}
     </div>
   );
 }

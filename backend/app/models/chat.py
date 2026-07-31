@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -17,6 +17,9 @@ class Chat(Base):
     system_prompt: Mapped[str] = mapped_column(Text, nullable=True)
     model: Mapped[str] = mapped_column(String(120), nullable=False)
     mode: Mapped[str] = mapped_column(String(32), default="normal", nullable=False)
+    preset_mode: Mapped[str] = mapped_column(String(16), default="auto", nullable=False)
+    selected_preset: Mapped[str] = mapped_column(String(32), default="instant", nullable=False)
+    manual_preset_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now

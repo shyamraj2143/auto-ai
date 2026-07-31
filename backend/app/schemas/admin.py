@@ -61,7 +61,7 @@ class AdminUserStatusUpdate(BaseModel):
 
 
 class AdminUserRoleUpdate(BaseModel):
-    role: str = Field(pattern="^(user|admin|super_admin|content_admin|content_editor|content_viewer)$")
+    role: str = Field(pattern="^(user|admin|super_admin|administrator|content_admin|content_editor|content_viewer)$")
 
 
 class AdminUserPasswordReset(BaseModel):
@@ -72,7 +72,7 @@ class AdminCreateUser(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
-    role: str = Field(pattern="^(admin|super_admin|content_admin|content_editor|content_viewer)$")
+    role: str = Field(pattern="^(admin|super_admin|administrator|content_admin|content_editor|content_viewer)$")
 
 
 class AdminQuotaUpdate(BaseModel):
