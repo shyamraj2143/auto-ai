@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - "scripts/apply_user_requested_feature_fixes.py"
+      - "scripts/fix_requested_feature_contract_test.py"
       - ".github/workflows/apply-requested-feature-fixes.yml"
       - ".github/feature-fix-trigger.txt"
   pull_request:
@@ -14,6 +15,7 @@ on:
       - main
     paths:
       - "scripts/apply_user_requested_feature_fixes.py"
+      - "scripts/fix_requested_feature_contract_test.py"
       - ".github/workflows/apply-requested-feature-fixes.yml"
       - ".github/feature-fix-trigger.txt"
 
@@ -49,6 +51,7 @@ jobs:
           else
             python scripts/apply_user_requested_feature_fixes.py
           fi
+          python scripts/fix_requested_feature_contract_test.py
 
       - name: Assert admin section is untouched
         shell: bash
