@@ -1,2 +1,2 @@
 Verify the native call signaling and temporary server outage reliability hotfix.
-Attempt 2: include fakeredis and pytest-asyncio for existing backend call tests.
+Attempt 3: preserve legacy PresenceService test injection and enable fakeredis Lua call-lock scripts.
