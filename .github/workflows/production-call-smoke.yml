@@ -1,0 +1,116 @@
+name: Production call signaling smoke
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/production-call-smoke.yml"
+      - ".github/production-call-smoke-trigger.txt"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-call-signaling:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AUTO_AI_API_BASE_URL: https://auto-ai-production-a6ef.up.railway.app/api/v1
+      AUTO_AI_ADMIN_EMAIL: ${{ secrets.AUTO_AI_ADMIN_EMAIL }}
+      AUTO_AI_ADMIN_PASSWORD: ${{ secrets.AUTO_AI_ADMIN_PASSWORD }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install smoke-test clients
+        run: pip install httpx websockets
+
+      - name: Verify production health, auth, TURN and WebSocket signaling
+        shell: bash
+        run: |
+          python - <<'PY'
+          import asyncio
+          import json
+          import os
+          import uuid
+          from datetime import datetime, timezone
+          from urllib.parse import quote
+
+          import httpx
+          import websockets
+
+          base = os.environ["AUTO_AI_API_BASE_URL"].rstrip("/")
+          email = os.environ.get("AUTO_AI_ADMIN_EMAIL", "").strip()
+          password = os.environ.get("AUTO_AI_ADMIN_PASSWORD", "")
+          if not email or not password:
+              raise SystemExit("Required admin smoke-test secrets are missing.")
+
+          async def main() -> None:
+              timeout = httpx.Timeout(25.0, connect=15.0)
+              async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+                  health_response = await client.get(f"{base}/calls/health")
+                  health_response.raise_for_status()
+                  health = health_response.json()
+                  print("CALL_HEALTH", json.dumps(health, sort_keys=True))
+                  assert health.get("calling_enabled") is True, health
+                  assert health.get("websocket_ready") is True, health
+                  assert health.get("call_signaling_ready") is True, health
+                  assert health.get("turn_configured") is True, health
+
+                  login_response = await client.post(
+                      f"{base}/auth/login",
+                      json={"email": email, "password": password},
+                  )
+                  login_response.raise_for_status()
+                  session = login_response.json()
+                  token = session.get("access_token")
+                  user_id = (session.get("user") or {}).get("id")
+                  assert token and user_id, "Login response did not include an access token and user id."
+                  headers = {"Authorization": f"Bearer {token}"}
+
+                  turn_response = await client.get(f"{base}/calls/turn-credentials", headers=headers)
+                  turn_response.raise_for_status()
+                  turn = turn_response.json()
+                  ice_servers = turn.get("ice_servers") or []
+                  assert ice_servers, "TURN endpoint returned no ICE servers."
+                  assert any(str(url).startswith(("turn:", "turns:")) for server in ice_servers for url in (server.get("urls") if isinstance(server.get("urls"), list) else [server.get("urls")]))
+                  print("TURN_READY", len(ice_servers))
+
+                  ticket_response = await client.post(f"{base}/calls/ws-ticket", headers=headers, json={})
+                  ticket_response.raise_for_status()
+                  ticket = ticket_response.json().get("ticket")
+                  assert ticket, "WebSocket ticket was not returned."
+
+              ws_base = base.replace("https://", "wss://", 1).replace("http://", "ws://", 1)
+              ws_url = f"{ws_base}/calls/ws?ticket={quote(ticket)}"
+              async with websockets.connect(
+                  ws_url,
+                  open_timeout=20,
+                  close_timeout=5,
+                  ping_interval=None,
+                  max_size=64 * 1024,
+              ) as socket:
+                  first = json.loads(await asyncio.wait_for(socket.recv(), timeout=20))
+                  assert first.get("type") == "presence.snapshot", first
+                  ping = {
+                      "schema_version": 1,
+                      "event_id": str(uuid.uuid4()),
+                      "type": "ping",
+                      "call_id": None,
+                      "sender_user_id": user_id,
+                      "timestamp": datetime.now(timezone.utc).isoformat(),
+                      "payload": {},
+                  }
+                  await socket.send(json.dumps(ping, separators=(",", ":")))
+                  pong = json.loads(await asyncio.wait_for(socket.recv(), timeout=20))
+                  assert pong.get("type") == "pong", pong
+                  print("WEBSOCKET_SIGNALING_READY", pong.get("payload", {}).get("connection_id"))
+
+          asyncio.run(main())
+          PY
