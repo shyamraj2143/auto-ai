@@ -8,7 +8,8 @@ export type AutoAiLogoProps = {
 
 /**
  * Network-independent application logo. Rendering the mark as inline SVG avoids
- * route-depth, cache, MIME-type, CDN, Railway, and Capacitor asset URL failures.
+ * route-depth, cache, MIME-type, CDN, Railway, case-sensitivity and Capacitor
+ * asset URL failures. It never renders a browser broken-image placeholder.
  */
 export function AutoAiLogo({
   className = "app-logo",
@@ -32,7 +33,8 @@ export function AutoAiLogo({
       aria-label={labelled ? alt : undefined}
       aria-hidden={labelled ? undefined : true}
       focusable="false"
-      data-autoai-logo="inline"
+      data-autoai-logo="inline-v2"
+      style={{ display: "block", width: "100%", height: "100%", flex: "0 0 auto" }}
     >
       <defs>
         <linearGradient id={edgeId} x1="6" y1="10" x2="58" y2="54" gradientUnits="userSpaceOnUse">
