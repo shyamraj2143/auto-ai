@@ -1,0 +1,71 @@
+name: Library auto archive check
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/app/api/routes/documents.py"
+      - "backend/app/services/document_service.py"
+      - "backend/app/services/library_asset_service.py"
+      - "backend/tests/test_library_auto_archive.py"
+      - "backend/tests/test_library_validation.py"
+      - "frontend/src/components/chat/Composer.tsx"
+      - "frontend/src/components/chat/LibraryModal.tsx"
+      - ".github/workflows/library-auto-archive-check.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt pytest
+
+      - name: Compile attachment archive modules
+        run: |
+          python -m compileall -q backend/app/api/routes/documents.py
+          python -m compileall -q backend/app/services/document_service.py
+          python -m compileall -q backend/app/services/library_asset_service.py
+
+      - name: Run library archive tests
+        env:
+          PYTHONPATH: backend
+        run: pytest -q backend/tests/test_library_auto_archive.py backend/tests/test_library_validation.py
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: |
+          npm ci
+          npm ci --prefix frontend
+
+      - name: Build production frontend
+        run: AUTO_AI_SKIP_COMPRESSION=1 npm run build
+
+      - name: Verify automatic-only Library UI
+        run: |
+          grep -q "Automatically saved from your AI Chat attachments" frontend/src/components/chat/LibraryModal.tsx
+          grep -q 'uploadLibraryAsset(token, file, "chat_attachment")' frontend/src/components/chat/Composer.tsx
+          if grep -q '>Upload<' frontend/src/components/chat/LibraryModal.tsx; then
+            echo "Manual Library upload control was reintroduced." >&2
+            exit 1
+          fi
