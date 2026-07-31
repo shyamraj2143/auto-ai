@@ -6,6 +6,7 @@ import "./styles/crystal.css";
 import "./styles/prism.css";
 import "./styles/actionHubTheme.css";
 import "./styles/workspaceSurfaces.css";
+import "./styles/responseCardOverrides.css";
 import App from "./App";
 import { beginStartupRecovery } from "./reliability/safeMode";
 import { installFunctionalDialogDiagnostics, installResponsiveDiagnostics } from "./reliability/responsiveDiagnostics";
