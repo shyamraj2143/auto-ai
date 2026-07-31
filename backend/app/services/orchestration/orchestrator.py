@@ -63,16 +63,25 @@ class IntelligenceOrchestrator:
         )
         if not tasks:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="No healthy intelligence model is available.")
-        advanced_provider_unavailable = (
+
+        task_providers = {task.model.provider for task in tasks}
+        provider_fallback_used = (
             canonical == IntelligenceMode.HIGH
-            and not any(task.model.provider == "bedrock" for task in tasks)
+            and "bedrock" not in task_providers
+        ) or (
+            canonical == IntelligenceMode.CODING
+            and (len(tasks) < 2 or task_providers != {"groq", "bedrock"})
         )
-        if advanced_provider_unavailable:
+        if provider_fallback_used:
             emit(
                 "model.progress",
                 {
                     "mode": canonical.value,
-                    "stage": "Continuing with available intelligence models.",
+                    "stage": (
+                        "Coding with available healthy models; cross-provider review will resume automatically."
+                        if canonical == IntelligenceMode.CODING
+                        else "Continuing with available intelligence models."
+                    ),
                     "fallback_used": True,
                 },
             )
@@ -143,6 +152,8 @@ class IntelligenceOrchestrator:
                     raise HTTPException(status_code=499, detail="Generation cancelled.")
                 stream_content(content[:end])
         elapsed_ms = int((perf_counter() - started) * 1000)
+        runtime_failure_fallback = any(result.status != TaskStatus.COMPLETED for result in results)
+        fallback_used = provider_fallback_used or runtime_failure_fallback
         emit("synthesis.completed", {"mode": canonical.value, "stage": "Preparing the final response"})
         emit(
             "orchestration.completed",
@@ -154,8 +165,7 @@ class IntelligenceOrchestrator:
                 "models_completed": len(successes),
                 "models_contributed": len(successes),
                 "verified_sources": verified_citations,
-                "fallback_used": advanced_provider_unavailable
-                or any(result.status != TaskStatus.COMPLETED for result in results),
+                "fallback_used": fallback_used,
             },
         )
         usages = [result.usage for result in successes] + [synthesis_usage]
@@ -170,7 +180,7 @@ class IntelligenceOrchestrator:
             len(results),
             len(successes),
             elapsed_ms,
-            advanced_provider_unavailable or any(result.status != TaskStatus.COMPLETED for result in results),
+            fallback_used,
             verified_citations,
             usage["total_tokens"],
         )
@@ -206,8 +216,7 @@ class IntelligenceOrchestrator:
                 ],
                 "verified_sources": verified_citations,
                 "duration_ms": elapsed_ms,
-                "fallback_used": advanced_provider_unavailable
-                or any(result.status != TaskStatus.COMPLETED for result in results),
+                "fallback_used": fallback_used,
             },
         )
 
