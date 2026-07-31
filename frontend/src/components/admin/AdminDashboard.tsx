@@ -1158,12 +1158,16 @@ export function AdminDashboard() {
           )}
 
           {activeSection === "tokens" && (
-            <section className="rounded-lg border border-white/10 bg-white/[0.045]">
-              <div className="border-b border-white/10 p-4">
-                <SectionTitle title="User Token Management" subtitle="Adjust monthly quota, bonus tokens, daily messages, and usage resets" />
-                <div className="relative max-w-md">
+            <section className="admin-token-management rounded-lg border border-white/10 bg-white/[0.045]">
+              <div className="admin-token-management__toolbar border-b border-white/10 p-4">
+                <div>
+                  <SectionTitle title="User Token Management" subtitle="Adjust monthly quota, bonus tokens, daily messages, and usage resets" />
+                  <p className="admin-token-management__count">{filteredQuotaUsers.length} {filteredQuotaUsers.length === 1 ? "user" : "users"} shown</p>
+                </div>
+                <div className="relative w-full max-w-md">
                   <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={16} />
                   <input
+                    aria-label="Search users by name or email"
                     className="input-dark h-10 pl-9"
                     placeholder="Search users by name or email"
                     value={quotaQuery}
@@ -1171,133 +1175,134 @@ export function AdminDashboard() {
                   />
                 </div>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[1440px] border-collapse text-left text-sm">
-                  <thead className="bg-white/[0.035] text-xs uppercase text-slate-400">
-                    <tr>
-                      <th className="px-4 py-3">User</th>
-                      <th className="px-4 py-3">Plan</th>
-                      <th className="px-4 py-3">Monthly limit</th>
-                      <th className="px-4 py-3">Used / Balance</th>
-                      <th className="px-4 py-3">Bonus</th>
-                      <th className="px-4 py-3">Daily messages</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3">Add tokens</th>
-                      <th className="px-4 py-3">Deduct tokens</th>
-                      <th className="px-4 py-3">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/10">
-                    {filteredQuotaUsers.map((account) => {
-                      const quota = account.quota;
-                      const form = quotaForms[account.id] ?? quotaToForm(quota);
-                      const busy = busyId?.includes(account.id);
-                      const progress = quotaProgress(quota);
-                      return (
-                        <tr key={account.id} className="align-top text-slate-200">
-                          <td className="px-4 py-3">
-                            <div className="font-semibold text-white">{account.name}</div>
-                            <div className="text-xs text-slate-400">{account.email}</div>
-                          </td>
-                          <td className="px-4 py-3">
+              <div className="admin-token-list">
+                {filteredQuotaUsers.map((account) => {
+                  const quota = account.quota;
+                  const form = quotaForms[account.id] ?? quotaToForm(quota);
+                  const busy = busyId?.includes(account.id);
+                  const progress = quotaProgress(quota);
+                  return (
+                    <article className="admin-token-card" key={account.id}>
+                      <header className="admin-token-card__header">
+                        <div className="min-w-0">
+                          <h3>{account.name}</h3>
+                          <p title={account.email}>{account.email}</p>
+                        </div>
+                        <StatusPill active={account.is_active} label={account.status} />
+                      </header>
+
+                      <div className="admin-token-card__quota">
+                        <label className="admin-token-field">
+                          <span>Plan</span>
+                          <select
+                            aria-label={`Plan for ${account.name}`}
+                            className="model-select-dark h-9"
+                            value={form.plan_name}
+                            onChange={(event) => updateQuotaForm(account.id, { plan_name: event.target.value })}
+                          >
+                            {!plans.includes(form.plan_name as AdminPlanName) && <option value={form.plan_name}>{form.plan_name}</option>}
+                            {plans.map((plan) => <option key={plan} value={plan}>{plan.replace(/-/g, " ")}</option>)}
+                          </select>
+                        </label>
+                        <label className="admin-token-field">
+                          <span>Monthly limit</span>
+                          <input
+                            className="input-dark h-9"
+                            min={0}
+                            type="number"
+                            value={form.token_limit_monthly}
+                            onChange={(event) => updateQuotaForm(account.id, { token_limit_monthly: event.target.value })}
+                          />
+                        </label>
+                        <label className="admin-token-field">
+                          <span>Bonus tokens</span>
+                          <input
+                            className="input-dark h-9"
+                            min={0}
+                            type="number"
+                            value={form.bonus_tokens}
+                            onChange={(event) => updateQuotaForm(account.id, { bonus_tokens: event.target.value })}
+                          />
+                        </label>
+                        <label className="admin-token-field">
+                          <span>Daily messages</span>
+                          <input
+                            className="input-dark h-9"
+                            min={0}
+                            type="number"
+                            value={form.daily_message_limit}
+                            onChange={(event) => updateQuotaForm(account.id, { daily_message_limit: event.target.value })}
+                          />
+                          <small>{quota?.messages_used_today ?? 0} used today</small>
+                        </label>
+                      </div>
+
+                      <div className="admin-token-card__usage">
+                        <div>
+                          <span>Monthly usage</span>
+                          <strong>{(quota?.tokens_used_monthly ?? 0).toLocaleString()} used</strong>
+                        </div>
+                        <div className="admin-token-card__usage-bar" aria-label={`${progress}% of monthly token limit used`} role="progressbar" aria-valuemax={100} aria-valuemin={0} aria-valuenow={progress}>
+                          <span style={{ width: `${progress}%` }} />
+                        </div>
+                        <p>{quota?.token_limit_monthly === 0 ? "Unlimited balance" : `${(quota?.token_balance ?? 0).toLocaleString()} tokens remaining`}</p>
+                      </div>
+
+                      <div className="admin-token-card__adjustments">
+                        <div className="admin-token-adjustment admin-token-adjustment--add">
+                          <div><strong>Add tokens</strong><span>Credits the current balance</span></div>
+                          <div className="admin-token-adjustment__fields">
                             <input
-                              className="input-dark h-9 min-w-[120px]"
-                              value={form.plan_name}
-                              onChange={(event) => updateQuotaForm(account.id, { plan_name: event.target.value })}
-                            />
-                          </td>
-                          <td className="px-4 py-3">
-                            <input
-                              className="input-dark h-9 min-w-[130px]"
+                              aria-label={`Token amount to add for ${account.name}`}
+                              className="input-dark h-9"
                               min={0}
+                              placeholder="Amount"
                               type="number"
-                              value={form.token_limit_monthly}
-                              onChange={(event) => updateQuotaForm(account.id, { token_limit_monthly: event.target.value })}
+                              value={form.addAmount}
+                              onChange={(event) => updateQuotaForm(account.id, { addAmount: event.target.value })}
                             />
-                          </td>
-                          <td className="px-4 py-3 min-w-[220px]">
-                            <div className="mb-2 flex items-center justify-between gap-3 text-xs">
-                              <span>{(quota?.tokens_used_monthly ?? 0).toLocaleString()} used</span>
-                              <span>{quota?.token_limit_monthly === 0 ? "Unlimited" : `${(quota?.token_balance ?? 0).toLocaleString()} left`}</span>
-                            </div>
-                            <div className="h-2 rounded-full bg-slate-800">
-                              <div className="h-2 rounded-full bg-cyan-300" style={{ width: `${progress}%` }} />
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
                             <input
-                              className="input-dark h-9 min-w-[110px]"
-                              min={0}
-                              type="number"
-                              value={form.bonus_tokens}
-                              onChange={(event) => updateQuotaForm(account.id, { bonus_tokens: event.target.value })}
+                              aria-label={`Reason for adding tokens to ${account.name}`}
+                              className="input-dark h-9"
+                              placeholder="Reason (optional)"
+                              value={form.addReason}
+                              onChange={(event) => updateQuotaForm(account.id, { addReason: event.target.value })}
                             />
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              <input
-                                className="input-dark h-9 w-24"
-                                min={0}
-                                type="number"
-                                value={form.daily_message_limit}
-                                onChange={(event) => updateQuotaForm(account.id, { daily_message_limit: event.target.value })}
-                              />
-                              <span className="text-xs text-slate-400">{quota?.messages_used_today ?? 0} used</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3"><StatusPill active={account.is_active} label={account.status} /></td>
-                          <td className="px-4 py-3">
-                            <div className="grid min-w-[190px] gap-2">
-                              <input
-                                className="input-dark h-9"
-                                min={0}
-                                placeholder="Amount"
-                                type="number"
-                                value={form.addAmount}
-                                onChange={(event) => updateQuotaForm(account.id, { addAmount: event.target.value })}
-                              />
-                              <input
-                                className="input-dark h-9"
-                                placeholder="Reason"
-                                value={form.addReason}
-                                onChange={(event) => updateQuotaForm(account.id, { addReason: event.target.value })}
-                              />
-                              <button className="chip-dark" disabled={busy} onClick={() => addTokens(account)} type="button">Add</button>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="grid min-w-[190px] gap-2">
-                              <input
-                                className="input-dark h-9"
-                                min={0}
-                                placeholder="Amount"
-                                type="number"
-                                value={form.deductAmount}
-                                onChange={(event) => updateQuotaForm(account.id, { deductAmount: event.target.value })}
-                              />
-                              <input
-                                className="input-dark h-9"
-                                placeholder="Reason"
-                                value={form.deductReason}
-                                onChange={(event) => updateQuotaForm(account.id, { deductReason: event.target.value })}
-                              />
-                              <button className="chip-dark" disabled={busy} onClick={() => deductTokens(account)} type="button">Deduct</button>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex min-w-[170px] flex-wrap gap-2">
-                              <button className="btn-secondary h-9" disabled={busy || !quota} onClick={() => saveQuota(account)} type="button">Save</button>
-                              <button className="chip-dark" disabled={busy || !quota} onClick={() => resetTokens(account)} type="button">Reset</button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {filteredQuotaUsers.length === 0 && (
-                      <tr><td className="px-4 py-6 text-sm text-slate-400" colSpan={10}>No users found.</td></tr>
-                    )}
-                  </tbody>
-                </table>
+                            <button className="chip-dark" disabled={busy} onClick={() => addTokens(account)} type="button">Add</button>
+                          </div>
+                        </div>
+                        <div className="admin-token-adjustment admin-token-adjustment--deduct">
+                          <div><strong>Deduct tokens</strong><span>Removes from the current balance</span></div>
+                          <div className="admin-token-adjustment__fields">
+                            <input
+                              aria-label={`Token amount to deduct for ${account.name}`}
+                              className="input-dark h-9"
+                              min={0}
+                              placeholder="Amount"
+                              type="number"
+                              value={form.deductAmount}
+                              onChange={(event) => updateQuotaForm(account.id, { deductAmount: event.target.value })}
+                            />
+                            <input
+                              aria-label={`Reason for deducting tokens from ${account.name}`}
+                              className="input-dark h-9"
+                              placeholder="Reason (optional)"
+                              value={form.deductReason}
+                              onChange={(event) => updateQuotaForm(account.id, { deductReason: event.target.value })}
+                            />
+                            <button className="chip-dark" disabled={busy} onClick={() => deductTokens(account)} type="button">Deduct</button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <footer className="admin-token-card__footer">
+                        <button className="btn-secondary h-9" disabled={busy || !quota} onClick={() => saveQuota(account)} type="button">Save quota changes</button>
+                        <button className="chip-dark" disabled={busy || !quota} onClick={() => resetTokens(account)} type="button">Reset usage</button>
+                      </footer>
+                    </article>
+                  );
+                })}
+                {filteredQuotaUsers.length === 0 && <p className="admin-token-management__empty">No users found.</p>}
               </div>
             </section>
           )}
