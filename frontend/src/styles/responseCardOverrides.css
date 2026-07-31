@@ -1,0 +1,131 @@
+/* Final AI response-card surface. Loaded after the legacy theme files so older
+   motion/glow rules cannot reintroduce the Android/WebView white reflection. */
+
+.app-logo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.chat-workspace .message-card.message-card-ai,
+.advanced-motion .chat-workspace .message-card.message-card-ai {
+  position: relative;
+  isolation: isolate;
+  -webkit-tap-highlight-color: transparent;
+  border: 1px solid rgba(70, 190, 235, 0.2) !important;
+  border-radius: 5px 16px 16px 16px;
+  background: linear-gradient(
+    145deg,
+    rgba(8, 28, 57, 0.96),
+    rgba(5, 17, 39, 0.98)
+  ) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    inset 1px 0 0 rgba(74, 196, 255, 0.025),
+    0 10px 24px rgba(0, 0, 0, 0.26),
+    0 2px 7px rgba(28, 110, 190, 0.08) !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  transform: translateZ(0);
+  transition:
+    border-color 160ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
+}
+
+/* Remove every legacy sheen/shimmer layer, including advanced-motion hover. */
+.chat-workspace .message-card-ai::before,
+.chat-workspace .message-card-ai::after,
+.advanced-motion .chat-workspace .message-card-ai::before,
+.advanced-motion .chat-workspace .message-card-ai::after,
+.advanced-motion .message-row-assistant:hover .message-card-ai::after,
+.advanced-motion .message-row-assistant:active .message-card-ai::after {
+  content: none !important;
+  display: none !important;
+  opacity: 0 !important;
+  background: none !important;
+  animation: none !important;
+  transition: none !important;
+  transform: none !important;
+}
+
+/* Tapping, long-pressing or focusing the non-interactive card keeps the same
+   stable dark surface. Real controls inside retain their own focus indicator. */
+.chat-workspace .message-card-ai:active,
+.chat-workspace .message-card-ai:focus,
+.chat-workspace .message-card-ai:focus-visible,
+.chat-workspace .message-row-assistant:active .message-card-ai {
+  outline: none;
+  border-color: rgba(70, 190, 235, 0.2) !important;
+  background: linear-gradient(
+    145deg,
+    rgba(8, 28, 57, 0.96),
+    rgba(5, 17, 39, 0.98)
+  ) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    inset 1px 0 0 rgba(74, 196, 255, 0.025),
+    0 10px 24px rgba(0, 0, 0, 0.26),
+    0 2px 7px rgba(28, 110, 190, 0.08) !important;
+  filter: none !important;
+}
+
+.chat-workspace .message-card-ai :is(button, a, [role="button"]):focus-visible {
+  outline: 2px solid rgba(103, 232, 249, 0.86);
+  outline-offset: 2px;
+}
+
+.chat-workspace .message-card-ai :not(button):not(a):not(input):not(textarea):not(select) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.chat-workspace .message-card-ai .prose,
+.chat-workspace .message-card-ai .prose :where(p, li, strong, em, a, code, pre, table, th, td) {
+  text-shadow: none;
+}
+
+.chat-workspace .message-card-ai .prose {
+  overflow-wrap: anywhere;
+}
+
+.chat-workspace .message-card-ai .prose table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .chat-workspace .message-row-assistant:hover .message-card-ai {
+    transform: translateY(-1px);
+    border-color: rgba(83, 204, 240, 0.28) !important;
+    background: linear-gradient(
+      145deg,
+      rgba(8, 28, 57, 0.96),
+      rgba(5, 17, 39, 0.98)
+    ) !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.035),
+      inset 1px 0 0 rgba(74, 196, 255, 0.025),
+      0 12px 26px rgba(0, 0, 0, 0.27),
+      0 2px 7px rgba(28, 110, 190, 0.09) !important;
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .chat-workspace .message-card-ai,
+  .chat-workspace .message-row-assistant:hover .message-card-ai,
+  .chat-workspace .message-row-assistant:active .message-card-ai {
+    transform: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-workspace .message-card-ai {
+    transition: none !important;
+    transform: none !important;
+  }
+}
