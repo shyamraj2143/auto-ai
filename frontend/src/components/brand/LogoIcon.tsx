@@ -4,37 +4,44 @@ export type AutoAiLogoProps = {
   className?: string;
   alt?: string;
   loading?: "eager" | "lazy";
+  size?: number;
 };
 
 /**
- * Network-independent application logo. Rendering the mark as inline SVG avoids
- * route-depth, cache, MIME-type, CDN, Railway, case-sensitivity and Capacitor
- * asset URL failures. It never renders a browser broken-image placeholder.
+ * Network-independent application logo. The mark is rendered inline so nested
+ * routes, Railway, case-sensitive hosts and Capacitor never request a fallible
+ * image URL. Its intrinsic size is deliberately compact; layout CSS may override
+ * it for an explicit surface such as a hero or app icon.
  */
 export function AutoAiLogo({
   className = "app-logo",
   alt = "AutoAI",
-  loading = "lazy"
+  loading = "lazy",
+  size
 }: AutoAiLogoProps) {
   void loading;
   const id = useId().replace(/:/g, "");
   const edgeId = `${id}-autoai-edge`;
   const metalId = `${id}-autoai-metal`;
   const labelled = Boolean(alt);
+  const resolvedClassName = ["autoai-logo", className].filter(Boolean).join(" ");
+  const explicitSize = size && Number.isFinite(size) && size > 0
+    ? { width: `${size}px`, height: `${size}px` }
+    : undefined;
 
   return (
     <svg
-      className={className}
+      className={resolvedClassName}
       viewBox="0 0 64 64"
-      width="64"
-      height="64"
+      width={size || 36}
+      height={size || 36}
+      style={explicitSize}
       preserveAspectRatio="xMidYMid meet"
       role={labelled ? "img" : undefined}
       aria-label={labelled ? alt : undefined}
       aria-hidden={labelled ? undefined : true}
       focusable="false"
-      data-autoai-logo="inline-v2"
-      style={{ display: "block", width: "100%", height: "100%", flex: "0 0 auto" }}
+      data-autoai-logo="inline-v3"
     >
       <defs>
         <linearGradient id={edgeId} x1="6" y1="10" x2="58" y2="54" gradientUnits="userSpaceOnUse">
