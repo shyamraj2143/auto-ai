@@ -1,0 +1,122 @@
+/* Authoritative AutoAI branding geometry.
+   Loaded last so broad legacy SVG/text wrapping rules cannot distort the mark. */
+
+.autoai-logo,
+svg.autoai-logo,
+svg.app-logo {
+  display: block;
+  width: 36px;
+  height: 36px;
+  max-width: none;
+  max-height: none;
+  flex: 0 0 auto;
+  overflow: visible;
+  object-fit: contain;
+  object-position: center;
+}
+
+.autoai-brand-name,
+.autoai-workspace-brand strong,
+.hub-brand strong,
+.workspace-sidebar > div:first-child a {
+  display: block;
+  min-width: max-content;
+  white-space: nowrap !important;
+  overflow-wrap: normal !important;
+  word-break: keep-all !important;
+  writing-mode: horizontal-tb !important;
+  text-orientation: mixed;
+  line-height: 1.1;
+}
+
+.autoai-workspace-brand {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.autoai-workspace-brand .autoai-logo,
+.autoai-workspace-brand .app-logo {
+  width: 38px !important;
+  height: 38px !important;
+  flex-basis: 38px;
+}
+
+.workspace-sidebar > div:first-child > div:first-child {
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+.workspace-sidebar > div:first-child > div:first-child > span:first-child {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  overflow: hidden;
+}
+
+.workspace-sidebar > div:first-child > div:first-child > span:first-child .autoai-logo,
+.workspace-sidebar > div:first-child > div:first-child > span:first-child .app-logo {
+  width: 32px !important;
+  height: 32px !important;
+}
+
+.hub-brand-row {
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+.hub-brand {
+  min-width: 0;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.hub-brand .autoai-logo,
+.hub-brand .app-logo {
+  width: 37px !important;
+  height: 37px !important;
+  flex-basis: 37px;
+}
+
+.hub-core-orb .autoai-logo,
+.hub-core-orb .app-logo {
+  width: 55px !important;
+  height: 55px !important;
+}
+
+/* The desktop workspace rail already owns product branding. Keep the compact
+   header brand for mobile only, while leaving the update control available. */
+@media (min-width: 768px) {
+  .hub-brand {
+    display: none !important;
+  }
+
+  .hub-brand-row:not(:has(.hub-update-button)) {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .hub-brand {
+    display: inline-flex;
+  }
+
+  .hub-brand .autoai-logo,
+  .hub-brand .app-logo {
+    width: 31px !important;
+    height: 31px !important;
+    flex-basis: 31px;
+  }
+}
+
+@media (max-width: 380px) {
+  .hub-brand .autoai-logo,
+  .hub-brand .app-logo {
+    width: 28px !important;
+    height: 28px !important;
+    flex-basis: 28px;
+  }
+}
