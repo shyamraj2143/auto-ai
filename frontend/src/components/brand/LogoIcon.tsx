@@ -41,7 +41,7 @@ export function AutoAiLogo({
       aria-label={labelled ? alt : undefined}
       aria-hidden={labelled ? undefined : true}
       focusable="false"
-      data-autoai-logo="inline-v3"
+      data-autoai-logo="inline"
     >
       <defs>
         <linearGradient id={edgeId} x1="6" y1="10" x2="58" y2="54" gradientUnits="userSpaceOnUse">
