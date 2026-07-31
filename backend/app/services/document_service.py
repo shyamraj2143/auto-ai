@@ -13,6 +13,12 @@ from app.core.config import settings
 from app.services.groq_service import groq_service
 
 
+CODE_EXTENSIONS = {
+    ".py", ".ts", ".tsx", ".js", ".jsx", ".java", ".kt", ".go", ".rs",
+    ".css", ".html", ".json", ".md", ".yaml", ".yml", ".sql",
+}
+
+
 @dataclass(frozen=True)
 class DocumentExtraction:
     text: str
@@ -29,10 +35,11 @@ class DocumentService:
     ) -> tuple[str, DocumentExtraction]:
         filename = upload.filename or "document"
         extension = Path(filename).suffix.lower()
-        if extension not in settings.ALLOWED_DOCUMENT_EXTENSIONS:
+        allowed_extensions = settings.ALLOWED_DOCUMENT_EXTENSIONS | CODE_EXTENSIONS
+        if extension not in allowed_extensions:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Supported document formats are PDF, TXT, and DOCX.",
+                detail="Supported formats are PDF, TXT, DOCX, and common source-code files.",
             )
 
         data = await upload.read()
@@ -40,6 +47,11 @@ class DocumentService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="The uploaded file is empty.",
+            )
+        if extension in CODE_EXTENSIONS and b"\x00" in data[:8192]:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="Binary files are not supported as source code.",
             )
 
         upload_limit_mb = max_upload_mb or settings.MAX_UPLOAD_MB
@@ -56,7 +68,7 @@ class DocumentService:
                 "This scanned PDF contains no embedded text, and OCR could not read its pages. "
                 "Upload a clearer scan or image, or retry when vision OCR is available."
                 if extension == ".pdf"
-                else "No readable text was found in the document."
+                else "No readable text was found in the document or code file."
             )
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -77,13 +89,15 @@ class DocumentService:
             "content_type": upload.content_type or "application/octet-stream",
             "file_size": len(data),
             "sha256": digest,
+            "file_kind": "code" if extension in CODE_EXTENSIONS else "document",
         }
         return str(stored_path), DocumentExtraction(text=extraction.text, metadata=metadata)
 
     def extract_text(self, data: bytes, extension: str) -> DocumentExtraction:
         try:
-            if extension == ".txt":
-                return self._extract_txt(data)
+            if extension == ".txt" or extension in CODE_EXTENSIONS:
+                parser = "source-code" if extension in CODE_EXTENSIONS else "text"
+                return self._extract_txt(data, parser=parser)
             if extension == ".pdf":
                 return self._extract_pdf(data)
             if extension == ".docx":
@@ -97,7 +111,7 @@ class DocumentService:
             ) from exc
         return self._build_extraction("", parser="unknown")
 
-    def _extract_txt(self, data: bytes) -> DocumentExtraction:
+    def _extract_txt(self, data: bytes, *, parser: str = "text") -> DocumentExtraction:
         text = ""
         for encoding in ("utf-8-sig", "utf-16", "latin-1"):
             try:
@@ -107,7 +121,7 @@ class DocumentService:
                 continue
         if not text:
             text = data.decode("utf-8", errors="replace")
-        return self._build_extraction(text, parser="text")
+        return self._build_extraction(text, parser=parser)
 
     def _extract_pdf(self, data: bytes) -> DocumentExtraction:
         reader = PdfReader(BytesIO(data), strict=False)
