@@ -43,7 +43,7 @@ jobs:
           test -f frontend/dist/index.html
           test -f frontend/dist/favicon.svg
           test -f frontend/dist/icons/icon-32.png
-          grep -R -q --include='*.js' 'inline-v3' frontend/dist/assets
+          grep -R -q --include='*.js' 'data-autoai-logo' frontend/dist/assets
           grep -R -q --include='*.css' 'autoai-workspace-brand' frontend/dist/assets
           grep -R -q --include='*.css' 'white-space:nowrap' frontend/dist/assets
           if grep -R -q --include='*.css' 'svg\.app-logo{[^}]*width:100%' frontend/dist/assets; then
@@ -56,7 +56,7 @@ jobs:
 
       - name: Verify Android bundle and compile
         run: |
-          grep -R -q --include='*.js' 'inline-v3' android/app/src/main/assets/public/assets
+          grep -R -q --include='*.js' 'data-autoai-logo' android/app/src/main/assets/public/assets
           grep -R -q --include='*.css' 'autoai-workspace-brand' android/app/src/main/assets/public/assets
           chmod +x android/gradlew
           ./android/gradlew -p android compileDebugJavaWithJavac
