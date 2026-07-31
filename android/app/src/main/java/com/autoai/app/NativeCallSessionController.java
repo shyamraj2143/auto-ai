@@ -21,6 +21,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.TimeUnit;
 
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -36,6 +37,8 @@ public final class NativeCallSessionController {
     }
 
     private static final String TAG = "AutoAiNativeCall";
+    private static final int MAX_SIGNAL_RECONNECT_ATTEMPTS = 20;
+    private static final int MAX_INITIALIZATION_ATTEMPTS = 12;
     private static volatile NativeCallSessionController instance;
 
     public static NativeCallSessionController get(Context context) {
@@ -48,7 +51,12 @@ public final class NativeCallSessionController {
     private final Context context;
     private final NativeCallApi api;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private final OkHttpClient socketClient = new OkHttpClient.Builder().retryOnConnectionFailure(true).build();
+    private final OkHttpClient socketClient = new OkHttpClient.Builder()
+        .retryOnConnectionFailure(true)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .pingInterval(15, TimeUnit.SECONDS)
+        .build();
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
     private final AtomicBoolean mediaStarting = new AtomicBoolean(false);
     private final AtomicBoolean terminal = new AtomicBoolean(false);
@@ -68,6 +76,7 @@ public final class NativeCallSessionController {
     private boolean peerReadyPending;
     private volatile boolean iceDisconnected;
     private volatile int reconnectAttempts;
+    private volatile int initializationAttempts;
     private boolean sessionStarted;
     private boolean muted;
     private boolean cameraEnabled = true;
@@ -75,6 +84,7 @@ public final class NativeCallSessionController {
     private String pendingOfferSdp;
     private String pendingAnswerSdp;
     private final List<PendingRemoteCandidate> pendingRemoteCandidates = new ArrayList<>();
+    private final List<String> pendingOutboundSignals = new ArrayList<>();
     private ConnectivityManager.NetworkCallback networkCallback;
 
     private NativeCallSessionController(Context context) {
@@ -101,6 +111,8 @@ public final class NativeCallSessionController {
         pendingRemoteCandidates.clear();
         iceDisconnected = false;
         reconnectAttempts = 0;
+        initializationAttempts = 0;
+        pendingOutboundSignals.clear();
         sessionStarted = true;
         executor.execute(this::initializeSession);
     }
@@ -162,6 +174,7 @@ public final class NativeCallSessionController {
                 return;
             }
             JSONObject call = api.getCall(callId);
+            initializationAttempts = 0;
             backendStatus = call.optString("status", "");
             direction = call.optString("direction", "incoming");
             backendCallType = call.optString("call_type", callType);
@@ -177,11 +190,33 @@ public final class NativeCallSessionController {
             update(ActiveCallStore.State.SIGNALING_CONNECTING, null);
             connectSocket(api.websocketUrl());
             if (isAcceptedStatus(backendStatus)) startMediaAfterAccept();
-        } catch (NativeCallApi.ApiException auth) {
-            fail(auth.status == 401 || auth.status == 403 ? "SIGNALING_AUTH_FAILED" : "SIGNALING_TIMEOUT", auth);
+        } catch (NativeCallApi.ApiException error) {
+            if (error.status == 401 || error.status == 403) fail("SIGNALING_AUTH_FAILED", error);
+            else scheduleInitializationRetry(error);
         } catch (Exception error) {
-            fail("SIGNALING_TIMEOUT", error);
+            scheduleInitializationRetry(error);
         }
+    }
+
+    private void scheduleInitializationRetry(Throwable cause) {
+        if (terminal.get()) return;
+        int attempt = ++initializationAttempts;
+        if (attempt > MAX_INITIALIZATION_ATTEMPTS) {
+            fail(CallFailureMessages.isOnline(context) ? "SIGNALING_TIMEOUT" : "NETWORK_LOST", cause);
+            return;
+        }
+        update(ActiveCallStore.State.RECONNECTING, null);
+        long delay = Math.min(4000L, 400L * attempt);
+        Log.w(TAG, "SIGNALING_INITIALIZATION_RETRY callId=" + callId + " attempt=" + attempt + " delayMs=" + delay, cause);
+        executor.execute(() -> {
+            try {
+                Thread.sleep(delay);
+                if (!terminal.get()) initializeSession();
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                fail("SIGNALING_TIMEOUT", interrupted);
+            }
+        });
     }
 
     private void connectSocket(String url) {
@@ -195,6 +230,7 @@ public final class NativeCallSessionController {
                 update(ActiveCallStore.State.SIGNALING_CONNECTED, null);
                 Log.i(TAG, "SIGNALING_CONNECTED callId=" + callId);
                 send("presence.ready", null, json("state", "background"));
+                flushPendingOutboundSignals();
                 executor.execute(() -> {
                     try {                        backendStatus = api.getCall(callId).optString("status", backendStatus);
                             if (isAcceptedStatus(backendStatus)) {
@@ -226,7 +262,7 @@ public final class NativeCallSessionController {
     private void scheduleReconnect() {
         if (!reconnectScheduled.compareAndSet(false, true)) return;
         int attempt = ++reconnectAttempts;
-        if (attempt > 8) {
+        if (attempt > MAX_SIGNAL_RECONNECT_ATTEMPTS) {
             reconnectScheduled.set(false);
             String failure = CallFailureMessages.isOnline(context) ? "SIGNALING_TIMEOUT" : "NETWORK_LOST";
             fail(failure, new IllegalStateException("Signaling reconnect limit reached"));
@@ -235,12 +271,12 @@ public final class NativeCallSessionController {
         update(ActiveCallStore.State.RECONNECTING, null);
         executor.execute(() -> {
             try {
-                Thread.sleep(Math.min(4000L, attempt * 500L));
+                Thread.sleep(Math.min(3000L, attempt * 350L));
                 reconnectScheduled.set(false);
                 if (!terminal.get()) connectSocket(api.websocketUrl());
             } catch (Exception error) {
                 reconnectScheduled.set(false);
-                fail("SIGNALING_TIMEOUT", error);
+                if (!terminal.get()) scheduleReconnect();
             }
         });
     }
@@ -291,12 +327,15 @@ public final class NativeCallSessionController {
             try {
                 update(ActiveCallStore.State.MEDIA_CONNECTING, null);
                 List<PeerConnection.IceServer> iceServers = parseIceServers(api.turnCredentials());
+                if (iceServers.isEmpty()) throw new NativeCallApi.ApiException(503, "No usable call relay configuration.");
                 NativeWebRtcEngine created = new NativeWebRtcEngine(context, engineListener);
                 created.start("video".equals(callType), iceServers);                synchronized (this) { engine = created; engine.setMuted(muted); engine.setCameraEnabled(cameraEnabled); }
                     flushPendingRemoteSignals(created);
                     announcePeerReadyIfPossible();
             } catch (SecurityException permission) {
                 fail("video".equals(callType) ? "CAMERA_PERMISSION_DENIED" : "MICROPHONE_PERMISSION_DENIED", permission);
+            } catch (NativeCallApi.ApiException relayError) {
+                fail(relayError.status == 401 || relayError.status == 403 ? "TURN_AUTH_FAILED" : "TURN_UNREACHABLE", relayError);
             } catch (Exception error) {
                 fail("INTERNAL_CALL_ERROR", error);
             }
@@ -380,15 +419,36 @@ public final class NativeCallSessionController {
     };
 
     private void send(String type, String eventCallId, JSONObject payload) {
-        WebSocket current = socket;
-        if (current == null || !signalingOpen) return;
         try {
             JSONObject event = new JSONObject().put("schema_version", 1).put("event_id", UUID.randomUUID().toString())
                 .put("type", type).put("timestamp", timestamp()).put("payload", payload == null ? new JSONObject() : payload);
             if (eventCallId != null) event.put("call_id", eventCallId);
-            current.send(event.toString());
+            String encoded = event.toString();
+            WebSocket current = socket;
+            if (current == null || !signalingOpen || !current.send(encoded)) {
+                queueOutboundSignal(encoded);
+                if (!terminal.get()) scheduleReconnect();
+            }
         } catch (org.json.JSONException error) {
             fail("INTERNAL_CALL_ERROR", error);
+        }
+    }
+
+    private synchronized void queueOutboundSignal(String encoded) {
+        if (pendingOutboundSignals.size() >= 256) pendingOutboundSignals.remove(0);
+        pendingOutboundSignals.add(encoded);
+    }
+
+    private synchronized void flushPendingOutboundSignals() {
+        WebSocket current = socket;
+        if (current == null || !signalingOpen || pendingOutboundSignals.isEmpty()) return;
+        List<String> queued = new ArrayList<>(pendingOutboundSignals);
+        pendingOutboundSignals.clear();
+        for (String encoded : queued) {
+            if (!current.send(encoded)) {
+                queueOutboundSignal(encoded);
+                break;
+            }
         }
     }
 
@@ -419,6 +479,7 @@ public final class NativeCallSessionController {
         if (manager == null || networkCallback != null) return;
         networkCallback = new ConnectivityManager.NetworkCallback() {
             @Override public void onAvailable(Network network) {
+                if (!terminal.get() && !signalingOpen) scheduleReconnect();
                 if (!terminal.get() && iceDisconnected && engine != null && !iceRestartAttempted) {
                     iceRestartAttempted = true;
                     update(ActiveCallStore.State.RECONNECTING, null);
@@ -440,6 +501,7 @@ public final class NativeCallSessionController {
         pendingOfferSdp = null;
         pendingAnswerSdp = null;
         pendingRemoteCandidates.clear();
+        if (terminalState) pendingOutboundSignals.clear();
         peerReadySent = false;
         ConnectivityManager manager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
         if (manager != null && networkCallback != null) try { manager.unregisterNetworkCallback(networkCallback); } catch (RuntimeException ignored) {}

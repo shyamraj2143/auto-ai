@@ -191,19 +191,37 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   const ensureNativeCallService = useCallback(async (currentCall: CallRecord, audioOnly = false) => {
     if (nativeServiceCallIdsRef.current.has(currentCall.id)) return;
-    nativeServiceCallIdsRef.current.add(currentCall.id);
-    try {
-      await callNative.startActiveCall({
-        callId: currentCall.id,
-        displayName: currentCall.peer.display_name,
-        startedAt: Date.now(),
-        video: currentCall.call_type === "video" && !audioOnly,
-      });
-      callDebug("native_call_service_started", { call_id: currentCall.id, role: currentCall.direction, state: currentCall.status });
-    } catch (nativeError) {
-      nativeServiceCallIdsRef.current.delete(currentCall.id);
-      throw new CallSetupError("FOREGROUND_SERVICE_FAILED", "Unable to start the Android call service.", nativeError);
+    const retryableNativeServiceCodes = new Set([
+      "SERVICE_READY_TIMEOUT",
+      "FOREGROUND_SERVICE_TIMEOUT",
+      "FOREGROUND_SERVICE_START_NOT_ALLOWED",
+      "SIGNALING_TIMEOUT",
+      "NETWORK_LOST",
+      "INTERNAL_SERVICE_ERROR",
+      "INTERNAL_CALL_ERROR",
+    ]);
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      nativeServiceCallIdsRef.current.add(currentCall.id);
+      try {
+        await callNative.startActiveCall({
+          callId: currentCall.id,
+          displayName: currentCall.peer.display_name,
+          startedAt: Date.now(),
+          video: currentCall.call_type === "video" && !audioOnly,
+        });
+        callDebug("native_call_service_started", { call_id: currentCall.id, role: currentCall.direction, state: currentCall.status, attempt: attempt + 1 });
+        return;
+      } catch (nativeError) {
+        nativeServiceCallIdsRef.current.delete(currentCall.id);
+        lastError = nativeError;
+        const code = failureCodeOf(nativeError, "FOREGROUND_SERVICE_FAILED");
+        callDebug("native_call_service_retry", { call_id: currentCall.id, attempt: attempt + 1, error_code: code });
+        if (!retryableNativeServiceCodes.has(code) || attempt === 2) break;
+        await new Promise((resolve) => window.setTimeout(resolve, 450 * (attempt + 1)));
+      }
     }
+    throw new CallSetupError("FOREGROUND_SERVICE_FAILED", "Unable to start the Android call service.", lastError);
   }, []);
 
   const clearRingTimer = useCallback(() => {

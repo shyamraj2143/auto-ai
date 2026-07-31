@@ -147,7 +147,7 @@ async def public_search_result(db: Session, user: User, record: UserCallSettings
 @router.get("/config", response_model=CallFeatureConfig)
 async def call_feature_config(current_user: User = Depends(get_current_user)) -> CallFeatureConfig:
     del current_user
-    realtime_ready = await presence_service.check() if settings.CALL_FEATURE_ENABLED else False
+    realtime_ready = await presence_service.realtime_ready() if settings.CALL_FEATURE_ENABLED else False
     diagnostic = None
     if settings.CALL_FEATURE_ENABLED and not realtime_ready:
         diagnostic = "Realtime calling is temporarily unavailable."
@@ -174,15 +174,16 @@ async def call_feature_config(current_user: User = Depends(get_current_user)) ->
 async def call_health() -> CallHealth:
     redis_configured = presence_service.configured
     redis_reachable = await presence_service.check() if redis_configured else False
+    realtime_ready = await presence_service.realtime_ready() if settings.CALL_FEATURE_ENABLED else False
     return CallHealth(
         calling_enabled=settings.CALL_FEATURE_ENABLED,
         redis_configured=redis_configured,
         redis_reachable=redis_reachable,
-        websocket_ready=settings.CALL_FEATURE_ENABLED and redis_reachable,
+        websocket_ready=settings.CALL_FEATURE_ENABLED and realtime_ready,
         firebase_configured=firebase_notification_service.configured,
         turn_configured=settings.turn_configured,
         fcm_ready=firebase_notification_service.configured,
-        call_signaling_ready=settings.CALL_FEATURE_ENABLED and redis_reachable,
+        call_signaling_ready=settings.CALL_FEATURE_ENABLED and realtime_ready,
         redis_ready=redis_reachable,
     )
 
