@@ -11,11 +11,12 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   live-call-signaling:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       AUTO_AI_API_BASE_URL: https://auto-ai-production-a6ef.up.railway.app/api/v1
       AUTO_AI_ADMIN_EMAIL: ${{ secrets.AUTO_AI_ADMIN_EMAIL }}
@@ -122,3 +123,34 @@ jobs:
 
           asyncio.run(main())
           PY
+
+      - name: Verify critical Android APK release completed
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          target_sha="d8c27205c7bb912c214bf09729ac1d522a029f5d"
+          for attempt in $(seq 1 30); do
+            runs="$(gh run list --workflow android-release.yml --branch main --limit 15 --json databaseId,status,conclusion,headSha,createdAt,url,displayTitle)"
+            echo "$runs" | jq -c '.[] | {databaseId,status,conclusion,headSha,displayTitle,url}'
+            match="$(echo "$runs" | jq -c --arg sha "$target_sha" '[.[] | select(.headSha==$sha)][0] // empty')"
+            if [ -n "$match" ]; then
+              status="$(echo "$match" | jq -r '.status')"
+              conclusion="$(echo "$match" | jq -r '.conclusion // ""')"
+              run_id="$(echo "$match" | jq -r '.databaseId')"
+              echo "ANDROID_RELEASE_RUN=$run_id status=$status conclusion=$conclusion"
+              if [ "$status" = "completed" ] && [ "$conclusion" = "success" ]; then
+                gh run view "$run_id" --json jobs,url,conclusion,status,headSha
+                exit 0
+              fi
+              if [ "$status" = "completed" ]; then
+                gh run view "$run_id" --log-failed || true
+                echo "Critical Android release did not complete successfully."
+                exit 1
+              fi
+            fi
+            sleep 20
+          done
+          echo "Timed out waiting for the critical Android release workflow."
+          exit 1
