@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowDown, Brain, Library, Menu, MessageSquarePlus, MoreHorizontal, Search, Settings, Sparkles, Square, Trash2, Pencil, Eraser } from "lucide-react";
+import { ArrowDown, Brain, Languages, Library, Menu, MessageSquarePlus, MoreHorizontal, Search, Settings, Sparkles, Square, Trash2, Pencil, Eraser } from "lucide-react";
 import { ApiClientError, api, streamGenerationActivity } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
@@ -134,7 +134,7 @@ export function ChatPage() {
   const location = useLocation();
   const { chatId } = useParams();
   const { token } = useAuth();
-  const { settings } = useAppSettings();
+  const { settings, setResponseLanguage } = useAppSettings();
   const { activeChat, createChat, deleteChat, openChat, refreshChats, setActiveChat, updateChat } = useChat();
   const { openSidebar, setActiveAiConversation } = useShell();
   const openSettings = useSettingsNavigation();
@@ -349,7 +349,8 @@ export function ChatPage() {
     () => dateSeparatorFlags(visibleMessages.map((message) => message.created_at)),
     [visibleMessages]
   );
-  const visibleGeneration = activeGeneration?.chat_id === activeChat?.id ? activeGeneration : null;
+  const activeVisibleChatId = activeChat?.id ?? activeRequestRef.current?.chatId ?? chatId ?? null;
+  const visibleGeneration = activeGeneration?.chat_id === activeVisibleChatId ? activeGeneration : null;
   const visibleGenerationRunning = Boolean(visibleGeneration && isRunningGenerationStatus(visibleGeneration.status));
   const visibleChatBusy = isRequestBusy(requestState) || submittingGeneration || visibleGenerationRunning;
   const visibleStreamingMessageId =
@@ -662,11 +663,15 @@ export function ChatPage() {
     const analyses: string[] = [];
     for (const file of imageFiles) {
       try {
-        const result = await api.analyzeImage(
-          token,
-          file,
-          text || "Analyze this image in detail and extract useful context for the next answer."
-        );
+        const analysisPrompt = [
+          "Inspect this image as a high-quality multimodal assistant.",
+          text.trim() ? `The user request is: ${text.trim()}` : "The user did not add a separate question, so provide a useful complete analysis.",
+          "Identify the image type and main subject, describe the scene and layout, list important objects and visual details, and explain what matters for the user request.",
+          "Transcribe every readable word, number, label, table entry, code fragment, warning, and UI message accurately. Preserve order and structure where possible.",
+          "For screenshots, explain the interface state, visible errors, likely cause, and practical next steps. For documents or diagrams, summarize sections and key facts.",
+          "Do not identify real people. Do not invent unclear details; explicitly mark uncertainty."
+        ].join("\n");
+        const result = await api.analyzeImage(token, file, analysisPrompt);
         analyses.push(`Image: ${file.name}\n${result.content}`);
       } catch (error) {
         const detail = error instanceof Error ? error.message : "Image analysis failed";
@@ -687,7 +692,7 @@ export function ChatPage() {
       document_ids: settings.memoryEnabled ? documentIds : [],
       library_asset_ids: libraryAssetIds,
       user_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-      user_locale: navigator.language || "en"
+      user_locale: `autoai-response-${settings.responseLanguage}`
     };
   }
 
@@ -803,10 +808,12 @@ export function ChatPage() {
         };
         navigate(`/chat/${encodeURIComponent(chat.id)}`, { replace: true });
         const pendingMessages = optimisticMessages(request, assistantId);
-        setMessages((current) => appendOptimisticMessages(current, pendingMessages));
+        const nextMessages = appendOptimisticMessages(messagesRef.current, pendingMessages);
+        messagesRef.current = nextMessages;
+        setMessages(nextMessages);
         const chatWithLocalMessages = {
           ...chat,
-          messages: mergeChatMessages(chat.messages ?? [], messagesRef.current.some((message) => message.id === assistantId) ? messagesRef.current : pendingMessages)
+          messages: mergeChatMessages(chat.messages ?? [], nextMessages)
         };
         activeChatRef.current = chatWithLocalMessages;
         setActiveChat(chatWithLocalMessages);
@@ -894,11 +901,10 @@ export function ChatPage() {
       chatId: request.chatId,
       clientMessageId: request.clientMessageId
     };
-    if (activeChat?.id) {
-      updateMessagesForChat(activeChat.id, (current) => appendOptimisticMessages(current, pendingMessages), true);
-    } else {
-      setMessages((current) => appendOptimisticMessages(current, pendingMessages));
-    }
+    const nextLocalMessages = appendOptimisticMessages(messagesRef.current, pendingMessages);
+    messagesRef.current = nextLocalMessages;
+    setMessages(nextLocalMessages);
+    if (activeChat?.id) syncActiveChatMessages(activeChat.id, nextLocalMessages);
     setRequestState("saving_user_message");
     window.requestAnimationFrame(scrollToBottom);
     await startGenerationForLocalAssistant(request, assistantId);
@@ -1110,6 +1116,14 @@ export function ChatPage() {
             <button role="menuitem" type="button" onClick={clearCurrentChat} disabled={!activeChat}><Eraser size={15} />Clear conversation</button>
             <button role="menuitem" type="button" onClick={() => { setChatMenuOpen(false); openSettings(); }}><Settings size={15} />Chat settings</button>
             <button role="menuitem" type="button" onClick={() => { setChatMenuOpen(false); setLibraryOpen(true); }}><Library size={15} />Library</button>
+            <div className="chat-language-section" role="group" aria-label="Response language">
+              <div className="chat-language-heading"><Languages size={15} /><span><strong>Response language</strong><small>Choose how AutoAI replies</small></span></div>
+              <div className="chat-language-options">
+                <button type="button" className={settings.responseLanguage === "auto" ? "is-active" : ""} aria-pressed={settings.responseLanguage === "auto"} onClick={() => { setResponseLanguage("auto"); setChatMenuOpen(false); }}>Automatic</button>
+                <button type="button" className={settings.responseLanguage === "en" ? "is-active" : ""} aria-pressed={settings.responseLanguage === "en"} onClick={() => { setResponseLanguage("en"); setChatMenuOpen(false); }}>English</button>
+                <button type="button" className={settings.responseLanguage === "hi" ? "is-active" : ""} aria-pressed={settings.responseLanguage === "hi"} onClick={() => { setResponseLanguage("hi"); setChatMenuOpen(false); }}>हिन्दी</button>
+              </div>
+            </div>
             <button className="is-danger" role="menuitem" type="button" onClick={deleteCurrentChat} disabled={!activeChat}><Trash2 size={15} />Delete conversation</button>
         </DismissibleMenu>
 

@@ -524,7 +524,6 @@ export function ScreenShareProvider({ children }: { children: ReactNode }) {
   }, [applyQuality, canShareScreen, ensureAccessToken, ensureSignaling, inviteOnlyRequest, requestPeer, signaling, startDisplayStream, stopLocalTracks, stopShare]);
 
   const generateShareCode = useCallback(async () => {
-    if (!inviteOnlyRequest && !requestPeer) return;
     if (!canShareScreen) {
       setError(SCREEN_UNSUPPORTED_MESSAGE);
       return;

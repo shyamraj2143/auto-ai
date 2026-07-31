@@ -7,6 +7,7 @@ export function ScreenShareWorkspacePage() {
   const navigate = useNavigate();
   const screenShare = useScreenShare();
   const [code, setCode] = useState("");
+  const [starting, setStarting] = useState(false);
   const sessionCode = screenShare.shareCode || screenShare.session?.sessionId || screenShare.session?.session_id || "";
   const active = Boolean(screenShare.session);
 
@@ -14,6 +15,16 @@ export function ScreenShareWorkspacePage() {
     const normalized = code.trim();
     if (!normalized) return;
     await screenShare.joinWithCode(normalized);
+  }
+
+  async function startSharing() {
+    if (starting || active) return;
+    setStarting(true);
+    try {
+      await screenShare.generateShareCode();
+    } finally {
+      setStarting(false);
+    }
   }
 
   return (
@@ -33,7 +44,7 @@ export function ScreenShareWorkspacePage() {
           <h2>{active ? "Screen session active" : "Start a secure screen session"}</h2>
           <p>Use the existing AutoAI encrypted room flow. The same code supports mobile and desktop viewers.</p>
           <div className="screen-share-primary-actions">
-            <button type="button" onClick={screenShare.requestInviteShare}><MonitorUp size={18} /> Share my screen</button>
+            <button type="button" onClick={() => void startSharing()} disabled={starting || active}><MonitorUp size={18} /> {starting ? "Starting..." : "Share my screen"}</button>
             {active && <button type="button" className="secondary" onClick={() => void screenShare.stopShare()}><ArrowDownToLine size={18} /> Stop sharing</button>}
           </div>
         </div>

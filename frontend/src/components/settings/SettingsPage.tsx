@@ -28,6 +28,8 @@ import {
   CircleDot,
   MousePointer2,
   RotateCcw,
+  Info,
+  X,
   type LucideIcon
 } from "lucide-react";
 import { api } from "../../api/client";
@@ -51,7 +53,7 @@ import { CrystalButton, CrystalCard } from "../crystal/Crystal";
 import { crystalUiEnabled, type CrystalEffectsLevel } from "../../crystal/tokens";
 import { isMobileAppRuntime } from "../../utils/runtime";
 
-const APP_VERSION = "1.0.3";
+const APP_VERSION = import.meta.env.VITE_APP_VERSION || "1.0.3";
 
 const THEME_OPTIONS: Array<{ value: "light" | "dark" | "system"; label: string; icon: LucideIcon }> = [
   { value: "light", label: "Light", icon: Sun },
@@ -237,6 +239,7 @@ export function SettingsPage() {
   const [isClearingChats, setIsClearingChats] = useState(false);
   const [chatSettings, setChatSettings] = useState<ChatSettings | null>(null);
   const [memoryNotice, setMemoryNotice] = useState("");
+  const [versionDetailsOpen, setVersionDetailsOpen] = useState(false);
 
   const section = useMemo<SettingsSection>(() => {
     const current = new URLSearchParams(location.search).get("section");
@@ -494,7 +497,7 @@ export function SettingsPage() {
 
         <SettingsGroup title="About & Account">
           <SettingsCard>
-            <SettingsRow icon={Monitor} title="App Version" description="Installed frontend build">
+            <SettingsRow icon={Monitor} title="App Version" description="Tap to view AutoAI project and feature details" onClick={() => setVersionDetailsOpen(true)}>
               <span className="text-[11px] font-semibold text-slate-300">v{APP_VERSION}</span>
             </SettingsRow>
             <SettingsRow
@@ -768,6 +771,22 @@ export function SettingsPage() {
           {section === "chat" && renderChatSettings()}
         </div>
       </div>
+      {versionDetailsOpen && (
+        <div className="version-details-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setVersionDetailsOpen(false)}>
+          <section className="version-details-dialog" role="dialog" aria-modal="true" aria-label="AutoAI app details">
+            <header><span><Info size={18} /><strong>AutoAI v{APP_VERSION}</strong></span><button type="button" onClick={() => setVersionDetailsOpen(false)} aria-label="Close app details"><X size={18} /></button></header>
+            <p>AutoAI is a multi-workspace AI platform for intelligent chat, reusable attachment analysis, secure screen sharing, calls, and user messaging.</p>
+            <div className="version-details-grid">
+              <article><strong>AI Chat</strong><small>Automatic intelligence presets, Coding, Deep Research, response streaming, voice, memory, files, images and personal Library.</small></article>
+              <article><strong>Attachment intelligence</strong><small>Photos, selfies, screenshots, documents and code are analyzed and saved automatically in each user's Library.</small></article>
+              <article><strong>Screen Sharing</strong><small>Secure share codes, mobile and desktop viewing, pause/resume and movable live controls.</small></article>
+              <article><strong>Communication</strong><small>User messages, audio/video calls, profiles, contacts, notifications and privacy controls.</small></article>
+              <article><strong>Account & billing</strong><small>Subscriptions, token usage, promo codes, payment history, receipts and app updates.</small></article>
+              <article><strong>Privacy</strong><small>Account-scoped chats, files, memories and Library items with user-controlled deletion and settings.</small></article>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import type { AiProvider } from "../types";
 import { crystalFailureThreshold, crystalUiEnabled, type CrystalEffectsLevel } from "../crystal/tokens";
 import { useMotionMode } from "../motion/MotionProvider";
 export type AppLanguage = "system" | "en" | "hi" | "hinglish";
+export type ResponseLanguage = "auto" | "en" | "hi";
 
 export type AppSettings = {
   defaultProvider: AiProvider;
@@ -13,6 +14,7 @@ export type AppSettings = {
   voiceEnabled: boolean;
   notificationsEnabled: boolean;
   language: AppLanguage;
+  responseLanguage: ResponseLanguage;
   visualEffectsLevel: CrystalEffectsLevel;
   crystalOrb: boolean;
   crystalSurfaces: boolean;
@@ -30,6 +32,7 @@ type AppSettingsContextValue = {
   setVoiceEnabled: (enabled: boolean) => void;
   setNotificationsEnabled: (enabled: boolean) => void;
   setLanguage: (language: AppLanguage) => void;
+  setResponseLanguage: (language: ResponseLanguage) => void;
   setVisualEffectsLevel: (level: CrystalEffectsLevel) => void;
   setCrystalOrb: (enabled: boolean) => void;
   setCrystalSurfaces: (enabled: boolean) => void;
@@ -84,6 +87,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   voiceEnabled: true,
   notificationsEnabled: false,
   language: "system",
+  responseLanguage: "auto",
   visualEffectsLevel: "reduced",
   crystalOrb: true,
   crystalSurfaces: true,
@@ -92,6 +96,7 @@ const DEFAULT_SETTINGS: AppSettings = {
 };
 
 const LANGUAGE_VALUES = new Set<AppLanguage>(["system", "en", "hi", "hinglish"]);
+const RESPONSE_LANGUAGE_VALUES = new Set<ResponseLanguage>(["auto", "en", "hi"]);
 function normalizeSettings(payload: unknown): AppSettings {
   if (!payload || typeof payload !== "object") return DEFAULT_SETTINGS;
   const raw = payload as Partial<AppSettings>;
@@ -111,6 +116,9 @@ function normalizeSettings(payload: unknown): AppSettings {
     voiceEnabled: raw.voiceEnabled ?? DEFAULT_SETTINGS.voiceEnabled,
     notificationsEnabled: raw.notificationsEnabled ?? DEFAULT_SETTINGS.notificationsEnabled,
     language: raw.language && LANGUAGE_VALUES.has(raw.language) ? raw.language : DEFAULT_SETTINGS.language,
+    responseLanguage: raw.responseLanguage && RESPONSE_LANGUAGE_VALUES.has(raw.responseLanguage)
+      ? raw.responseLanguage
+      : DEFAULT_SETTINGS.responseLanguage,
     visualEffectsLevel: raw.visualEffectsLevel === "off" || raw.visualEffectsLevel === "reduced" || raw.visualEffectsLevel === "full"
       ? raw.visualEffectsLevel
       : DEFAULT_SETTINGS.visualEffectsLevel,
@@ -229,6 +237,9 @@ export function AppSettingsProvider({ children }: { children: React.ReactNode })
       },
       setLanguage: (language) => {
         updateSettings((current) => ({ ...current, language }));
+      },
+      setResponseLanguage: (responseLanguage) => {
+        updateSettings((current) => ({ ...current, responseLanguage }));
       },
       setVisualEffectsLevel: (level) => {
         updateSettings((current) => ({ ...current, visualEffectsLevel: level }));
