@@ -86,8 +86,8 @@ jobs:
         shell: bash
         run: |
           python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt fakeredis[lua]
-          pytest -q backend/tests/test_calls.py backend/tests/test_call_realtime_fallback.py
+          python -m pip install -r backend/requirements.txt pytest fakeredis[lua]
+          python -m pytest -q backend/tests/test_calls.py backend/tests/test_call_realtime_fallback.py
 
       - name: Materialize verified source changes
         shell: bash
