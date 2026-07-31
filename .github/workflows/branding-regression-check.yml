@@ -1,0 +1,62 @@
+name: Branding regression check
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix frontend
+
+      - name: Run focused logo tests
+        run: npm test --prefix frontend -- --run src/components/brand/LogoIcon.test.tsx
+
+      - name: Build production frontend
+        run: AUTO_AI_SKIP_COMPRESSION=1 npm run build
+
+      - name: Verify production branding assets
+        run: |
+          test -f frontend/dist/index.html
+          test -f frontend/dist/favicon.svg
+          test -f frontend/dist/icons/icon-32.png
+          grep -R -q --include='*.js' 'inline-v3' frontend/dist/assets
+          grep -R -q --include='*.css' 'autoai-workspace-brand' frontend/dist/assets
+          grep -R -q --include='*.css' 'white-space:nowrap' frontend/dist/assets
+          if grep -R -q --include='*.css' 'svg\.app-logo{[^}]*width:100%' frontend/dist/assets; then
+            echo 'A late global 100% logo width rule remains in the production bundle.' >&2
+            exit 1
+          fi
+
+      - name: Sync Android assets
+        run: npx cap sync android
+
+      - name: Verify Android bundle and compile
+        run: |
+          grep -R -q --include='*.js' 'inline-v3' android/app/src/main/assets/public/assets
+          grep -R -q --include='*.css' 'autoai-workspace-brand' android/app/src/main/assets/public/assets
+          chmod +x android/gradlew
+          ./android/gradlew -p android compileDebugJavaWithJavac
