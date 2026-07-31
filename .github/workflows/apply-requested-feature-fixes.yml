@@ -8,12 +8,20 @@ on:
     paths:
       - "scripts/apply_user_requested_feature_fixes.py"
       - ".github/workflows/apply-requested-feature-fixes.yml"
+      - ".github/feature-fix-trigger.txt"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "scripts/apply_user_requested_feature_fixes.py"
+      - ".github/workflows/apply-requested-feature-fixes.yml"
+      - ".github/feature-fix-trigger.txt"
 
 permissions:
   contents: write
 
 concurrency:
-  group: apply-requested-user-feature-fixes
+  group: apply-requested-user-feature-fixes-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -22,10 +30,10 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout main
+      - name: Checkout target branch
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || 'main' }}
           fetch-depth: 0
 
       - name: Set up Python
@@ -34,12 +42,18 @@ jobs:
           python-version: "3.12"
 
       - name: Apply targeted patch
-        run: python scripts/apply_user_requested_feature_fixes.py
+        shell: bash
+        run: |
+          if test -f frontend/src/styles/featureFixes.css && grep -q 'Response language' frontend/src/components/chat/ChatPage.tsx; then
+            echo "Targeted patch is already applied."
+          else
+            python scripts/apply_user_requested_feature_fixes.py
+          fi
 
       - name: Assert admin section is untouched
         shell: bash
         run: |
-          changed="$(git diff --name-only)"
+          changed="$(git diff --name-only origin/main...HEAD; git diff --name-only)"
           echo "$changed"
           if echo "$changed" | grep -E '(^|/)admin(/|$)|(^|/)Admin[^/]*\.(tsx|ts|jsx|js|py)$'; then
             echo "Admin-related files were changed. Aborting."
@@ -90,13 +104,14 @@ jobs:
           grep -q 'autoai-response-' backend/app/services/live_context.py
           git diff --check
 
-      - name: Commit verified changes to main
+      - name: Commit verified changes to source branch
         shell: bash
         run: |
           if git diff --quiet; then
             echo "No generated changes to commit."
             exit 0
           fi
+          target_branch="${GITHUB_HEAD_REF:-main}"
           git config user.name "AutoAI Fix Bot"
           git config user.email "actions@users.noreply.github.com"
           git add \
@@ -113,4 +128,4 @@ jobs:
             backend/app/api/routes/ai.py \
             backend/tests/test_response_language_context.py
           git commit -m "fix: improve chat settings sharing and mobile messaging"
-          git push origin HEAD:main
+          git push origin HEAD:"$target_branch"
