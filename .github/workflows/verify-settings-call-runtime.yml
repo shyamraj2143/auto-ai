@@ -1,0 +1,107 @@
+name: Verify settings and call runtime fixes
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "frontend/src/components/common/AppSelect.tsx"
+      - "frontend/src/styles/runtimeStabilityFixes.css"
+      - "frontend/src/main.tsx"
+      - "frontend/src/auth/sessionStorage.ts"
+      - "android/app/src/main/java/com/autoai/app/AutoAiSecureStoragePlugin.java"
+      - "android/app/src/main/java/com/autoai/app/NativeCallApi.java"
+      - "scripts/apply_call_runtime_provider_fix.py"
+      - ".github/workflows/verify-settings-call-runtime.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: settings-call-runtime-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  verify-and-materialize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout source branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Apply targeted provider patch
+        run: python scripts/apply_call_runtime_provider_fix.py
+
+      - name: Contract checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'createPortal' frontend/src/components/common/AppSelect.tsx
+          grep -q 'app-select-portal' frontend/src/styles/runtimeStabilityFixes.css
+          grep -q 'aria-checked="true"' frontend/src/styles/runtimeStabilityFixes.css
+          grep -q 'registerPlugin<NativeSecureStorage>' frontend/src/auth/sessionStorage.ts
+          grep -q 'syncNativeAccessToken' frontend/src/features/calls/CallProvider.tsx
+          grep -q 'verifyCallPreflight' frontend/src/features/calls/CallProvider.tsx
+          grep -q 'refreshSession()' android/app/src/main/java/com/autoai/app/NativeCallApi.java
+          grep -q '/auth/refresh' android/app/src/main/java/com/autoai/app/NativeCallApi.java
+          grep -q 'writeStoredValue' android/app/src/main/java/com/autoai/app/AutoAiSecureStoragePlugin.java
+          if git diff --name-only origin/main...HEAD | grep -E '(^|/)(admin|Admin)(/|\.|$)'; then
+            echo 'Admin files must not be changed.' >&2
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix frontend
+
+      - name: Frontend production build
+        run: npm run build --prefix frontend
+
+      - name: Sync Android assets
+        run: npx cap sync android
+
+      - name: Android unit tests and Java compile
+        run: |
+          chmod +x android/gradlew
+          ./android/gradlew -p android :app:testDebugUnitTest :app:compileDebugJavaWithJavac
+
+      - name: Focused backend call tests
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt fakeredis[lua]
+          pytest -q backend/tests/test_calls.py backend/tests/test_call_realtime_fallback.py
+
+      - name: Materialize verified source changes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git rm scripts/apply_call_runtime_provider_fix.py .github/workflows/verify-settings-call-runtime.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/features/calls/CallProvider.tsx
+          if git diff --cached --quiet; then
+            echo 'No generated provider changes were staged.' >&2
+            exit 1
+          fi
+          git commit -m "fix: stabilize settings controls and Android calling [force-update]"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
