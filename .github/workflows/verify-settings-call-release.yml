@@ -1,0 +1,61 @@
+name: Verify settings and call runtime release
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/verify-settings-call-release.yml"
+      - ".github/verify-settings-call-release-trigger.txt"
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  verify-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TARGET_SHA: be68167d51e347703ae3674e13e693c5b7f99db4
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify exact Android release run
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            runs="$(gh run list --workflow android-release.yml --branch main --limit 20 --json databaseId,status,conclusion,headSha,displayTitle,url)"
+            match="$(echo "$runs" | jq -c --arg sha "$TARGET_SHA" '[.[] | select(.headSha==$sha)][0] // empty')"
+            if [ -n "$match" ]; then
+              status="$(echo "$match" | jq -r '.status')"
+              conclusion="$(echo "$match" | jq -r '.conclusion // ""')"
+              run_id="$(echo "$match" | jq -r '.databaseId')"
+              echo "ANDROID_RELEASE_RUN=$run_id status=$status conclusion=$conclusion"
+              if [ "$status" = "completed" ] && [ "$conclusion" = "success" ]; then
+                gh run view "$run_id" --json jobs,url,conclusion,status,headSha
+                artifacts="$(gh api "repos/$GH_REPO/actions/runs/$run_id/artifacts")"
+                echo "$artifacts" | jq -e '.artifacts | length > 0'
+                echo "$artifacts" | jq -e '.artifacts[] | select(.name | startswith("auto-ai-"))'
+                echo "$run_id" > android-release-run-id.txt
+                exit 0
+              fi
+              if [ "$status" = "completed" ]; then
+                gh run view "$run_id" --log-failed || true
+                exit 1
+              fi
+            fi
+            sleep 15
+          done
+          echo "Timed out waiting for Android release." >&2
+          exit 1
+
+      - name: Show release artifact metadata
+        shell: bash
+        run: |
+          run_id="$(cat android-release-run-id.txt)"
+          gh api "repos/$GH_REPO/actions/runs/$run_id/artifacts" --jq '.artifacts[] | {id,name,size_in_bytes,digest,expired}'
