@@ -4,7 +4,7 @@ import uuid
 
 from app.core.config import settings
 from app.services.orchestration.model_registry import model_registry
-from app.services.orchestration.preset_policy import coding_configuration_status, coding_model_ids
+from app.services.orchestration.preset_policy import coding_configuration_status, coding_task_records
 from app.services.orchestration.schemas import IntelligenceMode, ModelTask, RequestAnalysis
 
 
@@ -89,20 +89,13 @@ class TaskPlanner:
         else:
             all_records = model_registry.refresh()
             available, reason = coding_configuration_status(all_records)
-            if not available:
+            records = coding_task_records(all_records)
+            if not available or len(records) < 2:
                 from fastapi import HTTPException, status
-                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=reason)
-            groq_model, bedrock_model = coding_model_ids(all_records)
-            records = [
-                record
-                for provider, model_id in (("groq", groq_model), ("bedrock", bedrock_model))
-                for record in all_records
-                if record.provider == provider
-                and record.actual_model_id == model_id
-                and record.enabled
-                and record.health_status == "healthy"
-                and {"text", "chat"}.issubset(record.capabilities)
-            ]
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=reason or "Coding requires two healthy text-chat models.",
+                )
             roles = [role for role, _ in CODING_ROLES]
             limit = 2
 
