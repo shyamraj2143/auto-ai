@@ -36,7 +36,11 @@ type ImageAttachment = {
   previewUrl: string;
 };
 
-const DOCUMENT_EXTENSIONS = new Set([".pdf", ".docx", ".txt"]);
+const DOCUMENT_EXTENSIONS = new Set([
+  ".pdf", ".docx", ".txt",
+  ".py", ".ts", ".tsx", ".js", ".jsx", ".java", ".kt", ".go", ".rs",
+  ".css", ".html", ".json", ".md", ".yaml", ".yml", ".sql"
+]);
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 type ComposerOpenMenu = "attachments" | "mode" | null;
 
@@ -314,6 +318,10 @@ export function Composer({
     setSending(true);
     let accepted = false;
     try {
+      if (files.length) {
+        if (!token) throw new Error("Sign in again to save image attachments.");
+        await Promise.all(files.map((file) => api.uploadLibraryAsset(token, file, "chat_attachment")));
+      }
       const detectedPreset = detectPreset(text, Boolean(files.length || selectedDocuments.length || selectedLibraryAttachments.length));
       const selectedPreset = presetMode === "auto" ? detectedPreset : composerModeOption(chatMode).chatMode as IntelligenceMode;
       const result = await onSend(
@@ -484,7 +492,7 @@ export function Composer({
           )}
         </AnimatePresence>
 
-        <input ref={documentInputRef} className="hidden" type="file" multiple accept=".pdf,.docx,.txt" onChange={handleFileSelection} />
+        <input ref={documentInputRef} className="hidden" type="file" multiple accept=".pdf,.docx,.txt,.py,.ts,.tsx,.js,.jsx,.java,.kt,.go,.rs,.css,.html,.json,.md,.yaml,.yml,.sql" onChange={handleFileSelection} />
         <input ref={imageInputRef} className="hidden" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif" onChange={handleFileSelection} />
         <input ref={cameraInputRef} className="hidden" type="file" accept="image/*" capture="environment" onChange={handleFileSelection} />
         <div className="composer-top-row compact-toolbar">
@@ -516,7 +524,7 @@ export function Composer({
                   </button>
                   <button className="composer-popover-option composer-attachment-option" type="button" role="menuitem" onClick={openDocumentPicker}>
                     <FileText size={20} />
-                    <span><strong>Documents</strong><small>PDF, DOCX or TXT</small></span>
+                    <span><strong>Documents & code</strong><small>PDF, DOCX, TXT or source code</small></span>
                   </button>
                 </div>
               </div>
