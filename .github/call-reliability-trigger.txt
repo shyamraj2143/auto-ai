@@ -1,2 +1,0 @@
-Verify the native call signaling and temporary server outage reliability hotfix.
-Attempt 3: preserve legacy PresenceService test injection and enable fakeredis Lua call-lock scripts.
