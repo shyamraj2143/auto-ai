@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useNavigate } from "react-router-dom";
 import { resolveApiAssetUrl } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
+import { syncNativeAccessToken } from "../../auth/sessionStorage";
 import { CallContext, type CallContextValue } from "./CallContext";
 import { callApi } from "./services/callApi";
 import { callNative } from "./services/callNative";
@@ -165,15 +166,73 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   const refreshRealtime = useCallback(async () => {
     if (!token) throw new Error("Not authenticated");
-    const nextConfig = await callApi.config(token);
-    setConfig(nextConfig);
-    if (nextConfig.enabled && nextConfig.realtime_configured) {
-      await signaling.retry(token);
-    } else {
-      signaling.close();
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        const nextConfig = await callApi.config(token);
+        setConfig(nextConfig);
+        configRef.current = nextConfig;
+        if (!nextConfig.enabled) {
+          signaling.close();
+          return nextConfig;
+        }
+        if (!nextConfig.realtime_configured) {
+          throw new CallSetupError("SIGNALING_TIMEOUT", "Realtime calling is temporarily unavailable.");
+        }
+        await signaling.retry(token);
+        if (!await signaling.waitUntilConnected(6000)) {
+          throw new CallSetupError("SIGNALING_TIMEOUT", "Realtime calling could not connect.");
+        }
+        return nextConfig;
+      } catch (refreshError) {
+        lastError = refreshError;
+        if (attempt < 3) await new Promise((resolve) => window.setTimeout(resolve, 500 * 2 ** attempt));
+      }
     }
-    return nextConfig;
+    throw lastError instanceof Error ? lastError : new Error("Realtime calling is temporarily unavailable.");
   }, [signaling, token]);
+
+  const verifyCallPreflight = useCallback(async () => {
+    if (!token) throw new CallSetupError("SIGNALING_AUTH_FAILED", "Sign in again before starting a call.");
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      try {
+        if (callNative.isAndroid()) await syncNativeAccessToken(token);
+        const [nextConfig, credentials] = await Promise.all([
+          callApi.config(token),
+          callApi.turnCredentials(token),
+        ]);
+        setConfig(nextConfig);
+        configRef.current = nextConfig;
+        const servers = normalizeIceServers(credentials.iceServers ?? credentials.ice_servers);
+        const relayConfigured = Boolean(
+          credentials.configured ?? credentials.relayConfigured ?? credentials.relay_configured
+        );
+        if (!nextConfig.enabled) throw new Error("Calling is disabled.");
+        if (!nextConfig.realtime_configured) {
+          throw new CallSetupError("SIGNALING_TIMEOUT", "Realtime calling is temporarily unavailable.");
+        }
+        if (!relayConfigured || !servers.length) {
+          throw new CallSetupError("TURN_UNREACHABLE", CALL_RELAY_UNAVAILABLE_MESSAGE);
+        }
+        turnCredentialsRef.current = {
+          iceServers: servers,
+          relayConfigured,
+          warning: credentials.warning,
+          expiresAtMs: Date.now() + 5 * 60_000,
+        };
+        return;
+      } catch (preflightError) {
+        lastError = preflightError;
+        callDebug("call_preflight_retry", {
+          attempt: attempt + 1,
+          error_code: failureCodeOf(preflightError, "SIGNALING_TIMEOUT"),
+        });
+        if (attempt < 3) await new Promise((resolve) => window.setTimeout(resolve, 500 * 2 ** attempt));
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error("Calling setup is temporarily unavailable.");
+  }, [token]);
 
   const stopRingtone = useCallback(() => {
     window.clearInterval(ringtoneTimerRef.current);
@@ -740,6 +799,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     sessionStateRef.current = "connecting";
     if (!callNative.isAndroid()) navigate(`/calls/active/${encodeURIComponent(callId)}`, { replace: true });
     try {
+      if (callNative.isAndroid()) await syncNativeAccessToken(token);
       await ensureNativeCallService(authoritative);
       await callNative.acknowledgeCallHandoff(callId).catch(() => undefined);
       callDebug("ACTIVE_CALL_UI_READY", { call_id: callId });
@@ -983,10 +1043,6 @@ export function CallProvider({ children }: { children: ReactNode }) {
     if (!token || startPendingRef.current || sessionStateRef.current !== "idle") return;
     if (callType === "video" && !peer.can_video_call) { setError("This user is not accepting video calls."); return; }
     if (callType === "audio" && !peer.can_audio_call) { setError("This user is not accepting audio calls."); return; }
-    if (configRef.current?.diagnostic === CALL_RELAY_UNAVAILABLE_MESSAGE) {
-      setError(CALL_RELAY_UNAVAILABLE_MESSAGE);
-      return;
-    }
     startPendingRef.current = true;
     callEndedRef.current = false;
     rejectInProgressRef.current = false;
@@ -996,7 +1052,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
     setPendingPeer(peer);
     setSessionState("preparing");
     sessionStateRef.current = "preparing";
-    try {      if (callNative.isAndroid()) {
+    try {
+      await verifyCallPreflight();
+      if (callNative.isAndroid()) {
+        await syncNativeAccessToken(token);
             const permissions = callType === "video"
               ? await callNative.requestVideoCallPermissions()
               : await callNative.requestAudioCallPermissions();
@@ -1075,7 +1134,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     } finally {
       startPendingRef.current = false;
     }
-  }, [cleanup, clearCallTimer, ensureNativeCallService, requestLocalMedia, setCallTimer, signaling, token]);
+  }, [cleanup, clearCallTimer, ensureNativeCallService, requestLocalMedia, setCallTimer, signaling, token, verifyCallPreflight]);
 
   const acceptCall = useCallback(async (audioOnly = false) => {
     const currentCall = callRef.current;
@@ -1089,6 +1148,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     sessionStateRef.current = "accepting";
     let acceptedSent = false;
     try {
+      await verifyCallPreflight();
       const fresh = await callApi.get(token, currentCall.id);
       if (!canResumeAcceptedCall(fresh)) throw new Error("This call is no longer available.");
       callDebug("accepting", { call_id: fresh.id, role: "incoming", state: fresh.status, signaling_connected: signaling.isConnected() });
@@ -1100,6 +1160,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       callRef.current = accepted;
       setCall(accepted);      clearProgressTimers();
           if (callNative.isAndroid()) {
+            await syncNativeAccessToken(token);
             const permissions = fresh.call_type === "video" && !audioOnly
               ? await callNative.requestVideoCallPermissions()
               : await callNative.requestAudioCallPermissions();
@@ -1160,6 +1221,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
             if (!["accepted", "connecting", "active"].includes(authoritative.status)) throw new Error("Call is no longer active.");
             callRef.current = authoritative;
             setCall(authoritative);
+            if (callNative.isAndroid()) await syncNativeAccessToken(token);
             await ensureNativeCallService(authoritative);
             await loadIceConfiguration();
             await ensurePeerConnection(authoritative);
@@ -1188,7 +1250,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       startPendingRef.current = false;
       acceptInProgressRef.current = false;
     }
-  }, [armMediaConnectTimeout, cleanup, clearProgressTimers, closeBrowserNotification, ensureNativeCallService, ensurePeerConnection, loadIceConfiguration, requestLocalMedia, setCallTimer, signaling, stopRingtone, token, transition]);
+  }, [armMediaConnectTimeout, cleanup, clearProgressTimers, closeBrowserNotification, ensureNativeCallService, ensurePeerConnection, loadIceConfiguration, requestLocalMedia, setCallTimer, signaling, stopRingtone, token, transition, verifyCallPreflight]);
   acceptCallRef.current = acceptCall;
 
   const rejectCall = useCallback(async () => {
