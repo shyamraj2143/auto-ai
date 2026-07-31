@@ -75,6 +75,16 @@ jobs:
       - name: Install root dependencies
         run: npm ci
 
+      - name: Verify native call reliability sources
+        shell: bash
+        run: |
+          test -f backend/app/services/presence_fallback.py
+          grep -q 'MAX_ATTEMPTS = 4' android/app/src/main/java/com/autoai/app/NativeCallApi.java
+          grep -q 'MAX_SIGNAL_RECONNECT_ATTEMPTS = 20' android/app/src/main/java/com/autoai/app/NativeCallSessionController.java
+          grep -q 'MAX_INITIALIZATION_ATTEMPTS = 12' android/app/src/main/java/com/autoai/app/NativeCallSessionController.java
+          grep -q 'pendingOutboundSignals' android/app/src/main/java/com/autoai/app/NativeCallSessionController.java
+          grep -q 'retryableNativeServiceCodes' frontend/src/features/calls/CallProvider.tsx
+
       - name: Build and verify Android APK
         shell: bash
         run: |
@@ -102,7 +112,7 @@ jobs:
           fi
 
           chmod +x android/gradlew
-          ./android/gradlew -p android assembleRelease
+          ./android/gradlew -p android :app:testDebugUnitTest assembleRelease
           test -f android/app/build/outputs/apk/release/app-release.apk
           mkdir -p output/android
           cp android/app/build/outputs/apk/release/app-release.apk output/android/auto-ai.apk
@@ -120,8 +130,9 @@ jobs:
             echo "Version-Code: ${AUTO_AI_ANDROID_VERSION_CODE}"
             echo "Version-Name: ${AUTO_AI_ANDROID_VERSION_NAME}"
             echo "SHA256: ${sha256}"
-            echo "Changelog: AI Chat sidebar overlay and custom delete dialog hotfix"
+            echo "Changelog: Native voice/video calling signaling and service reliability hotfix"
             echo
+            echo "Includes transient server retries, WebSocket reconnect, queued signal replay, Redis fallback and Android foreground-service recovery."
             echo "Verified Android assets from GitHub push ${GITHUB_SHA::7}"
           } > "$notes"
           gh release create "$tag" "$apk_path" \
@@ -143,8 +154,8 @@ jobs:
             --apk output/android/auto-ai.apk \
             --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
             --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
-            --changelog "AI Chat sidebar overlay and custom delete dialog hotfix" \
-            --release-notes "Verified Android assets from GitHub push ${GITHUB_SHA::7}" \
+            --changelog "Native voice/video calling signaling and service reliability hotfix" \
+            --release-notes "Includes transient retries, WebSocket recovery, queued signal replay, Redis fallback and foreground-service recovery. Verified GitHub push ${GITHUB_SHA::7}." \
             --metadata-only \
             "${args[@]}"
 
@@ -156,7 +167,7 @@ jobs:
             --api-url "$AUTO_AI_API_BASE_URL" \
             --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
             --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
-            --changelog "AI Chat sidebar overlay and custom delete dialog hotfix"
+            --changelog "Native voice/video calling signaling and service reliability hotfix"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
