@@ -1,6 +1,7 @@
 name: Apply requested user feature fixes
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
