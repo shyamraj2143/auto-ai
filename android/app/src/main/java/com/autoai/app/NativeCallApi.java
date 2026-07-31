@@ -5,6 +5,7 @@ import android.content.Context;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -19,6 +20,7 @@ final class NativeCallApi {
         ApiException(int status, String message) { super(message); this.status = status; }
     }
 
+    private static final int MAX_ATTEMPTS = 4;
     private final Context context;
 
     NativeCallApi(Context context) { this.context = context.getApplicationContext(); }
@@ -57,16 +59,39 @@ final class NativeCallApi {
     }
 
     private JSONObject request(String method, String path, JSONObject body) throws Exception {
+        Exception last = null;
+        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            try {
+                return requestOnce(method, path, body);
+            } catch (ApiException error) {
+                last = error;
+                if (!isTransientStatus(error.status) || attempt == MAX_ATTEMPTS) throw error;
+            } catch (IOException error) {
+                last = error;
+                if (attempt == MAX_ATTEMPTS) throw error;
+            }
+            try {
+                Thread.sleep(Math.min(2400L, 300L * (1L << (attempt - 1))));
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw interrupted;
+            }
+        }
+        throw last == null ? new IOException("Call request failed.") : last;
+    }
+
+    private JSONObject requestOnce(String method, String path, JSONObject body) throws Exception {
         String token = AutoAiSecureStoragePlugin.readStoredValue(context, "auto-ai-access-token");
         if (token == null || token.trim().isEmpty()) throw new ApiException(401, "Missing call authentication.");
         HttpURLConnection connection = null;
         try {
             connection = (HttpURLConnection) new URL(trim(BuildConfig.AUTO_AI_API_BASE_URL) + path).openConnection();
-            connection.setConnectTimeout(12_000);
+            connection.setConnectTimeout(10_000);
             connection.setReadTimeout(15_000);
             connection.setRequestMethod(method);
             connection.setRequestProperty("Authorization", "Bearer " + token.trim());
             connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Cache-Control", "no-cache");
             if (body != null) {
                 connection.setDoOutput(true);
                 connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
@@ -86,6 +111,11 @@ final class NativeCallApi {
         } finally {
             if (connection != null) connection.disconnect();
         }
+    }
+
+    private static boolean isTransientStatus(int status) {
+        return status == 408 || status == 425 || status == 429 || status == 500
+            || status == 502 || status == 503 || status == 504;
     }
 
     private static String trim(String value) { return value == null ? "" : value.replaceAll("/+$", ""); }

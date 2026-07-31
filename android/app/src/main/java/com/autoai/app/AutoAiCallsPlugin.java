@@ -237,9 +237,15 @@ public class AutoAiCallsPlugin extends Plugin {
         else getContext().registerReceiver(receiver, filter);
         handler.postDelayed(() -> {
             try { getContext().unregisterReceiver(receiver); } catch (IllegalArgumentException ignored) { return; }
+            ActiveCallStore.Snapshot snapshot = ActiveCallStore.get(getContext(), readyCallId);
+            if (snapshot != null && snapshot.isUsable()) {
+                CallIntentDispatcher.launchActive(getContext(), snapshot);
+                call.resolve();
+                return;
+            }
             CallNotificationManager.cancelOngoingCall(getContext(), readyCallId);
             call.reject("Call service readiness timed out.", "SERVICE_READY_TIMEOUT");
-        }, 9000L);
+        }, 15_000L);
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) getContext().startForegroundService(intent);
             else getContext().startService(intent);

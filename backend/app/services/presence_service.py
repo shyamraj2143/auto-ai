@@ -298,4 +298,6 @@ class PresenceService:
         return "calls:presence"
 
 
-presence_service = PresenceService()
+from app.services.presence_fallback import ResilientPresenceService
+
+presence_service = ResilientPresenceService(PresenceService())
