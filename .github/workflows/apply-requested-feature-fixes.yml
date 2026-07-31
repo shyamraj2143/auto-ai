@@ -1,0 +1,115 @@
+name: Apply requested user feature fixes
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "scripts/apply_user_requested_feature_fixes.py"
+      - ".github/workflows/apply-requested-feature-fixes.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-requested-user-feature-fixes
+  cancel-in-progress: false
+
+jobs:
+  apply-verify-and-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Apply targeted patch
+        run: python scripts/apply_user_requested_feature_fixes.py
+
+      - name: Assert admin section is untouched
+        shell: bash
+        run: |
+          changed="$(git diff --name-only)"
+          echo "$changed"
+          if echo "$changed" | grep -E '(^|/)admin(/|$)|(^|/)Admin[^/]*\.(tsx|ts|jsx|js|py)$'; then
+            echo "Admin-related files were changed. Aborting."
+            exit 1
+          fi
+
+      - name: Check patch formatting
+        run: git diff --check
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Run focused frontend contract test
+        run: npm --prefix frontend test -- src/reliability/requestedFeatureFixes.contract.test.ts
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Install backend test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt pytest
+
+      - name: Compile affected backend modules
+        run: |
+          python -m compileall -q backend/app/services/live_context.py
+          python -m compileall -q backend/app/api/routes/ai.py
+
+      - name: Run response-language backend tests
+        env:
+          PYTHONPATH: backend
+        run: pytest -q backend/tests/test_response_language_context.py
+
+      - name: Verify generated files
+        shell: bash
+        run: |
+          test -f frontend/src/styles/featureFixes.css
+          grep -q 'Response language' frontend/src/components/chat/ChatPage.tsx
+          grep -q 'ss-dock-compact' frontend/src/features/screenShare/ScreenShareOverlay.tsx
+          grep -q 'AutoAI app details' frontend/src/components/settings/SettingsPage.tsx
+          grep -q 'autoai-response-' backend/app/services/live_context.py
+          git diff --check
+
+      - name: Commit verified changes to main
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No generated changes to commit."
+            exit 0
+          fi
+          git config user.name "AutoAI Fix Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add \
+            frontend/src/contexts/AppSettingsContext.tsx \
+            frontend/src/components/chat/ChatPage.tsx \
+            frontend/src/components/settings/SettingsPage.tsx \
+            frontend/src/features/screenShare/ScreenShareProvider.tsx \
+            frontend/src/features/screenShare/ScreenShareWorkspacePage.tsx \
+            frontend/src/features/screenShare/ScreenShareOverlay.tsx \
+            frontend/src/styles/featureFixes.css \
+            frontend/src/main.tsx \
+            frontend/src/reliability/requestedFeatureFixes.contract.test.ts \
+            backend/app/services/live_context.py \
+            backend/app/api/routes/ai.py \
+            backend/tests/test_response_language_context.py
+          git commit -m "fix: improve chat settings sharing and mobile messaging"
+          git push origin HEAD:main
