@@ -1,6 +1,6 @@
+import asyncio
 from io import BytesIO
 
-import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 from starlette.datastructures import UploadFile
@@ -69,16 +69,14 @@ def test_code_attachment_is_classified_as_code():
     assert file_type == "code"
 
 
-@pytest.mark.asyncio
-async def test_document_service_accepts_common_code_files(monkeypatch, tmp_path):
+def test_document_service_accepts_common_code_files(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path))
     upload = UploadFile(
         filename="app.py",
         file=BytesIO(b"def hello():\n    return 'AutoAI'\n"),
-        headers={"content-type": "text/x-python"},
     )
 
-    stored_path, extraction = await document_service.save_and_extract(upload, "code-user")
+    stored_path, extraction = asyncio.run(document_service.save_and_extract(upload, "code-user"))
 
     assert stored_path.endswith(".py")
     assert "def hello" in extraction.text
