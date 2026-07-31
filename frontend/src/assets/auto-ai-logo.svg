@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="edge" x1="6" y1="10" x2="58" y2="54" gradientUnits="userSpaceOnUse"><stop stop-color="#22f5ff"/><stop offset=".52" stop-color="#e8f3f7"/><stop offset="1" stop-color="#ffb21e"/></linearGradient>
+    <linearGradient id="metal" x1="18" y1="16" x2="48" y2="45" gradientUnits="userSpaceOnUse"><stop stop-color="#f8fbff"/><stop offset=".48" stop-color="#aeb9bd"/><stop offset="1" stop-color="#ffbf35"/></linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="1.1" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect x="3" y="3" width="58" height="58" rx="14" fill="#070b0f"/>
+  <rect x="5" y="5" width="54" height="54" rx="12" fill="#0b1116" stroke="url(#edge)" stroke-width="2"/>
+  <path d="M9 32h8l6-6h5M9 39h13l4-4h4M42 28h5l4-4h4M43 36h8l4 4" fill="none" stroke="#18dff0" stroke-opacity=".35" stroke-width="1.2"/>
+  <path d="M15 42 28.8 17.5c1.5-2.7 4.9-2.7 6.4 0L49 42" fill="none" stroke="#111820" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M15 42 28.8 17.5c1.5-2.7 4.9-2.7 6.4 0L49 42" fill="none" stroke="url(#metal)" stroke-width="7.2" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
+  <path d="M19 39 31.2 17.8c.4-.7 1.2-.7 1.6 0L45 39" fill="none" stroke="#fff" stroke-opacity=".34" stroke-width="1.2" stroke-linecap="round"/>
+  <path d="M15 29a19 19 0 0 1 35-7M49 25a17 17 0 0 1 1 14" fill="none" stroke="#25f4ff" stroke-width="3.2" stroke-linecap="round" opacity=".92"/>
+  <circle cx="15" cy="35" r="3.4" fill="#5effff" filter="url(#glow)"/><circle cx="50" cy="25" r="3.5" fill="#ffc454" filter="url(#glow)"/>
+  <rect x="22" y="35" width="20" height="12" rx="5.5" fill="#05090d" stroke="url(#metal)" stroke-width="1.8"/><path d="M32 35v-5" stroke="#eafcff" stroke-width="1.4" stroke-linecap="round"/><circle cx="32" cy="29" r="2.3" fill="#30f3ff" filter="url(#glow)"/>
+  <rect x="27" y="39" width="3" height="5" rx="1.5" fill="#36f8ff"/><rect x="34" y="39" width="3" height="5" rx="1.5" fill="#36f8ff"/>
+</svg>

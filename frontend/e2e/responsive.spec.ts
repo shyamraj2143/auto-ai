@@ -133,6 +133,19 @@ test("preset selection stays collapsed without manual model controls", async ({ 
   await assertNoFunctionalOverflow(page);
 });
 
+test("chat direct route loads the bundled logo without a broken image", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await installAuthenticatedFixtures(page);
+  await openRoute(page, "/chat");
+
+  const logo = page.locator(".workspace-sidebar .app-logo").first();
+  await expect(logo).toBeVisible();
+  const source = await logo.getAttribute("src");
+  expect(source).toMatch(/\/(?:src\/assets\/auto-ai-logo\.svg\?no-inline|assets\/auto-ai-logo-[A-Za-z0-9_-]+\.svg)$/);
+  expect(await logo.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
+  expect((await page.request.get(source!)).status()).toBe(200);
+});
+
 for (const section of sections) {
   test(`Call Hub ${section} section is responsive`, async ({ page }) => {
     await page.setViewportSize({ width: 393, height: 873 });

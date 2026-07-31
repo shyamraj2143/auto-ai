@@ -2045,6 +2045,23 @@ button:disabled {
   max-height: 100%;
   max-width: 100%;
   object-fit: contain;
+  object-position: center;
+}
+
+.autoai-logo-fallback {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  flex: 0 0 auto;
+  border: 1px solid rgba(103, 232, 249, 0.38);
+  border-radius: 10px;
+  background: rgba(8, 24, 50, 0.94);
+  box-sizing: border-box;
+  color: #dffbff;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: calc(min(var(--brand-icon-sm), 32px) * 0.56);
+  font-weight: 800;
+  line-height: 1;
 }
 
 .app-logo-inline {
