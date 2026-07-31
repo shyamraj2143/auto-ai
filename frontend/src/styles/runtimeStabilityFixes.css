@@ -1,0 +1,254 @@
+/* Final runtime stability overrides. Loaded last so legacy theme rules cannot break controls. */
+
+.app-select-portal {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483600;
+  display: grid;
+  place-items: center;
+  isolation: isolate;
+  padding:
+    max(14px, var(--safe-top, env(safe-area-inset-top, 0px)))
+    max(14px, var(--safe-right, env(safe-area-inset-right, 0px)))
+    max(14px, var(--safe-bottom, env(safe-area-inset-bottom, 0px)))
+    max(14px, var(--safe-left, env(safe-area-inset-left, 0px)));
+  pointer-events: auto;
+}
+
+.app-select-portal .app-select-backdrop {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 0 !important;
+  display: block !important;
+  width: auto !important;
+  height: auto !important;
+  background: rgba(2, 6, 23, 0.82) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: auto !important;
+}
+
+.app-select-portal .app-select-menu {
+  position: relative !important;
+  inset: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  z-index: 1 !important;
+  width: min(430px, 100%) !important;
+  max-width: 100% !important;
+  max-height: min(78dvh, 640px) !important;
+  margin: 0 !important;
+  transform: none !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(103, 232, 249, 0.34) !important;
+  border-radius: 16px !important;
+  background: linear-gradient(160deg, rgba(7, 27, 55, 0.995), rgba(3, 12, 31, 0.995)) !important;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.66) !important;
+  color: #e2e8f0;
+  outline: none;
+  pointer-events: auto !important;
+}
+
+.app-select-portal .app-select-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(4, 18, 42, 0.98);
+  padding: 10px 12px 10px 16px;
+}
+
+.app-select-portal .app-select-header strong {
+  color: #f8fafc;
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.app-select-portal .app-select-header button {
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px !important;
+  min-height: 40px !important;
+  display: grid !important;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 10px !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  padding: 0 !important;
+  color: #e2e8f0 !important;
+}
+
+.app-select-portal .app-select-options {
+  max-height: min(64dvh, 520px) !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px !important;
+}
+
+.app-select-portal .app-select-option {
+  width: 100% !important;
+  min-height: 54px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  border: 1px solid transparent !important;
+  border-radius: 11px !important;
+  background: transparent !important;
+  padding: 10px 12px !important;
+  color: #cbd5e1 !important;
+  text-align: left !important;
+}
+
+.app-select-portal .app-select-option.is-active,
+.app-select-portal .app-select-option:focus-visible {
+  border-color: rgba(103, 232, 249, 0.24) !important;
+  background: rgba(34, 211, 238, 0.08) !important;
+  outline: none;
+}
+
+.app-select-portal .app-select-option.is-selected {
+  border-color: rgba(34, 211, 238, 0.5) !important;
+  background: rgba(8, 145, 178, 0.2) !important;
+  color: #ecfeff !important;
+}
+
+.app-select-portal .app-select-option-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.app-select-portal .app-select-check {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 999px;
+  color: #67e8f9;
+}
+
+.settings-reference-page .settings-row {
+  isolation: auto !important;
+}
+
+.settings-reference-page .settings-row-controls {
+  position: relative;
+  z-index: auto !important;
+  overflow: visible;
+}
+
+.toggle-switch-wrap,
+.settings-reference-page .toggle-switch-wrap {
+  width: auto !important;
+  min-width: 44px !important;
+  min-height: 40px !important;
+  flex: 0 0 auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px;
+}
+
+.toggle-switch,
+.settings-reference-page .settings-toggle.toggle-switch {
+  position: relative !important;
+  width: 44px !important;
+  min-width: 44px !important;
+  max-width: 44px !important;
+  height: 26px !important;
+  min-height: 26px !important;
+  max-height: 26px !important;
+  flex: 0 0 44px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(148, 163, 184, 0.38) !important;
+  border-radius: 999px !important;
+  background: rgba(15, 23, 42, 0.92) !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.38) !important;
+  appearance: none;
+  -webkit-appearance: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.toggle-switch .toggle-switch-thumb,
+.settings-reference-page .settings-toggle.toggle-switch .toggle-switch-thumb {
+  position: absolute !important;
+  top: 50% !important;
+  left: 4px !important;
+  width: 18px !important;
+  min-width: 18px !important;
+  max-width: 18px !important;
+  height: 18px !important;
+  min-height: 18px !important;
+  max-height: 18px !important;
+  display: block !important;
+  border-radius: 999px !important;
+  background: #cbd5e1 !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.42) !important;
+  transform: translate(0, -50%) !important;
+  transition: transform 160ms ease, background 160ms ease !important;
+  pointer-events: none;
+}
+
+.toggle-switch[aria-checked="true"],
+.settings-reference-page .settings-toggle.toggle-switch[aria-checked="true"] {
+  border-color: rgba(34, 211, 238, 0.7) !important;
+  background: linear-gradient(90deg, rgba(8, 145, 178, 0.92), rgba(37, 99, 235, 0.92)) !important;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.24), 0 0 12px rgba(34, 211, 238, 0.16) !important;
+}
+
+.toggle-switch[aria-checked="true"] .toggle-switch-thumb,
+.settings-reference-page .settings-toggle.toggle-switch[aria-checked="true"] .toggle-switch-thumb {
+  background: #ecfeff !important;
+  transform: translate(18px, -50%) !important;
+}
+
+.toggle-switch:focus-visible {
+  outline: 2px solid rgba(103, 232, 249, 0.92) !important;
+  outline-offset: 3px !important;
+}
+
+.toggle-switch:disabled {
+  cursor: not-allowed !important;
+  opacity: 0.48 !important;
+}
+
+@media (max-width: 599px) {
+  .app-select-portal {
+    align-items: center;
+    padding-left: max(12px, var(--safe-left, env(safe-area-inset-left, 0px)));
+    padding-right: max(12px, var(--safe-right, env(safe-area-inset-right, 0px)));
+  }
+
+  .app-select-portal .app-select-menu {
+    width: 100% !important;
+    max-height: min(76dvh, 620px) !important;
+  }
+
+  .app-select-portal .app-select-options {
+    max-height: min(61dvh, 500px) !important;
+  }
+
+  .settings-reference-page .settings-row-controls {
+    align-items: center !important;
+  }
+
+  .settings-reference-page .toggle-switch-wrap {
+    width: auto !important;
+    align-self: flex-start;
+  }
+}

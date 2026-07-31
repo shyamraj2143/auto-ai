@@ -35,11 +35,10 @@ public class AutoAiSecureStoragePlugin extends Plugin {
             return;
         }
         try {
-            String encrypted = prefs().getString(key, null);
             JSObject result = new JSObject();
-            result.put("value", encrypted == null ? null : decrypt(encrypted));
+            result.put("value", readStoredValue(getContext(), key));
             call.resolve(result);
-        } catch (Exception error) {
+        } catch (RuntimeException error) {
             call.reject("Unable to read secure value.", error);
         }
     }
@@ -53,9 +52,9 @@ public class AutoAiSecureStoragePlugin extends Plugin {
             return;
         }
         try {
-            prefs().edit().putString(key, encrypt(value)).apply();
+            writeStoredValue(getContext(), key, value);
             call.resolve();
-        } catch (Exception error) {
+        } catch (RuntimeException error) {
             call.reject("Unable to save secure value.", error);
         }
     }
@@ -67,7 +66,7 @@ public class AutoAiSecureStoragePlugin extends Plugin {
             call.reject("Storage key is required.");
             return;
         }
-        prefs().edit().remove(key).apply();
+        removeStoredValue(getContext(), key);
         call.resolve();
     }
 
@@ -85,7 +84,26 @@ public class AutoAiSecureStoragePlugin extends Plugin {
         }
     }
 
-    private String encrypt(String value) throws Exception {
+    public static void writeStoredValue(Context context, String key, String value) {
+        if (context == null || key == null || key.trim().isEmpty() || value == null) {
+            throw new IllegalArgumentException("Storage key and value are required.");
+        }
+        try {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putString(key, encrypt(value))
+                .commit();
+        } catch (Exception error) {
+            throw new IllegalStateException("Unable to save secure value.", error);
+        }
+    }
+
+    public static void removeStoredValue(Context context, String key) {
+        if (context == null || key == null || key.trim().isEmpty()) return;
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().remove(key).commit();
+    }
+
+    private static String encrypt(String value) throws Exception {
         Cipher cipher = Cipher.getInstance(TRANSFORMATION);
         cipher.init(Cipher.ENCRYPT_MODE, secretKey());
         String iv = Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP);

@@ -9,6 +9,7 @@ import "./styles/workspaceSurfaces.css";
 import "./styles/responseCardOverrides.css";
 import "./styles/brandingOverrides.css";
 import "./styles/featureFixes.css";
+import "./styles/runtimeStabilityFixes.css";
 import App from "./App";
 import { beginStartupRecovery } from "./reliability/safeMode";
 import { installFunctionalDialogDiagnostics, installResponsiveDiagnostics } from "./reliability/responsiveDiagnostics";

@@ -1,6 +1,7 @@
 package com.autoai.app;
 
 import android.content.Context;
+import android.util.Log;
 
 import org.json.JSONObject;
 
@@ -20,7 +21,11 @@ final class NativeCallApi {
         ApiException(int status, String message) { super(message); this.status = status; }
     }
 
+    private static final String TAG = "AutoAiNativeCallApi";
+    private static final String ACCESS_TOKEN_KEY = "auto-ai-access-token";
+    private static final String REFRESH_TOKEN_KEY = "auto-ai-refresh-token";
     private static final int MAX_ATTEMPTS = 4;
+    private static final Object REFRESH_LOCK = new Object();
     private final Context context;
 
     NativeCallApi(Context context) { this.context = context.getApplicationContext(); }
@@ -60,11 +65,19 @@ final class NativeCallApi {
 
     private JSONObject request(String method, String path, JSONObject body) throws Exception {
         Exception last = null;
+        boolean refreshAttempted = false;
         for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
             try {
                 return requestOnce(method, path, body);
             } catch (ApiException error) {
                 last = error;
+                if (error.status == 401 && !refreshAttempted) {
+                    refreshAttempted = true;
+                    if (refreshSession()) {
+                        attempt--;
+                        continue;
+                    }
+                }
                 if (!isTransientStatus(error.status) || attempt == MAX_ATTEMPTS) throw error;
             } catch (IOException error) {
                 last = error;
@@ -81,36 +94,86 @@ final class NativeCallApi {
     }
 
     private JSONObject requestOnce(String method, String path, JSONObject body) throws Exception {
-        String token = AutoAiSecureStoragePlugin.readStoredValue(context, "auto-ai-access-token");
+        String token = AutoAiSecureStoragePlugin.readStoredValue(context, ACCESS_TOKEN_KEY);
+        if (token == null || token.trim().isEmpty()) {
+            if (refreshSession()) token = AutoAiSecureStoragePlugin.readStoredValue(context, ACCESS_TOKEN_KEY);
+        }
         if (token == null || token.trim().isEmpty()) throw new ApiException(401, "Missing call authentication.");
+
         HttpURLConnection connection = null;
         try {
-            connection = (HttpURLConnection) new URL(trim(BuildConfig.AUTO_AI_API_BASE_URL) + path).openConnection();
-            connection.setConnectTimeout(10_000);
-            connection.setReadTimeout(15_000);
-            connection.setRequestMethod(method);
+            connection = openConnection(path, method);
             connection.setRequestProperty("Authorization", "Bearer " + token.trim());
-            connection.setRequestProperty("Accept", "application/json");
-            connection.setRequestProperty("Cache-Control", "no-cache");
-            if (body != null) {
-                connection.setDoOutput(true);
-                connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
-                try (OutputStream output = connection.getOutputStream()) {
-                    output.write(body.toString().getBytes(StandardCharsets.UTF_8));
-                }
-            }
+            if (body != null) writeJson(connection, body);
             int status = connection.getResponseCode();
-            InputStream stream = status >= 200 && status < 300 ? connection.getInputStream() : connection.getErrorStream();
-            StringBuilder result = new StringBuilder();
-            if (stream != null) try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null && result.length() < 128_000) result.append(line);
-            }
-            if (status < 200 || status >= 300) throw new ApiException(status, result.toString());
-            return result.length() == 0 ? new JSONObject() : new JSONObject(result.toString());
+            String result = readBody(connection, status);
+            if (status < 200 || status >= 300) throw new ApiException(status, result);
+            return result.isEmpty() ? new JSONObject() : new JSONObject(result);
         } finally {
             if (connection != null) connection.disconnect();
         }
+    }
+
+    private boolean refreshSession() {
+        synchronized (REFRESH_LOCK) {
+            String refreshToken = AutoAiSecureStoragePlugin.readStoredValue(context, REFRESH_TOKEN_KEY);
+            if (refreshToken == null || refreshToken.trim().isEmpty()) return false;
+
+            HttpURLConnection connection = null;
+            try {
+                connection = openConnection("/auth/refresh", "POST");
+                writeJson(connection, new JSONObject().put("refresh_token", refreshToken.trim()));
+                int status = connection.getResponseCode();
+                String result = readBody(connection, status);
+                if (status < 200 || status >= 300) {
+                    Log.w(TAG, "Native call session refresh rejected status=" + status);
+                    return false;
+                }
+                JSONObject payload = new JSONObject(result);
+                String accessToken = payload.optString("access_token", "").trim();
+                String nextRefreshToken = payload.optString("refresh_token", "").trim();
+                if (accessToken.isEmpty()) return false;
+                AutoAiSecureStoragePlugin.writeStoredValue(context, ACCESS_TOKEN_KEY, accessToken);
+                if (!nextRefreshToken.isEmpty()) {
+                    AutoAiSecureStoragePlugin.writeStoredValue(context, REFRESH_TOKEN_KEY, nextRefreshToken);
+                }
+                Log.i(TAG, "Native call session refreshed successfully.");
+                return true;
+            } catch (Exception error) {
+                Log.w(TAG, "Native call session refresh deferred.", error);
+                return false;
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+        }
+    }
+
+    private HttpURLConnection openConnection(String path, String method) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) new URL(trim(BuildConfig.AUTO_AI_API_BASE_URL) + path).openConnection();
+        connection.setConnectTimeout(10_000);
+        connection.setReadTimeout(15_000);
+        connection.setRequestMethod(method);
+        connection.setRequestProperty("Accept", "application/json");
+        connection.setRequestProperty("Cache-Control", "no-cache");
+        return connection;
+    }
+
+    private static void writeJson(HttpURLConnection connection, JSONObject body) throws IOException {
+        connection.setDoOutput(true);
+        connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+        try (OutputStream output = connection.getOutputStream()) {
+            output.write(body.toString().getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    private static String readBody(HttpURLConnection connection, int status) throws IOException {
+        InputStream stream = status >= 200 && status < 300 ? connection.getInputStream() : connection.getErrorStream();
+        StringBuilder result = new StringBuilder();
+        if (stream != null) try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null && result.length() < 128_000) result.append(line);
+        }
+        return result.toString();
     }
 
     private static boolean isTransientStatus(int status) {
