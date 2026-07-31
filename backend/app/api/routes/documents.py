@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -12,9 +13,11 @@ from app.models.user import User
 from app.schemas.document import DocumentDetail, DocumentRead, DocumentSummary
 from app.services.admin_control import active_subscription, ensure_user_subscription, plan_upload_limit_mb
 from app.services.document_service import document_service
+from app.services.library_asset_service import upsert_library_asset
 
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+logger = logging.getLogger("auto_ai.documents")
 
 
 @router.post("/upload", response_model=DocumentRead, status_code=status.HTTP_201_CREATED)
@@ -38,12 +41,35 @@ async def upload_document(
         current_user.id,
         max_upload_mb=plan_upload_limit_mb(effective_plan),
     )
-
-    summary = (
-        document_service.summarize(extraction.text, file.filename or "document", provider=provider)
-        if summarize
-        else None
+    stored_data = Path(file_path).read_bytes()
+    library_asset = upsert_library_asset(
+        db,
+        user_id=current_user.id,
+        filename=file.filename or Path(file_path).name,
+        declared_mime=file.content_type,
+        data=stored_data,
+        source="chat_attachment",
+        pre_extracted=(extraction.text, extraction.metadata),
+        extra_metadata={"chat_id": chat_id, "auto_saved_from": "ai_chat_document"},
     )
+
+    summary = None
+    if summarize:
+        try:
+            summary = document_service.summarize(extraction.text, file.filename or "document", provider=provider)
+        except Exception as exc:
+            logger.warning(
+                "document_summary_failed user_id=%s filename=%s error_type=%s",
+                current_user.id,
+                file.filename,
+                type(exc).__name__,
+            )
+
+    document_metadata = {
+        **extraction.metadata,
+        "library_asset_id": library_asset.id,
+        "library_auto_saved": True,
+    }
     document = Document(
         user_id=current_user.id,
         chat_id=chat_id,
@@ -53,9 +79,13 @@ async def upload_document(
         file_path=file_path,
         extracted_text=extraction.text,
         summary=summary,
-        document_metadata=extraction.metadata,
+        document_metadata=document_metadata,
     )
     db.add(document)
+    db.flush()
+    asset_metadata = dict(library_asset.metadata_json or {})
+    asset_metadata.update({"document_id": document.id, "chat_id": chat_id})
+    library_asset.metadata_json = asset_metadata
     db.commit()
     db.refresh(document)
     return document
