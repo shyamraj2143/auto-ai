@@ -33,7 +33,7 @@ jobs:
           npm ci --prefix frontend
 
       - name: Run focused logo tests
-        run: npm test --prefix frontend -- --run src/components/brand/LogoIcon.test.tsx
+        run: npm test --prefix frontend -- src/components/brand/LogoIcon.test.tsx
 
       - name: Build production frontend
         run: AUTO_AI_SKIP_COMPRESSION=1 npm run build
