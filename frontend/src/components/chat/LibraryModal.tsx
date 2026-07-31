@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { FileCode2, FileText, Grid2X2, Image as ImageIcon, List, LoaderCircle, Pencil, Search, Trash2, Upload, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { FileCode2, FileText, Grid2X2, Image as ImageIcon, List, LoaderCircle, Pencil, Search, Trash2, X } from "lucide-react";
 import { api } from "../../api/client";
 import type { LibraryAsset, LibraryAttachment } from "../../types";
 import "./library.css";
@@ -51,10 +51,7 @@ export function LibraryModal({
   const [fileType, setFileType] = useState("");
   const [view, setView] = useState<"grid" | "list">("grid");
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const cameraRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -88,22 +85,6 @@ export function LibraryModal({
     window.addEventListener("auto-ai-android-back", onBack);
     return () => window.removeEventListener("auto-ai-android-back", onBack);
   }, [onClose, open]);
-
-  async function upload(files: File[], source: LibraryAsset["source"]) {
-    if (!files.length || uploading) return;
-    setUploading(true);
-    setError("");
-    try {
-      const uploaded: LibraryAsset[] = [];
-      for (const file of files) uploaded.push(await api.uploadLibraryAsset(token, file, source));
-      setAssets((current) => [...uploaded, ...current.filter((item) => !uploaded.some((next) => next.id === item.id))]);
-      setSelected(new Set(uploaded.map((item) => item.id)));
-    } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Upload failed.");
-    } finally {
-      setUploading(false);
-    }
-  }
 
   async function attach() {
     if (!selected.size) return;
@@ -150,18 +131,14 @@ export function LibraryModal({
   if (!open) return null;
   return (
     <div className="library-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="library-modal" role="dialog" aria-modal="true" aria-label="Personal upload library">
+      <section className="library-modal" role="dialog" aria-modal="true" aria-label="AI Chat attachment library">
         <header>
-          <span><strong>Library</strong><small>Your reusable uploads</small></span>
+          <span><strong>Library</strong><small>Automatically saved from your AI Chat attachments</small></span>
           <button type="button" onClick={onClose} aria-label="Close library"><X size={18} /></button>
         </header>
         <div className="library-toolbar">
-          <label><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search files" /></label>
-          <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading}><Upload size={15} />Upload</button>
-          <button type="button" onClick={() => cameraRef.current?.click()} disabled={uploading}><ImageIcon size={15} />Photo</button>
+          <label><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search saved attachments" /></label>
           <button type="button" onClick={() => setView((current) => current === "grid" ? "list" : "grid")} aria-label="Toggle grid or list view">{view === "grid" ? <List size={16} /> : <Grid2X2 size={16} />}</button>
-          <input ref={inputRef} hidden multiple type="file" accept="image/*,.pdf,.docx,.txt,.py,.ts,.tsx,.js,.jsx,.java,.kt,.go,.rs,.css,.html,.json,.md,.yaml,.yml,.sql" onChange={(event) => { void upload(Array.from(event.target.files || []), "upload"); event.target.value = ""; }} />
-          <input ref={cameraRef} hidden type="file" accept="image/*" capture="environment" onChange={(event) => { void upload(Array.from(event.target.files || []), "camera"); event.target.value = ""; }} />
         </div>
         <div className="library-filters">
           {[["", "All"], ["image", "Images"], ["document", "Documents"], ["code", "Code"]].map(([value, label]) =>
@@ -186,7 +163,7 @@ export function LibraryModal({
               </div>
             </article>
           ))}
-          {!loading && !assets.length && <p className="library-empty">No library items found.</p>}
+          {!loading && !assets.length && <p className="library-empty">Attach a photo, selfie, document, PDF, or code file in AI Chat. It will appear here automatically after you send it.</p>}
           {loading && <p className="library-empty"><LoaderCircle className="animate-spin" /> Loading library…</p>}
         </div>
         <footer><span>{selected.size} selected</span><button type="button" className="btn-primary" disabled={!selected.size || loading} onClick={() => void attach()}>Attach to chat</button></footer>
