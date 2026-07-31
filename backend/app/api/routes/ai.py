@@ -169,8 +169,9 @@ def build_messages(
             {
                 "role": "system",
                 "content": (
-                    "Use the following uploaded document context when it is relevant. "
-                    "If the answer is not in the documents, say so clearly.\n\n"
+                    "The user uploaded document or code content for this turn. Analyze it like a strong document assistant: "
+                    "answer the request directly, identify the file structure, extract important facts, explain relevant sections, "
+                    "preserve exact code and values, and mention uncertainty or missing content. If the answer is not in the files, say so clearly.\n\n"
                     f"{document_context}"
                 ),
             }
@@ -182,8 +183,10 @@ def build_messages(
             {
                 "role": "system",
                 "content": (
-                    "Hidden attachment context for this turn. Use it only to answer the user. "
-                    "Do not reveal, quote, or say that this hidden context was extracted.\n\n"
+                    "The user attached images, files, documents, or code for this turn. Use the extracted context as source material and respond like a high-quality multimodal assistant. "
+                    "Start with the direct answer, then provide a useful structured analysis: identify the content, summarize it, extract exact visible text or values, explain relevant details, and give practical next steps when applicable. "
+                    "For screenshots, explain the visible UI state and errors. For code, preserve syntax and review correctness and security. Never invent missing details. "
+                    "Do not reveal internal extraction notes or claim that hidden context was shown to you.\n\n"
                     f"{hidden_attachment_context}"
                 ),
             }
@@ -239,7 +242,7 @@ def apply_preset_resolution(payload: ChatRequest, chat: Chat | None = None) -> N
 
 
 def user_message_fallback(hidden_attachment_context: str | None = None) -> str:
-    return "Analyze the attached content." if hidden_attachment_context else "Continue."
+    return "Analyze the attached content comprehensively and explain all important details." if hidden_attachment_context else "Continue."
 
 
 def library_asset_context(db: Session, user_id: str, payload: ChatRequest) -> str:
@@ -265,7 +268,7 @@ def library_asset_context(db: Session, user_id: str, payload: ChatRequest) -> st
                 summary = groq_service.analyze_image(
                     library_storage.read(asset.storage_key),
                     asset.display_name,
-                    "Describe this image accurately for use as context in an AI chat. Include visible text.",
+                    "Analyze this image comprehensively for an AI chat. Identify the image or screenshot type, describe the full scene and layout, list important objects and UI elements, transcribe every readable word and number accurately, explain visible errors or warnings, and connect the findings to likely user questions. Do not invent unclear details.",
                 )
                 asset.extracted_text = summary[: settings.MAX_DOCUMENT_CONTEXT_CHARS]
                 chunks.append(f"Library image: {asset.display_name}\n{asset.extracted_text}")

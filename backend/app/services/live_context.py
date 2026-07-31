@@ -9,6 +9,21 @@ TIME_QUERY_PATTERN = re.compile(
     r"\b(date|time|datetime|clock)\b|तारीख|समय|टाइम|कितने बजे",
     re.IGNORECASE,
 )
+RESPONSE_LANGUAGE_PREFIX = "autoai-response-"
+
+
+def response_language_instruction(locale: str) -> str:
+    if not locale.startswith(RESPONSE_LANGUAGE_PREFIX):
+        return ""
+    preference = locale.removeprefix(RESPONSE_LANGUAGE_PREFIX)
+    if preference == "en":
+        return "Always answer in clear English. Keep code, commands, filenames, and technical identifiers unchanged."
+    if preference == "hi":
+        return "Always answer in clear Hindi using Devanagari script. Keep code, commands, filenames, and technical identifiers unchanged."
+    return (
+        "Match the language and script of the user's latest message. If the message mixes languages, "
+        "use the dominant language while keeping code and technical identifiers unchanged."
+    )
 
 
 @dataclass(frozen=True)
@@ -41,7 +56,7 @@ class LiveRequestContext:
         )
 
     def system_prompt(self) -> str:
-        return (
+        prompt = (
             "Authoritative per-request time context (server clock; never guess or replace it):\n"
             f"request_started_at_utc={self.started_at_utc.isoformat()}\n"
             f"request_started_at_epoch_ms={int(self.started_at_utc.timestamp() * 1000)}\n"
@@ -50,6 +65,8 @@ class LiveRequestContext:
             f"user_local_datetime={self.local_datetime.isoformat()}\n"
             f"request_id={self.request_id}"
         )
+        language_instruction = response_language_instruction(self.locale)
+        return f"{prompt}\n\nResponse language instruction: {language_instruction}" if language_instruction else prompt
 
     def time_answer(self) -> str:
         rendered = self.local_datetime.strftime("%d %B %Y, %I:%M:%S %p")
