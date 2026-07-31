@@ -51,7 +51,7 @@ def _capabilities(model_id: str) -> frozenset[str]:
     if any(marker in value for marker in INCOMPATIBLE_TEXT_MODEL_MARKERS):
         return frozenset({"non_chat"})
     capabilities = {"text", "chat"}
-    if "coder" in value:
+    if "coder" in value or "coding" in value or "code" in value:
         capabilities.add("coding")
     if "vision" in value or "scout" in value or "-vl-" in value:
         capabilities.add("vision")
@@ -94,6 +94,7 @@ class ModelRegistry:
                     if not model_id:
                         continue
                     is_available = model_id in available
+                    capabilities = _capabilities(model_id)
                     modes = {
                         IntelligenceMode.INSTANT,
                         IntelligenceMode.MEDIUM,
@@ -103,14 +104,10 @@ class ModelRegistry:
                         IntelligenceMode.HIGH,
                         IntelligenceMode.DEEP_RESEARCH,
                     }
-                    coding_model = (
-                        settings.ORCHESTRATION_GROQ_CODING_MODEL
-                        if provider == "groq"
-                        else settings.ORCHESTRATION_BEDROCK_CODING_MODEL
-                    )
-                    if coding_model and model_id == coding_model:
+                    # Coding uses a preferred Qwen/Coder pair when present, but every
+                    # healthy text-chat model is a valid implementation/review fallback.
+                    if {"text", "chat"}.issubset(capabilities):
                         modes.add(IntelligenceMode.CODING)
-                    capabilities = _capabilities(model_id)
                     records[(provider, model_id)] = ModelRecord(
                         provider=provider,
                         friendly_name=_display_name(model_id),
@@ -177,8 +174,19 @@ class ModelRegistry:
         if not (settings.bedrock_api_key or (settings.aws_access_key_id and settings.aws_secret_access_key)):
             return set()
         if settings.bedrock_endpoint_mode.lower() != "mantle":
-            # Runtime model discovery requires IAM APIs not included in this deployment.
-            return set(settings.BEDROCK_RESEARCH_MODELS)
+            # IAM deployments do not expose the same lightweight discovery API.
+            # Treat explicitly configured models as candidates and let real runtime
+            # calls plus circuit-breaker health tracking determine degradation.
+            return {
+                model_id
+                for model_id in (
+                    settings.BEDROCK_MODEL,
+                    *settings.BEDROCK_RESEARCH_MODELS,
+                    *settings.ORCHESTRATION_BEDROCK_MODELS,
+                    settings.ORCHESTRATION_BEDROCK_CODING_MODEL,
+                )
+                if model_id
+            }
         try:
             response = httpx.get(
                 f"{settings.bedrock_mantle_base_url}/models",
