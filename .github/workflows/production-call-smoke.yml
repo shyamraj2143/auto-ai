@@ -77,9 +77,17 @@ jobs:
                   turn_response = await client.get(f"{base}/calls/turn-credentials", headers=headers)
                   turn_response.raise_for_status()
                   turn = turn_response.json()
-                  ice_servers = turn.get("ice_servers") or []
+                  ice_servers = turn.get("iceServers") or turn.get("ice_servers") or []
                   assert ice_servers, "TURN endpoint returned no ICE servers."
-                  assert any(str(url).startswith(("turn:", "turns:")) for server in ice_servers for url in (server.get("urls") if isinstance(server.get("urls"), list) else [server.get("urls")]))
+                  assert any(
+                      str(url).startswith(("turn:", "turns:"))
+                      for server in ice_servers
+                      for url in (
+                          server.get("urls")
+                          if isinstance(server.get("urls"), list)
+                          else [server.get("urls")]
+                      )
+                  ), "TURN endpoint returned no relay URL."
                   print("TURN_READY", len(ice_servers))
 
                   ticket_response = await client.post(f"{base}/calls/ws-ticket", headers=headers, json={})
