@@ -14,6 +14,13 @@ describe("call start and recent-history hotfix", () => {
     expect(callApiSource).toContain('operation: "calls.turn"');
   });
 
+  it("caches only an authenticated TURN relay response, never a STUN-only response", () => {
+    expect(callApiSource).toContain("function hasUsableTurnRelay");
+    expect(callApiSource).toContain('/^turns?:/i.test(url)');
+    expect(callApiSource).toContain("if (!relayConfigured) return false");
+    expect(callApiSource).toContain("if (hasUsableTurnRelay(credentials)) lastSuccessfulTurnCredentials = credentials");
+  });
+
   it("keeps the real backend call creation and history endpoints as the source of truth", () => {
     expect(callApiSource).toContain('apiFetch<CallRecord>("/calls"');
     expect(callApiSource).toContain('apiFetch<CallHistoryPage>(`/calls/history?page=${page}&limit=${limit}`');
