@@ -1,4 +1,5 @@
 Auto-AI critical native calling release
 
-Includes main commit 7ab52bf68b28a49eb47c1cab25cbe84b9598429f.
-This release must replace older APKs because signaling retry, WebSocket reconnect, foreground-service recovery, and native WebRTC changes are compiled into the Android application.
+This release must replace older APKs because the single incoming-call surface,
+non-terminal Answer handoff, ringtone cleanup, and native video renderer repair
+are compiled into the Android application.

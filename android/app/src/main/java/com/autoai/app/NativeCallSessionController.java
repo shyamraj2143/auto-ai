@@ -4,6 +4,8 @@ import android.content.Context;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 
 import org.json.JSONArray;
@@ -58,6 +60,7 @@ public final class NativeCallSessionController {
         .pingInterval(15, TimeUnit.SECONDS)
         .build();
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final AtomicBoolean mediaStarting = new AtomicBoolean(false);
     private final AtomicBoolean terminal = new AtomicBoolean(false);
     private final AtomicBoolean reconnectScheduled = new AtomicBoolean(false);
@@ -85,6 +88,8 @@ public final class NativeCallSessionController {
     private String pendingAnswerSdp;
     private final List<PendingRemoteCandidate> pendingRemoteCandidates = new ArrayList<>();
     private final List<String> pendingOutboundSignals = new ArrayList<>();
+    private SurfaceViewRenderer localRenderer;
+    private SurfaceViewRenderer remoteRenderer;
     private ConnectivityManager.NetworkCallback networkCallback;
 
     private NativeCallSessionController(Context context) {
@@ -130,10 +135,16 @@ public final class NativeCallSessionController {
     public void removeListener(Listener listener) { listeners.remove(listener); }
 
     public synchronized void attachRenderers(SurfaceViewRenderer local, SurfaceViewRenderer remote) {
+        localRenderer = local;
+        remoteRenderer = remote;
         if (engine != null) engine.attachRenderers(local, remote);
     }
 
-    public synchronized void detachRenderers() { if (engine != null) engine.detachRenderers(); }
+    public synchronized void detachRenderers() {
+        if (engine != null) engine.detachRenderers();
+        localRenderer = null;
+        remoteRenderer = null;
+    }
     public synchronized void setMuted(boolean value) { muted = value; if (engine != null) engine.setMuted(value); }
     public synchronized boolean isMuted() { return muted; }
     public synchronized void setCameraEnabled(boolean value) { cameraEnabled = value; if (engine != null) engine.setCameraEnabled(value); }
@@ -329,9 +340,27 @@ public final class NativeCallSessionController {
                 List<PeerConnection.IceServer> iceServers = parseIceServers(api.turnCredentials());
                 if (iceServers.isEmpty()) throw new NativeCallApi.ApiException(503, "No usable call relay configuration.");
                 NativeWebRtcEngine created = new NativeWebRtcEngine(context, engineListener);
-                created.start("video".equals(callType), iceServers);                synchronized (this) { engine = created; engine.setMuted(muted); engine.setCameraEnabled(cameraEnabled); }
-                    flushPendingRemoteSignals(created);
-                    announcePeerReadyIfPossible();
+                created.start("video".equals(callType), iceServers);
+                SurfaceViewRenderer pendingLocal;
+                SurfaceViewRenderer pendingRemote;
+                synchronized (this) {
+                    engine = created;
+                    engine.setMuted(muted);
+                    engine.setCameraEnabled(cameraEnabled);
+                    pendingLocal = localRenderer;
+                    pendingRemote = remoteRenderer;
+                }
+                if (pendingLocal != null || pendingRemote != null) {
+                    mainHandler.post(() -> {
+                        synchronized (NativeCallSessionController.this) {
+                            if (engine != created || localRenderer != pendingLocal || remoteRenderer != pendingRemote) return;
+                            try { created.attachRenderers(pendingLocal, pendingRemote); }
+                            catch (RuntimeException error) { Log.w(TAG, "Video renderer attach deferred callId=" + callId, error); }
+                        }
+                    });
+                }
+                flushPendingRemoteSignals(created);
+                announcePeerReadyIfPossible();
             } catch (SecurityException permission) {
                 fail("video".equals(callType) ? "CAMERA_PERMISSION_DENIED" : "MICROPHONE_PERMISSION_DENIED", permission);
             } catch (NativeCallApi.ApiException relayError) {
@@ -403,7 +432,6 @@ public final class NativeCallSessionController {
             if (remoteMediaReceived) return;
             remoteMediaReceived = true;
             update(ActiveCallStore.State.MEDIA_CONNECTED, null);
-            AutoAiTelecomBridge.markActive(context, callId);
             send("call.media_ready", callId, json("audio_ready", true, "video_ready", video || "audio".equals(callType)));
             send("call.connected", callId, new JSONObject());
             Log.i(TAG, "REMOTE_MEDIA_RECEIVED callId=" + callId);

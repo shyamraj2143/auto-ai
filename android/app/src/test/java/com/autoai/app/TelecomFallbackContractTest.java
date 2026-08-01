@@ -34,12 +34,14 @@ public class TelecomFallbackContractTest {
         assertTrue(bridge.contains("return alreadyRegistered ? TelecomRegistrationResult.ALREADY_REGISTERED"));
     }
 
-    @Test public void telecomFailureCannotTerminateWebRtcService() throws Exception {
+    @Test public void appOwnedCallServiceDoesNotDependOnTelecom() throws Exception {
         String service = source("CallForegroundService.java");
-        assertTrue(service.contains("continuing native WebRTC"));
-        assertTrue(service.contains("TelecomMode.DEGRADED"));
-        assertFalse(service.contains("failStart(activeCallId, \"TELECOM_REGISTRATION_FAILED\")"));
+        assertFalse(service.contains("AutoAiTelecomBridge.ensureRegisteredDetailed"));
+        assertFalse(service.contains("AutoAiTelecomBridge.markActive"));
+        assertFalse(service.contains("TelecomMode"));
         assertFalse(service.contains("TELECOM_REGISTRATION_FAILED"));
+        assertTrue(service.contains("NativeCallSessionController.get(this)"));
+        assertTrue(service.contains("return START_STICKY"));
     }
 
     @Test public void telecomSecurityExceptionIsTypedAndDoesNotFailTheCall() throws Exception {
@@ -47,20 +49,43 @@ public class TelecomFallbackContractTest {
         String service = source("CallForegroundService.java");
         assertTrue(bridge.contains("catch (SecurityException error)"));
         assertTrue(bridge.contains("TelecomCallResult.SECURITY_EXCEPTION"));
-        assertFalse(service.contains("failStart(activeCallId, \"TELECOM"));
+        assertFalse(service.contains("AutoAiTelecomBridge.ensureRegisteredDetailed"));
+        assertFalse(service.contains("AutoAiTelecomBridge.markActive"));
         assertTrue(service.contains("return START_STICKY"));
     }
 
-    @Test public void telecomReportingKeepsNativeNotificationFallback() throws Exception {
+    @Test public void appOwnedPresentationNeverReportsTheSameCallToTelecom() throws Exception {
         String manager = source("CallNotificationManager.java");
-        String bridge = source("AutoAiTelecomBridge.java");
-        assertTrue(manager.contains("TelecomCallResult telecomResult"));
+        String plugin = source("AutoAiCallsPlugin.java");
         assertTrue(manager.contains("NotificationCompat.Builder"));
-        assertTrue(manager.indexOf("manager.notify(incomingNotificationId, notification)")
-            < manager.indexOf("AutoAiTelecomBridge.reportIncomingCall(context, data)"));
-        assertTrue(bridge.contains("catch (SecurityException error)"));
-        assertTrue(bridge.contains("catch (IllegalArgumentException error)"));
-        assertTrue(bridge.contains("catch (UnsupportedOperationException error)"));
+        assertTrue(manager.contains("manager.notify(incomingNotificationId, notification)"));
+        assertTrue(manager.contains("presentation=app_owned"));
+        assertFalse(manager.contains("AutoAiTelecomBridge.reportIncomingCall"));
+        assertFalse(plugin.contains("AutoAiTelecomBridge.reportOutgoingCall"));
+    }
+
+    @Test public void incomingSurfaceIsSingleTaskAndProcessesNotificationAnswerIntent() throws Exception {
+        String manifest = read("src/main/AndroidManifest.xml");
+        int start = manifest.indexOf("android:name=\".IncomingCallActivity\"");
+        int end = manifest.indexOf("/>", start);
+        String declaration = manifest.substring(start, end);
+        String activity = source("IncomingCallActivity.java");
+        String manager = source("CallNotificationManager.java");
+        assertTrue(declaration.contains("android:launchMode=\"singleTask\""));
+        assertTrue(activity.contains("protected void onNewIntent(Intent intent)"));
+        assertTrue(activity.contains("handleRequestedAction(requestedAction)"));
+        assertTrue(manager.contains("Intent.FLAG_ACTIVITY_CLEAR_TOP"));
+        assertTrue(manager.contains("Intent.FLAG_ACTIVITY_SINGLE_TOP"));
+    }
+
+    @Test public void acceptedPushDismissesRingingWithoutTerminatingMedia() throws Exception {
+        String messaging = source("AutoAiFirebaseMessagingService.java");
+        String manager = source("CallNotificationManager.java");
+        assertTrue(messaging.contains("\"call_accepted\".equals(messageType)"));
+        assertTrue(messaging.contains("CallNotificationManager.cancelIncomingPresentation(this, callId)"));
+        assertTrue(manager.contains("IncomingCallRingingService.stop(context, callId)"));
+        assertFalse(manager.substring(manager.indexOf("public static void cancelIncomingPresentation"),
+            manager.indexOf("public static void showOngoingCall")).contains("AutoAiTelecomBridge.disconnectLocal"));
     }
 
     @Test public void callStateColorsFollowMediaSemantics() throws Exception {

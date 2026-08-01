@@ -122,7 +122,7 @@ public final class NotificationDeepLink {
         if ("chat_message".equals(type)) return Destination.MESSAGE_THREAD.name();
         if ("incoming_call".equals(type) || "incoming_call_fallback".equals(type)) return Destination.INCOMING_CALL.name();
         if ("call_missed".equals(type)) return Destination.MISSED_CALL.name();
-        if ("call_failed".equals(type) || "call_ended".equals(type) || "call_cancelled".equals(type) || "call_rejected".equals(type)) return Destination.CALL_HISTORY.name();
+        if ("call_accepted".equals(type) || "call_failed".equals(type) || "call_ended".equals(type) || "call_cancelled".equals(type) || "call_rejected".equals(type)) return Destination.CALL_HISTORY.name();
         if ("follow_request".equals(type)) return Destination.FOLLOW_REQUEST.name();
         if ("follow_accept".equals(type)) return Destination.FOLLOW_ACCEPTED.name();
         if ("apk_update".equals(type)) return Destination.APP_UPDATE.name();

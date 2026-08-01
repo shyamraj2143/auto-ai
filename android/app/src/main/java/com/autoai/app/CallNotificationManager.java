@@ -111,9 +111,9 @@ public final class CallNotificationManager {
         Log.i(TAG, "INCOMING_PRESENTED callId=" + callId);
         savePending(context, callId, null, expiresAt);
         createChannels(context);
-        TelecomCallResult telecomResult = TelecomCallResult.REGISTRATION_UNAVAILABLE;
-
-        Intent incomingIntent = new Intent(context, IncomingCallActivity.class);
+        Intent incomingIntent = new Intent(context, IncomingCallActivity.class)
+            .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
         incomingIntent.putExtra(EXTRA_CALL_ID, callId);
         if (!callerId.isEmpty()) incomingIntent.putExtra(EXTRA_CALLER_ID, callerId);
         incomingIntent.putExtra(EXTRA_CALLER_NAME, name);
@@ -182,12 +182,11 @@ public final class CallNotificationManager {
                 CallDeliveryAckWorker.schedule(context, data, "callstyle_posted", "", "");
                 acknowledgeRinging(context, callId);
                 IncomingCallRingingService.start(context, callId, expiresAt, notification, data);
-                telecomResult = AutoAiTelecomBridge.reportIncomingCall(context, data);
-                if (!telecomResult.isReported()) {
-                    Log.w(TAG, "Incoming Telecom presentation degraded callId=" + callId + " result=" + telecomResult);
-                }
+                // AutoAI owns the only incoming-call surface. Reporting the same call to
+                // Telecom creates a second OEM/system interface and a competing Answer/
+                // Disconnect callback on several Android builds.
                 Log.i(TAG, "Incoming call notification shown callId=" + callId + " silent=" + silent
-                    + " telecom=" + telecomResult.isReported());
+                    + " presentation=app_owned");
             } catch (RuntimeException notificationError) {
                 diagnostic(context, "NOTIFICATION_POST_FAILED", data, "NOTIFICATION_POST_FAILED");
                 Log.e(TAG, "Incoming call notification post failed callId=" + callId, notificationError);
@@ -215,6 +214,7 @@ public final class CallNotificationManager {
     }
 
     public static void cancelIncomingPresentation(Context context, String callId) {
+        IncomingCallRingingService.stop(context, callId);
         cancelNotification(context, callId);
         Log.i(TAG, "Incoming presentation cancelled callId=" + callId);
     }

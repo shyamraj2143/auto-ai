@@ -129,6 +129,8 @@ final class NativeWebRtcEngine {
     }
 
     void attachRenderers(SurfaceViewRenderer local, SurfaceViewRenderer remote) {
+        if (localRenderer == local && remoteRenderer == remote) return;
+        if (localRenderer != null || remoteRenderer != null) detachRenderers();
         localRenderer = local;
         remoteRenderer = remote;
         if (eglBase == null) return;

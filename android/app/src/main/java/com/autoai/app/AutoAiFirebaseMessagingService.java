@@ -96,6 +96,13 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
             if (Boolean.parseBoolean(data.get("show_missed"))) showMissedCallNotification(data);
             return;
         }
+        if ("call_accepted".equals(messageType)) {
+            if (!CallNotificationManager.acceptRevision(this, callId, callRevision)) return;
+            // Accept is a handoff, not a terminal event. Only remove the ringing
+            // presentation; the foreground service and native media session must live on.
+            CallNotificationManager.cancelIncomingPresentation(this, callId);
+            return;
+        }
         if ("call_failed".equals(messageType) || "call_ended".equals(messageType)
             || "call_cancelled".equals(messageType) || "call_rejected".equals(messageType)) {
             if (!CallNotificationManager.acceptRevision(this, callId, callRevision)) return;

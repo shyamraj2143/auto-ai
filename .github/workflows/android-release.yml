@@ -142,9 +142,9 @@ jobs:
             echo "Version-Code: ${AUTO_AI_ANDROID_VERSION_CODE}"
             echo "Version-Name: ${AUTO_AI_ANDROID_VERSION_NAME}"
             echo "SHA256: ${sha256}"
-            echo "Changelog: Restore incoming calls, ringtone and message notifications"
+            echo "Changelog: One incoming-call screen and stable voice/video Answer handoff"
             echo
-            echo "Repairs Firebase installation-ID direct-send registration without clearing app data or rotating the valid installation."
+            echo "Removes the duplicate Android Telecom surface, keeps accepted-call cleanup non-terminal, and restores notification Answer plus video renderer handoff."
             echo "Verified Android assets from GitHub push ${GITHUB_SHA::7}"
           } > "$notes"
           gh release create "$tag" "$apk_path" \
@@ -166,8 +166,8 @@ jobs:
             --apk output/android/auto-ai.apk \
             --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
             --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
-            --changelog "Restore incoming calls, ringtone and message notifications" \
-            --release-notes "Repairs Firebase installation-ID direct-send registration without clearing app data or rotating the valid installation. Verified GitHub push ${GITHUB_SHA::7}." \
+            --changelog "One incoming-call screen and stable voice/video Answer handoff" \
+            --release-notes "Removes the duplicate Android Telecom surface, keeps accepted-call cleanup non-terminal, and restores notification Answer plus video renderer handoff. Verified GitHub push ${GITHUB_SHA::7}." \
             --metadata-only \
             "${args[@]}"
 
@@ -179,7 +179,7 @@ jobs:
             --api-url "$AUTO_AI_API_BASE_URL" \
             --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
             --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
-            --changelog "Restore incoming calls, ringtone and message notifications"
+            --changelog "One incoming-call screen and stable voice/video Answer handoff"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

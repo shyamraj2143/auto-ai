@@ -148,8 +148,27 @@ public class IncomingCallActivity extends Activity {
 
         rejectButton.setOnClickListener(view -> rejectCall());
         acceptButton.setOnClickListener(view -> acceptCall(false));
-        if ("accept".equals(initialAction)) acceptCall(false);
-        else if ("audio_only".equals(initialAction)) acceptCall(true);
+        handleRequestedAction(initialAction);
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (intent == null) return;
+        String nextCallId = clean(intent.getStringExtra(CallNotificationManager.EXTRA_CALL_ID));
+        if (callId == null || !callId.equals(nextCallId)) {
+            Log.w(TAG, "Ignoring incoming activity intent for a different call current=" + callId + " next=" + nextCallId);
+            return;
+        }
+        String nextToken = clean(intent.getStringExtra(CallNotificationManager.EXTRA_ACTION_TOKEN));
+        if (nextToken != null) actionToken = nextToken;
+        long nextExpiresAt = intent.getLongExtra(CallNotificationManager.EXTRA_EXPIRES_AT, 0L);
+        if (nextExpiresAt > expiresAt) expiresAt = nextExpiresAt;
+        callRevision = Math.max(callRevision, intent.getLongExtra(CallNotificationManager.EXTRA_CALL_REVISION, 0L));
+        String requestedAction = clean(intent.getStringExtra(CallNotificationManager.EXTRA_ACTION));
+        Log.i(TAG, "INCOMING_ACTIVITY_INTENT_REUSED callId=" + callId + " action=" + requestedAction);
+        handleRequestedAction(requestedAction);
     }
 
     @Override
@@ -192,6 +211,11 @@ public class IncomingCallActivity extends Activity {
         beginAccept(audioOnly);
     }
 
+    private void handleRequestedAction(String action) {
+        if ("accept".equals(action)) acceptCall(false);
+        else if ("audio_only".equals(action)) acceptCall(true);
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
@@ -213,6 +237,8 @@ public class IncomingCallActivity extends Activity {
     private void beginAccept(boolean audioOnly) {
         if (!actionRunning.compareAndSet(false, true)) return;
         Log.i(TAG, "ACCEPT_TAPPED callId=" + callId + " audioOnly=" + audioOnly);
+        // Release ringtone audio focus before starting microphone/camera media.
+        CallNotificationManager.cancelIncomingPresentation(this, callId);
         setActionsEnabled(false);
         setStatus("Connecting call…", Color.rgb(34, 211, 238));
         CallAcceptCoordinator.accept(this, callId, audioOnly, new CallAcceptCoordinator.Listener() {

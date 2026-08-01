@@ -261,8 +261,7 @@ public class AutoAiCallsPlugin extends Plugin {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) getContext().startForegroundService(intent);
             else getContext().startService(intent);
-            AutoAiTelecomBridge.reportOutgoingCall(getContext(), callId, displayName, video ? "video" : "audio");
-            Log.i(TAG, "Active call foreground service requested callId=" + callId);
+            Log.i(TAG, "Active call foreground service requested callId=" + callId + " presentation=app_owned");
         } catch (RuntimeException error) {
             try { getContext().unregisterReceiver(receiver); } catch (IllegalArgumentException ignored) {}
             Log.e(TAG, "Unable to start active call foreground service callId=" + callId, error);

@@ -5,6 +5,7 @@ from typing import Final
 
 NOTIFICATION_DESTINATION_BY_TYPE: Final[dict[str, str]] = {
     "apk_update": "APP_UPDATE",
+    "call_accepted": "CALL_HISTORY",
     "call_cancelled": "CALL_HISTORY",
     "call_ended": "CALL_HISTORY",
     "call_failed": "CALL_HISTORY",
@@ -19,6 +20,7 @@ NOTIFICATION_DESTINATION_BY_TYPE: Final[dict[str, str]] = {
 
 ENTITY_FIELD_BY_TYPE: Final[dict[str, str | None]] = {
     "apk_update": "release_id",
+    "call_accepted": "call_id",
     "call_cancelled": "call_id",
     "call_ended": "call_id",
     "call_failed": "call_id",

@@ -146,7 +146,11 @@ public final class IncomingCallRingingService extends Service {
     }
 
     @Override public void onDestroy() {
-        String stopped = activeCallId; stopPlayback(); activeCallId = null;
+        String stopped = activeCallId;
+        stopPlayback();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) stopForeground(STOP_FOREGROUND_REMOVE);
+        else stopForeground(true);
+        activeCallId = null;
         Log.i(TAG, "RINGING_SERVICE_STOPPED call_id=" + stopped);
         super.onDestroy();
     }
