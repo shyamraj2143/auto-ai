@@ -14,8 +14,10 @@ public class AlarmRuntimeContractTest {
         String scheduler = source("AlarmScheduler.java");
         String store = source("AlarmStore.java");
         String receiver = source("AlarmReceiver.java");
-        assertTrue(scheduler.contains("setExactAndAllowWhileIdle"));
+        assertTrue(scheduler.contains("setAlarmClock"));
         assertTrue(scheduler.contains("canScheduleExactAlarms"));
+        assertTrue(scheduler.contains("exact_alarm_access_required"));
+        assertFalse(scheduler.contains("setAndAllowWhileIdle"));
         assertTrue(scheduler.contains("\"ringing\".equals(payload.status)"));
         assertTrue(store.contains("SharedPreferences"));
         assertTrue(store.contains("replaceAll"));
@@ -26,6 +28,7 @@ public class AlarmRuntimeContractTest {
     @Test public void ringingUsesSystemAlarmAudioAndHumanVoice() throws Exception {
         String service = source("AlarmRingingService.java");
         assertTrue(service.contains("RingtoneManager.TYPE_ALARM"));
+        assertTrue(service.contains("ToneGenerator.STREAM_ALARM") || service.contains("new ToneGenerator(AudioManager.STREAM_ALARM"));
         assertTrue(service.contains("TextToSpeech"));
         assertTrue(service.contains("AudioAttributes.USAGE_ALARM"));
         assertTrue(service.contains("AudioAttributes.CONTENT_TYPE_SPEECH"));
@@ -33,12 +36,25 @@ public class AlarmRuntimeContractTest {
         assertTrue(service.contains("configureVoice"));
     }
 
-    @Test public void lockScreenAlarmHasExplicitSnoozeAndDismiss() throws Exception {
+    @Test public void lockScreenAlarmRequiresLiveAwakeVerificationToStop() throws Exception {
         String activity = source("AlarmRingingActivity.java");
+        String verifierActivity = source("AlarmAwakeVerificationActivity.java");
+        String verifier = source("AlarmAwakeVerifier.java");
+        String actions = source("AlarmActionReceiver.java");
+        String service = source("AlarmRingingService.java");
         assertTrue(activity.contains("setShowWhenLocked(true)"));
         assertTrue(activity.contains("setTurnScreenOn(true)"));
         assertTrue(activity.contains("Snooze 10 min"));
-        assertTrue(activity.contains("Dismiss"));
+        assertTrue(activity.contains("Stop alarm"));
+        assertTrue(activity.contains("AlarmAwakeVerificationActivity"));
+        assertTrue(verifierActivity.contains("ImageCapture"));
+        assertTrue(verifierActivity.contains("EXTRA_AWAKE_VERIFIED, true"));
+        assertTrue(verifier.contains("FaceDetection.getClient"));
+        assertTrue(verifier.contains("getLeftEyeOpenProbability"));
+        assertTrue(verifier.contains("verify-awake"));
+        assertTrue(actions.contains("!intent.getBooleanExtra(EXTRA_AWAKE_VERIFIED, false)"));
+        assertFalse(service.contains("MAX_RING_DURATION_MS"));
+        assertTrue(service.contains("START_STICKY"));
         assertFalse(activity.contains("WebView"));
     }
 
@@ -50,6 +66,8 @@ public class AlarmRuntimeContractTest {
         assertTrue(worker.contains("scheduled_at"));
         assertTrue(worker.contains("/auth/refresh"));
         assertTrue(store.contains("local.revision > remote.revision"));
+        assertTrue(store.contains("preserveActiveRing"));
+        assertTrue(source("AlarmRingingService.java").contains("\"ringing\", 0, 0L, payload.revision"));
     }
 
     @Test public void manifestDeclaresOnlyAlarmRequiredNativeAccess() throws Exception {
@@ -58,7 +76,10 @@ public class AlarmRuntimeContractTest {
         assertTrue(manifest.contains("android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"));
         assertTrue(manifest.contains("android:name=\".AlarmRingingService\""));
         assertTrue(manifest.contains("android:name=\".AlarmRingingActivity\""));
+        assertTrue(manifest.contains("android:name=\".AlarmAwakeVerificationActivity\""));
         assertTrue(manifest.contains("android:name=\".AlarmReceiver\""));
+        String gradle = read("build.gradle");
+        assertTrue(gradle.contains("com.google.mlkit:face-detection:16.1.7"));
     }
 
     private static String source(String file) throws Exception {

@@ -113,6 +113,7 @@ class Settings(BaseSettings):
     GROQ_MODEL: str = "openai/gpt-oss-120b"
     GROQ_SEARCH_MODEL: str = "groq/compound-mini"
     GROQ_VISION_MODEL: str = "meta-llama/llama-4-scout-17b-16e-instruct"
+    ALARM_GROQ_VISION_MODEL: str = "qwen/qwen3.6-27b"
     BEDROCK_VISION_MODEL: str = "qwen.qwen3-vl-235b-a22b-instruct"
     GROQ_AUDIO_MODEL: str = "whisper-large-v3-turbo"
 

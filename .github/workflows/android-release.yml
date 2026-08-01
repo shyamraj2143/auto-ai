@@ -99,9 +99,14 @@ jobs:
           grep -q 'dialog.setCanceledOnTouchOutside(!mandatory)' android/app/src/main/java/com/autoai/app/AppUpdateDialog.java
           grep -q 'GITHUB_RELEASES_REQUIRE_UPDATE = True' backend/app/services/github_apk_release.py
           grep -q 'registerPlugin(AutoAiAlarmPlugin.class)' android/app/src/main/java/com/autoai/app/MainActivity.java
-          grep -q 'setExactAndAllowWhileIdle' android/app/src/main/java/com/autoai/app/AlarmScheduler.java
+          grep -q 'setAlarmClock' android/app/src/main/java/com/autoai/app/AlarmScheduler.java
+          grep -q 'exact_alarm_access_required' android/app/src/main/java/com/autoai/app/AlarmScheduler.java
           grep -q 'RingtoneManager.TYPE_ALARM' android/app/src/main/java/com/autoai/app/AlarmRingingService.java
           grep -q 'TextToSpeech' android/app/src/main/java/com/autoai/app/AlarmRingingService.java
+          grep -q 'START_STICKY' android/app/src/main/java/com/autoai/app/AlarmRingingService.java
+          grep -q 'FaceDetection.getClient' android/app/src/main/java/com/autoai/app/AlarmAwakeVerifier.java
+          grep -q 'EXTRA_AWAKE_VERIFIED, true' android/app/src/main/java/com/autoai/app/AlarmAwakeVerificationActivity.java
+          grep -q 'com.google.mlkit:face-detection:16.1.7' android/app/build.gradle
           grep -q 'android.permission.SCHEDULE_EXACT_ALARM' android/app/src/main/AndroidManifest.xml
           grep -q 'app.include_router(alarms.router' backend/app/main.py
           grep -q 'title="AI Alarm"' frontend/src/features/actionHub/ActionHubPage.tsx
@@ -162,9 +167,9 @@ jobs:
             echo "Version-Name: ${AUTO_AI_ANDROID_VERSION_NAME}"
             echo "SHA256: ${sha256}"
             echo "Force-Update: true"
-            echo "Changelog: AI Alarm personal assistant with stable Android calls"
+            echo "Changelog: Exact AI alarms with offline awake verification"
             echo
-            echo "Adds account-synced AI alarms with calendar scheduling, native ringtone, lock-screen controls and human-style spoken reminders while preserving stable calls and mandatory updates."
+            echo "Fixes exact alarm delivery and adds live-camera awake verification with bundled offline face detection plus Groq Vision when online, while preserving stable calls and mandatory updates."
             echo "Verified Android assets from GitHub push ${GITHUB_SHA::7}"
           } > "$notes"
           gh release create "$tag" "$apk_path" \
@@ -181,8 +186,8 @@ jobs:
             --apk output/android/auto-ai.apk \
             --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
             --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
-            --changelog "AI Alarm personal assistant with stable Android calls" \
-            --release-notes "Adds account-synced AI alarms with calendar scheduling, native ringtone, lock-screen controls and human-style spoken reminders while preserving stable calls and mandatory updates. Verified GitHub push ${GITHUB_SHA::7}." \
+            --changelog "Exact AI alarms with offline awake verification" \
+            --release-notes "Fixes exact alarm delivery and adds live-camera awake verification with bundled offline face detection plus Groq Vision when online, while preserving stable calls and mandatory updates. Verified GitHub push ${GITHUB_SHA::7}." \
             --metadata-only \
             --force-update
 
@@ -194,7 +199,7 @@ jobs:
             --api-url "$AUTO_AI_API_BASE_URL" \
             --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
             --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
-            --changelog "AI Alarm personal assistant with stable Android calls"
+            --changelog "Exact AI alarms with offline awake verification"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

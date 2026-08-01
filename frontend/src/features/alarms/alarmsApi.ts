@@ -1,5 +1,5 @@
 import { apiFetch } from "../../api/client";
-import type { AlarmDraft, AlarmListResponse, UserAlarm } from "./types";
+import type { AlarmAwakeVerification, AlarmDraft, AlarmListResponse, UserAlarm } from "./types";
 
 export const alarmsApi = {
   list: (token: string, includeCompleted = false) => apiFetch<AlarmListResponse>(
@@ -32,6 +32,17 @@ export const alarmsApi = {
       body: JSON.stringify({ action, snooze_minutes: snoozeMinutes }),
     },
   ),
+  verifyAwake: (token: string, alarmId: string, photo: Blob) => {
+    const form = new FormData();
+    form.append("file", photo, "awake.jpg");
+    return apiFetch<AlarmAwakeVerification>(`/alarms/${encodeURIComponent(alarmId)}/verify-awake`, {
+      method: "POST",
+      token,
+      operation: "alarms.verifyAwake",
+      timeoutMs: 12_000,
+      body: form,
+    });
+  },
   remove: (token: string, alarmId: string) => apiFetch<void>(`/alarms/${encodeURIComponent(alarmId)}`, {
     method: "DELETE",
     token,

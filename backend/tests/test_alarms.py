@@ -1,16 +1,19 @@
+import asyncio
+import io
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from fastapi import BackgroundTasks, HTTPException
+from fastapi import BackgroundTasks, HTTPException, UploadFile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.api.routes.alarms import alarm_action, create_alarm, delete_alarm, list_alarms, update_alarm
+from app.api.routes.alarms import alarm_action, create_alarm, delete_alarm, list_alarms, update_alarm, verify_alarm_awake
 from app.db.base import Base
 from app.models.alarm import UserAlarm
 from app.models.user import User
 from app.schemas.alarm import AlarmAction, AlarmCreate, AlarmUpdate
 from app.services.alarm_ai_service import AlarmMessage, alarm_ai_service
+from app.services.alarm_awake_service import AwakeDecision, AlarmAwakeService, alarm_awake_service
 
 
 @pytest.fixture()
@@ -183,3 +186,56 @@ def test_ai_failure_uses_human_local_fallback(monkeypatch: pytest.MonkeyPatch) -
     assert result.generated is False
     assert "उठ जाइए" in result.text
     assert "ऑफिस जाना है" in result.text
+
+
+def test_awake_photo_is_user_scoped_ephemeral_and_returns_groq_decision(
+    db: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    current = user(db)
+    other = user(db, "awake-other")
+    monkeypatch.setattr(alarm_ai_service, "compose", lambda **_: AlarmMessage("Wake up.", "groq-test", True))
+    alarm = create_alarm(alarm_payload(), BackgroundTasks(), db, current)
+    monkeypatch.setattr(
+        alarm_awake_service,
+        "verify",
+        lambda **_: AwakeDecision(True, .91, "Both eyes are open.", "qwen-awake-test"),
+    )
+    upload = UploadFile(filename="awake.jpg", file=io.BytesIO(b"\xff\xd8\xff" + b"face" * 40))
+    result = asyncio.run(verify_alarm_awake(alarm.id, upload, db, current))
+    assert result.awake is True
+    assert result.confidence == .91
+    assert result.model == "qwen-awake-test"
+    assert result.photo_stored is False
+
+    with pytest.raises(HTTPException) as missing:
+        asyncio.run(
+            verify_alarm_awake(
+                alarm.id,
+                UploadFile(filename="awake.jpg", file=io.BytesIO(b"\xff\xd8\xffphoto")),
+                db,
+                other,
+            )
+        )
+    assert missing.value.status_code == 404
+
+
+def test_alarm_awake_service_requires_strict_json_and_groq_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services import alarm_awake_service as module
+
+    captured: dict = {}
+
+    def complete(*args, **kwargs):
+        captured.update(kwargs)
+        return '{"awake":true,"confidence":0.88,"reason":"Face is upright and eyes are open."}', {}, "groq-awake"
+
+    monkeypatch.setattr(module.groq_service, "complete", complete)
+    decision = AlarmAwakeService().verify(image=b"\xff\xd8\xffphoto", filename="awake.jpg")
+    assert decision.awake is True
+    assert decision.confidence == .88
+    assert captured["provider"] == "groq"
+    assert captured["allow_bedrock_fallback"] is False
+
+    with pytest.raises(HTTPException) as invalid:
+        AlarmAwakeService.parse_json("The person seems awake")
+    assert invalid.value.status_code == 502

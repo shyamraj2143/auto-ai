@@ -52,6 +52,7 @@ export function AlarmPage() {
 
   const activeAlarms = useMemo(() => alarms.filter((alarm) => !["completed", "cancelled"].includes(alarm.status)), [alarms]);
   const permissionReady = !nativeStatus || nativeStatus.ready;
+  const lockScreenReady = !nativeStatus || !nativeStatus.fullScreenRequired || nativeStatus.fullScreenGranted;
 
   const updateField = <K extends keyof AlarmForm>(key: K, value: AlarmForm[K]) => setForm((current) => ({ ...current, [key]: value }));
   const reset = () => {
@@ -130,10 +131,10 @@ export function AlarmPage() {
           </aside>
         </section>
 
-        {!permissionReady && nativeStatus && (
+        {(!permissionReady || !lockScreenReady) && nativeStatus && (
           <section className="alarm-access-card" role="status">
             <span><ShieldCheck /></span>
-            <div><strong>Enable reliable alarm access</strong><p>Allow notifications and exact alarms so AutoAI can ring when the app is closed or the screen is locked.</p></div>
+            <div><strong>{permissionReady ? "Enable the lock-screen alarm" : "Finish reliable alarm access"}</strong><p>Allow notifications, camera, exact alarms and the full-screen alarm window. AutoAI will not claim an alarm is armed until exact timing is available.</p></div>
             <button type="button" onClick={() => void requestAlarmAccess()}>Enable access</button>
           </section>
         )}

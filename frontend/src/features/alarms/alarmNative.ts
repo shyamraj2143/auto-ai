@@ -1,5 +1,5 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
-import type { AlarmNativeStatus, UserAlarm } from "./types";
+import type { AlarmNativeScheduleResult, AlarmNativeStatus, AlarmNativeSyncResult, UserAlarm } from "./types";
 
 export type NativeAlarmPayload = {
   alarmId: string;
@@ -17,8 +17,8 @@ export type NativeAlarmPayload = {
 };
 
 type AutoAiAlarmPlugin = {
-  syncAlarms(options: { alarms: NativeAlarmPayload[] }): Promise<{ scheduled: number; exact: boolean }>;
-  scheduleAlarm(options: { alarm: NativeAlarmPayload }): Promise<{ scheduled: boolean; exact: boolean }>;
+  syncAlarms(options: { alarms: NativeAlarmPayload[] }): Promise<AlarmNativeSyncResult>;
+  scheduleAlarm(options: { alarm: NativeAlarmPayload }): Promise<AlarmNativeScheduleResult>;
   cancelAlarm(options: { alarmId: string }): Promise<void>;
   getStatus(): Promise<AlarmNativeStatus>;
   requestAlarmAccess(): Promise<AlarmNativeStatus>;
@@ -55,6 +55,10 @@ const browserStatus: AlarmNativeStatus = {
   exactAlarmGranted: true,
   notificationsRequired: typeof Notification !== "undefined",
   notificationsGranted: typeof Notification === "undefined" || Notification.permission === "granted",
+  cameraRequired: false,
+  cameraGranted: true,
+  fullScreenRequired: false,
+  fullScreenGranted: true,
   ready: true,
 };
 
@@ -62,10 +66,10 @@ export const alarmNative = {
   isAndroid: isNativeAlarmRuntime,
   sync: (alarms: UserAlarm[]) => isNativeAlarmRuntime()
     ? NativeAlarm.syncAlarms({ alarms: alarms.map(toNativeAlarm) })
-    : Promise.resolve({ scheduled: 0, exact: false }),
+    : Promise.resolve({ scheduled: 0, failed: 0, exact: false, reason: "browser_runtime" }),
   schedule: (alarm: UserAlarm) => isNativeAlarmRuntime()
     ? NativeAlarm.scheduleAlarm({ alarm: toNativeAlarm(alarm) })
-    : Promise.resolve({ scheduled: false, exact: false }),
+    : Promise.resolve({ scheduled: false, exact: false, triggerAtEpochMs: 0, method: "browser", reason: "browser_runtime" }),
   cancel: (alarmId: string) => isNativeAlarmRuntime() ? NativeAlarm.cancelAlarm({ alarmId }) : Promise.resolve(),
   status: () => isNativeAlarmRuntime() ? NativeAlarm.getStatus() : Promise.resolve({ ...browserStatus }),
   requestAccess: async () => {

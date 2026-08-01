@@ -1,14 +1,16 @@
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models.alarm import UserAlarm
 from app.models.user import User
-from app.schemas.alarm import AlarmAction, AlarmCreate, AlarmList, AlarmRead, AlarmUpdate
+from app.schemas.alarm import AlarmAction, AlarmAwakeVerification, AlarmCreate, AlarmList, AlarmRead, AlarmUpdate
+from app.services.alarm_awake_service import alarm_awake_service
 from app.services.alarm_ai_service import alarm_ai_service
 from app.services.alarm_notification_service import alarm_sync_data, deleted_alarm_sync_data, dispatch_alarm_sync
 
@@ -16,6 +18,7 @@ from app.services.alarm_notification_service import alarm_sync_data, deleted_ala
 router = APIRouter(prefix="/alarms", tags=["alarms"])
 MINIMUM_LEAD_SECONDS = 20
 MAXIMUM_FUTURE_DAYS = 366 * 5
+MAX_AWAKE_PHOTO_BYTES = 6 * 1024 * 1024
 
 
 def utc_naive(value: datetime) -> datetime:
@@ -215,6 +218,36 @@ def alarm_action(
     if sync_action:
         queue_sync(background_tasks, alarm, sync_action)
     return alarm_read(alarm)
+
+
+@router.post("/{alarm_id}/verify-awake", response_model=AlarmAwakeVerification)
+async def verify_alarm_awake(
+    alarm_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> AlarmAwakeVerification:
+    alarm = owned_alarm(db, current_user.id, alarm_id)
+    if not alarm.enabled or alarm.status not in {"scheduled", "ringing"}:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This alarm is not ringing.")
+    # Read into memory only. Alarm selfies are never written to disk or retained.
+    image = await file.read(MAX_AWAKE_PHOTO_BYTES + 1)
+    if not image:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The captured photo is empty.")
+    if len(image) > MAX_AWAKE_PHOTO_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="The captured photo is too large.")
+    decision = await run_in_threadpool(
+        alarm_awake_service.verify,
+        image=image,
+        filename=file.filename or "awake.jpg",
+    )
+    return AlarmAwakeVerification(
+        awake=decision.awake,
+        confidence=decision.confidence,
+        reason=decision.reason,
+        model=decision.model,
+        photo_stored=False,
+    )
 
 
 @router.delete("/{alarm_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -13,12 +13,16 @@ public final class AlarmActionReceiver extends BroadcastReceiver {
     static final String ACTION_SNOOZE = "com.autoai.app.alarm.SNOOZE";
     static final String ACTION_CHANGED = "com.autoai.app.alarm.CHANGED";
     static final String EXTRA_ACTION = "alarm_action";
+    static final String EXTRA_AWAKE_VERIFIED = "awake_verified";
     private static final int SNOOZE_MINUTES = 10;
 
     @Override public void onReceive(Context context, Intent intent) {
         String alarmId = intent == null ? null : intent.getStringExtra(AlarmScheduler.EXTRA_ALARM_ID);
         String action = intent == null ? null : intent.getAction();
         if (alarmId == null || alarmId.trim().isEmpty()) return;
+        if (!ACTION_SNOOZE.equals(action) && !ACTION_DISMISS.equals(action)) return;
+        if (ACTION_DISMISS.equals(action)
+            && (intent == null || !intent.getBooleanExtra(EXTRA_AWAKE_VERIFIED, false))) return;
         AlarmRingingService.stop(context, alarmId);
         if (ACTION_SNOOZE.equals(action)) {
             AlarmPayload snoozed = AlarmStore.snooze(context, alarmId, System.currentTimeMillis() + SNOOZE_MINUTES * 60_000L);
@@ -34,7 +38,7 @@ public final class AlarmActionReceiver extends BroadcastReceiver {
                 );
             }
             broadcast(context, alarmId, "snooze");
-        } else {
+        } else if (ACTION_DISMISS.equals(action)) {
             AlarmScheduler.cancel(context, alarmId);
             AlarmPayload completed = AlarmStore.markCompleted(context, alarmId);
             if (completed != null) {

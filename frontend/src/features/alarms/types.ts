@@ -45,5 +45,32 @@ export type AlarmNativeStatus = {
   exactAlarmGranted: boolean;
   notificationsRequired: boolean;
   notificationsGranted: boolean;
+  cameraRequired: boolean;
+  cameraGranted: boolean;
+  fullScreenRequired: boolean;
+  fullScreenGranted: boolean;
   ready: boolean;
+};
+
+export type AlarmNativeScheduleResult = {
+  scheduled: boolean;
+  exact: boolean;
+  triggerAtEpochMs: number;
+  method: string;
+  reason: string;
+};
+
+export type AlarmNativeSyncResult = {
+  scheduled: number;
+  failed: number;
+  exact: boolean;
+  reason: string;
+};
+
+export type AlarmAwakeVerification = {
+  awake: boolean;
+  confidence: number;
+  reason: string;
+  model: string;
+  photo_stored: boolean;
 };

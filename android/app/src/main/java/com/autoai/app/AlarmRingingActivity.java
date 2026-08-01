@@ -1,6 +1,7 @@
 package com.autoai.app;
 
 import android.app.Activity;
+import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -8,6 +9,7 @@ import android.content.IntentFilter;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -25,6 +27,17 @@ import java.util.Locale;
 public final class AlarmRingingActivity extends Activity {
     private String alarmId;
     private BroadcastReceiver changedReceiver;
+
+    static PendingIntent pendingIntent(Context context, AlarmPayload alarm) {
+        Intent intent = new Intent(context, AlarmRingingActivity.class)
+            .setAction("com.autoai.app.alarm.SHOW")
+            .setData(Uri.parse("autoai://alarm-screen/" + Uri.encode(alarm.alarmId)))
+            .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            .putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarm.alarmId);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) flags |= PendingIntent.FLAG_IMMUTABLE;
+        return PendingIntent.getActivity(context, AlarmPayload.requestCode(alarm.alarmId) + 3, intent, flags);
+    }
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -105,16 +118,16 @@ public final class AlarmRingingActivity extends Activity {
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setGravity(Gravity.CENTER);
         Button snooze = actionButton("Snooze 10 min", Color.rgb(27, 43, 68), Color.rgb(128, 157, 202));
-        Button dismiss = actionButton("Dismiss", Color.rgb(222, 91, 35), Color.rgb(255, 184, 102));
+        Button dismiss = actionButton("Stop alarm", Color.rgb(222, 91, 35), Color.rgb(255, 184, 102));
         snooze.setOnClickListener(view -> act(AlarmActionReceiver.ACTION_SNOOZE));
-        dismiss.setOnClickListener(view -> act(AlarmActionReceiver.ACTION_DISMISS));
+        dismiss.setOnClickListener(view -> openAwakeVerification());
         LinearLayout.LayoutParams button = new LinearLayout.LayoutParams(0, dp(54), 1f);
         button.setMargins(dp(4), 0, dp(4), 0);
         actions.addView(snooze, button);
         actions.addView(dismiss, button);
         root.addView(actions, matchWrap(dp(25)));
 
-        TextView helper = text("Your alarm stays active until you snooze or dismiss it.", 11, Color.rgb(128, 146, 171), Typeface.NORMAL);
+        TextView helper = text("Stopping requires a live face capture. The alarm keeps ringing until you verify that you are awake.", 11, Color.rgb(128, 146, 171), Typeface.NORMAL);
         helper.setGravity(Gravity.CENTER);
         root.addView(helper, matchWrap(dp(16)));
         scroll.addView(root, new ScrollView.LayoutParams(-1, -1));
@@ -125,6 +138,11 @@ public final class AlarmRingingActivity extends Activity {
         sendBroadcast(new Intent(this, AlarmActionReceiver.class).setAction(action)
             .putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarmId));
         finishAndRemoveTask();
+    }
+
+    private void openAwakeVerification() {
+        startActivity(new Intent(this, AlarmAwakeVerificationActivity.class)
+            .putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarmId));
     }
 
     private TextView text(String value, float size, int color, int style) {

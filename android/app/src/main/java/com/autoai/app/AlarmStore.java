@@ -35,6 +35,15 @@ final class AlarmStore {
         return null;
     }
 
+    static synchronized AlarmPayload ringing(Context context) {
+        AlarmPayload earliest = null;
+        for (AlarmPayload payload : all(context)) {
+            if (!payload.enabled || !"ringing".equals(payload.status)) continue;
+            if (earliest == null || payload.scheduledAtEpochMs < earliest.scheduledAtEpochMs) earliest = payload;
+        }
+        return earliest;
+    }
+
     static synchronized boolean upsert(Context context, AlarmPayload incoming) {
         if (incoming == null || !incoming.valid()) return false;
         List<AlarmPayload> alarms = all(context);
@@ -62,7 +71,11 @@ final class AlarmStore {
             if (remote == null || !remote.valid()) continue;
             AlarmPayload newest = remote;
             for (AlarmPayload local : existing) {
-                if (local.alarmId.equals(remote.alarmId) && local.revision > remote.revision) {
+                boolean preserveActiveRing = local.alarmId.equals(remote.alarmId)
+                    && local.revision == remote.revision
+                    && "ringing".equals(local.status)
+                    && "scheduled".equals(remote.status);
+                if (local.alarmId.equals(remote.alarmId) && (local.revision > remote.revision || preserveActiveRing)) {
                     newest = local;
                     break;
                 }

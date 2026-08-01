@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useAuth } from "../../contexts/AuthContext";
 import { alarmNative } from "./alarmNative";
 import { alarmsApi } from "./alarmsApi";
-import type { AlarmDraft, AlarmNativeStatus, UserAlarm } from "./types";
+import type { AlarmAwakeVerification, AlarmDraft, AlarmNativeStatus, UserAlarm } from "./types";
 
 type AlarmContextValue = {
   alarms: UserAlarm[];
@@ -17,6 +17,7 @@ type AlarmContextValue = {
   updateAlarm: (alarmId: string, payload: Partial<AlarmDraft> & { enabled?: boolean }) => Promise<UserAlarm>;
   deleteAlarm: (alarmId: string) => Promise<void>;
   dismissAlarm: (alarmId: string) => Promise<void>;
+  verifyAwake: (alarmId: string, photo: Blob) => Promise<AlarmAwakeVerification>;
   snoozeAlarm: (alarmId: string, minutes?: number) => Promise<void>;
   previewAlarm: (alarm: UserAlarm) => Promise<void>;
   requestAlarmAccess: () => Promise<void>;
@@ -30,6 +31,13 @@ function sortAlarms(items: UserAlarm[]) {
 
 function readableError(error: unknown) {
   return error instanceof Error ? error.message : "Alarm service is temporarily unavailable.";
+}
+
+function accessMessage(status: AlarmNativeStatus) {
+  if (status.notificationsRequired && !status.notificationsGranted) return "Allow alarm notifications, then create the alarm again.";
+  if (status.cameraRequired && !status.cameraGranted) return "Allow camera access for awake verification, then create the alarm again.";
+  if (status.exactAlarmRequired && !status.exactAlarmGranted) return "Enable Alarms & reminders access, return to AutoAI, then create the alarm again.";
+  return "Finish the required Android alarm access, then create the alarm again.";
 }
 
 export function AlarmProvider({ children }: { children: ReactNode }) {
@@ -54,8 +62,13 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
       const result = await alarmsApi.list(token);
       const items = sortAlarms(result.items);
       setAlarms(items);
-      setError("");
-      await alarmNative.sync(items).catch(() => undefined);
+      const sync = await alarmNative.sync(items);
+      const scheduledCount = items.filter((item) => item.enabled && item.status === "scheduled").length;
+      if (alarmNative.isAndroid() && scheduledCount > 0 && (!sync.exact || sync.failed > 0)) {
+        setError("One or more alarms are saved but not armed. Enable exact alarm access before relying on them.");
+      } else {
+        setError("");
+      }
     } catch (requestError) {
       setError(readableError(requestError));
     } finally {
@@ -116,13 +129,28 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
     return updated;
   }, []);
 
+  const ensureNativeAccess = useCallback(async () => {
+    if (!alarmNative.isAndroid()) return;
+    let status = await alarmNative.status();
+    setNativeStatus(status);
+    if (status.ready) return;
+    await alarmNative.requestAccess();
+    status = await alarmNative.status();
+    setNativeStatus(status);
+    if (!status.ready) throw new Error(accessMessage(status));
+  }, []);
+
   const createAlarm = useCallback(async (payload: AlarmDraft) => {
     if (!token) throw new Error("Sign in to create an alarm.");
     setSaving(true);
     setError("");
     try {
+      await ensureNativeAccess();
       const created = upsert(await alarmsApi.create(token, payload));
-      await alarmNative.schedule(created).catch(() => undefined);
+      const armed = await alarmNative.schedule(created);
+      if (alarmNative.isAndroid() && (!armed.scheduled || !armed.exact)) {
+        throw new Error("Alarm was saved to your account but Android did not arm it. Enable exact alarm access and re-enable this alarm.");
+      }
       return created;
     } catch (requestError) {
       setError(readableError(requestError));
@@ -130,15 +158,21 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
     } finally {
       setSaving(false);
     }
-  }, [token, upsert]);
+  }, [ensureNativeAccess, token, upsert]);
 
   const updateAlarm = useCallback(async (alarmId: string, payload: Partial<AlarmDraft> & { enabled?: boolean }) => {
     if (!token) throw new Error("Sign in to update an alarm.");
     setSaving(true);
     setError("");
     try {
+      if (payload.enabled !== false) await ensureNativeAccess();
       const updated = upsert(await alarmsApi.update(token, alarmId, payload));
-      if (updated.enabled) await alarmNative.schedule(updated).catch(() => undefined);
+      if (updated.enabled) {
+        const armed = await alarmNative.schedule(updated);
+        if (alarmNative.isAndroid() && (!armed.scheduled || !armed.exact)) {
+          throw new Error("Changes were saved, but Android did not arm this alarm. Enable exact alarm access and try again.");
+        }
+      }
       else await alarmNative.cancel(updated.id).catch(() => undefined);
       return updated;
     } catch (requestError) {
@@ -147,7 +181,7 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
     } finally {
       setSaving(false);
     }
-  }, [token, upsert]);
+  }, [ensureNativeAccess, token, upsert]);
 
   const deleteAlarm = useCallback(async (alarmId: string) => {
     if (!token) return;
@@ -175,6 +209,11 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
     } catch (requestError) {
       setError(readableError(requestError));
     }
+  }, [token]);
+
+  const verifyAwake = useCallback(async (alarmId: string, photo: Blob) => {
+    if (!token) throw new Error("Sign in to verify this alarm.");
+    return alarmsApi.verifyAwake(token, alarmId, photo);
   }, [token]);
 
   const snoozeAlarm = useCallback(async (alarmId: string, minutes = 10) => {
@@ -222,10 +261,11 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
     updateAlarm,
     deleteAlarm,
     dismissAlarm,
+    verifyAwake,
     snoozeAlarm,
     previewAlarm,
     requestAlarmAccess,
-  }), [activeAlarm, alarms, createAlarm, deleteAlarm, dismissAlarm, error, loading, nativeStatus, nextAlarm, previewAlarm, refresh, requestAlarmAccess, saving, snoozeAlarm, updateAlarm]);
+  }), [activeAlarm, alarms, createAlarm, deleteAlarm, dismissAlarm, error, loading, nativeStatus, nextAlarm, previewAlarm, refresh, requestAlarmAccess, saving, snoozeAlarm, updateAlarm, verifyAwake]);
 
   return <AlarmContext.Provider value={value}>{children}</AlarmContext.Provider>;
 }

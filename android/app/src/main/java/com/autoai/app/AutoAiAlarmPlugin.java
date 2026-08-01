@@ -2,6 +2,7 @@ package com.autoai.app;
 
 import android.Manifest;
 import android.app.AlarmManager;
+import android.app.NotificationManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -30,7 +31,10 @@ import java.util.List;
 
 @CapacitorPlugin(
     name = "AutoAiAlarm",
-    permissions = { @Permission(strings = { Manifest.permission.POST_NOTIFICATIONS }, alias = "notifications") }
+    permissions = {
+        @Permission(strings = { Manifest.permission.POST_NOTIFICATIONS }, alias = "notifications"),
+        @Permission(strings = { Manifest.permission.CAMERA }, alias = "camera")
+    }
 )
 public final class AutoAiAlarmPlugin extends Plugin {
     private BroadcastReceiver actionReceiver;
@@ -69,11 +73,22 @@ public final class AutoAiAlarmPlugin extends Plugin {
         for (String removed : AlarmStore.replaceAll(getContext(), incoming)) AlarmScheduler.cancel(getContext(), removed);
         List<AlarmPayload> effective = AlarmStore.all(getContext());
         int scheduled = 0;
+        int failed = 0;
         boolean exact = AlarmScheduler.canScheduleExact(getContext());
-        for (AlarmPayload alarm : effective) if (AlarmScheduler.schedule(getContext(), alarm).scheduled) scheduled++;
+        String firstFailure = "";
+        for (AlarmPayload alarm : effective) {
+            AlarmScheduler.Result schedule = AlarmScheduler.schedule(getContext(), alarm);
+            if (schedule.scheduled) scheduled++;
+            else if (alarm.enabled && "scheduled".equals(alarm.status)) {
+                failed++;
+                if (firstFailure.isEmpty()) firstFailure = schedule.reason;
+            }
+        }
         JSObject result = new JSObject();
         result.put("scheduled", scheduled);
+        result.put("failed", failed);
         result.put("exact", exact);
+        result.put("reason", firstFailure);
         call.resolve(result);
     }
 
@@ -82,10 +97,7 @@ public final class AutoAiAlarmPlugin extends Plugin {
         if (payload == null) { call.reject("A valid alarm is required.", "INVALID_ALARM"); return; }
         AlarmStore.upsert(getContext(), payload);
         AlarmScheduler.Result scheduled = AlarmScheduler.schedule(getContext(), payload);
-        JSObject result = new JSObject();
-        result.put("scheduled", scheduled.scheduled);
-        result.put("exact", scheduled.exact);
-        call.resolve(result);
+        call.resolve(scheduleResult(scheduled));
     }
 
     @PluginMethod public void cancelAlarm(PluginCall call) {
@@ -104,13 +116,32 @@ public final class AutoAiAlarmPlugin extends Plugin {
             requestPermissionForAlias("notifications", call, "notificationPermissionCallback");
             return;
         }
-        openExactAlarmAccessIfNeeded();
+        if (!cameraGranted()) {
+            requestPermissionForAlias("camera", call, "cameraPermissionCallback");
+            return;
+        }
+        continueSpecialAccess(call);
+    }
+
+    private void continueSpecialAccess(PluginCall call) {
+        if (openExactAlarmAccessIfNeeded()) {
+            call.resolve(status());
+            return;
+        }
+        openFullScreenAlarmAccessIfNeeded();
         call.resolve(status());
     }
 
     @PermissionCallback private void notificationPermissionCallback(PluginCall call) {
-        openExactAlarmAccessIfNeeded();
-        call.resolve(status());
+        if (!cameraGranted()) {
+            requestPermissionForAlias("camera", call, "cameraPermissionCallback");
+            return;
+        }
+        continueSpecialAccess(call);
+    }
+
+    @PermissionCallback private void cameraPermissionCallback(PluginCall call) {
+        continueSpecialAccess(call);
     }
 
     @PluginMethod public void previewVoice(PluginCall call) {
@@ -146,13 +177,22 @@ public final class AutoAiAlarmPlugin extends Plugin {
         boolean notificationsRequired = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU;
         boolean exactGranted = AlarmScheduler.canScheduleExact(getContext());
         boolean notificationGranted = notificationsGranted();
+        boolean cameraGranted = cameraGranted();
+        boolean fullScreenRequired = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE;
+        boolean fullScreenGranted = fullScreenAlarmGranted();
         JSObject result = new JSObject();
         result.put("native", true);
         result.put("exactAlarmRequired", exactRequired);
         result.put("exactAlarmGranted", exactGranted);
         result.put("notificationsRequired", notificationsRequired);
         result.put("notificationsGranted", notificationGranted);
-        result.put("ready", (!exactRequired || exactGranted) && (!notificationsRequired || notificationGranted));
+        result.put("cameraRequired", true);
+        result.put("cameraGranted", cameraGranted);
+        result.put("fullScreenRequired", fullScreenRequired);
+        result.put("fullScreenGranted", fullScreenGranted);
+        result.put("ready", (!exactRequired || exactGranted)
+            && (!notificationsRequired || notificationGranted)
+            && cameraGranted);
         return result;
     }
 
@@ -162,8 +202,13 @@ public final class AutoAiAlarmPlugin extends Plugin {
             || getPermissionState("notifications") == PermissionState.GRANTED;
     }
 
-    private void openExactAlarmAccessIfNeeded() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || AlarmScheduler.canScheduleExact(getContext())) return;
+    private boolean cameraGranted() {
+        return getContext().checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+            || getPermissionState("camera") == PermissionState.GRANTED;
+    }
+
+    private boolean openExactAlarmAccessIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || AlarmScheduler.canScheduleExact(getContext())) return false;
         try {
             Intent intent = new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
                 Uri.parse("package:" + getContext().getPackageName()));
@@ -172,5 +217,34 @@ public final class AutoAiAlarmPlugin extends Plugin {
             getActivity().startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 Uri.parse("package:" + getContext().getPackageName())));
         }
+        return true;
+    }
+
+    private boolean fullScreenAlarmGranted() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return true;
+        NotificationManager manager = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
+        return manager != null && manager.canUseFullScreenIntent();
+    }
+
+    private boolean openFullScreenAlarmAccessIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE || fullScreenAlarmGranted()) return false;
+        try {
+            getActivity().startActivity(new Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                Uri.parse("package:" + getContext().getPackageName())));
+        } catch (RuntimeException ignored) {
+            getActivity().startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:" + getContext().getPackageName())));
+        }
+        return true;
+    }
+
+    private JSObject scheduleResult(AlarmScheduler.Result value) {
+        JSObject result = new JSObject();
+        result.put("scheduled", value.scheduled);
+        result.put("exact", value.exact);
+        result.put("triggerAtEpochMs", value.triggerAtEpochMs);
+        result.put("method", value.method);
+        result.put("reason", value.reason);
+        return result;
     }
 }

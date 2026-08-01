@@ -72,3 +72,11 @@ class AlarmRead(BaseModel):
 class AlarmList(BaseModel):
     items: list[AlarmRead]
     server_time: datetime
+
+
+class AlarmAwakeVerification(BaseModel):
+    awake: bool
+    confidence: float = Field(ge=0, le=1)
+    reason: str
+    model: str
+    photo_stored: bool = False

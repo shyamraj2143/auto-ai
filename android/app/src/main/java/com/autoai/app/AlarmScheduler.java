@@ -16,7 +16,17 @@ final class AlarmScheduler {
     static final class Result {
         final boolean scheduled;
         final boolean exact;
-        Result(boolean scheduled, boolean exact) { this.scheduled = scheduled; this.exact = exact; }
+        final long triggerAtEpochMs;
+        final String method;
+        final String reason;
+
+        Result(boolean scheduled, boolean exact, long triggerAtEpochMs, String method, String reason) {
+            this.scheduled = scheduled;
+            this.exact = exact;
+            this.triggerAtEpochMs = triggerAtEpochMs;
+            this.method = method;
+            this.reason = reason;
+        }
     }
 
     private AlarmScheduler() {}
@@ -25,25 +35,33 @@ final class AlarmScheduler {
         boolean ringableState = payload != null && ("scheduled".equals(payload.status) || "ringing".equals(payload.status));
         if (payload == null || !payload.valid() || !payload.enabled || !ringableState) {
             if (payload != null) cancel(context, payload.alarmId);
-            return new Result(false, canScheduleExact(context));
+            return new Result(false, canScheduleExact(context), 0L, "none", "alarm_not_ringable");
         }
         AlarmManager manager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
-        if (manager == null) return new Result(false, false);
+        if (manager == null) return new Result(false, false, 0L, "none", "alarm_manager_unavailable");
         long now = System.currentTimeMillis();
         long triggerAt = payload.scheduledAtEpochMs;
-        if (triggerAt < now - MISSED_ALARM_GRACE_MS) return new Result(false, canScheduleExact(context));
-        if (triggerAt <= now) triggerAt = now + 750L;
-        PendingIntent pending = pendingIntent(context, payload.alarmId, payload.revision, PendingIntent.FLAG_UPDATE_CURRENT);
-        boolean exact = canScheduleExact(context);
-        if (exact) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending);
-            else manager.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pending);
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pending);
-        } else {
-            manager.set(AlarmManager.RTC_WAKEUP, triggerAt, pending);
+        if (triggerAt < now - MISSED_ALARM_GRACE_MS) {
+            return new Result(false, canScheduleExact(context), triggerAt, "none", "alarm_expired");
         }
-        return new Result(true, exact);
+        if (triggerAt <= now) triggerAt = now + 750L;
+        boolean exact = canScheduleExact(context);
+        if (!exact) {
+            // A one-minute wake-up alarm must never be silently downgraded to an inexact
+            // alarm. Android can defer that fallback in Doze, which previously let the UI
+            // report success even though the alarm was not armed for its requested time.
+            return new Result(false, false, triggerAt, "none", "exact_alarm_access_required");
+        }
+        PendingIntent pending = pendingIntent(context, payload.alarmId, payload.revision, PendingIntent.FLAG_UPDATE_CURRENT);
+        PendingIntent show = AlarmRingingActivity.pendingIntent(context, payload);
+        try {
+            manager.setAlarmClock(new AlarmManager.AlarmClockInfo(triggerAt, show), pending);
+        } catch (SecurityException denied) {
+            return new Result(false, false, triggerAt, "none", "exact_alarm_access_required");
+        } catch (RuntimeException failure) {
+            return new Result(false, true, triggerAt, "none", "schedule_failed");
+        }
+        return new Result(true, true, triggerAt, "alarm_clock", "");
     }
 
     static int rescheduleAll(Context context) {

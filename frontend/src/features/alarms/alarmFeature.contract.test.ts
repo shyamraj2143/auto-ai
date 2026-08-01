@@ -20,6 +20,8 @@ describe("AI Alarm feature contracts", () => {
     expect(context).toContain("alarmNative.sync");
     expect(native).toContain('registerPlugin<AutoAiAlarmPlugin>("AutoAiAlarm")');
     expect(native).toContain("scheduledAtEpochMs");
+    expect(context).toContain("Android did not arm it");
+    expect(context).toContain("ensureNativeAccess");
   });
 
   it("retains explicit desktop and small-mobile responsive layouts", () => {
@@ -27,5 +29,13 @@ describe("AI Alarm feature contracts", () => {
     expect(css).toContain("@media (max-width: 760px)");
     expect(css).toContain("@media (max-width: 390px)");
     expect(css).toContain("word-break: normal");
+  });
+
+  it("requires a live camera and awake verification before desktop dismissal", () => {
+    const overlay = source("src/features/alarms/AlarmOverlay.tsx");
+    expect(overlay).toContain("navigator.mediaDevices?.getUserMedia");
+    expect(overlay).toContain("verifyAwake(activeAlarm.id, photo)");
+    expect(overlay).toContain("Verify to stop");
+    expect(overlay).toContain("setInterval(speakReminder");
   });
 });

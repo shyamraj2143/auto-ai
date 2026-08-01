@@ -12,6 +12,7 @@ import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.media.RingtoneManager;
+import android.media.ToneGenerator;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -32,7 +33,6 @@ public final class AlarmRingingService extends Service {
     private static final String CHANNEL_ID = "auto_ai_alarm_ringing_v1";
     private static final String ACTION_START = "com.autoai.app.alarm.START_RINGING";
     private static final String ACTION_STOP = "com.autoai.app.alarm.STOP_RINGING";
-    private static final long MAX_RING_DURATION_MS = 10L * 60L * 1000L;
     private static final String UTTERANCE_ID = "auto_ai_alarm_voice";
     private static volatile String activeAlarmId;
 
@@ -40,11 +40,19 @@ public final class AlarmRingingService extends Service {
     private AlarmPayload currentAlarm;
     private MediaPlayer ringtonePlayer;
     private TextToSpeech textToSpeech;
+    private ToneGenerator fallbackTone;
     private PowerManager.WakeLock wakeLock;
     private AudioManager audioManager;
     private AudioFocusRequest audioFocusRequest;
     private float ringtoneVolume = .82f;
     private boolean speaking;
+    private final Runnable fallbackTonePulse = new Runnable() {
+        @Override public void run() {
+            if (fallbackTone == null || currentAlarm == null) return;
+            fallbackTone.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 950);
+            handler.postDelayed(this, 1_250L);
+        }
+    };
 
     static void start(Context context, String alarmId) {
         Intent intent = new Intent(context, AlarmRingingService.class)
@@ -84,37 +92,27 @@ public final class AlarmRingingService extends Service {
             if (currentAlarm == null || alarmId == null || currentAlarm.alarmId.equals(alarmId)) stopSelfSafely();
             return START_NOT_STICKY;
         }
-        AlarmPayload payload = AlarmStore.get(this, alarmId);
+        AlarmPayload payload = alarmId == null ? AlarmStore.ringing(this) : AlarmStore.get(this, alarmId);
         if (payload == null || !payload.enabled) {
             stopSelfSafely();
             return START_NOT_STICKY;
         }
         if (currentAlarm != null && currentAlarm.alarmId.equals(payload.alarmId) && currentAlarm.revision == payload.revision) {
-            return START_NOT_STICKY;
+            return START_STICKY;
         }
         stopPlayback();
         currentAlarm = payload;
         activeAlarmId = payload.alarmId;
         ringtoneVolume = "gentle".equals(payload.ringtone) ? .46f : "energetic".equals(payload.ringtone) ? 1f : .82f;
         AlarmStore.markRinging(this, payload.alarmId);
+        AlarmActionSyncWorker.enqueue(this, payload.alarmId, "ringing", 0, 0L, payload.revision);
         startForeground(AlarmPayload.requestCode(payload.alarmId), notification(payload));
         acquireWakeLock();
         requestAudioFocus();
         startRingtone(payload);
         startSpeech(payload);
-        handler.postDelayed(() -> {
-            if (currentAlarm != null) {
-                String id = currentAlarm.alarmId;
-                AlarmPayload completed = AlarmStore.markCompleted(this, id);
-                if (completed != null) {
-                    AlarmActionSyncWorker.enqueue(this, id, "dismiss", 0, 0L, completed.revision);
-                }
-                AlarmActionReceiver.broadcast(this, id, "timeout");
-            }
-            stopSelfSafely();
-        }, MAX_RING_DURATION_MS);
         Log.i("AutoAiAlarm", "ALARM_RINGING_STARTED alarmId=" + payload.alarmId);
-        return START_NOT_STICKY;
+        return START_STICKY;
     }
 
     private Notification notification(AlarmPayload alarm) {
@@ -139,7 +137,7 @@ public final class AlarmRingingService extends Service {
             .setWhen(alarm.scheduledAtEpochMs)
             .setShowWhen(true)
             .addAction(new Notification.Action.Builder(android.R.drawable.ic_lock_idle_alarm, "Snooze 10 min", AlarmActionReceiver.pending(this, alarm, true)).build())
-            .addAction(new Notification.Action.Builder(android.R.drawable.ic_menu_close_clear_cancel, "Dismiss", AlarmActionReceiver.pending(this, alarm, false)).build());
+            .addAction(new Notification.Action.Builder(android.R.drawable.ic_menu_camera, "Stop with face check", AlarmAwakeVerificationActivity.pendingIntent(this, alarm)).build());
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) builder.setPriority(Notification.PRIORITY_MAX);
         return builder.build();
     }
@@ -148,7 +146,7 @@ public final class AlarmRingingService extends Service {
         PowerManager manager = (PowerManager) getSystemService(POWER_SERVICE);
         if (manager == null) return;
         wakeLock = manager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "autoai:ai-alarm");
-        wakeLock.acquire(MAX_RING_DURATION_MS + 15_000L);
+        wakeLock.acquire();
     }
 
     private void requestAudioFocus() {
@@ -186,6 +184,16 @@ public final class AlarmRingingService extends Service {
             ringtonePlayer.start();
         } catch (Exception error) {
             Log.w("AutoAiAlarm", "Unable to play system alarm ringtone", error);
+            startFallbackTone();
+        }
+    }
+
+    private void startFallbackTone() {
+        try {
+            fallbackTone = new ToneGenerator(AudioManager.STREAM_ALARM, 100);
+            handler.post(fallbackTonePulse);
+        } catch (RuntimeException error) {
+            Log.w("AutoAiAlarm", "Unable to start fallback alarm tone", error);
         }
     }
 
@@ -248,6 +256,10 @@ public final class AlarmRingingService extends Service {
             try { ringtonePlayer.stop(); } catch (IllegalStateException ignored) {}
             ringtonePlayer.release();
             ringtonePlayer = null;
+        }
+        if (fallbackTone != null) {
+            fallbackTone.release();
+            fallbackTone = null;
         }
         if (textToSpeech != null) {
             textToSpeech.stop();
