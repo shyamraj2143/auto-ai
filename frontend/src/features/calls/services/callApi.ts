@@ -15,11 +15,15 @@ const TURN_PREFLIGHT_ATTEMPTS = 3;
 const TURN_PREFLIGHT_STUN: RTCIceServer[] = [{ urls: ["stun:stun.l.google.com:19302"] }];
 let lastSuccessfulTurnCredentials: TurnCredentials | null = null;
 
-function hasUsableIceServers(credentials: TurnCredentials) {
+function hasUsableTurnRelay(credentials: TurnCredentials) {
+  const relayConfigured = Boolean(
+    credentials.configured ?? credentials.relayConfigured ?? credentials.relay_configured,
+  );
+  if (!relayConfigured) return false;
   const servers = credentials.iceServers ?? credentials.ice_servers ?? [];
   return servers.some((server) => {
     const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
-    return urls.some((url) => typeof url === "string" && /^(stun|turns?):/i.test(url));
+    return urls.some((url) => typeof url === "string" && /^turns?:/i.test(url));
   });
 }
 
@@ -40,7 +44,7 @@ async function loadTurnCredentials(token: string) {
         token,
         operation: "calls.turn",
       });
-      if (hasUsableIceServers(credentials)) lastSuccessfulTurnCredentials = credentials;
+      if (hasUsableTurnRelay(credentials)) lastSuccessfulTurnCredentials = credentials;
       return credentials;
     } catch (error) {
       lastError = error;
