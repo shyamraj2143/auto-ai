@@ -6,6 +6,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { destinationFromSocialNotification, routeForNotificationDestination } from "../../notifications/notificationDestination";
 import { useCallSession } from "./hooks/useCallSession";
 import { callApi } from "./services/callApi";
+import { callNative } from "./services/callNative";
 import { socialApi } from "./services/socialApi";
 import { userMessagesApi } from "../userMessages/userMessagesApi";
 import type { UserThread } from "../userMessages/types";
@@ -466,26 +467,35 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
   }
 
   async function placeUserCall(user: PublicCallUser, type: CallType) {
-    if ((type === "audio" && !user.can_audio_call) || (type === "video" && !user.can_video_call)) {
-      showToast("Follow approval is required before calling this user.");
-      return;
-    }
-    let latestConfig = config;
-    if (!latestConfig || !latestConfig.enabled || !latestConfig.realtime_configured || signalingState !== "connected") {
-      showToast("Connecting secure call service…");
-      try {
-        latestConfig = await refreshRealtime();
-      } catch (connectError) {
-        showToast(errorText(connectError, "Calling service could not connect. Please retry."));
-        return;
-      }
-    }
-    if (!latestConfig.enabled || !latestConfig.realtime_configured) {
-      showToast(latestConfig.diagnostic || "Calling service is temporarily unavailable.");
-      return;
-    }
-    await startCall(user, type);
+  if ((type === "audio" && !user.can_audio_call) || (type === "video" && !user.can_video_call)) {
+    showToast("Follow approval is required before calling this user.");
+    return;
   }
+
+  // Android owns signaling and media inside the native foreground service.
+  // Requiring the WebView websocket here prevented the real call request
+  // from reaching the backend and produced only a red secure-call error.
+  if (callNative.isAndroid()) {
+    await startCall(user, type);
+    return;
+  }
+
+  let latestConfig = config;
+  if (!latestConfig || !latestConfig.enabled || !latestConfig.realtime_configured || signalingState !== "connected") {
+    showToast("Connecting secure call service…");
+    try {
+      latestConfig = await refreshRealtime();
+    } catch (connectError) {
+      showToast(errorText(connectError, "Calling service could not connect. Please retry."));
+      return;
+    }
+  }
+  if (!latestConfig.enabled || !latestConfig.realtime_configured) {
+    showToast(latestConfig.diagnostic || "Calling service is temporarily unavailable.");
+    return;
+  }
+  await startCall(user, type);
+}
 
   async function openMessageByUserId(userId: string) {
     if (!token) return;
