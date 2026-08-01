@@ -1090,7 +1090,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       if (created.delivery === "unreachable") {
         callDebug("call_cancel_source", { call_id: created.id, role: created.direction, source: "delivery_unreachable" });
         await callApi.cancel(token, created.id).catch(() => undefined);
-        await cleanup("failed", "User is unavailable");
+        await cleanup("failed", "User is offline or has no internet connection.");
         return;
       }
       clearCallTimer("noAnswer");
