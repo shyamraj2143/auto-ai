@@ -11,7 +11,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.api.routes.calls import call_health, discoverable_users_query, register_call_device, ringing_call, search_users
+from app.api.routes.calls import call_health, discoverable_users_query, pending_incoming_call, register_call_device, ringing_call, search_users
 from app.core.config import settings
 from app.db.base import Base
 from app.models.call import BlockedUser, Call, CallDelivery, UserCallSettings, UserDevice
@@ -325,6 +325,28 @@ def test_call_state_machine_rejects_late_accept_state() -> None:
     call = Call(caller_id="caller", callee_id="callee", call_type="video", status="cancelled")
     with pytest.raises(Exception):
         CallService._require_state(call, {"initiated", "ringing"})
+
+
+@pytest.mark.asyncio
+async def test_pending_incoming_call_recovers_a_delivery_race(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    caller = create_user(db, "pending_caller", "Pending Caller")
+    callee = create_user(db, "pending_callee", "Pending Callee")
+    call = Call(caller_id=caller.id, callee_id=callee.id, call_type="audio", status="initiated")
+    db.add(call)
+    db.commit()
+    monkeypatch.setattr(
+        global_presence_service,
+        "presence_for_user",
+        AsyncMock(return_value={"state": "online", "last_seen_at": None, "reachable": True}),
+    )
+
+    recovered = await pending_incoming_call(db=db, current_user=callee)
+
+    assert recovered is not None
+    assert recovered.id == call.id
+    assert recovered.direction == "incoming"
 
 
 @pytest.mark.asyncio

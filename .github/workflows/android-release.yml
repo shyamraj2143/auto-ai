@@ -130,9 +130,9 @@ jobs:
             echo "Version-Code: ${AUTO_AI_ANDROID_VERSION_CODE}"
             echo "Version-Name: ${AUTO_AI_ANDROID_VERSION_NAME}"
             echo "SHA256: ${sha256}"
-            echo "Changelog: Native voice/video calling signaling and service reliability hotfix"
+            echo "Changelog: Restore voice/video calls, message notifications and recent-call sync"
             echo
-            echo "Includes transient server retries, WebSocket reconnect, queued signal replay, Redis fallback and Android foreground-service recovery."
+            echo "Includes FCM token self-healing, false-offline delivery recovery and immediate call-history refresh."
             echo "Verified Android assets from GitHub push ${GITHUB_SHA::7}"
           } > "$notes"
           gh release create "$tag" "$apk_path" \
@@ -154,8 +154,8 @@ jobs:
             --apk output/android/auto-ai.apk \
             --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
             --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
-            --changelog "Native voice/video calling signaling and service reliability hotfix" \
-            --release-notes "Includes transient retries, WebSocket recovery, queued signal replay, Redis fallback and foreground-service recovery. Verified GitHub push ${GITHUB_SHA::7}." \
+            --changelog "Restore voice/video calls, message notifications and recent-call sync" \
+            --release-notes "Includes FCM token self-healing, false-offline delivery recovery and immediate call-history refresh. Verified GitHub push ${GITHUB_SHA::7}." \
             --metadata-only \
             "${args[@]}"
 
@@ -167,7 +167,7 @@ jobs:
             --api-url "$AUTO_AI_API_BASE_URL" \
             --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
             --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
-            --changelog "Native voice/video calling signaling and service reliability hotfix"
+            --changelog "Restore voice/video calls, message notifications and recent-call sync"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

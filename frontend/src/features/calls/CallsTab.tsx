@@ -282,6 +282,12 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
     finally { setLoading(false); }
   }, [showToast, token]);
 
+  const loadCallHistory = useCallback(async () => {
+    if (!token) return;
+    try { setHistory((await callApi.history(token, 1, 20)).items); }
+    catch (loadError) { showToast(errorText(loadError, "Unable to load call history.")); }
+  }, [showToast, token]);
+
   const refresh = useCallback(async (notifyOnError = false) => {
     if (!token) return;
     onRefreshingChange(true);
@@ -336,9 +342,16 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
   useEffect(() => {
     if (view === "requests") void loadRequests();
     if (view === "chats") void loadChats();
+    if (view === "calls") void loadCallHistory();
     if (view === "alerts") void loadNotifications();
     if (view === "search" && query.trim().length < 2) void loadSearchHistory();
-  }, [loadChats, loadNotifications, loadRequests, loadSearchHistory, query, view]);
+  }, [loadCallHistory, loadChats, loadNotifications, loadRequests, loadSearchHistory, query, view]);
+
+  useEffect(() => {
+    const reload = () => void loadCallHistory();
+    window.addEventListener("auto-ai-call-history-updated", reload);
+    return () => window.removeEventListener("auto-ai-call-history-updated", reload);
+  }, [loadCallHistory]);
 
   useEffect(() => () => searchAbortRef.current?.abort(), []);
 

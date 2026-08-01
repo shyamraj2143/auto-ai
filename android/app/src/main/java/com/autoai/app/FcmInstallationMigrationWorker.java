@@ -57,8 +57,10 @@ public final class FcmInstallationMigrationWorker extends Worker {
             Tasks.await(installations.delete(), 30, TimeUnit.SECONDS);
             Tasks.await(FirebaseMessaging.getInstance().register(), 30, TimeUnit.SECONDS);
             String newFid = Tasks.await(installations.getId(), 30, TimeUnit.SECONDS);
+            String newToken = Tasks.await(FirebaseMessaging.getInstance().getToken(), 30, TimeUnit.SECONDS);
             if (newFid == null || newFid.equals(oldFid)) return Result.retry();
-            if (!PushTokenRegistrar.registerInstallationBlocking(context, newFid, oldHash)) return Result.retry();
+            if (!PushTokenRegistrar.isUsableFcmToken(newToken, newFid)) return Result.retry();
+            if (!PushTokenRegistrar.registerInstallationBlocking(context, newFid, newToken, oldHash)) return Result.retry();
             SharedPreferences preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
             preferences.edit().putBoolean(COMPLETED, true).apply();
             Log.i("AutoAiFcmMigration", "FCM installation rotation completed new_fid_hash=" + PushTokenRegistrar.sha256Prefix(newFid));

@@ -85,6 +85,7 @@ export const callApi = {
         platform: payload.platform,
         fcmToken: payload.fcm_token,
         appVersion: payload.app_version,
+        appVersionCode: payload.app_version_code,
         deviceName: payload.device_name
       })
     }),
@@ -94,6 +95,8 @@ export const callApi = {
   turnCredentials: (token: string) => loadTurnCredentials(token),
   initiate: (token: string, calleeUserId: string, callType: CallType, deviceId?: string | null) =>
     apiFetch<CallRecord>("/calls", { method: "POST", token, operation: "calls.initiate", body: JSON.stringify({ callee_user_id: calleeUserId, call_type: callType, caller_device_id: deviceId }) }),
+  pendingIncoming: (token: string) =>
+    apiFetch<CallRecord | null>("/calls/pending-incoming", { token, operation: "calls.pendingIncoming" }),
   get: (token: string, callId: string) => apiFetch<CallRecord>(`/calls/${callId}`, { token, operation: "calls.get" }),
   accept: (token: string, callId: string, deviceId?: string | null) =>
     apiFetch<CallRecord>(`/calls/${callId}/accept`, { method: "POST", token, operation: "calls.accept", body: JSON.stringify({ device_id: deviceId }) }),

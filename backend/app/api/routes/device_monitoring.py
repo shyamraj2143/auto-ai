@@ -9,7 +9,6 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.device_monitoring import DeviceActivityCreate, DeviceActivityIngestResponse, DeviceCommandAckRequest, DeviceHeartbeatRequest, DeviceRegisterRequest, DeviceRegisterResponse
 from app.services.device_monitoring import upsert_registered_device
-from app.services.device_token_security import token_hash
 
 
 router = APIRouter(tags=["device-monitoring"])
@@ -41,7 +40,7 @@ def register_device(
         activation_required=False,
         approved=True,
         fcmTokenStored=bool(device.fcm_token_hash),
-        fcmTokenHash=token_hash(payload.fcmToken)[:16] if payload.fcmToken else None,
+        fcmTokenHash=device.fcm_token_hash[:16] if device.fcm_token_hash else None,
     )
 
 

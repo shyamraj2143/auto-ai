@@ -54,6 +54,10 @@ function isRelayCandidate(candidate: RTCIceCandidate) {
   return /\styp relay(\s|$)/.test(candidate.candidate);
 }
 
+function notifyCallHistoryChanged() {
+  window.dispatchEvent(new Event("auto-ai-call-history-updated"));
+}
+
 export function CallProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const { token, user } = useAuth();
@@ -713,6 +717,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     reconnectAttemptsRef.current = 0;
     mediaResourceCoordinator.release("person-call");
     const cleanedCallId = callRef.current?.id;
+    if (cleanedCallId) notifyCallHistoryChanged();
     await callNative.stopActiveCall(cleanedCallId).catch(() => undefined);
     if (cleanedCallId) nativeServiceCallIdsRef.current.delete(cleanedCallId);
     if (detail) setError(detail);
@@ -774,6 +779,17 @@ export function CallProvider({ children }: { children: ReactNode }) {
       // Expired or cancelled native notifications are dismissed without showing a stale call.
     }
   }, [cleanup, clearRingTimer, closeBrowserNotification, setCallTimer, signaling, startRingtone, token]);
+
+  useEffect(() => {
+    if (!token || signalingState !== "connected" || sessionStateRef.current !== "idle") return;
+    let active = true;
+    void callApi.pendingIncoming(token).then((pending) => {
+      if (active && pending?.id && sessionStateRef.current === "idle") {
+        void receiveIncomingCall(pending.id);
+      }
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [receiveIncomingCall, signalingState, token]);
 
   const resumeAcceptedCall = useCallback(async (callId: string, knownCall?: CallRecord) => {
     if (!token) return;
@@ -981,7 +997,20 @@ export function CallProvider({ children }: { children: ReactNode }) {
       if (nativeCall.callId) await processNativeCallAction(nativeCall.callId, nativeCall.action);
       const registration = await callNative.registration();
       deviceIdRef.current = registration.device_id;
-      await callApi.registerDevice(token, registration).catch(() => undefined);
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          await callApi.registerDevice(token, registration);
+          break;
+        } catch (registrationError) {
+          callDebug("device_registration_retry", {
+            attempt: attempt + 1,
+            platform: registration.platform,
+            has_fcm_token: Boolean(registration.fcm_token),
+            error_code: failureCodeOf(registrationError, "INTERNAL_CALL_ERROR"),
+          });
+          if (attempt < 2) await new Promise((resolve) => window.setTimeout(resolve, 500 * 2 ** attempt));
+        }
+      }
       const [nextConfig, callSettings] = await Promise.all([callApi.config(token), callApi.settings(token)]);
       if (!active) return;
       setConfig(nextConfig);
@@ -1074,6 +1103,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
           const created = await callApi.initiate(token, peer.id, callType, deviceIdRef.current);
       callRef.current = created;
       setCall(created);
+      notifyCallHistoryChanged();
       setSessionState("notifying");
       sessionStateRef.current = "notifying";
       if (callNative.isAndroid()) {
@@ -1088,10 +1118,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
         });
       }
       if (created.delivery === "unreachable") {
-        callDebug("call_cancel_source", { call_id: created.id, role: created.direction, source: "delivery_unreachable" });
-        await callApi.cancel(token, created.id).catch(() => undefined);
-        await cleanup("failed", "User is offline or has no internet connection.");
-        return;
+        // Delivery counts are an immediate transport snapshot, not proof that
+        // the user is offline. Keep the call alive during the normal ring window;
+        // the receiver can recover it after token repair or socket reconnect.
+        callDebug("call_delivery_pending", { call_id: created.id, role: created.direction, source: "no_immediate_receiver" });
       }
       clearCallTimer("noAnswer");
       const pollOutgoingStatus = () => {

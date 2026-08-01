@@ -37,14 +37,25 @@ describe("call start and recent-history hotfix", () => {
     expect(callsTabSource).toContain("callApi.history(token, 1, 20)");
   });
 
-  it("shows a clear offline state only when no delivery channel exists", () => {
-  expect(providerSource).toContain("User is offline or has no internet connection.");
-  expect(providerSource).toContain('created.delivery === "unreachable"');
-});
+  it("does not mislabel an immediate delivery race as an offline user", () => {
+    expect(providerSource).toContain('created.delivery === "unreachable"');
+    expect(providerSource).toContain('callDebug("call_delivery_pending"');
+    expect(providerSource).not.toContain('source: "delivery_unreachable"');
+    expect(providerSource).not.toContain('cleanup("failed", "User is offline or has no internet connection.")');
+  });
+
+  it("recovers an incoming call after push-token repair or socket reconnect", () => {
+    expect(callApiSource).toContain('apiFetch<CallRecord | null>("/calls/pending-incoming"');
+    expect(providerSource).toContain("callApi.pendingIncoming(token)");
+    expect(providerSource).toContain("receiveIncomingCall(pending.id)");
+  });
 
   it("refreshes history immediately whenever the Calls section is opened", () => {
     expect(callsPageSource).toContain('if (section === "calls") setRefreshRequestId');
     expect(callsPageSource).toContain("useEffect, useState");
     expect(callsPageSource).toContain("refreshRequestId={refreshRequestId}");
+    expect(providerSource).toContain('new Event("auto-ai-call-history-updated")');
+    expect(callsTabSource).toContain('window.addEventListener("auto-ai-call-history-updated", reload)');
+    expect(callsTabSource).toContain('if (view === "calls") void loadCallHistory()');
   });
 });

@@ -42,11 +42,17 @@ function Avatar({ user }: { user: Pick<ChatPublicUser, "display_name" | "avatar_
 }
 
 function MessageStatus({ message }: { message: UserMessage }) {
-  if (message.status === "failed") return <span aria-label="Message failed">!</span>;
-  if (message.status === "sending") return <span aria-label="Sending">…</span>;
-  if (message.status === "read") return <CheckCheck size={14} className="read" />;
-  if (message.status === "delivered") return <CheckCheck size={14} />;
-  return <Check size={14} />;
+  const label = message.status === "failed" ? "Failed"
+    : message.status === "sending" ? "Sending"
+      : message.status === "read" ? "Read"
+        : message.status === "delivered" ? "Delivered"
+          : "Sent";
+  const icon = message.status === "failed" ? <span aria-hidden="true">!</span>
+    : message.status === "sending" ? <span aria-hidden="true">…</span>
+      : message.status === "read" ? <CheckCheck size={14} className="read" aria-hidden="true" />
+        : message.status === "delivered" ? <CheckCheck size={14} aria-hidden="true" />
+          : <Check size={14} aria-hidden="true" />;
+  return <span className={`um-message-status ${message.status}`} aria-label={label} title={label}>{icon}<span>{label}</span></span>;
 }
 
 export function UserMessagesPage() {

@@ -14,6 +14,7 @@ from app.models.call import DeviceCommand, UserDevice
 from app.models.device_monitoring import UserDeviceActivity
 from app.models.user import User
 from app.schemas.device_monitoring import DeviceRegisterRequest
+from app.services.device_token_security import decrypt_token, token_hash
 from app.services.device_monitoring import upsert_registered_device
 
 
@@ -219,3 +220,60 @@ def test_register_service_upserts_without_telemetry_fields() -> None:
         assert second.ram_total is None
         assert json.loads(second.permissions_status) == {"notification": False}
         assert activity_count(db) == 0
+
+
+def test_firebase_installation_id_never_overwrites_the_real_fcm_token() -> None:
+    with db_session() as db:
+        user = create_user(db, "push-identity-user")
+        valid_token = "valid-fcm-registration-token-" + "x" * 32
+        installation_id = "firebase-installation-id-123"
+
+        first = upsert_registered_device(
+            db,
+            user,
+            DeviceRegisterRequest(
+                deviceId="android-push",
+                platform="android",
+                fcmToken=valid_token,
+                firebaseInstallationId=installation_id,
+            ),
+        )
+        overwritten = upsert_registered_device(
+            db,
+            user,
+            DeviceRegisterRequest(
+                deviceId="android-push",
+                platform="android",
+                fcmToken=installation_id,
+                firebaseInstallationId=installation_id,
+            ),
+        )
+
+        assert first.id == overwritten.id
+        assert decrypt_token(overwritten.fcm_token_ciphertext) == valid_token
+        assert overwritten.fcm_token_hash == token_hash(valid_token)
+        assert overwritten.firebase_installation_id_hash == token_hash(installation_id)
+        assert overwritten.last_fcm_failure_code == "FCM_TOKEN_EQUALS_INSTALLATION_ID"
+
+
+def test_installation_only_registration_waits_for_a_real_fcm_token() -> None:
+    with db_session() as db:
+        user = create_user(db, "installation-only-user")
+        installation_id = "firebase-installation-only-456"
+
+        device = upsert_registered_device(
+            db,
+            user,
+            DeviceRegisterRequest(
+                deviceId="android-installation-only",
+                platform="android",
+                fcmToken=installation_id,
+                firebaseInstallationId=installation_id,
+            ),
+        )
+
+        assert device.is_active is True
+        assert device.fcm_token_ciphertext is None
+        assert device.fcm_token_hash is None
+        assert device.firebase_installation_id_hash == token_hash(installation_id)
+        assert device.last_fcm_failure_code == "FCM_TOKEN_EQUALS_INSTALLATION_ID"

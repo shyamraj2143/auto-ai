@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { timeLabel } from "./UserMessagesPage";
 
 const workspaceSurfaces = readFileSync(new URL("../../styles/workspaceSurfaces.css", import.meta.url), "utf8");
+const messagesSource = readFileSync(new URL("./UserMessagesPage.tsx", import.meta.url), "utf8");
+const messageStyles = readFileSync(new URL("./userMessages.css", import.meta.url), "utf8");
 
 describe("user message timestamps", () => {
   it("treats timezone-less API timestamps as UTC before formatting locally", () => {
@@ -31,5 +33,12 @@ describe("user message timestamps", () => {
     expect(workspaceSurfaces).toContain("padding-bottom: calc(var(--mobile-nav-height) + var(--safe-bottom) + 8px)");
     expect(workspaceSurfaces).toContain(".um-page { padding-bottom: 0; }");
     expect(workspaceSurfaces).not.toContain(".calls-workspace-page, .um-page { padding-bottom: 76px; }");
+  });
+
+  it("shows an explicit sending, sent, delivered, read, or failed acknowledgement", () => {
+    expect(messagesSource).toContain('className={`um-message-status ${message.status}`}');
+    expect(messagesSource).toContain('? "Delivered"');
+    expect(messagesSource).toContain(': "Sent"');
+    expect(messageStyles).toContain(".um-message-status");
   });
 });

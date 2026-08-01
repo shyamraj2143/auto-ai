@@ -402,8 +402,11 @@ public class MainActivity extends BridgeActivity {
             FirebaseMessaging.getInstance().register().addOnCompleteListener(task -> {
                 if (!task.isSuccessful()) {
                     android.util.Log.w("AutoAiPushSync", "FCM installation registration unavailable during authenticated sync.", task.getException());
-                    PushTokenRegistrar.registerStoredUserDeviceIfAuthenticated(this);
                 }
+                // An APK update or backend redeploy does not guarantee onNewToken.
+                // Always re-read and upload the actual messaging token so calls and
+                // chat notifications repair themselves on the next authenticated launch.
+                PushTokenRegistrar.refreshCurrentTokenAsync(this);
             });
             FcmInstallationMigrationWorker.schedule(this);
         } catch (RuntimeException error) {

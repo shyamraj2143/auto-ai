@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import hashlib
 import logging
 
@@ -371,6 +371,28 @@ async def initiate_call(
     return await call_service.initiate(
         db, current_user, payload.callee_user_id, payload.call_type, payload.caller_device_id
     )
+
+
+@router.get("/pending-incoming", response_model=CallRead | None)
+async def pending_incoming_call(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> CallRead | None:
+    """Recover a ringing call when push or WebSocket delivery raced app startup."""
+    cutoff = datetime.utcnow() - timedelta(seconds=settings.CALL_RING_TIMEOUT_SECONDS + 10)
+    call = db.scalar(
+        select(Call)
+        .where(
+            Call.callee_id == current_user.id,
+            Call.status.in_(["initiated", "ringing"]),
+            Call.created_at >= cutoff,
+        )
+        .order_by(Call.created_at.desc())
+        .limit(1)
+    )
+    if call is None:
+        return None
+    return await call_service.serialize_call(db, call, current_user.id)
 
 
 @router.get("/history", response_model=CallHistoryPage)

@@ -6,6 +6,8 @@ import android.content.SharedPreferences;
 import android.os.Build;
 import android.util.Log;
 
+import com.google.firebase.messaging.FirebaseMessaging;
+
 import org.json.JSONObject;
 
 import java.io.OutputStream;
@@ -40,44 +42,78 @@ public final class PushTokenRegistrar {
         Log.i(TAG, "Scheduling push token registration.");
         EXECUTOR.execute(() -> {
             String cleanToken = token.trim();
-            appContext.getSharedPreferences(TOKEN_PREFERENCES, Context.MODE_PRIVATE).edit().putString(LAST_FCM_TOKEN, cleanToken).apply();
+            SharedPreferences preferences = appContext.getSharedPreferences(TOKEN_PREFERENCES, Context.MODE_PRIVATE);
+            preferences.edit().putString(LAST_FCM_TOKEN, cleanToken).commit();
+            String installationId = clean(preferences.getString(LAST_FIREBASE_INSTALLATION_ID, null));
+            registerUserDevice(appContext, cleanToken, installationId, null);
             registerUpdateToken(appContext, cleanToken);
-            registerUserDevice(appContext, cleanToken);
         });
     }
 
     public static void registerInstallationAsync(Context context, String installationId) {
         if (clean(installationId) == null) return;
         Context appContext = context.getApplicationContext();
-        EXECUTOR.execute(() -> registerInstallationBlocking(appContext, installationId, null));
+        refreshCurrentTokenAsync(appContext, installationId, null);
     }
 
     public static boolean registerInstallationBlocking(Context context, String installationId, String rotatingFromHash) {
+        String token = clean(context.getSharedPreferences(TOKEN_PREFERENCES, Context.MODE_PRIVATE)
+            .getString(LAST_FCM_TOKEN, null));
+        return registerInstallationBlocking(context, installationId, token, rotatingFromHash);
+    }
+
+    public static boolean registerInstallationBlocking(
+        Context context,
+        String installationId,
+        String fcmToken,
+        String rotatingFromHash
+    ) {
         String cleanInstallationId = clean(installationId);
-        if (cleanInstallationId == null) return false;
+        String cleanToken = clean(fcmToken);
+        if (cleanInstallationId == null || !isUsableFcmToken(cleanToken, cleanInstallationId)) {
+            Log.w(TAG, "FCM registration deferred; installation id is not a messaging token.");
+            return false;
+        }
         context.getSharedPreferences(TOKEN_PREFERENCES, Context.MODE_PRIVATE).edit()
             .putString(LAST_FIREBASE_INSTALLATION_ID, cleanInstallationId)
-            .remove(LAST_FCM_TOKEN)
-            .apply();
-        return registerUserDevice(context, cleanInstallationId, cleanInstallationId, rotatingFromHash);
+            .putString(LAST_FCM_TOKEN, cleanToken)
+            .commit();
+        boolean registered = registerUserDevice(context, cleanToken, cleanInstallationId, rotatingFromHash);
+        registerUpdateToken(context, cleanToken);
+        return registered;
     }
 
     public static void registerStoredUserDeviceIfAuthenticated(Context context) {
         Context appContext = context.getApplicationContext();
-        EXECUTOR.execute(() -> {
-            SharedPreferences preferences = appContext.getSharedPreferences(TOKEN_PREFERENCES, Context.MODE_PRIVATE);
-            String installationId = clean(preferences.getString(LAST_FIREBASE_INSTALLATION_ID, null));
-            if (installationId != null) {
-                registerUserDevice(appContext, installationId, installationId, null);
-                return;
-            }
-            String token = preferences.getString(LAST_FCM_TOKEN, null);
-            if (token == null || token.trim().isEmpty()) {
-                Log.i(TAG, "User device registration retry skipped; no stored FCM identity.");
-                return;
-            }
-            registerUserDevice(appContext, token.trim());
-        });
+        refreshCurrentTokenAsync(appContext, null, null);
+    }
+
+    public static void refreshCurrentTokenAsync(Context context) {
+        refreshCurrentTokenAsync(context.getApplicationContext(), null, null);
+    }
+
+    private static void refreshCurrentTokenAsync(Context context, String installationId, String rotatingFromHash) {
+        Context appContext = context.getApplicationContext();
+        try {
+            FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
+                if (task.isSuccessful() && isUsableFcmToken(task.getResult(), installationId)) {
+                    String currentToken = task.getResult().trim();
+                    if (installationId == null) {
+                        registerAsync(appContext, currentToken);
+                    } else {
+                        EXECUTOR.execute(() -> registerInstallationBlocking(
+                            appContext, installationId, currentToken, rotatingFromHash
+                        ));
+                    }
+                    return;
+                }
+                Log.w(TAG, "Fresh FCM token unavailable; retrying the last valid token.", task.getException());
+                EXECUTOR.execute(() -> registerStoredUserDevice(appContext, installationId, rotatingFromHash));
+            });
+        } catch (RuntimeException error) {
+            Log.w(TAG, "Fresh FCM token lookup failed; retrying the last valid token.", error);
+            EXECUTOR.execute(() -> registerStoredUserDevice(appContext, installationId, rotatingFromHash));
+        }
     }
 
     public static synchronized String deviceId(Context context, String preferencesName, String fallbackKey) {
@@ -107,6 +143,28 @@ public final class PushTokenRegistrar {
     public static boolean hasStoredToken(Context context) {
         String token = context.getSharedPreferences(TOKEN_PREFERENCES, Context.MODE_PRIVATE).getString(LAST_FCM_TOKEN, null);
         return token != null && !token.trim().isEmpty();
+    }
+
+    static boolean isUsableFcmToken(String token, String installationId) {
+        String cleanToken = clean(token);
+        String cleanInstallationId = clean(installationId);
+        return cleanToken != null && (cleanInstallationId == null || !cleanToken.equals(cleanInstallationId));
+    }
+
+    private static boolean registerStoredUserDevice(Context context, String installationId, String rotatingFromHash) {
+        SharedPreferences preferences = context.getSharedPreferences(TOKEN_PREFERENCES, Context.MODE_PRIVATE);
+        String storedInstallationId = clean(installationId);
+        if (storedInstallationId == null) {
+            storedInstallationId = clean(preferences.getString(LAST_FIREBASE_INSTALLATION_ID, null));
+        }
+        String token = clean(preferences.getString(LAST_FCM_TOKEN, null));
+        if (!isUsableFcmToken(token, storedInstallationId)) {
+            Log.i(TAG, "User device registration retry skipped; no valid stored FCM token.");
+            return false;
+        }
+        boolean registered = registerUserDevice(context, token, storedInstallationId, rotatingFromHash);
+        registerUpdateToken(context, token);
+        return registered;
     }
 
     private static void registerUpdateToken(Context context, String token) {
@@ -144,11 +202,11 @@ public final class PushTokenRegistrar {
         }
     }
 
-    private static void registerUserDevice(Context context, String token) {
-        registerUserDevice(context, token, null, null);
-    }
-
     private static boolean registerUserDevice(Context context, String token, String firebaseInstallationId, String rotatingFromHash) {
+        if (!isUsableFcmToken(token, firebaseInstallationId)) {
+            Log.w(TAG, "User device registration rejected an invalid FCM identity.");
+            return false;
+        }
         String accessToken = AutoAiSecureStoragePlugin.readStoredValue(context, "auto-ai-access-token");
         if (accessToken == null || accessToken.trim().isEmpty()) {
             Log.i(TAG, "User call device registration skipped; no stored access token.");
