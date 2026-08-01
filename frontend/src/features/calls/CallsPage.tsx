@@ -1,5 +1,5 @@
 import { ArrowLeft, PhoneCall, RefreshCw, Settings } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { CallsTab } from "./CallsTab";
 
@@ -9,6 +9,11 @@ export function CallsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const { section } = useParams();
   const validSections = new Set(["search", "requests", "chats", "calls", "alerts"]);
+
+  useEffect(() => {
+    if (section === "calls") setRefreshRequestId((value) => value + 1);
+  }, [section]);
+
   if (section && !validSections.has(section)) return <Navigate to="/call-hub/search" replace />;
   const goBack = () => {
     const sameOriginReferrer = document.referrer ? new URL(document.referrer).origin === window.location.origin : false;
