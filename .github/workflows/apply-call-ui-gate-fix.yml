@@ -33,6 +33,7 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
 
           calls_tab_path = Path("frontend/src/features/calls/CallsTab.tsx")
           provider_path = Path("frontend/src/features/calls/CallProvider.tsx")
@@ -49,38 +50,15 @@ jobs:
                   raise SystemExit("callNative import anchor missing")
               calls_tab = calls_tab.replace(import_anchor, import_replacement, 1)
 
-          old_place = '''  async function placeUserCall(user: PublicCallUser, type: CallType) {
-            if ((type === "audio" && !user.can_audio_call) || (type === "video" && !user.can_video_call)) {
-              showToast("Follow approval is required before calling this user.");
-              return;
-            }
-            let latestConfig = config;
-            if (!latestConfig || !latestConfig.enabled || !latestConfig.realtime_configured || signalingState !== "connected") {
-              showToast("Connecting secure call service…");
-              try {
-                latestConfig = await refreshRealtime();
-              } catch (connectError) {
-                showToast(errorText(connectError, "Calling service could not connect. Please retry."));
-                return;
-              }
-            }
-            if (!latestConfig.enabled || !latestConfig.realtime_configured) {
-              showToast(latestConfig.diagnostic || "Calling service is temporarily unavailable.");
-              return;
-            }
-            await startCall(user, type);
-          }
-          '''
           new_place = '''  async function placeUserCall(user: PublicCallUser, type: CallType) {
             if ((type === "audio" && !user.can_audio_call) || (type === "video" && !user.can_video_call)) {
               showToast("Follow approval is required before calling this user.");
               return;
             }
 
-            // Android owns signaling/media in the native foreground call service.
-            // Blocking here on the WebView websocket caused the red
-            // “Connecting secure call service…” message and prevented both audio
-            // and video calls from ever reaching callApi.initiate().
+            // Android owns signaling and media inside the native foreground service.
+            // Requiring the WebView websocket here prevented the real call request
+            // from reaching the backend and produced only a red secure-call error.
             if (callNative.isAndroid()) {
               await startCall(user, type);
               return;
@@ -103,9 +81,13 @@ jobs:
             await startCall(user, type);
           }
           '''
-          if old_place not in calls_tab:
-              raise SystemExit("placeUserCall anchor missing")
-          calls_tab = calls_tab.replace(old_place, new_place, 1)
+          place_pattern = re.compile(
+              r'  async function placeUserCall\(user: PublicCallUser, type: CallType\) \{.*?\n  \}\n\n  async function openMessageByUserId',
+              re.S,
+          )
+          calls_tab, count = place_pattern.subn(new_place + '\n  async function openMessageByUserId', calls_tab, count=1)
+          if count != 1:
+              raise SystemExit(f"placeUserCall replacement count={count}")
 
           old_offline = '        await cleanup("failed", "User is unavailable");\n'
           new_offline = '        await cleanup("failed", "User is offline or has no internet connection.");\n'
@@ -113,8 +95,14 @@ jobs:
               raise SystemExit("offline delivery anchor missing")
           provider = provider.replace(old_offline, new_offline, 1)
 
-          contract_anchor = '''  it("keeps the real backend call creation and history endpoints as the source of truth", () => {
-          '''
+          provider_contract_anchor = 'const callsTabSource = readFileSync(new URL("./CallsTab.tsx", import.meta.url), "utf8");\n'
+          provider_contract_replacement = provider_contract_anchor + 'const providerSource = readFileSync(new URL("./CallProvider.tsx", import.meta.url), "utf8");\n'
+          if "const providerSource" not in contract:
+              if provider_contract_anchor not in contract:
+                  raise SystemExit("provider contract import anchor missing")
+              contract = contract.replace(provider_contract_anchor, provider_contract_replacement, 1)
+
+          contract_anchor = '  it("keeps the real backend call creation and history endpoints as the source of truth", () => {\n'
           contract_block = '''  it("does not block Android calls on the WebView signaling gate", () => {
             expect(callsTabSource).toContain('import { callNative } from "./services/callNative";');
             expect(callsTabSource).toContain("if (callNative.isAndroid())");
@@ -130,15 +118,7 @@ jobs:
                   raise SystemExit("contract insertion anchor missing")
               contract = contract.replace(contract_anchor, contract_block + contract_anchor, 1)
 
-          provider_contract_anchor = 'const callsTabSource = readFileSync(new URL("./CallsTab.tsx", import.meta.url), "utf8");\n'
-          provider_contract_replacement = provider_contract_anchor + 'const providerSource = readFileSync(new URL("./CallProvider.tsx", import.meta.url), "utf8");\n'
-          if "const providerSource" not in contract:
-              if provider_contract_anchor not in contract:
-                  raise SystemExit("provider contract import anchor missing")
-              contract = contract.replace(provider_contract_anchor, provider_contract_replacement, 1)
-
-          offline_test_anchor = '''  it("refreshes history immediately whenever the Calls section is opened", () => {
-          '''
+          offline_test_anchor = '  it("refreshes history immediately whenever the Calls section is opened", () => {\n'
           offline_test_block = '''  it("shows a clear offline state only when no delivery channel exists", () => {
             expect(providerSource).toContain("User is offline or has no internet connection.");
             expect(providerSource).toContain('created.delivery === "unreachable"');
