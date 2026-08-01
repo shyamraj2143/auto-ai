@@ -22,12 +22,14 @@ import android.os.Looper;
 import android.os.PowerManager;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
+import android.speech.tts.Voice;
 import android.util.Log;
 
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 
 import java.util.Locale;
+import java.util.Set;
 
 public final class AlarmRingingService extends Service {
     private static final String CHANNEL_ID = "auto_ai_alarm_ringing_v1";
@@ -225,16 +227,41 @@ public final class AlarmRingingService extends Service {
 
     static void configureVoice(TextToSpeech speech, String language, String style) {
         String tag = "hinglish-IN".equals(language) ? "hi-IN" : language;
+        Locale selectedLocale = Locale.forLanguageTag(tag);
         speech.setAudioAttributes(new AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_ALARM)
             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
             .build());
-        int languageResult = speech.setLanguage(Locale.forLanguageTag(tag));
+        int languageResult = speech.setLanguage(selectedLocale);
         if (languageResult == TextToSpeech.LANG_MISSING_DATA || languageResult == TextToSpeech.LANG_NOT_SUPPORTED) {
-            speech.setLanguage(Locale.getDefault());
+            selectedLocale = Locale.getDefault();
+            speech.setLanguage(selectedLocale);
         }
+        Voice offlineVoice = bestOfflineVoice(speech, selectedLocale);
+        if (offlineVoice != null) speech.setVoice(offlineVoice);
         speech.setSpeechRate("gentle".equals(style) ? .84f : "energetic".equals(style) ? 1.04f : .93f);
         speech.setPitch("gentle".equals(style) ? .92f : "energetic".equals(style) ? 1.07f : 1f);
+    }
+
+    private static Voice bestOfflineVoice(TextToSpeech speech, Locale requested) {
+        final Set<Voice> voices;
+        try { voices = speech.getVoices(); }
+        catch (RuntimeException unavailable) { return null; }
+        if (voices == null || voices.isEmpty()) return null;
+        Voice best = null;
+        int bestScore = Integer.MIN_VALUE;
+        for (Voice voice : voices) {
+            if (voice == null || voice.isNetworkConnectionRequired() || voice.getLocale() == null) continue;
+            Locale locale = voice.getLocale();
+            if (!locale.getLanguage().equalsIgnoreCase(requested.getLanguage())) continue;
+            int score = voice.getQuality() - voice.getLatency();
+            if (!requested.getCountry().isEmpty() && locale.getCountry().equalsIgnoreCase(requested.getCountry())) score += 10_000;
+            if (score > bestScore) {
+                best = voice;
+                bestScore = score;
+            }
+        }
+        return best;
     }
 
     private void lowerRingtone(boolean lower) {

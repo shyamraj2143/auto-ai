@@ -34,6 +34,7 @@ public class AlarmRuntimeContractTest {
         assertTrue(service.contains("AudioAttributes.CONTENT_TYPE_SPEECH"));
         assertTrue(service.contains("setFullScreenIntent(open, true)"));
         assertTrue(service.contains("configureVoice"));
+        assertTrue(service.contains("isNetworkConnectionRequired"));
     }
 
     @Test public void lockScreenAlarmRequiresLiveAwakeVerificationToStop() throws Exception {

@@ -103,6 +103,7 @@ jobs:
           grep -q 'exact_alarm_access_required' android/app/src/main/java/com/autoai/app/AlarmScheduler.java
           grep -q 'RingtoneManager.TYPE_ALARM' android/app/src/main/java/com/autoai/app/AlarmRingingService.java
           grep -q 'TextToSpeech' android/app/src/main/java/com/autoai/app/AlarmRingingService.java
+          grep -q 'isNetworkConnectionRequired' android/app/src/main/java/com/autoai/app/AlarmRingingService.java
           grep -q 'START_STICKY' android/app/src/main/java/com/autoai/app/AlarmRingingService.java
           grep -q 'FaceDetection.getClient' android/app/src/main/java/com/autoai/app/AlarmAwakeVerifier.java
           grep -q 'EXTRA_AWAKE_VERIFIED, true' android/app/src/main/java/com/autoai/app/AlarmAwakeVerificationActivity.java
