@@ -1,0 +1,77 @@
+name: Verify call start and recent history fix
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "frontend/src/features/calls/services/callApi.ts"
+      - "frontend/src/features/calls/CallsPage.tsx"
+      - "frontend/src/features/calls/callStartHistoryHotfix.contract.test.ts"
+      - ".github/workflows/verify-call-start-history.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix frontend
+
+      - name: Run focused call regression tests
+        run: |
+          npm --prefix frontend test -- src/features/calls/callStartHistoryHotfix.contract.test.ts
+          npm --prefix frontend test -- src/features/calls/CallsTab.test.ts
+
+      - name: Build production frontend
+        env:
+          AUTO_AI_SKIP_COMPRESSION: "1"
+        run: npm run build
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run backend call tests
+        env:
+          PYTHONPATH: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt pytest pytest-asyncio 'fakeredis[lua]'
+          pytest -q backend/tests/test_calls.py
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Verify Android integration build
+        run: |
+          npx cap sync android
+          chmod +x android/gradlew
+          ./android/gradlew -p android :app:compileDebugJavaWithJavac :app:testDebugUnitTest
+
+      - name: Enforce scope
+        run: |
+          changed="$(git diff --name-only origin/main...HEAD | sort)"
+          echo "$changed"
+          if echo "$changed" | grep -E '(^|/)admin(/|$)|(^|/)Admin[^/]*\.(tsx|ts|jsx|js|py|java)$'; then
+            echo "Admin-related file changed."
+            exit 1
+          fi
+          git diff --check origin/main...HEAD
