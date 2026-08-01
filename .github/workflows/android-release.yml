@@ -74,7 +74,7 @@ jobs:
       - name: Install root dependencies
         run: npm ci
 
-      - name: Verify native call reliability sources
+      - name: Verify native call and alarm reliability sources
         shell: bash
         run: |
           test -f backend/app/services/presence_fallback.py
@@ -98,7 +98,14 @@ jobs:
           grep -q 'dialog.setCancelable(!mandatory)' android/app/src/main/java/com/autoai/app/AppUpdateDialog.java
           grep -q 'dialog.setCanceledOnTouchOutside(!mandatory)' android/app/src/main/java/com/autoai/app/AppUpdateDialog.java
           grep -q 'GITHUB_RELEASES_REQUIRE_UPDATE = True' backend/app/services/github_apk_release.py
-          metadata_step="$(sed -n '/- name: Publish APK metadata to backend/,/- name: Notify installed Android apps/p' .github/workflows/android-release.yml)"
+          grep -q 'registerPlugin(AutoAiAlarmPlugin.class)' android/app/src/main/java/com/autoai/app/MainActivity.java
+          grep -q 'setExactAndAllowWhileIdle' android/app/src/main/java/com/autoai/app/AlarmScheduler.java
+          grep -q 'RingtoneManager.TYPE_ALARM' android/app/src/main/java/com/autoai/app/AlarmRingingService.java
+          grep -q 'TextToSpeech' android/app/src/main/java/com/autoai/app/AlarmRingingService.java
+          grep -q 'android.permission.SCHEDULE_EXACT_ALARM' android/app/src/main/AndroidManifest.xml
+          grep -q 'app.include_router(alarms.router' backend/app/main.py
+          grep -q 'title="AI Alarm"' frontend/src/features/actionHub/ActionHubPage.tsx
+          metadata_step="$(sed -n '/- name: Publish APK metadata.*backend/,/- name: Notify installed Android.*apps/p' .github/workflows/android-release.yml)"
           grep -q -- '--force-update' <<< "$metadata_step"
           if grep -R -q 'FirebaseMessaging.getInstance().getToken' android/app/src/main/java/com/autoai/app; then
             echo 'Deprecated getToken() is incompatible with installation-id direct-send mode.' >&2
@@ -155,9 +162,9 @@ jobs:
             echo "Version-Name: ${AUTO_AI_ANDROID_VERSION_NAME}"
             echo "SHA256: ${sha256}"
             echo "Force-Update: true"
-            echo "Changelog: Stable Android calls and mandatory app updates"
+            echo "Changelog: AI Alarm personal assistant with stable Android calls"
             echo
-            echo "Makes native Android the single WebRTC owner, restores real audio/video transport, and requires every higher version published from main before the app can continue."
+            echo "Adds account-synced AI alarms with calendar scheduling, native ringtone, lock-screen controls and human-style spoken reminders while preserving stable calls and mandatory updates."
             echo "Verified Android assets from GitHub push ${GITHUB_SHA::7}"
           } > "$notes"
           gh release create "$tag" "$apk_path" \
@@ -174,8 +181,8 @@ jobs:
             --apk output/android/auto-ai.apk \
             --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
             --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
-            --changelog "Stable Android calls and mandatory app updates" \
-            --release-notes "Makes native Android the single WebRTC owner, restores real audio/video transport, and requires every higher version published from main before the app can continue. Verified GitHub push ${GITHUB_SHA::7}." \
+            --changelog "AI Alarm personal assistant with stable Android calls" \
+            --release-notes "Adds account-synced AI alarms with calendar scheduling, native ringtone, lock-screen controls and human-style spoken reminders while preserving stable calls and mandatory updates. Verified GitHub push ${GITHUB_SHA::7}." \
             --metadata-only \
             --force-update
 
@@ -187,7 +194,7 @@ jobs:
             --api-url "$AUTO_AI_API_BASE_URL" \
             --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
             --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
-            --changelog "Stable Android calls and mandatory app updates"
+            --changelog "AI Alarm personal assistant with stable Android calls"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

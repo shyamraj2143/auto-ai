@@ -34,8 +34,15 @@
 
 .autoai-workspace-nav > nav {
   display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  align-content: start;
   gap: 5px;
   margin-top: 22px;
+  margin-bottom: 12px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(93, 137, 207, .35) transparent;
 }
 
 .autoai-workspace-nav > nav a {
@@ -72,6 +79,7 @@
   align-items: center;
   gap: 9px;
   margin-top: auto;
+  flex: 0 0 auto;
   padding: 10px;
   border: 1px solid rgba(121, 164, 230, .18);
   border-radius: 13px;

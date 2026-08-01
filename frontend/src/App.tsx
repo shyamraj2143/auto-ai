@@ -44,6 +44,7 @@ const UserMessagesPage = lazy(() => import("./features/userMessages/UserMessages
 const ScreenShareJoinPage = lazy(() => import("./features/screenShare/ScreenShareJoinPage").then((module) => ({ default: module.ScreenShareJoinPage })));
 const ScreenShareWorkspacePage = lazy(() => import("./features/screenShare/ScreenShareWorkspacePage").then((module) => ({ default: module.ScreenShareWorkspacePage })));
 const ActionHubPage = lazy(() => import("./features/actionHub/ActionHubPage").then((module) => ({ default: module.ActionHubPage })));
+const AlarmPage = lazy(() => import("./features/alarms/AlarmPage").then((module) => ({ default: module.AlarmPage })));
 
 /** Shows LandingPage for guests, redirects logged-in users to the Action Hub. */
 function RootRedirect() {
@@ -161,6 +162,7 @@ function AppRoutes() {
             <Route element={<AppShell />}>
               <Route path="/hub" element={<ActionHubPage />} />
               <Route path="/activity" element={<ActionHubPage />} />
+              <Route path="/alarms" element={<AlarmPage />} />
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/chat/:chatId" element={<ChatPage />} />
               <Route path="/messages" element={<UserMessagesPage />} />

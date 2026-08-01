@@ -128,6 +128,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(ScreenCapturePlugin.class);
         registerPlugin(AutoAiCallsPlugin.class);
         registerPlugin(AutoAiUpdatePlugin.class);
+        registerPlugin(AutoAiAlarmPlugin.class);
         super.onCreate(savedInstanceState);
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         getWindow().setStatusBarColor(Color.TRANSPARENT);

@@ -1,4 +1,4 @@
-import { Activity, CheckCircle2, MessageCircle, MonitorUp, Phone, UsersRound, Zap } from "lucide-react";
+import { Activity, AlarmClock, CheckCircle2, MessageCircle, MonitorUp, Phone, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
@@ -13,6 +13,8 @@ import { QuickConnect, type QuickConnectAction } from "./QuickConnect";
 import { RecentActivity, type HubActivityItem } from "./RecentActivity";
 import { callSearchRoute, isActiveScreenShareState } from "./actionHubNavigation";
 import "./actionHub.css";
+import { useAlarms } from "../alarms/AlarmContext";
+import { countdownLabel, formatAlarmDate } from "../alarms/alarmTime";
 
 function greeting() {
   const hour = new Date().getHours();
@@ -36,6 +38,7 @@ export function ActionHubPage() {
   const { token, user, logout } = useAuth();
   const { chats, loadingChats } = useChat();
   const screenShare = useScreenShare();
+  const { nextAlarm } = useAlarms();
   const [calls, setCalls] = useState<CallRecord[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [activityLoading, setActivityLoading] = useState(true);
@@ -146,13 +149,16 @@ export function ActionHubPage() {
               <div className="hub-card-position hub-card-call">
                 <FeatureCard tone="call" icon={Phone} title="Audio / Video Call" description="Crystal clear calls with contacts and teams." details="Contacts · Recent calls · Alerts" primaryAction={{ label: "Start Call", onClick: () => navigate("/call-hub/search") }} secondaryAction={{ label: "History", onClick: () => navigate("/call-hub/calls") }} />
               </div>
+              <div className="hub-card-position hub-card-alarm">
+                <FeatureCard tone="alarm" icon={AlarmClock} title="AI Alarm" description="Wake up with a personal reminder in your language." details={nextAlarm ? `${countdownLabel(nextAlarm.scheduled_at)} · ${nextAlarm.title}` : "Calendar · AI voice · Native ringtone"} primaryAction={{ label: "Set Alarm", onClick: () => navigate("/alarms") }} secondaryAction={nextAlarm ? { label: "Manage", onClick: () => navigate("/alarms") } : undefined} />
+              </div>
             </section>
 
             <section className="hub-metric-grid" aria-label="Workspace metrics">
               <article><span><Activity size={16} /> AI conversations</span><strong>{chats.length}</strong><small>Available chat threads</small></article>
               <article><span><MonitorUp size={16} /> Screen sharing</span><strong>{isActiveScreenShareState(screenShare.uiState) ? "Live" : "Ready"}</strong><small>{screenShare.networkQuality === "unknown" ? "Secure relay" : `${screenShare.networkQuality} network`}</small></article>
               <article><span><Phone size={16} /> Call history</span><strong>{calls.length}</strong><small>Recent call records</small></article>
-              <article><span><UsersRound size={16} /> Services</span><strong>Online</strong><small>Realtime workspace</small></article>
+              <article><span><AlarmClock size={16} /> Next alarm</span><strong>{nextAlarm ? new Date(nextAlarm.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Ready"}</strong><small>{nextAlarm ? formatAlarmDate(nextAlarm.scheduled_at) : "No alarm scheduled"}</small></article>
             </section>
 
             <section className="hub-dashboard-lower">

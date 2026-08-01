@@ -58,6 +58,24 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         String callId = data.get("call_id");
         long callRevision = parseInt(data.get("call_revision"));
         Log.i(TAG, "FCM received type=" + messageType + " callId=" + data.get("call_id"));
+        if ("alarm_sync".equals(messageType)) {
+            String alarmId = data.get("alarm_id");
+            String alarmAction = data.get("action");
+            if (alarmId == null || alarmId.trim().isEmpty()) return;
+            if ("delete".equals(alarmAction)) {
+                AlarmActionReceiver.cancelFromSync(this, alarmId, true);
+                return;
+            }
+            AlarmPayload alarm = AlarmPayload.fromData(data);
+            if (alarm == null || !AlarmStore.upsert(this, alarm)) return;
+            if ("cancel".equals(alarmAction) || !alarm.enabled) {
+                AlarmActionReceiver.cancelFromSync(this, alarmId, false);
+            } else {
+                AlarmScheduler.schedule(this, alarm);
+                AlarmActionReceiver.broadcast(this, alarmId, "schedule");
+            }
+            return;
+        }
         if ("incoming_call".equals(messageType) || "incoming_call_fallback".equals(messageType)) {
             String priorityResult = message.getOriginalPriority() == RemoteMessage.PRIORITY_HIGH
                 ? (message.getPriority() == RemoteMessage.PRIORITY_HIGH ? "HIGH_DELIVERED_AS_HIGH" : "HIGH_DOWNGRADED_TO_NORMAL")

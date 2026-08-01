@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { PanelLeftOpen } from "lucide-react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { ChatProvider } from "../../contexts/ChatContext";
@@ -11,6 +11,13 @@ import { AndroidBackHandler } from "./AndroidBackHandler";
 import { useMotionMode } from "../../motion/MotionProvider";
 import { parseNotificationDestination, routeForNotificationDestination } from "../../notifications/notificationDestination";
 import "../../features/calls/calls.css";
+import { AlarmProvider } from "../../features/alarms/AlarmContext";
+import { AlarmOverlay } from "../../features/alarms/AlarmOverlay";
+
+function AlarmWorkspaceScope({ enabled, children }: { enabled: boolean; children: ReactNode }) {
+  if (!enabled) return <>{children}</>;
+  return <AlarmProvider>{children}<AlarmOverlay /></AlarmProvider>;
+}
 
 export function AppShell() {
   const location = useLocation();
@@ -24,6 +31,7 @@ export function AppShell() {
     isSidebarOpen
   } = useShell();
   const fullCanvasAdmin = location.pathname.startsWith("/admin/live-pages");
+  const isAdminRoute = location.pathname.startsWith("/admin");
   const isChatWorkspace = location.pathname.startsWith("/chat");
 
   useEffect(() => {
@@ -80,6 +88,7 @@ export function AppShell() {
   return (
       <CallProvider>
           <ChatProvider>
+          <AlarmWorkspaceScope enabled={!isAdminRoute}>
           <AndroidBackHandler />
           <div className={`app-shell${isSidebarOpen ? " sidebar-open" : ""}`}>
             {!fullCanvasAdmin && <WorkspaceNavigation />}
@@ -108,6 +117,7 @@ export function AppShell() {
             {!fullCanvasAdmin && <WorkspaceMobileNavigation />}
             <CallOverlay />
           </div>
+          </AlarmWorkspaceScope>
           </ChatProvider>
       </CallProvider>
   );

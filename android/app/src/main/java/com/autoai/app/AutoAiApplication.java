@@ -9,6 +9,8 @@ public final class AutoAiApplication extends Application {
     @Override public void onCreate() {
         super.onCreate();
         CallNotificationManager.createChannels(this);
+        AlarmRingingService.createChannel(this);
+        AlarmScheduler.rescheduleAll(this);
         AppUpdateCoordinator.get(this);
         TelecomRegistrationResult telecomResult = AutoAiTelecomBridge.ensureRegisteredDetailed(this);
         Log.i("AutoAiApplication", "Telecom startup registration result=" + telecomResult.name());

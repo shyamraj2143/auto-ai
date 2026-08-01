@@ -155,6 +155,31 @@ class FirebaseNotificationService:
         }
         return self._send(message)
 
+    def send_alarm_data(
+        self,
+        target: str,
+        data: dict[str, str],
+        *,
+        ttl_seconds: int = 2_419_200,
+        target_kind: str = "token",
+    ) -> FcmSendResult:
+        alarm_id = data.get("alarm_id", "unknown")
+        message = {
+            "message": {
+                **self._target(target, target_kind),
+                "data": data,
+                "android": {
+                    "priority": "HIGH",
+                    "ttl": f"{max(60, min(ttl_seconds, 2_419_200))}s",
+                    "direct_boot_ok": False,
+                    "restricted_package_name": "com.autoai.app",
+                    "collapse_key": f"alarm_{alarm_id}",
+                    "fcm_options": {"analytics_label": "alarm_sync"},
+                },
+            }
+        }
+        return self._send(message)
+
     def _send(self, message: dict[str, Any]) -> FcmSendResult:
         try:
             service_account = self._service_account()

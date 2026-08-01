@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  AlarmClock,
   LayoutDashboard,
   LogOut,
   MessageCircle,
@@ -21,6 +22,7 @@ const primaryItems = [
   { to: "/screen-share", label: "Screen Sharing", icon: MonitorUp },
   { to: "/call-hub/calls", label: "Calls", icon: Phone },
   { to: "/messages", label: "Messages", icon: MessagesSquare },
+  { to: "/alarms", label: "AI Alarm", icon: AlarmClock },
   { to: "/call-hub/chats", label: "Contacts", icon: UsersRound },
   { to: "/activity", label: "Analytics", icon: BarChart3 },
   { to: "/settings", label: "Settings", icon: Settings },

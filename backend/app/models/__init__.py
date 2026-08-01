@@ -1,5 +1,6 @@
 from app.models.api_usage import APIUsage
 from app.models.admin_control import AuditLog, FeatureFlag, PaymentRecord, PlanLimit, UsageLog, UserSubscription
+from app.models.alarm import UserAlarm
 from app.models.apk import ApkDownload, ApkRelease
 from app.models.auth import PasswordResetToken, RefreshToken
 from app.models.chat import Chat
@@ -74,6 +75,7 @@ __all__ = [
     "SocialNotification",
     "UsageLog",
     "User",
+    "UserAlarm",
     "UserChatMessage",
     "UserChatSettings",
     "UserCallSettings",
