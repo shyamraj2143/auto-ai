@@ -41,6 +41,7 @@ public class ActiveCallActivity extends Activity implements NativeCallSessionCon
     private SurfaceViewRenderer remoteVideo;
     private PowerManager.WakeLock proximityLock;
     private boolean speakerEnabled;
+    private boolean chronometerStarted;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -56,12 +57,13 @@ public class ActiveCallActivity extends Activity implements NativeCallSessionCon
             return;
         }
         callType = stored.callType;
+        speakerEnabled = "video".equals(callType);
         buildUi(stored);
         controller = NativeCallSessionController.get(this);
         controller.addListener(this);
         if (!controller.owns(callId)) controller.start(callId, callType, stored.peerName);
         if ("video".equals(callType)) controller.attachRenderers(localVideo, remoteVideo);
-        ActiveCallStore.update(this, callId, ActiveCallStore.State.ACTIVE_UI_READY);
+        ActiveCallStore.markUiReady(this, callId);
         sendBroadcast(new Intent(CallIntentDispatcher.ACTION_UI_READY).setPackage(getPackageName())
             .putExtra(CallNotificationManager.EXTRA_CALL_ID, callId));
         Log.i(TAG, "ACTIVE_UI_READY callId=" + callId + " DEVICE_LOCKED=" + keyguardLocked()
@@ -96,7 +98,10 @@ public class ActiveCallActivity extends Activity implements NativeCallSessionCon
                 case MEDIA_CONNECTING: setStatus("Connecting call…", 0xFF22D3EE); break;
                 case MEDIA_CONNECTED:
                     setStatus("Connected", 0xFF22C55E);
-                    chronometer.setBase(android.os.SystemClock.elapsedRealtime());
+                    if (!chronometerStarted) {
+                        chronometerStarted = true;
+                        chronometer.setBase(android.os.SystemClock.elapsedRealtime());
+                    }
                     chronometer.setVisibility(View.VISIBLE);
                     chronometer.start();
                     Log.i(TAG, "AUDIO_SESSION_ACTIVE=true callId=" + callId);
@@ -112,7 +117,9 @@ public class ActiveCallActivity extends Activity implements NativeCallSessionCon
         });
     }
 
-    @Override public void onRemoteVideoAvailable() { runOnUiThread(() -> remoteVideo.setVisibility(View.VISIBLE)); }
+    @Override public void onRemoteVideoAvailable() {
+        runOnUiThread(() -> { if (remoteVideo != null) remoteVideo.setVisibility(View.VISIBLE); });
+    }
 
     @Override public void onUserLeaveHint() {
         super.onUserLeaveHint();
@@ -130,7 +137,8 @@ public class ActiveCallActivity extends Activity implements NativeCallSessionCon
         ));
         if ("video".equals(callType)) {
             remoteVideo = new SurfaceViewRenderer(this);
-            remoteVideo.setVisibility(View.INVISIBLE);
+            remoteVideo.setVisibility(View.VISIBLE);
+            remoteVideo.setBackgroundColor(Color.BLACK);
             root.addView(remoteVideo, new FrameLayout.LayoutParams(-1, -1));
             localVideo = new SurfaceViewRenderer(this);
             FrameLayout.LayoutParams localParams = new FrameLayout.LayoutParams(dp(112), dp(160), Gravity.END | Gravity.TOP);
@@ -167,7 +175,7 @@ public class ActiveCallActivity extends Activity implements NativeCallSessionCon
         panel.addView(chronometer);
         LinearLayout controls = new LinearLayout(this); controls.setGravity(Gravity.CENTER); controls.setPadding(0, dp(36), 0, 0);
         mute = control("Mute", android.R.drawable.ic_lock_silent_mode);
-        speaker = control("Speaker", android.R.drawable.ic_lock_silent_mode_off);
+        speaker = control(speakerEnabled ? "Earpiece" : "Speaker", android.R.drawable.ic_lock_silent_mode_off);
         controls.addView(mute, controlParams()); controls.addView(speaker, controlParams());
         if ("video".equals(callType)) {
             camera = control("Camera", android.R.drawable.ic_menu_camera);
@@ -195,7 +203,7 @@ public class ActiveCallActivity extends Activity implements NativeCallSessionCon
     private void toggleSpeaker() {
         speakerEnabled = !speakerEnabled;
         AudioManager manager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-        if (manager != null) { manager.setMode(AudioManager.MODE_IN_COMMUNICATION); manager.setSpeakerphoneOn(speakerEnabled); }
+        if (manager != null) NativeAudioRouter.routeForCall(manager, speakerEnabled, false);
         speaker.setText(speakerEnabled ? "Earpiece" : "Speaker");
     }
 

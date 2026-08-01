@@ -171,7 +171,9 @@ public class MainActivity extends BridgeActivity {
         registerFirebaseMessagingToken();
         UpdateCheckScheduler.cancelLegacy(this);
         AppUpdateCoordinator.get(this).addListener(directUpdateListener);
-        AppUpdateCoordinator.get(this).check(false);
+        // A cold launch must not reuse the normal cooldown: every successful main
+        // deployment publishes a required APK and must be discovered immediately.
+        AppUpdateCoordinator.get(this).check(true);
         dispatchUpdateIntent(getIntent());
         syncPushDeviceIfAuthenticated();
         dispatchIncomingCallIntent(getIntent());
@@ -242,9 +244,11 @@ public class MainActivity extends BridgeActivity {
 
     private void handleDirectUpdateState(AppUpdateCoordinator.Snapshot snapshot) {
         AppUpdateCoordinator coordinator = AppUpdateCoordinator.get(this);
-        boolean mandatoryExplanation = snapshot.metadata != null && snapshot.metadata.mandatory
-            && snapshot.state == AppUpdateCoordinator.State.AVAILABLE;
-        if (((snapshot.state == AppUpdateCoordinator.State.FAILED && coordinator.isDirectUpdateActive()) || mandatoryExplanation) && fallbackUpdateDialog == null) {
+        boolean mandatoryGate = snapshot.metadata != null && snapshot.metadata.mandatory
+            && AppUpdateCoordinator.hasPendingUpdate(snapshot.metadata)
+            && snapshot.state != AppUpdateCoordinator.State.INSTALLED
+            && snapshot.state != AppUpdateCoordinator.State.UP_TO_DATE;
+        if (((snapshot.state == AppUpdateCoordinator.State.FAILED && coordinator.isDirectUpdateActive()) || mandatoryGate) && fallbackUpdateDialog == null) {
             runOnUiThread(() -> {
                 if (fallbackUpdateDialog == null && !isFinishing()) {
                     fallbackUpdateDialog = new AppUpdateDialog(this);
@@ -252,7 +256,9 @@ public class MainActivity extends BridgeActivity {
                 }
             });
         }
-        if (!coordinator.isDirectUpdateActive() || snapshot.state != AppUpdateCoordinator.State.READY_TO_INSTALL) return;
+        // The mandatory dialog owns its installer handoff. Keeping the direct path
+        // out of this state prevents two Android installer screens from opening.
+        if (mandatoryGate || !coordinator.isDirectUpdateActive() || snapshot.state != AppUpdateCoordinator.State.READY_TO_INSTALL) return;
         runOnUiThread(() -> {
             if (!directInstallerHandoff.compareAndSet(false, true) || isFinishing()) return;
             if (!coordinator.canInstallPackages()) {
@@ -315,14 +321,19 @@ public class MainActivity extends BridgeActivity {
         directInstallerHandoff.set(false);
         CallingPermissionCoordinator.invalidateCachedState();
         AppUpdateCoordinator.get(this).refreshInstallState();
-        AppUpdateCoordinator.get(this).check(false);
+        // Re-check whenever the app returns to the foreground so a just-published
+        // required release cannot be hidden by a recent successful check.
+        AppUpdateCoordinator.get(this).check(true);
         syncPushDeviceIfAuthenticated();
         if (NotificationDeepLink.hasPending(this)) dispatchNotificationDestination(null);
         mainHandler.postDelayed(this::launchCallingSetupIfRequired, 600L);
     }
 
     private void launchCallingSetupIfRequired() {
-        if (!hasWindowFocus() || isFinishing() || callingSetupVisible || CallingSetupActivity.isVisible() || waitingForInstallPermission || pendingInstallFile != null || updateDialogVisible) return;
+        AppUpdateCoordinator.Snapshot update = AppUpdateCoordinator.get(this).current();
+        boolean mandatoryUpdatePending = update.metadata != null && update.metadata.mandatory
+            && AppUpdateCoordinator.hasPendingUpdate(update.metadata);
+        if (!hasWindowFocus() || isFinishing() || callingSetupVisible || CallingSetupActivity.isVisible() || waitingForInstallPermission || pendingInstallFile != null || updateDialogVisible || mandatoryUpdatePending) return;
         String accessToken = AutoAiSecureStoragePlugin.readStoredValue(this, "auto-ai-access-token");
         if (accessToken == null || accessToken.trim().isEmpty()) return;
         if (AutoAiCallsPlugin.isAnyActiveCall(this) || CallNotificationManager.pendingCallId(this) != null) return;

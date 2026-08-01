@@ -41,6 +41,10 @@ public final class NativeCallSessionController {
     private static final String TAG = "AutoAiNativeCall";
     private static final int MAX_SIGNAL_RECONNECT_ATTEMPTS = 20;
     private static final int MAX_INITIALIZATION_ATTEMPTS = 12;
+    private static final int MAX_ICE_RESTART_ATTEMPTS = 2;
+    private static final long INITIAL_MEDIA_TIMEOUT_MS = 15_000L;
+    private static final long ICE_DISCONNECT_GRACE_MS = 4_000L;
+    private static final long ICE_RECOVERY_TIMEOUT_MS = 12_000L;
     private static volatile NativeCallSessionController instance;
 
     public static NativeCallSessionController get(Context context) {
@@ -61,6 +65,7 @@ public final class NativeCallSessionController {
         .build();
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final NativeMediaReadiness mediaReadiness = new NativeMediaReadiness();
     private final AtomicBoolean mediaStarting = new AtomicBoolean(false);
     private final AtomicBoolean terminal = new AtomicBoolean(false);
     private final AtomicBoolean reconnectScheduled = new AtomicBoolean(false);
@@ -74,9 +79,15 @@ public final class NativeCallSessionController {
     private String backendCallType;
     private boolean audioOnly;
     private boolean signalingOpen;
-    private boolean remoteMediaReceived;
-    private boolean iceRestartAttempted;
+    private boolean mediaConnectedSignaled;
+    private boolean remoteVideoNotified;
+    private boolean mediaReconnecting;
+    private boolean iceRecoveryInFlight;
+    private boolean iceRestartPending;
+    private int iceRestartAttempts;
+    private long mediaWatchdogGeneration;
     private boolean peerReadyPending;
+    private boolean initialOfferStarted;
     private volatile boolean iceDisconnected;
     private volatile int reconnectAttempts;
     private volatile int initializationAttempts;
@@ -107,9 +118,16 @@ public final class NativeCallSessionController {
         terminal.set(false);
         mediaStarting.set(false);
         reconnectScheduled.set(false);
-        remoteMediaReceived = false;
-        iceRestartAttempted = false;
+        mediaReadiness.reset();
+        mediaConnectedSignaled = false;
+        remoteVideoNotified = false;
+        mediaReconnecting = false;
+        iceRecoveryInFlight = false;
+        iceRestartPending = false;
+        iceRestartAttempts = 0;
+        cancelMediaWatchdog();
         peerReadyPending = false;
+        initialOfferStarted = false;
         peerReadySent = false;
         pendingOfferSdp = null;
         pendingAnswerSdp = null;
@@ -130,6 +148,7 @@ public final class NativeCallSessionController {
         if (listener != null && !listeners.contains(listener)) listeners.add(listener);
         ActiveCallStore.Snapshot snapshot = ActiveCallStore.get(context, callId);
         if (listener != null && snapshot != null) listener.onState(snapshot.state, snapshot.lastErrorCode);
+        if (listener != null && mediaReadiness.hasRemoteVideoTrack()) listener.onRemoteVideoAvailable();
     }
 
     public void removeListener(Listener listener) { listeners.remove(listener); }
@@ -304,11 +323,8 @@ public final class NativeCallSessionController {
                 backendStatus = "accepted";
                 startMediaAfterAccept();
             } else if ("call.peer_ready".equals(type) && "outgoing".equals(direction)) {
-                peerReadyPending = true;
-                if (engine != null) {
-                    peerReadyPending = false;
-                    engine.createOffer(false);
-                }
+                if (!initialOfferStarted) peerReadyPending = true;
+                createInitialOfferIfPossible();
             } else if ("webrtc.offer".equals(type)) {
                 String sdp = payload.getString("sdp");
                 if (engine != null) engine.applyOffer(sdp); else pendingOfferSdp = sdp;
@@ -320,9 +336,8 @@ public final class NativeCallSessionController {
                     payload.optString("sdpMid", null), payload.optInt("sdpMLineIndex", 0), payload.optString("candidate", ""));
                 if (engine != null) engine.addRemoteCandidate(candidate.mid, candidate.lineIndex, candidate.candidate);
                 else pendingRemoteCandidates.add(candidate);
-            } else if ("webrtc.ice_restart".equals(type) && engine != null && !iceRestartAttempted) {
-                iceRestartAttempted = true;
-                engine.restartIce();
+            } else if ("webrtc.ice_restart".equals(type)) {
+                handleRemoteIceRestartRequest();
             } else if (type.startsWith("call.") && isTerminalSignal(type)) {
                 terminal.set(true);
                 closeInternal(true, null);
@@ -361,6 +376,13 @@ public final class NativeCallSessionController {
                 }
                 flushPendingRemoteSignals(created);
                 announcePeerReadyIfPossible();
+                if (iceRestartPending && "outgoing".equals(direction)) {
+                    iceRestartPending = false;
+                    iceRecoveryInFlight = true;
+                    restartAsOfferer("queued_remote_request");
+                } else {
+                    armMediaWatchdog(INITIAL_MEDIA_TIMEOUT_MS);
+                }
             } catch (SecurityException permission) {
                 fail("video".equals(callType) ? "CAMERA_PERMISSION_DENIED" : "MICROPHONE_PERMISSION_DENIED", permission);
             } catch (NativeCallApi.ApiException relayError) {
@@ -375,10 +397,7 @@ public final class NativeCallSessionController {
         NativeWebRtcEngine current = engine;
         if (!signalingOpen || current == null || terminal.get()) return;
         if ("outgoing".equals(direction)) {
-            if (peerReadyPending) {
-                peerReadyPending = false;
-                current.createOffer(false);
-            }
+            createInitialOfferIfPossible();
             return;
         }
         if ("incoming".equals(direction) && !peerReadySent) {
@@ -386,6 +405,14 @@ public final class NativeCallSessionController {
             send("call.peer_ready", callId, json("call_type", backendCallType, "audio_ready", true, "video_ready", !"video".equals(backendCallType) || (!audioOnly && cameraEnabled), "audio_only", audioOnly, "negotiation_id", UUID.randomUUID().toString()));
             Log.i(TAG, "PEER_READY_SENT callId=" + callId);
         }
+    }
+
+    private synchronized void createInitialOfferIfPossible() {
+        NativeWebRtcEngine current = engine;
+        if (!peerReadyPending || initialOfferStarted || current == null || terminal.get()) return;
+        peerReadyPending = false;
+        initialOfferStarted = true;
+        current.createOffer(false);
     }
 
     private synchronized void flushPendingRemoteSignals(NativeWebRtcEngine current) {
@@ -404,47 +431,204 @@ public final class NativeCallSessionController {
 
     private final NativeWebRtcEngine.Listener engineListener = new NativeWebRtcEngine.Listener() {
         @Override public void onLocalDescription(SessionDescription description) {
-            String event = description.type == SessionDescription.Type.OFFER ? "webrtc.offer" : "webrtc.answer";
-            send(event, callId, json("type", description.type.canonicalForm(), "sdp", description.description));
-            if (description.type == SessionDescription.Type.ANSWER) Log.i(TAG, "ANSWER_SENT callId=" + callId);
+            executor.execute(() -> {
+                String event = description.type == SessionDescription.Type.OFFER ? "webrtc.offer" : "webrtc.answer";
+                send(event, callId, json("type", description.type.canonicalForm(), "sdp", description.description));
+                if (description.type == SessionDescription.Type.ANSWER) Log.i(TAG, "ANSWER_SENT callId=" + callId);
+            });
         }
 
         @Override public void onLocalIceCandidate(IceCandidate candidate) {
-            send("webrtc.ice_candidate", callId, json("candidate", candidate.sdp,
-                "sdpMid", candidate.sdpMid, "sdpMLineIndex", candidate.sdpMLineIndex));
+            executor.execute(() -> send("webrtc.ice_candidate", callId, json("candidate", candidate.sdp,
+                "sdpMid", candidate.sdpMid, "sdpMLineIndex", candidate.sdpMLineIndex)));
         }
 
         @Override public void onIceState(PeerConnection.IceConnectionState state) {
-            if (state == PeerConnection.IceConnectionState.CONNECTED || state == PeerConnection.IceConnectionState.COMPLETED) {
-                iceDisconnected = false;
-                Log.i(TAG, "ICE_CONNECTED callId=" + callId);
-            } else if (state == PeerConnection.IceConnectionState.DISCONNECTED) {
-                iceDisconnected = true;
-                update(ActiveCallStore.State.RECONNECTING, null);
-            } else if (state == PeerConnection.IceConnectionState.FAILED) {
-                iceDisconnected = true;
-                if (!iceRestartAttempted && engine != null) { iceRestartAttempted = true; engine.restartIce(); }
-                else fail("ICE_CONNECTION_FAILED", null);
-            }
+            executor.execute(() -> handleIceState(state));
         }
 
-        @Override public void onRemoteMedia(boolean video) {
-            if (remoteMediaReceived) return;
-            remoteMediaReceived = true;
-            update(ActiveCallStore.State.MEDIA_CONNECTED, null);
-            send("call.media_ready", callId, json("audio_ready", true, "video_ready", video || "audio".equals(callType)));
-            send("call.connected", callId, new JSONObject());
-            Log.i(TAG, "REMOTE_MEDIA_RECEIVED callId=" + callId);
-            Log.i(TAG, "CALL_CONNECTED callId=" + callId);
-            for (Listener listener : listeners) if (video) listener.onRemoteVideoAvailable();
+        @Override public void onPeerConnectionState(PeerConnection.PeerConnectionState state) {
+            executor.execute(() -> handlePeerConnectionState(state));
+        }
+
+        @Override public void onRemoteTrack(boolean video) {
+            executor.execute(() -> handleRemoteTrack(video));
+        }
+
+        @Override public void onFirstRemoteVideoFrame() {
+            executor.execute(NativeCallSessionController.this::handleFirstRemoteVideoFrame);
         }
 
         @Override public void onRemoteDescriptionApplied(SessionDescription.Type type) {
             if (type == SessionDescription.Type.OFFER) Log.i(TAG, "OFFER_APPLIED callId=" + callId);
         }
 
-        @Override public void onFailure(String errorCode, Throwable error) { fail(errorCode, error); }
+        @Override public void onFailure(String errorCode, Throwable error) {
+            executor.execute(() -> fail(errorCode, error));
+        }
     };
+
+    private void handleIceState(PeerConnection.IceConnectionState state) {
+        if (terminal.get()) return;
+        if (state == PeerConnection.IceConnectionState.CONNECTED || state == PeerConnection.IceConnectionState.COMPLETED) {
+            mediaReadiness.setIceConnected(true);
+            iceDisconnected = false;
+            Log.i(TAG, "ICE_CONNECTED callId=" + callId);
+            maybeMarkMediaConnected();
+        } else if (state == PeerConnection.IceConnectionState.DISCONNECTED) {
+            mediaReadiness.setIceConnected(false);
+            mediaReadiness.setPeerConnected(false);
+            iceDisconnected = true;
+            beginMediaReconnect(ICE_DISCONNECT_GRACE_MS);
+        } else if (state == PeerConnection.IceConnectionState.FAILED) {
+            mediaReadiness.setIceConnected(false);
+            mediaReadiness.setPeerConnected(false);
+            iceDisconnected = true;
+            recoverMedia("ice_failed");
+        } else if (state == PeerConnection.IceConnectionState.CLOSED) {
+            mediaReadiness.setIceConnected(false);
+            mediaReadiness.setPeerConnected(false);
+        }
+    }
+
+    private void handlePeerConnectionState(PeerConnection.PeerConnectionState state) {
+        if (terminal.get()) return;
+        if (state == PeerConnection.PeerConnectionState.CONNECTED) {
+            mediaReadiness.setPeerConnected(true);
+            iceDisconnected = false;
+            Log.i(TAG, "PEER_CONNECTION_CONNECTED callId=" + callId);
+            maybeMarkMediaConnected();
+        } else if (state == PeerConnection.PeerConnectionState.DISCONNECTED) {
+            mediaReadiness.setPeerConnected(false);
+            mediaReadiness.setIceConnected(false);
+            iceDisconnected = true;
+            beginMediaReconnect(ICE_DISCONNECT_GRACE_MS);
+        } else if (state == PeerConnection.PeerConnectionState.FAILED) {
+            mediaReadiness.setPeerConnected(false);
+            mediaReadiness.setIceConnected(false);
+            iceDisconnected = true;
+            recoverMedia("peer_connection_failed");
+        } else if (state == PeerConnection.PeerConnectionState.CLOSED) {
+            mediaReadiness.setPeerConnected(false);
+            mediaReadiness.setIceConnected(false);
+        }
+    }
+
+    private void handleRemoteTrack(boolean video) {
+        if (terminal.get()) return;
+        mediaReadiness.markRemoteTrack(video);
+        if (video) notifyRemoteVideoAvailable();
+        maybeMarkMediaConnected();
+    }
+
+    private void handleFirstRemoteVideoFrame() {
+        if (terminal.get()) return;
+        mediaReadiness.markFirstRemoteVideoFrame();
+        notifyRemoteVideoAvailable();
+        if (mediaConnectedSignaled) {
+            send("call.media_ready", callId, json("audio_ready", true, "video_ready", true));
+        }
+        Log.i(TAG, "REMOTE_VIDEO_FIRST_FRAME callId=" + callId);
+    }
+
+    private void notifyRemoteVideoAvailable() {
+        if (remoteVideoNotified) return;
+        remoteVideoNotified = true;
+        for (Listener listener : listeners) listener.onRemoteVideoAvailable();
+    }
+
+    private void maybeMarkMediaConnected() {
+        if (terminal.get() || !mediaReadiness.isMediaConnected()) return;
+        boolean recovered = mediaReconnecting;
+        mediaReconnecting = false;
+        iceRecoveryInFlight = false;
+        iceDisconnected = false;
+        iceRestartAttempts = 0;
+        cancelMediaWatchdog();
+        if (!mediaConnectedSignaled) {
+            mediaConnectedSignaled = true;
+            update(ActiveCallStore.State.MEDIA_CONNECTED, null);
+            send("call.media_ready", callId, json("audio_ready", true,
+                "video_ready", "audio".equals(callType) || mediaReadiness.hasFirstRemoteVideoFrame()));
+            send("call.connected", callId, new JSONObject());
+            Log.i(TAG, "REMOTE_MEDIA_RECEIVED callId=" + callId + " transport_connected=true");
+            Log.i(TAG, "CALL_CONNECTED callId=" + callId);
+        } else if (recovered) {
+            update(ActiveCallStore.State.MEDIA_CONNECTED, null);
+            send("call.media_ready", callId, json("audio_ready", true,
+                "video_ready", "audio".equals(callType) || mediaReadiness.hasFirstRemoteVideoFrame()));
+            Log.i(TAG, "MEDIA_RECOVERED callId=" + callId);
+        }
+    }
+
+    private void beginMediaReconnect(long timeoutMs) {
+        if (terminal.get()) return;
+        if (!mediaReconnecting) {
+            mediaReconnecting = true;
+            update(ActiveCallStore.State.RECONNECTING, null);
+        }
+        if (!iceRecoveryInFlight) armMediaWatchdog(timeoutMs);
+    }
+
+    private void recoverMedia(String reason) {
+        if (terminal.get() || mediaReadiness.isMediaConnected()) return;
+        if (iceRecoveryInFlight) return;
+        if (engine == null) {
+            fail("ICE_CONNECTION_FAILED", new IllegalStateException("Media engine unavailable during recovery."));
+            return;
+        }
+        if (iceRestartAttempts >= MAX_ICE_RESTART_ATTEMPTS) {
+            fail("ICE_CONNECTION_FAILED", new IllegalStateException("Media recovery exhausted: " + reason));
+            return;
+        }
+        iceRestartAttempts++;
+        iceRecoveryInFlight = true;
+        mediaReconnecting = true;
+        update(ActiveCallStore.State.RECONNECTING, null);
+        Log.w(TAG, "ICE_RECOVERY callId=" + callId + " attempt=" + iceRestartAttempts + " reason=" + reason);
+        if ("outgoing".equals(direction)) restartAsOfferer(reason);
+        else send("webrtc.ice_restart", callId, json("reason", reason));
+        armMediaWatchdog(ICE_RECOVERY_TIMEOUT_MS);
+    }
+
+    private void handleRemoteIceRestartRequest() {
+        if (terminal.get()) return;
+        if (!"outgoing".equals(direction)) {
+            Log.d(TAG, "Ignoring non-offerer ICE restart request callId=" + callId);
+            return;
+        }
+        if (engine == null) {
+            iceRestartPending = true;
+            return;
+        }
+        if (iceRecoveryInFlight) return;
+        iceRecoveryInFlight = true;
+        restartAsOfferer("remote_request");
+    }
+
+    private void restartAsOfferer(String reason) {
+        NativeWebRtcEngine current = engine;
+        if (terminal.get() || current == null) return;
+        initialOfferStarted = true;
+        mediaReconnecting = true;
+        update(ActiveCallStore.State.RECONNECTING, null);
+        Log.i(TAG, "ICE_RESTART_OFFER callId=" + callId + " reason=" + reason);
+        current.restartIce();
+        armMediaWatchdog(ICE_RECOVERY_TIMEOUT_MS);
+    }
+
+    private synchronized void armMediaWatchdog(long delayMs) {
+        final long generation = ++mediaWatchdogGeneration;
+        mainHandler.postDelayed(() -> executor.execute(() -> {
+            synchronized (NativeCallSessionController.this) {
+                if (generation != mediaWatchdogGeneration) return;
+            }
+            iceRecoveryInFlight = false;
+            recoverMedia("media_timeout");
+        }), delayMs);
+    }
+
+    private synchronized void cancelMediaWatchdog() { mediaWatchdogGeneration++; }
 
     private void send(String type, String eventCallId, JSONObject payload) {
         try {
@@ -508,10 +692,8 @@ public final class NativeCallSessionController {
         networkCallback = new ConnectivityManager.NetworkCallback() {
             @Override public void onAvailable(Network network) {
                 if (!terminal.get() && !signalingOpen) scheduleReconnect();
-                if (!terminal.get() && iceDisconnected && engine != null && !iceRestartAttempted) {
-                    iceRestartAttempted = true;
-                    update(ActiveCallStore.State.RECONNECTING, null);
-                    engine.restartIce();
+                if (!terminal.get() && iceDisconnected) {
+                    executor.execute(() -> recoverMedia("network_available"));
                 }
             }
             @Override public void onCapabilitiesChanged(Network network, NetworkCapabilities capabilities) {}
@@ -520,6 +702,7 @@ public final class NativeCallSessionController {
     }
 
     private synchronized void closeInternal(boolean terminalState, String errorCode) {
+        cancelMediaWatchdog();
         sessionStarted = false;
         signalingOpen = false;
         if (socket != null) socket.close(1000, "call terminal");
@@ -531,6 +714,15 @@ public final class NativeCallSessionController {
         pendingRemoteCandidates.clear();
         if (terminalState) pendingOutboundSignals.clear();
         peerReadySent = false;
+        initialOfferStarted = false;
+        mediaReadiness.reset();
+        mediaConnectedSignaled = false;
+        remoteVideoNotified = false;
+        mediaReconnecting = false;
+        iceRecoveryInFlight = false;
+        iceRestartPending = false;
+        iceRestartAttempts = 0;
+        iceDisconnected = false;
         ConnectivityManager manager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
         if (manager != null && networkCallback != null) try { manager.unregisterNetworkCallback(networkCallback); } catch (RuntimeException ignored) {}
         networkCallback = null;

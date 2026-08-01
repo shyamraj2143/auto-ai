@@ -154,6 +154,7 @@ public class CallForegroundService extends Service implements NativeCallSessionC
             } else {
                 audioManager.abandonAudioFocus(null);
             }
+            NativeAudioRouter.clear(audioManager);
             audioManager.setSpeakerphoneOn(previousSpeakerState);
             audioManager.setMode(previousAudioMode);
         }
@@ -211,7 +212,7 @@ public class CallForegroundService extends Service implements NativeCallSessionC
             previousAudioMode = audioManager.getMode();
             previousSpeakerState = audioManager.isSpeakerphoneOn();
             audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-            audioManager.setSpeakerphoneOn("video".equals(callType));
+            boolean focusGranted;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 AudioAttributes attributes = new AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
@@ -222,9 +223,13 @@ public class CallForegroundService extends Service implements NativeCallSessionC
                     .setAcceptsDelayedFocusGain(false)
                     .setOnAudioFocusChangeListener(focusChange -> Log.d(TAG, "Audio focus changed=" + focusChange))
                     .build();
-                return audioManager.requestAudioFocus(audioFocusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+                focusGranted = audioManager.requestAudioFocus(audioFocusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+            } else {
+                focusGranted = audioManager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL,
+                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
             }
-            return audioManager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+            boolean routed = NativeAudioRouter.routeForCall(audioManager, "video".equals(callType), true);
+            return focusGranted && routed;
         } catch (RuntimeException error) {
             Log.w(TAG, "Audio focus setup degraded callId=" + activeCallId, error);
             return false;

@@ -22,6 +22,18 @@ public class AppUpdateCoordinatorTest {
         assertFalse("com.autoai.app".equals(metadata.packageName));
     }
 
+    @Test public void everyHigherPublishedVersionIsMandatory() {
+        assertTrue(AppUpdateCoordinator.requiresMandatoryUpdate(102341, 102351));
+        assertFalse(AppUpdateCoordinator.requiresMandatoryUpdate(102351, 102351));
+        assertFalse(AppUpdateCoordinator.requiresMandatoryUpdate(102351, 102341));
+    }
+
+    @Test public void verifiedApkCanOnlyBeReusedForItsExactVersionCode() {
+        assertTrue(AppUpdateCoordinator.downloadedVersionMatches(102351, 102351));
+        assertFalse(AppUpdateCoordinator.downloadedVersionMatches(102341, 102351));
+        assertFalse(AppUpdateCoordinator.downloadedVersionMatches(0, 102351));
+    }
+
     @Test public void updaterAcceptsOnlyTheAutoAiReleasePath() {
         assertTrue(AppUpdateCoordinator.isTrustedDownloadUrl(
             "https://github.com/shyamraj2143/auto-ai/releases/download/android-101201/auto-ai.apk"));

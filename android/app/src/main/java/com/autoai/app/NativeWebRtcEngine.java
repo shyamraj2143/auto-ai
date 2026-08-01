@@ -19,6 +19,7 @@ import org.webrtc.MediaStream;
 import org.webrtc.PeerConnection;
 import org.webrtc.PeerConnectionFactory;
 import org.webrtc.RtpReceiver;
+import org.webrtc.RendererCommon;
 import org.webrtc.SdpObserver;
 import org.webrtc.SessionDescription;
 import org.webrtc.SurfaceTextureHelper;
@@ -39,7 +40,9 @@ final class NativeWebRtcEngine {
         void onLocalDescription(SessionDescription description);
         void onLocalIceCandidate(IceCandidate candidate);
         void onIceState(PeerConnection.IceConnectionState state);
-        void onRemoteMedia(boolean video);
+        void onPeerConnectionState(PeerConnection.PeerConnectionState state);
+        void onRemoteTrack(boolean video);
+        void onFirstRemoteVideoFrame();
         default void onRemoteDescriptionApplied(SessionDescription.Type type) {}
         void onFailure(String errorCode, Throwable error);
     }
@@ -54,6 +57,7 @@ final class NativeWebRtcEngine {
     private final Listener listener;
     private final List<IceCandidate> queuedRemoteCandidates = new ArrayList<>();
     private final AtomicBoolean negotiationRunning = new AtomicBoolean(false);
+    private final AtomicBoolean firstRemoteVideoFrameReported = new AtomicBoolean(false);
     private PeerConnection peerConnection;
     private AudioSource audioSource;
     private AudioTrack localAudioTrack;
@@ -65,6 +69,7 @@ final class NativeWebRtcEngine {
     private SurfaceViewRenderer localRenderer;
     private SurfaceViewRenderer remoteRenderer;
     private boolean remoteDescriptionSet;
+    private boolean videoEnabled;
 
     NativeWebRtcEngine(Context context, Listener listener) {
         this.context = context.getApplicationContext();
@@ -73,10 +78,15 @@ final class NativeWebRtcEngine {
 
     void start(boolean video, List<PeerConnection.IceServer> iceServers) {
         ensureFactory();
+        videoEnabled = video;
         PeerConnection.RTCConfiguration config = new PeerConnection.RTCConfiguration(iceServers);
         config.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
+        config.bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE;
+        config.rtcpMuxPolicy = PeerConnection.RtcpMuxPolicy.REQUIRE;
+        config.keyType = PeerConnection.KeyType.ECDSA;
         config.continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY;
         config.tcpCandidatePolicy = PeerConnection.TcpCandidatePolicy.ENABLED;
+        config.iceCandidatePoolSize = 2;
         peerConnection = factory.createPeerConnection(config, observer);
         if (peerConnection == null) throw new IllegalStateException("PeerConnection creation failed.");
 
@@ -105,7 +115,7 @@ final class NativeWebRtcEngine {
         setRemoteDescription(new SessionDescription(SessionDescription.Type.ANSWER, sdp), null);
     }
 
-    void addRemoteCandidate(String mid, int lineIndex, String candidate) {
+    synchronized void addRemoteCandidate(String mid, int lineIndex, String candidate) {
         IceCandidate ice = new IceCandidate(mid, lineIndex, candidate);
         if (!remoteDescriptionSet || peerConnection == null) {
             queuedRemoteCandidates.add(ice);
@@ -114,8 +124,9 @@ final class NativeWebRtcEngine {
         }
     }
 
-    void restartIce() {
+    synchronized void restartIce() {
         if (peerConnection == null) return;
+        remoteDescriptionSet = false;
         peerConnection.restartIce();
         createOffer(true);
     }
@@ -128,7 +139,7 @@ final class NativeWebRtcEngine {
         }
     }
 
-    void attachRenderers(SurfaceViewRenderer local, SurfaceViewRenderer remote) {
+    synchronized void attachRenderers(SurfaceViewRenderer local, SurfaceViewRenderer remote) {
         if (localRenderer == local && remoteRenderer == remote) return;
         if (localRenderer != null || remoteRenderer != null) detachRenderers();
         localRenderer = local;
@@ -138,17 +149,18 @@ final class NativeWebRtcEngine {
             localRenderer.init(eglBase.getEglBaseContext(), null);
             localRenderer.setMirror(true);
             localRenderer.setEnableHardwareScaler(true);
+            localRenderer.setZOrderMediaOverlay(true);
             if (localVideoTrack != null) localVideoTrack.addSink(localRenderer);
         }
         if (remoteRenderer != null) {
-            remoteRenderer.init(eglBase.getEglBaseContext(), null);
+            remoteRenderer.init(eglBase.getEglBaseContext(), remoteRendererEvents);
             remoteRenderer.setMirror(false);
             remoteRenderer.setEnableHardwareScaler(true);
             if (remoteVideoTrack != null) remoteVideoTrack.addSink(remoteRenderer);
         }
     }
 
-    void detachRenderers() {
+    synchronized void detachRenderers() {
         if (localVideoTrack != null && localRenderer != null) localVideoTrack.removeSink(localRenderer);
         if (remoteVideoTrack != null && remoteRenderer != null) remoteVideoTrack.removeSink(remoteRenderer);
         if (localRenderer != null) localRenderer.release();
@@ -157,7 +169,7 @@ final class NativeWebRtcEngine {
         remoteRenderer = null;
     }
 
-    void close() {
+    synchronized void close() {
         detachRenderers();
         if (videoCapturer != null) {
             try { videoCapturer.stopCapture(); } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
@@ -170,6 +182,8 @@ final class NativeWebRtcEngine {
         if (audioSource != null) audioSource.dispose();
         if (peerConnection != null) { peerConnection.close(); peerConnection.dispose(); }
         peerConnection = null;
+        queuedRemoteCandidates.clear();
+        remoteDescriptionSet = false;
     }
 
     private void ensureFactory() {
@@ -209,12 +223,17 @@ final class NativeWebRtcEngine {
 
     private void setRemoteDescription(SessionDescription description, Runnable complete) {
         if (peerConnection == null) return;
+        synchronized (this) { remoteDescriptionSet = false; }
         peerConnection.setRemoteDescription(new SimpleSdpObserver() {
             @Override public void onSetSuccess() {
-                remoteDescriptionSet = true;
+                List<IceCandidate> candidates;
+                synchronized (NativeWebRtcEngine.this) {
+                    remoteDescriptionSet = true;
+                    candidates = new ArrayList<>(queuedRemoteCandidates);
+                    queuedRemoteCandidates.clear();
+                }
                 listener.onRemoteDescriptionApplied(description.type);
-                for (IceCandidate candidate : queuedRemoteCandidates) peerConnection.addIceCandidate(candidate);
-                queuedRemoteCandidates.clear();
+                for (IceCandidate candidate : candidates) peerConnection.addIceCandidate(candidate);
                 if (complete != null) complete.run();
             }
             @Override public void onSetFailure(String error) { listener.onFailure("REMOTE_OFFER_INVALID", new IllegalStateException(error)); }
@@ -243,7 +262,8 @@ final class NativeWebRtcEngine {
     private final PeerConnection.Observer observer = new PeerConnection.Observer() {
         @Override public void onSignalingChange(PeerConnection.SignalingState state) { Log.d(TAG, "signaling=" + state); }
         @Override public void onIceConnectionChange(PeerConnection.IceConnectionState state) { listener.onIceState(state); }
-        @Override public void onIceConnectionReceivingChange(boolean receiving) {}
+        @Override public void onConnectionChange(PeerConnection.PeerConnectionState state) { listener.onPeerConnectionState(state); }
+        @Override public void onIceConnectionReceivingChange(boolean receiving) { Log.d(TAG, "iceReceiving=" + receiving); }
         @Override public void onIceGatheringChange(PeerConnection.IceGatheringState state) {}
         @Override public void onIceCandidate(IceCandidate candidate) { listener.onLocalIceCandidate(candidate); }
         @Override public void onIceCandidatesRemoved(IceCandidate[] candidates) {}
@@ -253,20 +273,33 @@ final class NativeWebRtcEngine {
         @Override public void onRenegotiationNeeded() {}
         @Override public void onAddTrack(RtpReceiver receiver, MediaStream[] mediaStreams) {
             if (receiver.track() instanceof VideoTrack) {
-                remoteVideoTrack = (VideoTrack) receiver.track();
-                if (remoteRenderer != null) remoteVideoTrack.addSink(remoteRenderer);
-                listener.onRemoteMedia(true);
+                synchronized (NativeWebRtcEngine.this) {
+                    remoteVideoTrack = (VideoTrack) receiver.track();
+                    remoteVideoTrack.setEnabled(true);
+                    if (remoteRenderer != null) remoteVideoTrack.addSink(remoteRenderer);
+                }
+                listener.onRemoteTrack(true);
             } else if (receiver.track() instanceof AudioTrack) {
                 receiver.track().setEnabled(true);
-                listener.onRemoteMedia(false);
+                listener.onRemoteTrack(false);
             }
         }
     };
 
-    private static MediaConstraints offerAnswerConstraints() {
+    private final RendererCommon.RendererEvents remoteRendererEvents = new RendererCommon.RendererEvents() {
+        @Override public void onFirstFrameRendered() {
+            if (firstRemoteVideoFrameReported.compareAndSet(false, true)) listener.onFirstRemoteVideoFrame();
+        }
+
+        @Override public void onFrameResolutionChanged(int videoWidth, int videoHeight, int rotation) {
+            Log.d(TAG, "remoteVideo=" + videoWidth + "x" + videoHeight + " rotation=" + rotation);
+        }
+    };
+
+    private MediaConstraints offerAnswerConstraints() {
         MediaConstraints constraints = new MediaConstraints();
         constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"));
-        constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"));
+        constraints.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", Boolean.toString(videoEnabled)));
         return constraints;
     }
 

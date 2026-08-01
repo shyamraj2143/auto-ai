@@ -5,7 +5,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { syncNativeAccessToken } from "../../auth/sessionStorage";
 import { CallContext, type CallContextValue } from "./CallContext";
 import { callApi } from "./services/callApi";
-import { callNative } from "./services/callNative";
+import { callNative, nativeRuntimeOwnsMediaSignal, type NativeCallState } from "./services/callNative";
 import { canResumeAcceptedCall, requiresAcceptRequest } from "./callAcceptance";
 import { CallSetupError, failureCodeOf } from "./callFailures";
 import { CallSignaling } from "./services/callSignaling";
@@ -720,6 +720,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     if (cleanedCallId) notifyCallHistoryChanged();
     await callNative.stopActiveCall(cleanedCallId).catch(() => undefined);
     if (cleanedCallId) nativeServiceCallIdsRef.current.delete(cleanedCallId);
+    if (callNative.isAndroid() && token) void signaling.connect(token);
     if (detail) setError(detail);
     setCallTimer("terminal", () => {
       setSessionState("idle");
@@ -733,8 +734,34 @@ export function CallProvider({ children }: { children: ReactNode }) {
       acceptInProgressRef.current = false;
       endInProgressRef.current = false;
     }, terminalState === "ended" ? 900 : 2200);
-  }, [clearProgressTimers, closeBrowserNotification, setCallTimer, stopRingtone]);
+  }, [clearProgressTimers, closeBrowserNotification, setCallTimer, signaling, stopRingtone, token]);
   cleanupRef.current = cleanup;
+
+  useEffect(() => {
+    if (!callNative.isAndroid()) return;
+    let disposed = false;
+    let listener: { remove: () => Promise<void> } | null = null;
+    const applyNativeState = (event: NativeCallState) => {
+      if (disposed || !event.callId || event.callId !== callRef.current?.id) return;
+      if (event.state === "MEDIA_CONNECTED") transition("active");
+      else if (event.state === "RECONNECTING") transition("reconnecting");
+      else if (event.state === "TERMINAL") {
+        void cleanupRef.current(event.errorCode ? "failed" : "ended",
+          event.errorCode ? "The secure media connection could not be established. Please retry." : "");
+      } else if (["SERVICE_READY", "SIGNALING_CONNECTING", "SIGNALING_CONNECTED", "MEDIA_CONNECTING"].includes(String(event.state))) {
+        transition("connecting");
+      }
+    };
+    void callNative.onNativeCallState(applyNativeState).then((handle) => {
+      if (disposed) void handle.remove();
+      else listener = handle;
+    });
+    void callNative.getActiveCallState().then(applyNativeState);
+    return () => {
+      disposed = true;
+      if (listener) void listener.remove();
+    };
+  }, [transition]);
 
   const receiveIncomingCall = useCallback(async (callId: string, payload?: IncomingCallPayload) => {
     if (!token) return;
@@ -815,14 +842,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
     sessionStateRef.current = "connecting";
     if (!callNative.isAndroid()) navigate(`/calls/active/${encodeURIComponent(callId)}`, { replace: true });
     try {
-      if (callNative.isAndroid()) await syncNativeAccessToken(token);
+      if (callNative.isAndroid()) {
+        await syncNativeAccessToken(token);
+        signaling.close();
+      }
       await ensureNativeCallService(authoritative);
       await callNative.acknowledgeCallHandoff(callId).catch(() => undefined);
       callDebug("ACTIVE_CALL_UI_READY", { call_id: callId });
-      if (callNative.isAndroid()) {
-        signaling.close();
-        return;
-      }
+      if (callNative.isAndroid()) return;
 
       let currentConfig = configRef.current;
       for (let attempt = 0; (!currentConfig?.enabled || !currentConfig.realtime_configured) && attempt < 3; attempt += 1) {
@@ -923,6 +950,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
       return;
     }
     if (!event.call_id || event.call_id !== callRef.current?.id) return;
+    if (nativeRuntimeOwnsMediaSignal(callNative.isAndroid(), event.type)) {
+      callDebug("native_media_signal_ignored_by_webview", { call_id: event.call_id, event_type: event.type });
+      return;
+    }
     const eventRevision = Number(event.payload.revision || 0);
     const currentRevision = callRef.current?.revision || 0;
     if (eventRevision > 0 && currentRevision > eventRevision) {
@@ -943,8 +974,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
       if (callRef.current) {
         callRef.current = { ...callRef.current, status: "accepted" };
         setCall(callRef.current);
-        void ensurePeerConnection(callRef.current);
-        armMediaConnectTimeout(callRef.current.id);
+        if (callNative.isAndroid()) {
+          signaling.close();
+          void ensureNativeCallService(callRef.current);
+        } else {
+          void ensurePeerConnection(callRef.current);
+          armMediaConnectTimeout(callRef.current.id);
+        }
       }
     } else if (event.type === "webrtc.offer" || event.type === "webrtc.answer") void applyDescription(event);
     else if (event.type === "webrtc.ice_candidate") void applyIceCandidate(event);
@@ -986,7 +1022,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       void cleanup(TERMINAL_EVENT_STATES[event.type], String(event.payload.end_reason || ""));
     }
     else if (event.type === "call.error") setError(String(event.payload.detail || "Call error"));
-  }, [applyDescription, applyIceCandidate, armMediaConnectTimeout, attemptReconnect, cleanup, clearProgressTimers, closeBrowserNotification, ensurePeerConnection, receiveIncomingCall, stopRingtone, transition]);
+  }, [applyDescription, applyIceCandidate, armMediaConnectTimeout, attemptReconnect, cleanup, clearProgressTimers, closeBrowserNotification, ensureNativeCallService, ensurePeerConnection, receiveIncomingCall, signaling, stopRingtone, transition]);
   eventHandlerRef.current = handleSignalEvent;
 
   useEffect(() => {
@@ -1095,6 +1131,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
               callType = "audio";
               setError("Camera permission was not granted. Starting an audio call instead.");
             }
+            signaling.close();
           } else {
             await signaling.connect(token);
             if (!await signaling.waitUntilConnected()) throw new Error("Secure call signaling could not connect. Please retry.");
@@ -1182,30 +1219,32 @@ export function CallProvider({ children }: { children: ReactNode }) {
       const fresh = await callApi.get(token, currentCall.id);
       if (!canResumeAcceptedCall(fresh)) throw new Error("This call is no longer available.");
       callDebug("accepting", { call_id: fresh.id, role: "incoming", state: fresh.status, signaling_connected: signaling.isConnected() });
+      if (callNative.isAndroid()) {
+        await syncNativeAccessToken(token);
+        const permissions = fresh.call_type === "video" && !audioOnly
+          ? await callNative.requestVideoCallPermissions()
+          : await callNative.requestAudioCallPermissions();
+        if (!permissions.microphone.granted) {
+          throw new CallSetupError("MICROPHONE_PERMISSION_DENIED", "Microphone permission is required.");
+        }
+        if (fresh.call_type === "video" && !audioOnly && !permissions.camera.granted) {
+          audioOnly = true;
+          setError("Camera permission was not granted. Answering with audio only.");
+        }
+        // Android's foreground service is the sole signaling/media owner once Answer begins.
+        signaling.close();
+      }
       const accepted = requiresAcceptRequest(fresh)
         ? await callApi.accept(token, fresh.id, deviceIdRef.current)
         : fresh;
       acceptedCallIdsRef.current.add(fresh.id);
       acceptedSent = true;
       callRef.current = accepted;
-      setCall(accepted);      clearProgressTimers();
-          if (callNative.isAndroid()) {
-            await syncNativeAccessToken(token);
-            const permissions = fresh.call_type === "video" && !audioOnly
-              ? await callNative.requestVideoCallPermissions()
-              : await callNative.requestAudioCallPermissions();
-            if (!permissions.microphone.granted) {
-              throw new CallSetupError("MICROPHONE_PERMISSION_DENIED", "Microphone permission is required.");
-            }
-            if (fresh.call_type === "video" && !audioOnly && !permissions.camera.granted) {
-              audioOnly = true;
-              setError("Camera permission was not granted. Answering with audio only.");
-            }
-          }
-          await ensureNativeCallService(accepted, audioOnly);
-          if (callNative.isAndroid()) {
+      setCall(accepted);
+      clearProgressTimers();
+      await ensureNativeCallService(accepted, audioOnly);
+      if (callNative.isAndroid()) {
         await callNative.acknowledgeCallHandoff(accepted.id).catch(() => undefined);
-        signaling.close();
         setSessionState("connecting");
         sessionStateRef.current = "connecting";
         return;
@@ -1245,16 +1284,22 @@ export function CallProvider({ children }: { children: ReactNode }) {
         sessionStateRef.current = "reconnecting";
         setCallTimer("pendingRetry", async () => {
           try {
-            await signaling.retry(token);
-            if (!await signaling.waitUntilConnected(8000)) throw new Error("Signaling reconnect timed out.");
             const authoritative = await callApi.get(token, currentCall.id);
             if (!["accepted", "connecting", "active"].includes(authoritative.status)) throw new Error("Call is no longer active.");
             callRef.current = authoritative;
             setCall(authoritative);
-            if (callNative.isAndroid()) await syncNativeAccessToken(token);
-            await ensureNativeCallService(authoritative);
-            await loadIceConfiguration();
-            await ensurePeerConnection(authoritative);
+            if (callNative.isAndroid()) {
+              await syncNativeAccessToken(token);
+              signaling.close();
+              await ensureNativeCallService(authoritative);
+              await callNative.acknowledgeCallHandoff(authoritative.id).catch(() => undefined);
+            } else {
+              await signaling.retry(token);
+              if (!await signaling.waitUntilConnected(8000)) throw new Error("Signaling reconnect timed out.");
+              await ensureNativeCallService(authoritative);
+              await loadIceConfiguration();
+              await ensurePeerConnection(authoritative);
+            }
             setError("");
             transition("connecting");
           } catch (recoveryError) {

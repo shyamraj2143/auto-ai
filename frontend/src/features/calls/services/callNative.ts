@@ -1,9 +1,30 @@
-import { Capacitor, registerPlugin } from "@capacitor/core";
+import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 
 type NativeIncomingCall = {
   callId?: string | null;
   action?: "accept" | "reject" | "audio_only" | "resume_call" | null;
 };
+
+export type NativeCallState = {
+  callId?: string | null;
+  state?: "SERVICE_READY" | "SIGNALING_CONNECTING" | "SIGNALING_CONNECTED" | "MEDIA_CONNECTING" | "MEDIA_CONNECTED" | "RECONNECTING" | "TERMINAL" | string | null;
+  errorCode?: string | null;
+};
+
+const NATIVE_OWNED_MEDIA_SIGNALS = new Set([
+  "call.peer_ready",
+  "call.media_ready",
+  "webrtc.offer",
+  "webrtc.answer",
+  "webrtc.ice_candidate",
+  "webrtc.ice_restart",
+  "webrtc.renegotiate",
+  "webrtc.restart_required",
+]);
+
+export function nativeRuntimeOwnsMediaSignal(isAndroid: boolean, eventType: string) {
+  return isAndroid && NATIVE_OWNED_MEDIA_SIGNALS.has(eventType);
+}
 
 export type NativePermissionState = {
   state: "granted" | "denied" | "prompt" | "prompt-with-rationale";
@@ -28,6 +49,8 @@ export type NativeCallPermissionResult = {
 type NativeCallPlugin = {
   getDeviceRegistration(): Promise<{ deviceId: string; fcmToken?: string | null; firebaseInstallationId?: string | null; appVersion?: string | null; appVersionCode?: number | null; deviceName?: string | null }>;
   consumeIncomingCall(): Promise<NativeIncomingCall>;
+  getActiveCallState(): Promise<NativeCallState>;
+  addListener(eventName: "nativeCallState", listener: (state: NativeCallState) => void): Promise<PluginListenerHandle>;
   checkCallPermissions(options?: { video?: boolean }): Promise<NativeCallPermissionResult>;
   requestAudioCallPermissions(): Promise<NativeCallPermissionResult>;
   requestVideoCallPermissions(options?: { video?: boolean }): Promise<NativeCallPermissionResult>;
@@ -101,6 +124,10 @@ export const callNative = {
     return { device_id: browserDeviceId(), platform: "web" as const, fcm_token: null, firebase_installation_id: null, app_version: null, app_version_code: 0, device_name: null };
   },
   consumeIncomingCall: () => Capacitor.getPlatform() === "android" ? NativeCalls.consumeIncomingCall() : Promise.resolve({}),
+  getActiveCallState: () => Capacitor.getPlatform() === "android" ? NativeCalls.getActiveCallState() : Promise.resolve({}),
+  onNativeCallState: (listener: (state: NativeCallState) => void) => Capacitor.getPlatform() === "android"
+    ? NativeCalls.addListener("nativeCallState", listener)
+    : Promise.resolve({ remove: async () => undefined } as PluginListenerHandle),
   checkCallPermissions: (video = false) => Capacitor.getPlatform() === "android" ? NativeCalls.checkCallPermissions({ video }) : Promise.resolve(defaultPermissions()),
   requestAudioCallPermissions: () => Capacitor.getPlatform() === "android" ? NativeCalls.requestAudioCallPermissions() : Promise.resolve(defaultPermissions()),
   requestVideoCallPermissions: () => Capacitor.getPlatform() === "android" ? NativeCalls.requestVideoCallPermissions({ video: true }) : Promise.resolve(defaultPermissions()),

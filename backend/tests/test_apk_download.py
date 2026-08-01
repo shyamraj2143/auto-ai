@@ -48,9 +48,10 @@ def test_download_streams_github_apk_when_railway_file_is_missing(monkeypatch) -
 
 
 def test_github_repository_is_not_legacy_repository() -> None:
-    from app.services.github_apk_release import GITHUB_REPO
+    from app.services.github_apk_release import GITHUB_RELEASES_REQUIRE_UPDATE, GITHUB_REPO
 
     assert GITHUB_REPO != "robinmaker123-ai/auto-ai"
+    assert GITHUB_RELEASES_REQUIRE_UPDATE is True
 
 
 def test_metadata_release_keeps_checksum_and_uses_missing_storage_path(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:

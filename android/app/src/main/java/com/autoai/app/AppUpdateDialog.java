@@ -338,10 +338,10 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         switch (snapshot.state) {
             case AVAILABLE:
             case PAUSED_WAITING_FOR_NETWORK:
-                coordinator.download();
+                coordinator.downloadOrCheck();
                 break;
             case FAILED:
-                if (AppUpdateCoordinator.hasPendingUpdate(snapshot.metadata)) coordinator.download();
+                if (AppUpdateCoordinator.hasPendingUpdate(snapshot.metadata)) coordinator.downloadOrCheck();
                 else coordinator.startDirectUpdate();
                 break;
             case READY_TO_INSTALL:

@@ -42,9 +42,27 @@ public class NativeCallRuntimeContractTest {
         assertTrue(controller.contains("api.websocketUrl()"));
         assertTrue(controller.contains("call.connected"));
         assertTrue(controller.contains("REMOTE_MEDIA_RECEIVED"));
+        assertTrue(controller.contains("mediaReadiness.isMediaConnected()"));
+        assertTrue(controller.contains("MAX_ICE_RESTART_ATTEMPTS"));
+        assertTrue(controller.contains("INITIAL_MEDIA_TIMEOUT_MS"));
+        assertFalse(controller.contains("if (remoteMediaReceived) return"));
         assertTrue(engine.contains("PeerConnection peerConnection"));
         assertTrue(engine.contains("queuedRemoteCandidates"));
         assertTrue(engine.contains("restartIce()"));
+        assertTrue(engine.contains("onConnectionChange"));
+        assertTrue(engine.contains("onFirstFrameRendered"));
+        assertTrue(engine.contains("listener.onRemoteTrack(true)"));
+        assertTrue(engine.contains("listener.onRemoteTrack(false)"));
+    }
+
+    @Test public void modernAudioAndVideoPresentationAreExplicit() throws Exception {
+        String activity = source("java/com/autoai/app/ActiveCallActivity.java");
+        String service = source("java/com/autoai/app/CallForegroundService.java");
+        String router = source("java/com/autoai/app/NativeAudioRouter.java");
+        assertTrue(activity.contains("remoteVideo.setVisibility(View.VISIBLE)"));
+        assertTrue(activity.contains("NativeAudioRouter.routeForCall"));
+        assertTrue(service.contains("NativeAudioRouter.routeForCall"));
+        assertTrue(router.contains("setCommunicationDevice"));
     }
 
     @Test public void manifestProtectsDedicatedActiveCallActivity() throws Exception {

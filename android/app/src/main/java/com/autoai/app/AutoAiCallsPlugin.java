@@ -46,6 +46,7 @@ import java.util.List;
 public class AutoAiCallsPlugin extends Plugin {
     private static final String TAG = "AutoAiCalls";
     public static final String ACTION_UI_READY = "com.autoai.app.call.UI_READY";
+    private static final String ACTION_NATIVE_STATE = "com.autoai.app.call.NATIVE_STATE";
     private static final String DEVICE_PREFERENCES = "auto_ai_call_device";
     private static final String FALLBACK_DEVICE_ID = "fallback_device_id";
     private static final String PERMISSION_PREFERENCES = "auto_ai_call_permissions";
@@ -56,6 +57,36 @@ public class AutoAiCallsPlugin extends Plugin {
     private static final String KEY_BLUETOOTH_REQUESTED = "bluetooth_requested";
     private static final String KEY_ACTIVE_CALL_ID = "active_call_id";
     private static final String KEY_ACTIVE_CALL_TYPE = "active_call_type";
+    private BroadcastReceiver nativeStateReceiver;
+
+    @Override
+    public void load() {
+        nativeStateReceiver = new BroadcastReceiver() {
+            @Override public void onReceive(Context context, Intent intent) {
+                JSObject payload = new JSObject();
+                payload.put("callId", intent.getStringExtra(CallNotificationManager.EXTRA_CALL_ID));
+                payload.put("state", intent.getStringExtra("state"));
+                payload.put("errorCode", intent.getStringExtra("error_code"));
+                notifyListeners("nativeCallState", payload);
+            }
+        };
+        IntentFilter filter = new IntentFilter(ACTION_NATIVE_STATE);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            getContext().registerReceiver(nativeStateReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            getContext().registerReceiver(nativeStateReceiver, filter);
+        }
+    }
+
+    @Override
+    protected void handleOnDestroy() {
+        if (nativeStateReceiver != null) {
+            try { getContext().unregisterReceiver(nativeStateReceiver); }
+            catch (IllegalArgumentException ignored) {}
+            nativeStateReceiver = null;
+        }
+        super.handleOnDestroy();
+    }
 
     @PluginMethod
     public void getDeviceRegistration(PluginCall call) {
@@ -129,6 +160,18 @@ public class AutoAiCallsPlugin extends Plugin {
         getContext().sendBroadcast(new Intent(ACTION_UI_READY).setPackage(getContext().getPackageName())
             .putExtra(CallNotificationManager.EXTRA_CALL_ID, callId));
         call.resolve();
+    }
+
+    @PluginMethod
+    public void getActiveCallState(PluginCall call) {
+        ActiveCallStore.Snapshot snapshot = ActiveCallStore.get(getContext());
+        JSObject result = new JSObject();
+        if (snapshot != null) {
+            result.put("callId", snapshot.callId);
+            result.put("state", snapshot.state == null ? null : snapshot.state.name());
+            result.put("errorCode", snapshot.lastErrorCode);
+        }
+        call.resolve(result);
     }
 
     @PluginMethod
@@ -288,9 +331,8 @@ public class AutoAiCallsPlugin extends Plugin {
             call.reject("Audio routing is unavailable.");
             return;
         }
-        audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-        audioManager.setSpeakerphoneOn(enabled);
-        call.resolve();
+        if (NativeAudioRouter.routeForCall(audioManager, enabled, false)) call.resolve();
+        else call.reject("Unable to change the audio route.", "AUDIO_ROUTE_FAILED");
     }
 
     @PluginMethod

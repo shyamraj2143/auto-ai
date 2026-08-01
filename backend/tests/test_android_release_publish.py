@@ -8,6 +8,7 @@ SCRIPT_SPEC = importlib.util.spec_from_file_location("auto_ai_publish_android_re
 assert SCRIPT_SPEC and SCRIPT_SPEC.loader
 publish_android_release = importlib.util.module_from_spec(SCRIPT_SPEC)
 SCRIPT_SPEC.loader.exec_module(publish_android_release)
+REPOSITORY_ROOT = SCRIPT_PATH.parents[1]
 
 
 def test_metadata_publish_registers_github_release_without_binary_upload(tmp_path, monkeypatch) -> None:
@@ -41,3 +42,14 @@ def test_metadata_publish_registers_github_release_without_binary_upload(tmp_pat
     assert payload["file_size"] == len(b"signed-apk")
     assert payload["sha256"] == hashlib.sha256(b"signed-apk").hexdigest()
     assert result == {"version_code": 101461}
+
+
+def test_every_main_push_release_is_published_as_mandatory() -> None:
+    workflow = (REPOSITORY_ROOT / ".github" / "workflows" / "android-release.yml").read_text(encoding="utf-8")
+    metadata_step = workflow.split("- name: Publish APK metadata to backend", 1)[1].split(
+        "- name: Notify installed Android apps", 1
+    )[0]
+
+    assert "--force-update" in metadata_step
+    assert "commit_message=" not in metadata_step
+    assert 'echo "Force-Update: true"' in workflow

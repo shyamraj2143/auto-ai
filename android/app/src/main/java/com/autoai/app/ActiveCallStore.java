@@ -145,6 +145,16 @@ public final class ActiveCallStore {
         editor.commit();
     }
 
+    public static synchronized void markUiReady(Context context, String callId) {
+        if (!matches(context, callId)) return;
+        Snapshot current = get(context);
+        SharedPreferences.Editor editor = prefs(context).edit().putString("ui_state", "ready");
+        if (current.state == null || current.state.ordinal() < State.ACTIVE_UI_READY.ordinal()) {
+            editor.putString("state", State.ACTIVE_UI_READY.name());
+        }
+        editor.commit();
+    }
+
     public static synchronized void fail(Context context, String callId, String errorCode) {
         if (!matches(context, callId)) return;
         prefs(context).edit().putString("last_error_code", clean(errorCode)).putString("state", State.TERMINAL.name())

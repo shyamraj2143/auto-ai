@@ -74,8 +74,15 @@ public final class AppUpdateCoordinator {
         snapshot = Snapshot.restore(prefs);
         observeDownload();
         clearCompletedUpdate();
-        if (hasPendingUpdate(snapshot.metadata) && snapshot.state == State.IDLE) {
-            snapshot = new Snapshot(State.AVAILABLE, snapshot.metadata, 0, snapshot.metadata.fileSize, "Ready to download", "");
+        if (hasPendingUpdate(snapshot.metadata)) {
+            // Every published AutoAI Android version is required. Re-apply the policy
+            // when restoring state so an update discovered by an older build cannot
+            // become dismissible after the process is recreated mid-download.
+            snapshot.metadata.mandatory = true;
+            snapshot.metadata.forceUpdate = true;
+            if (snapshot.state == State.IDLE) {
+                snapshot = new Snapshot(State.AVAILABLE, snapshot.metadata, 0, snapshot.metadata.fileSize, "Ready to download", "");
+            }
         }
     }
 
@@ -99,12 +106,18 @@ public final class AppUpdateCoordinator {
                     set(new Snapshot(State.UP_TO_DATE, metadata, 0, 0, "AutoAI is up to date.", ""));
                     return;
                 }
-                boolean mandatory = metadata.forceUpdate || BuildConfig.VERSION_CODE < metadata.minimumSupportedVersionCode;
+                boolean mandatory = requiresMandatoryUpdate(BuildConfig.VERSION_CODE, metadata.versionCode);
                 if (!mandatory && optionalDismissedThisLaunch) {
                     set(new Snapshot(State.IDLE, metadata, 0, metadata.fileSize, "", ""));
                     return;
                 }
+                metadata.forceUpdate = mandatory;
                 metadata.mandatory = mandatory;
+                if (hasVerifiedApk(metadata)) {
+                    downloadAfterCheck = false;
+                    set(new Snapshot(State.READY_TO_INSTALL, metadata, metadata.fileSize, metadata.fileSize, "Secure update verified", ""));
+                    return;
+                }
                 set(new Snapshot(State.AVAILABLE, metadata, 0, metadata.fileSize, "Ready to download", ""));
                 if (downloadAfterCheck) {
                     downloadAfterCheck = false;
@@ -159,9 +172,16 @@ public final class AppUpdateCoordinator {
     }
 
     private boolean hasVerifiedApk() {
+        return hasVerifiedApk(snapshot.metadata);
+    }
+
+    private boolean hasVerifiedApk(@Nullable Metadata metadata) {
         String path = prefs.getString("downloaded_apk_path", "");
         java.io.File file = path.isEmpty() ? null : new java.io.File(path);
-        return hasPendingUpdate(snapshot.metadata) && file != null && file.isFile() && file.length() > 0;
+        int activeDownloadVersion = prefs.getInt("active_download_version", 0);
+        return hasPendingUpdate(metadata)
+            && downloadedVersionMatches(activeDownloadVersion, metadata.versionCode)
+            && file != null && file.isFile() && file.length() > 0;
     }
 
     public void dismissOptional() {
@@ -182,13 +202,30 @@ public final class AppUpdateCoordinator {
     }
 
     public static boolean hasPendingUpdate(@Nullable Metadata metadata) {
-        return metadata != null && metadata.valid() && metadata.versionCode > BuildConfig.VERSION_CODE;
+        return metadata != null && metadata.valid()
+            && requiresMandatoryUpdate(BuildConfig.VERSION_CODE, metadata.versionCode);
+    }
+
+    /** AutoAI publishes a new APK for every production main push, so every higher version is mandatory. */
+    static boolean requiresMandatoryUpdate(int installedVersionCode, int latestVersionCode) {
+        return latestVersionCode > installedVersionCode;
+    }
+
+    static boolean downloadedVersionMatches(int activeDownloadVersion, int latestVersionCode) {
+        return activeDownloadVersion > 0 && activeDownloadVersion == latestVersionCode;
     }
 
     public void download() {
         Metadata m = snapshot.metadata;
         if (m == null || !m.valid() || m.versionCode <= BuildConfig.VERSION_CODE) return;
         if (snapshot.state == State.QUEUED || snapshot.state == State.DOWNLOADING || snapshot.state == State.VERIFYING) return;
+        int previousDownloadVersion = prefs.getInt("active_download_version", 0);
+        boolean replacePreviousVersion = previousDownloadVersion > 0 && previousDownloadVersion != m.versionCode;
+        if (replacePreviousVersion) {
+            String previousPath = prefs.getString("downloaded_apk_path", "");
+            if (!previousPath.isEmpty()) new java.io.File(previousPath).delete();
+            prefs.edit().remove("downloaded_apk_path").remove("installer_pending").apply();
+        }
         Data input = new Data.Builder().putString("metadata", m.toJson().toString()).build();
         Constraints constraints = new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build();
         OneTimeWorkRequest request = new OneTimeWorkRequest.Builder(AppUpdateDownloadWorker.class)
@@ -196,7 +233,11 @@ public final class AppUpdateCoordinator {
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.SECONDS).build();
         prefs.edit().putInt("active_download_version", m.versionCode).putString("download_work_id", request.getId().toString()).apply();
         set(new Snapshot(State.QUEUED, m, 0, m.fileSize, "Waiting to download", ""));
-        WorkManager.getInstance(context).enqueueUniqueWork(WORK_NAME, ExistingWorkPolicy.KEEP, request);
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            WORK_NAME,
+            replacePreviousVersion ? ExistingWorkPolicy.REPLACE : ExistingWorkPolicy.KEEP,
+            request
+        );
     }
 
     public void cancelOptional() {
@@ -216,6 +257,7 @@ public final class AppUpdateCoordinator {
     }
 
     public Intent installerIntent() {
+        if (!hasVerifiedApk()) return null;
         String path = prefs.getString("downloaded_apk_path", "");
         if (path.isEmpty()) return null;
         java.io.File file = new java.io.File(path);
@@ -303,7 +345,8 @@ public final class AppUpdateCoordinator {
         m.packageName = "com.autoai.app";
         m.minimumAndroidSdk = 24;
         m.minimumSupportedVersionCode = 1;
-        m.forceUpdate = false;
+        m.forceUpdate = true;
+        m.mandatory = true;
         m.changelog = optionalText(body, "Changelog:\\s*([^\\r\\n]+)", "AutoAI update");
         m.releaseDate = json.optString("published_at", json.optString("created_at", ""));
         return m;

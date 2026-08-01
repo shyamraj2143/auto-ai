@@ -26,7 +26,6 @@ jobs:
       AUTO_AI_ANDROID_KEY_PASSWORD: ${{ secrets.AUTO_AI_ANDROID_KEY_PASSWORD }}
       AUTO_AI_GOOGLE_WEB_CLIENT_ID: ${{ secrets.AUTO_AI_GOOGLE_WEB_CLIENT_ID }}
       AUTO_AI_GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.AUTO_AI_GOOGLE_SERVICES_JSON_BASE64 }}
-      AUTO_AI_APK_FORCE_UPDATE: ${{ secrets.AUTO_AI_APK_FORCE_UPDATE }}
       AUTO_AI_UPDATE_NOTIFY_SECRET: ${{ secrets.AUTO_AI_UPDATE_NOTIFY_SECRET }}
 
     steps:
@@ -82,12 +81,25 @@ jobs:
           grep -q 'MAX_ATTEMPTS = 4' android/app/src/main/java/com/autoai/app/NativeCallApi.java
           grep -q 'MAX_SIGNAL_RECONNECT_ATTEMPTS = 20' android/app/src/main/java/com/autoai/app/NativeCallSessionController.java
           grep -q 'MAX_INITIALIZATION_ATTEMPTS = 12' android/app/src/main/java/com/autoai/app/NativeCallSessionController.java
+          grep -q 'mediaReadiness.isMediaConnected()' android/app/src/main/java/com/autoai/app/NativeCallSessionController.java
+          grep -q 'MAX_ICE_RESTART_ATTEMPTS = 2' android/app/src/main/java/com/autoai/app/NativeCallSessionController.java
+          grep -q 'onFirstFrameRendered' android/app/src/main/java/com/autoai/app/NativeWebRtcEngine.java
+          grep -q 'native_media_signal_ignored_by_webview' frontend/src/features/calls/CallProvider.tsx
+          grep -q 'setCommunicationDevice' android/app/src/main/java/com/autoai/app/NativeAudioRouter.java
           grep -q 'pendingOutboundSignals' android/app/src/main/java/com/autoai/app/NativeCallSessionController.java
           grep -q 'retryableNativeServiceCodes' frontend/src/features/calls/CallProvider.tsx
           grep -q 'firebase_messaging_installation_id_enabled' android/app/src/main/AndroidManifest.xml
           grep -q 'FirebaseMessaging.getInstance().register()' android/app/src/main/java/com/autoai/app/PushTokenRegistrar.java
           grep -q 'registerInstallationBlocking(context, currentFid, rotatingFromHash)' android/app/src/main/java/com/autoai/app/FcmInstallationMigrationWorker.java
           grep -q 'return {"fid": target}' backend/app/services/firebase_notifications.py
+          grep -q 'requiresMandatoryUpdate(BuildConfig.VERSION_CODE, metadata.versionCode)' android/app/src/main/java/com/autoai/app/AppUpdateCoordinator.java
+          grep -q 'downloadedVersionMatches(activeDownloadVersion, metadata.versionCode)' android/app/src/main/java/com/autoai/app/AppUpdateCoordinator.java
+          grep -q 'coordinator.check(true)' android/app/src/main/java/com/autoai/app/AutoAiUpdatePlugin.java
+          grep -q 'dialog.setCancelable(!mandatory)' android/app/src/main/java/com/autoai/app/AppUpdateDialog.java
+          grep -q 'dialog.setCanceledOnTouchOutside(!mandatory)' android/app/src/main/java/com/autoai/app/AppUpdateDialog.java
+          grep -q 'GITHUB_RELEASES_REQUIRE_UPDATE = True' backend/app/services/github_apk_release.py
+          metadata_step="$(sed -n '/- name: Publish APK metadata to backend/,/- name: Notify installed Android apps/p' .github/workflows/android-release.yml)"
+          grep -q -- '--force-update' <<< "$metadata_step"
           if grep -R -q 'FirebaseMessaging.getInstance().getToken' android/app/src/main/java/com/autoai/app; then
             echo 'Deprecated getToken() is incompatible with installation-id direct-send mode.' >&2
             exit 1
@@ -142,9 +154,10 @@ jobs:
             echo "Version-Code: ${AUTO_AI_ANDROID_VERSION_CODE}"
             echo "Version-Name: ${AUTO_AI_ANDROID_VERSION_NAME}"
             echo "SHA256: ${sha256}"
-            echo "Changelog: One incoming-call screen and stable voice/video Answer handoff"
+            echo "Force-Update: true"
+            echo "Changelog: Stable Android calls and mandatory app updates"
             echo
-            echo "Removes the duplicate Android Telecom surface, keeps accepted-call cleanup non-terminal, and restores notification Answer plus video renderer handoff."
+            echo "Makes native Android the single WebRTC owner, restores real audio/video transport, and requires every higher version published from main before the app can continue."
             echo "Verified Android assets from GitHub push ${GITHUB_SHA::7}"
           } > "$notes"
           gh release create "$tag" "$apk_path" \
@@ -156,20 +169,15 @@ jobs:
         if: ${{ env.AUTO_AI_ADMIN_EMAIL != '' && env.AUTO_AI_ADMIN_PASSWORD != '' }}
         shell: bash
         run: |
-          args=()
-          commit_message="$(git log -1 --pretty=%B)"
-          if [ "${AUTO_AI_APK_FORCE_UPDATE,,}" = "true" ] || [[ "$commit_message" == *"[force-update]"* ]]; then
-            args+=(--force-update)
-          fi
           python scripts/publish_android_release.py \
             --api-url "$AUTO_AI_API_BASE_URL" \
             --apk output/android/auto-ai.apk \
             --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
             --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
-            --changelog "One incoming-call screen and stable voice/video Answer handoff" \
-            --release-notes "Removes the duplicate Android Telecom surface, keeps accepted-call cleanup non-terminal, and restores notification Answer plus video renderer handoff. Verified GitHub push ${GITHUB_SHA::7}." \
+            --changelog "Stable Android calls and mandatory app updates" \
+            --release-notes "Makes native Android the single WebRTC owner, restores real audio/video transport, and requires every higher version published from main before the app can continue. Verified GitHub push ${GITHUB_SHA::7}." \
             --metadata-only \
-            "${args[@]}"
+            --force-update
 
       - name: Notify installed Android apps
         if: ${{ env.AUTO_AI_UPDATE_NOTIFY_SECRET != '' }}
@@ -179,7 +187,7 @@ jobs:
             --api-url "$AUTO_AI_API_BASE_URL" \
             --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
             --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
-            --changelog "One incoming-call screen and stable voice/video Answer handoff"
+            --changelog "Stable Android calls and mandatory app updates"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

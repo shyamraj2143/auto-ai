@@ -5,6 +5,9 @@ import org.junit.Test;
 import android.widget.ScrollView;
 
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -39,5 +42,16 @@ public class AppUpdateDialogContractTest {
         assertEquals(AppUpdateDialog.Density.EXTRA_COMPACT, AppUpdateDialog.densityForHeightDp(568));
         assertEquals(AppUpdateDialog.Density.COMPACT, AppUpdateDialog.densityForHeightDp(640));
         assertEquals(AppUpdateDialog.Density.COMFORTABLE, AppUpdateDialog.densityForHeightDp(873));
+    }
+
+    @Test public void mandatoryDialogCannotBeDismissedOrBypassed() throws Exception {
+        String source = new String(
+            Files.readAllBytes(Paths.get("src/main/java/com/autoai/app/AppUpdateDialog.java")),
+            StandardCharsets.UTF_8
+        );
+        assertTrue(source.contains("close.setVisibility(mandatory ? View.GONE : View.VISIBLE)"));
+        assertTrue(source.contains("dialog.setCancelable(!mandatory)"));
+        assertTrue(source.contains("dialog.setCanceledOnTouchOutside(!mandatory)"));
+        assertTrue(source.contains("coordinator.current().metadata.mandatory"));
     }
 }

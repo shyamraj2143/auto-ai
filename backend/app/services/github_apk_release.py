@@ -14,6 +14,7 @@ GITHUB_REPO = os.getenv("AUTO_AI_GITHUB_APK_REPO", "shyamraj2143/auto-ai").strip
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 GITHUB_DOWNLOAD_URL = "/api/download/apk/github/latest"
 GITHUB_CACHE_TTL_SECONDS = 60
+GITHUB_RELEASES_REQUIRE_UPDATE = True
 
 
 @dataclass(frozen=True)
@@ -91,7 +92,7 @@ class GitHubApkReleaseService:
             file_name=asset_name,
             file_size=int(asset.get("size") or 0),
             changelog=changelog,
-            force_update=os.getenv("AUTO_AI_GITHUB_APK_FORCE_UPDATE", "").lower() == "true",
+            force_update=GITHUB_RELEASES_REQUIRE_UPDATE,
             is_active=True,
             download_count=0,
             created_at=ApkService.response_datetime(released_at),
@@ -131,7 +132,7 @@ class GitHubApkReleaseService:
         notes: list[str] = []
         for line in body.splitlines():
             line = line.strip("- ").strip()
-            if not line or re.match(r"^(Version-Code|Version-Name|SHA256|Changelog):", line, flags=re.IGNORECASE):
+            if not line or re.match(r"^(Version-Code|Version-Name|SHA256|Force-Update|Changelog):", line, flags=re.IGNORECASE):
                 continue
             notes.append(line)
         return notes[:20] or ["Auto update from GitHub push"]
