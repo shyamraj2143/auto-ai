@@ -1,3 +1,4 @@
+import { Capacitor } from "@capacitor/core";
 import { apiFetch } from "../../../api/client";
 import type {
   BlockedCallUser,
@@ -9,6 +10,55 @@ import type {
   CallUserPage,
   TurnCredentials,
 } from "../types";
+
+const TURN_PREFLIGHT_ATTEMPTS = 3;
+const TURN_PREFLIGHT_STUN: RTCIceServer[] = [{ urls: ["stun:stun.l.google.com:19302"] }];
+let lastSuccessfulTurnCredentials: TurnCredentials | null = null;
+
+function hasUsableIceServers(credentials: TurnCredentials) {
+  const servers = credentials.iceServers ?? credentials.ice_servers ?? [];
+  return servers.some((server) => {
+    const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+    return urls.some((url) => typeof url === "string" && /^(stun|turns?):/i.test(url));
+  });
+}
+
+function nativeDeferredTurnCredentials(): TurnCredentials {
+  return {
+    configured: true,
+    provider: "android-native-deferred",
+    ice_servers: TURN_PREFLIGHT_STUN,
+    relay_configured: true,
+  };
+}
+
+async function loadTurnCredentials(token: string) {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < TURN_PREFLIGHT_ATTEMPTS; attempt += 1) {
+    try {
+      const credentials = await apiFetch<TurnCredentials>("/calls/turn-credentials", {
+        token,
+        operation: "calls.turn",
+      });
+      if (hasUsableIceServers(credentials)) lastSuccessfulTurnCredentials = credentials;
+      return credentials;
+    } catch (error) {
+      lastError = error;
+      if (attempt < TURN_PREFLIGHT_ATTEMPTS - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 350 * 2 ** attempt));
+      }
+    }
+  }
+
+  if (lastSuccessfulTurnCredentials) return lastSuccessfulTurnCredentials;
+
+  // Android performs the authoritative TURN/WebRTC setup inside the native
+  // foreground call service. A temporary WebView credential failure must not
+  // block creation and delivery of the call before that native setup begins.
+  if (Capacitor.getPlatform() === "android") return nativeDeferredTurnCredentials();
+
+  throw lastError instanceof Error ? lastError : new Error("Calling network relay is temporarily unavailable.");
+}
 
 export const callApi = {
   config: (token: string) => apiFetch<CallFeatureConfig>("/calls/config", { token, operation: "calls.config" }),
@@ -37,7 +87,7 @@ export const callApi = {
   removeDevice: (token: string, deviceId: string) =>
     apiFetch<void>(`/calls/devices/${encodeURIComponent(deviceId)}`, { method: "DELETE", token, operation: "calls.devices.remove" }),
   wsTicket: (token: string) => apiFetch<{ ticket: string; expires_in: number }>("/calls/ws-ticket", { method: "POST", token, operation: "calls.wsTicket" }),
-  turnCredentials: (token: string) => apiFetch<TurnCredentials>("/calls/turn-credentials", { token, operation: "calls.turn" }),
+  turnCredentials: (token: string) => loadTurnCredentials(token),
   initiate: (token: string, calleeUserId: string, callType: CallType, deviceId?: string | null) =>
     apiFetch<CallRecord>("/calls", { method: "POST", token, operation: "calls.initiate", body: JSON.stringify({ callee_user_id: calleeUserId, call_type: callType, caller_device_id: deviceId }) }),
   get: (token: string, callId: string) => apiFetch<CallRecord>(`/calls/${callId}`, { token, operation: "calls.get" }),
