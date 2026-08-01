@@ -21,7 +21,7 @@ import com.google.firebase.messaging.FirebaseMessaging;
 import java.util.concurrent.TimeUnit;
 
 public final class FcmInstallationMigrationWorker extends Worker {
-    static final String MIGRATION = "fcm_native_call_installation_reset_v34";
+    static final String MIGRATION = "fcm_fid_direct_send_repair_v35";
     private static final String PREFERENCES = "auto_ai_fcm_migrations";
     private static final String COMPLETED = MIGRATION + "_completed";
 
@@ -30,7 +30,7 @@ public final class FcmInstallationMigrationWorker extends Worker {
     }
 
     public static void schedule(Context context) {
-        if (BuildConfig.VERSION_CODE < 34 || completed(context)) return;
+        if (BuildConfig.VERSION_CODE < 42 || completed(context)) return;
         Constraints constraints = new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build();
         OneTimeWorkRequest request = new OneTimeWorkRequest.Builder(FcmInstallationMigrationWorker.class)
             .setConstraints(constraints)
@@ -50,23 +50,19 @@ public final class FcmInstallationMigrationWorker extends Worker {
         if (accessToken == null || accessToken.trim().isEmpty()) return Result.success();
         try {
             FirebaseInstallations installations = FirebaseInstallations.getInstance();
-            String oldFid = Tasks.await(installations.getId(), 30, TimeUnit.SECONDS);
-            String oldHash = PushTokenRegistrar.sha256Prefix(oldFid);
-            Log.i("AutoAiFcmMigration", "Starting FCM installation rotation old_fid_hash=" + oldHash);
-            Tasks.await(FirebaseMessaging.getInstance().unregister(), 30, TimeUnit.SECONDS);
-            Tasks.await(installations.delete(), 30, TimeUnit.SECONDS);
+            String previousFid = PushTokenRegistrar.storedFirebaseInstallationId(context);
             Tasks.await(FirebaseMessaging.getInstance().register(), 30, TimeUnit.SECONDS);
-            String newFid = Tasks.await(installations.getId(), 30, TimeUnit.SECONDS);
-            String newToken = Tasks.await(FirebaseMessaging.getInstance().getToken(), 30, TimeUnit.SECONDS);
-            if (newFid == null || newFid.equals(oldFid)) return Result.retry();
-            if (!PushTokenRegistrar.isUsableFcmToken(newToken, newFid)) return Result.retry();
-            if (!PushTokenRegistrar.registerInstallationBlocking(context, newFid, newToken, oldHash)) return Result.retry();
+            String currentFid = Tasks.await(installations.getId(), 30, TimeUnit.SECONDS);
+            if (!PushTokenRegistrar.isUsablePushTarget(currentFid)) return Result.retry();
+            String rotatingFromHash = previousFid != null && !previousFid.equals(currentFid)
+                ? PushTokenRegistrar.sha256Prefix(previousFid) : null;
+            if (!PushTokenRegistrar.registerInstallationBlocking(context, currentFid, rotatingFromHash)) return Result.retry();
             SharedPreferences preferences = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
             preferences.edit().putBoolean(COMPLETED, true).apply();
-            Log.i("AutoAiFcmMigration", "FCM installation rotation completed new_fid_hash=" + PushTokenRegistrar.sha256Prefix(newFid));
+            Log.i("AutoAiFcmMigration", "FCM direct-send registration repaired fid_hash=" + PushTokenRegistrar.sha256Prefix(currentFid));
             return Result.success();
         } catch (Exception error) {
-            Log.w("AutoAiFcmMigration", "FCM installation rotation pending", error);
+            Log.w("AutoAiFcmMigration", "FCM direct-send registration repair pending", error);
             return Result.retry();
         }
     }

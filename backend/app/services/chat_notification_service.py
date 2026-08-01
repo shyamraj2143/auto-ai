@@ -65,7 +65,13 @@ def send_chat_message_notifications(db: Session, recipient_id: str, sender: User
             device.fcm_token_hash = None
             device.updated_at = datetime.utcnow()
             continue
-        result = firebase_notification_service.send_chat_data(token, data, sender.name, preview)
+        result = firebase_notification_service.send_chat_data(
+            token,
+            data,
+            sender.name,
+            preview,
+            target_kind="fid" if device.push_provider == "fcm_fid" else "token",
+        )
         if result.ok:
             sent += 1
         elif result.inactive:

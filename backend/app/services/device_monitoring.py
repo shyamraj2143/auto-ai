@@ -36,16 +36,17 @@ def upsert_registered_device(db: Session, user: User, payload: DeviceRegisterReq
     now = payload.lastSeenAt or utc_now_naive()
     device_id = payload.deviceId[:128]
     record = db.scalar(select(UserDevice).where(UserDevice.user_id == user.id, UserDevice.device_id == device_id))
-    # A Firebase Installation ID identifies an app installation, but it cannot
-    # receive FCM messages. Older Android builds accidentally submitted the FID
-    # in both fields, overwriting the real token and disabling calls/messages.
-    token_matches_installation = bool(
-        payload.fcmToken
+    # The Android build enables Firebase's installation-id direct-send mode.
+    # In that mode getToken() is unavailable and the registered FID is the
+    # authoritative messaging target. Legacy registration tokens remain valid
+    # for older clients, so accept either representation.
+    effective_fcm_target = payload.fcmToken or payload.firebaseInstallationId
+    target_is_fid = bool(
+        effective_fcm_target
         and payload.firebaseInstallationId
-        and payload.fcmToken == payload.firebaseInstallationId
+        and effective_fcm_target == payload.firebaseInstallationId
     )
-    effective_fcm_token = None if token_matches_installation else payload.fcmToken
-    next_token_hash = token_hash(effective_fcm_token)
+    next_token_hash = token_hash(effective_fcm_target)
     next_fid_hash = token_hash(payload.firebaseInstallationId)
     fid_record = db.scalar(select(UserDevice).where(UserDevice.firebase_installation_id_hash == next_fid_hash)) if next_fid_hash else None
     if fid_record is not None and fid_record is not record and fid_record.device_id != device_id:
@@ -77,19 +78,16 @@ def upsert_registered_device(db: Session, user: User, payload: DeviceRegisterReq
     record.os_version = payload.osVersion
     record.app_version = payload.appVersion
     record.app_version_code = payload.appVersionCode
-    if effective_fcm_token:
+    if effective_fcm_target:
         record.fcm_token = None
-        record.fcm_token_ciphertext = encrypt_token(effective_fcm_token)
+        record.fcm_token_ciphertext = encrypt_token(effective_fcm_target)
         record.fcm_token_hash = next_token_hash
         record.last_fcm_failure_code = None
-    elif token_matches_installation:
-        # Preserve any previously valid token until the repaired APK uploads a
-        # fresh one; never replace it with an undeliverable installation id.
-        record.last_fcm_failure_code = "FCM_TOKEN_EQUALS_INSTALLATION_ID"
-    record.firebase_installation_id_ciphertext = encrypt_token(payload.firebaseInstallationId)
-    record.firebase_installation_id_hash = next_fid_hash
-    record.installation_rotation_status = "INSTALLATION_READY"
-    record.push_provider = payload.pushProvider or "fcm"
+    if payload.firebaseInstallationId:
+        record.firebase_installation_id_ciphertext = encrypt_token(payload.firebaseInstallationId)
+        record.firebase_installation_id_hash = next_fid_hash
+        record.installation_rotation_status = "INSTALLATION_READY"
+    record.push_provider = "fcm_fid" if target_is_fid else (payload.pushProvider or "fcm")
     if payload.permissionsStatus is not None:
         record.permissions_status = safe_permission_status(payload.permissionsStatus)
     record.is_active = True

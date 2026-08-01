@@ -75,7 +75,7 @@ export const callApi = {
   settings: (token: string) => apiFetch<CallSettings>("/calls/settings", { token, operation: "calls.settings" }),
   updateSettings: (token: string, payload: Partial<CallSettings>) =>
     apiFetch<CallSettings>("/calls/settings", { method: "PATCH", token, operation: "calls.settings.update", body: JSON.stringify(payload) }),
-  registerDevice: (token: string, payload: { device_id: string; platform: "android" | "web"; fcm_token?: string | null; app_version?: string | null; app_version_code?: number; device_name?: string | null }) =>
+  registerDevice: (token: string, payload: { device_id: string; platform: "android" | "web"; fcm_token?: string | null; firebase_installation_id?: string | null; app_version?: string | null; app_version_code?: number; device_name?: string | null }) =>
     apiFetch<{ deviceId: string; registered: boolean }>("/devices/register", {
       method: "POST",
       token,
@@ -84,6 +84,7 @@ export const callApi = {
         deviceId: payload.device_id,
         platform: payload.platform,
         fcmToken: payload.fcm_token,
+        firebaseInstallationId: payload.firebase_installation_id,
         appVersion: payload.app_version,
         appVersionCode: payload.app_version_code,
         deviceName: payload.device_name

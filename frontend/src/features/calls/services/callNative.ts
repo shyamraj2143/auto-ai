@@ -26,7 +26,7 @@ export type NativeCallPermissionResult = {
 };
 
 type NativeCallPlugin = {
-  getDeviceRegistration(): Promise<{ deviceId: string; fcmToken?: string | null; appVersion?: string | null; appVersionCode?: number | null; deviceName?: string | null }>;
+  getDeviceRegistration(): Promise<{ deviceId: string; fcmToken?: string | null; firebaseInstallationId?: string | null; appVersion?: string | null; appVersionCode?: number | null; deviceName?: string | null }>;
   consumeIncomingCall(): Promise<NativeIncomingCall>;
   checkCallPermissions(options?: { video?: boolean }): Promise<NativeCallPermissionResult>;
   requestAudioCallPermissions(): Promise<NativeCallPermissionResult>;
@@ -92,12 +92,13 @@ export const callNative = {
         device_id: registration.deviceId,
         platform: "android" as const,
         fcm_token: registration.fcmToken,
+        firebase_installation_id: registration.firebaseInstallationId,
         app_version: registration.appVersion,
         app_version_code: registration.appVersionCode ?? 0,
         device_name: registration.deviceName,
       };
     }
-    return { device_id: browserDeviceId(), platform: "web" as const, fcm_token: null, app_version: null, app_version_code: 0, device_name: null };
+    return { device_id: browserDeviceId(), platform: "web" as const, fcm_token: null, firebase_installation_id: null, app_version: null, app_version_code: 0, device_name: null };
   },
   consumeIncomingCall: () => Capacitor.getPlatform() === "android" ? NativeCalls.consumeIncomingCall() : Promise.resolve({}),
   checkCallPermissions: (video = false) => Capacitor.getPlatform() === "android" ? NativeCalls.checkCallPermissions({ video }) : Promise.resolve(defaultPermissions()),

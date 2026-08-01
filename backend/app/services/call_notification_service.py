@@ -21,6 +21,10 @@ from app.services.notification_destination import with_notification_destination
 logger = logging.getLogger(__name__)
 
 
+def _target_kind(device: UserDevice) -> str:
+    return "fid" if device.push_provider == "fcm_fid" else "token"
+
+
 def _installation_hash(device_id: str) -> str:
     return hashlib.sha256(device_id.encode("utf-8")).hexdigest()[:16]
 
@@ -106,7 +110,12 @@ def send_incoming_call_notifications(
             device.updated_at = datetime.utcnow()
             continue
         remaining_lifetime = max(20, min(40, int((expires_at - datetime.now(timezone.utc)).total_seconds())))
-        result = firebase_notification_service.send_call_data(token, device_data, remaining_lifetime)
+        result = firebase_notification_service.send_call_data(
+            token,
+            device_data,
+            remaining_lifetime,
+            target_kind=_target_kind(device),
+        )
         if result.ok:
             sent += 1
             device.last_fcm_send_result = "accepted"
@@ -179,6 +188,7 @@ def send_call_dismiss_notifications(db: Session, call: Call, event_type: str) ->
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }),
             30,
+            target_kind=_target_kind(device),
         )
         if result.ok:
             sent += 1

@@ -399,18 +399,13 @@ public class MainActivity extends BridgeActivity {
             return;
         }
         try {
-            FirebaseMessaging.getInstance().register().addOnCompleteListener(task -> {
-                if (!task.isSuccessful()) {
-                    android.util.Log.w("AutoAiPushSync", "FCM installation registration unavailable during authenticated sync.", task.getException());
-                }
-                // An APK update or backend redeploy does not guarantee onNewToken.
-                // Always re-read and upload the actual messaging token so calls and
-                // chat notifications repair themselves on the next authenticated launch.
-                PushTokenRegistrar.refreshCurrentTokenAsync(this);
-            });
+            // This build uses Firebase's installation-id direct-send mode. The
+            // registration callback supplies the authoritative push target;
+            // getToken() is intentionally unavailable in this mode.
+            PushTokenRegistrar.refreshCurrentRegistrationAsync(this);
             FcmInstallationMigrationWorker.schedule(this);
         } catch (RuntimeException error) {
-            android.util.Log.w("AutoAiPushSync", "Fresh FCM token request failed.", error);
+            android.util.Log.w("AutoAiPushSync", "Fresh FCM installation registration failed.", error);
             PushTokenRegistrar.registerStoredUserDeviceIfAuthenticated(this);
         }
     }

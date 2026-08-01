@@ -68,11 +68,22 @@ class FirebaseNotificationService:
         }
         return self._send(message)
 
-    def send_call_data(self, token: str, data: dict[str, str], ttl_seconds: int) -> FcmSendResult:
+    @staticmethod
+    def _target(target: str, target_kind: str) -> dict[str, str]:
+        return {"fid": target} if target_kind == "fid" else {"token": target}
+
+    def send_call_data(
+        self,
+        target: str,
+        data: dict[str, str],
+        ttl_seconds: int,
+        *,
+        target_kind: str = "token",
+    ) -> FcmSendResult:
         analytics_label = "incoming_call_primary" if data.get("type") == "incoming_call" else "call_terminal"
         message = {
             "message": {
-                "token": token,
+                **self._target(target, target_kind),
                 "data": data,
                 "android": {
                     "priority": "HIGH",
@@ -86,10 +97,20 @@ class FirebaseNotificationService:
         }
         return self._send(message)
 
-    def send_call_system_fallback(self, token: str, data: dict[str, str], title: str, body: str, ttl_seconds: int, notification_tag: str) -> FcmSendResult:
+    def send_call_system_fallback(
+        self,
+        target: str,
+        data: dict[str, str],
+        title: str,
+        body: str,
+        ttl_seconds: int,
+        notification_tag: str,
+        *,
+        target_kind: str = "token",
+    ) -> FcmSendResult:
         fallback_body = body if body.endswith("tap to answer") else f"{body} — tap to answer"
         return self._send({"message": {
-            "token": token,
+            **self._target(target, target_kind),
             "notification": {"title": title[:120], "body": fallback_body[:180]},
             "data": data,
             "android": {
@@ -108,10 +129,18 @@ class FirebaseNotificationService:
             },
         }})
 
-    def send_chat_data(self, token: str, data: dict[str, str], title: str, body: str) -> FcmSendResult:
+    def send_chat_data(
+        self,
+        target: str,
+        data: dict[str, str],
+        title: str,
+        body: str,
+        *,
+        target_kind: str = "token",
+    ) -> FcmSendResult:
         message = {
             "message": {
-                "token": token,
+                **self._target(target, target_kind),
                 "notification": {"title": title[:120], "body": body[:180]},
                 "data": data,
                 "android": {

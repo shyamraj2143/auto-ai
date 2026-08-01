@@ -8,9 +8,12 @@ def test_system_fallback_contains_notification_data_channel_tag_and_label(monkey
     result = service.send_call_system_fallback(
         "secret-token", {"type": "incoming_call_fallback", "call_id": "call-1"},
         "Caller", "Incoming AutoAI audio call", 25, "autoai_call_call-1",
+        target_kind="fid",
     )
     message = captured["message"]
     assert result.ok
+    assert message["fid"] == "secret-token"
+    assert "token" not in message
     assert message["notification"]["title"] == "Caller"
     assert message["data"]["call_id"] == "call-1"
     assert message["android"]["notification"]["channel_id"] == "auto_ai_incoming_calls_v6"

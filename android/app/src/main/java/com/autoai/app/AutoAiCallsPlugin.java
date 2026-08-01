@@ -26,6 +26,7 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
+import com.google.firebase.installations.FirebaseInstallations;
 import com.google.firebase.messaging.FirebaseMessaging;
 
 import org.json.JSONArray;
@@ -72,14 +73,25 @@ public class AutoAiCallsPlugin extends Plugin {
         }
 
         try {
-            FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
-                if (task.isSuccessful() && task.getResult() != null && !task.getResult().trim().isEmpty()) {
-                    result.put("fcmToken", task.getResult());
-                    Log.i(TAG, "FCM registration token available hash=" + PushTokenRegistrar.sha256Prefix(task.getResult()));
-                } else {
-                    Log.w(TAG, "FCM registration token unavailable for call device registration.", task.getException());
+            FirebaseMessaging.getInstance().register().addOnCompleteListener(registrationTask -> {
+                if (!registrationTask.isSuccessful()) {
+                    Log.w(TAG, "FCM installation unavailable for call device registration.", registrationTask.getException());
+                    call.resolve(result);
+                    return;
                 }
-                call.resolve(result);
+                FirebaseInstallations.getInstance().getId().addOnCompleteListener(fidTask -> {
+                    String installationId = fidTask.isSuccessful() ? fidTask.getResult() : null;
+                    if (installationId != null && !installationId.trim().isEmpty()) {
+                        String cleanInstallationId = installationId.trim();
+                        result.put("fcmToken", cleanInstallationId);
+                        result.put("firebaseInstallationId", cleanInstallationId);
+                        PushTokenRegistrar.registerInstallationAsync(getContext(), cleanInstallationId);
+                        Log.i(TAG, "FCM direct-send installation available hash=" + PushTokenRegistrar.sha256Prefix(cleanInstallationId));
+                    } else {
+                        Log.w(TAG, "Firebase installation id unavailable for call device registration.", fidTask.getException());
+                    }
+                    call.resolve(result);
+                });
             });
         } catch (RuntimeException error) {
             // Firebase is optional in builds without google-services.json.

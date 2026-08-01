@@ -84,6 +84,18 @@ jobs:
           grep -q 'MAX_INITIALIZATION_ATTEMPTS = 12' android/app/src/main/java/com/autoai/app/NativeCallSessionController.java
           grep -q 'pendingOutboundSignals' android/app/src/main/java/com/autoai/app/NativeCallSessionController.java
           grep -q 'retryableNativeServiceCodes' frontend/src/features/calls/CallProvider.tsx
+          grep -q 'firebase_messaging_installation_id_enabled' android/app/src/main/AndroidManifest.xml
+          grep -q 'FirebaseMessaging.getInstance().register()' android/app/src/main/java/com/autoai/app/PushTokenRegistrar.java
+          grep -q 'registerInstallationBlocking(context, currentFid, rotatingFromHash)' android/app/src/main/java/com/autoai/app/FcmInstallationMigrationWorker.java
+          grep -q 'return {"fid": target}' backend/app/services/firebase_notifications.py
+          if grep -R -q 'FirebaseMessaging.getInstance().getToken' android/app/src/main/java/com/autoai/app; then
+            echo 'Deprecated getToken() is incompatible with installation-id direct-send mode.' >&2
+            exit 1
+          fi
+          if grep -q -E 'FirebaseMessaging.getInstance\(\)\.unregister|installations\.delete' android/app/src/main/java/com/autoai/app/FcmInstallationMigrationWorker.java; then
+            echo 'The FCM repair worker must not invalidate the registered installation.' >&2
+            exit 1
+          fi
 
       - name: Build and verify Android APK
         shell: bash
@@ -130,9 +142,9 @@ jobs:
             echo "Version-Code: ${AUTO_AI_ANDROID_VERSION_CODE}"
             echo "Version-Name: ${AUTO_AI_ANDROID_VERSION_NAME}"
             echo "SHA256: ${sha256}"
-            echo "Changelog: Restore voice/video calls, message notifications and recent-call sync"
+            echo "Changelog: Restore incoming calls, ringtone and message notifications"
             echo
-            echo "Includes FCM token self-healing, false-offline delivery recovery and immediate call-history refresh."
+            echo "Repairs Firebase installation-ID direct-send registration without clearing app data or rotating the valid installation."
             echo "Verified Android assets from GitHub push ${GITHUB_SHA::7}"
           } > "$notes"
           gh release create "$tag" "$apk_path" \
@@ -154,8 +166,8 @@ jobs:
             --apk output/android/auto-ai.apk \
             --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
             --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
-            --changelog "Restore voice/video calls, message notifications and recent-call sync" \
-            --release-notes "Includes FCM token self-healing, false-offline delivery recovery and immediate call-history refresh. Verified GitHub push ${GITHUB_SHA::7}." \
+            --changelog "Restore incoming calls, ringtone and message notifications" \
+            --release-notes "Repairs Firebase installation-ID direct-send registration without clearing app data or rotating the valid installation. Verified GitHub push ${GITHUB_SHA::7}." \
             --metadata-only \
             "${args[@]}"
 
@@ -167,7 +179,7 @@ jobs:
             --api-url "$AUTO_AI_API_BASE_URL" \
             --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
             --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
-            --changelog "Restore voice/video calls, message notifications and recent-call sync"
+            --changelog "Restore incoming calls, ringtone and message notifications"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

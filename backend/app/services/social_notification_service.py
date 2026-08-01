@@ -57,7 +57,13 @@ def send_social_push_notification(db: Session, notification: SocialNotification,
             device.fcm_token_hash = None
             device.updated_at = datetime.utcnow()
             continue
-        result = firebase_notification_service.send_chat_data(token, data, notification.title, notification.body or notification.title)
+        result = firebase_notification_service.send_chat_data(
+            token,
+            data,
+            notification.title,
+            notification.body or notification.title,
+            target_kind="fid" if device.push_provider == "fcm_fid" else "token",
+        )
         if result.ok:
             sent += 1
         elif result.inactive:

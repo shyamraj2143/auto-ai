@@ -119,7 +119,8 @@ def process_due_fallbacks(limit: int = 100) -> int:
                 payload = with_notification_destination(payload)
                 result = firebase_notification_service.send_call_system_fallback(
                     token, payload, payload.get("caller_name") or "Incoming AutoAI call",
-                    f"Incoming AutoAI {payload.get('call_type', 'audio')} call — tap to answer", ttl, f"autoai_call_{call.id}"
+                    f"Incoming AutoAI {payload.get('call_type', 'audio')} call — tap to answer", ttl, f"autoai_call_{call.id}",
+                    target_kind="fid" if device.push_provider == "fcm_fid" else "token",
                 )
                 delivery.fallback_event_id = fallback_event_id
                 delivery.fallback_sent_at = now

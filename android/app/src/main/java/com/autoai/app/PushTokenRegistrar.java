@@ -6,6 +6,7 @@ import android.content.SharedPreferences;
 import android.os.Build;
 import android.util.Log;
 
+import com.google.firebase.installations.FirebaseInstallations;
 import com.google.firebase.messaging.FirebaseMessaging;
 
 import org.json.JSONObject;
@@ -27,6 +28,7 @@ public final class PushTokenRegistrar {
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int READ_TIMEOUT_MS = 30000;
     private static final String TOKEN_PREFERENCES = "auto_ai_push_token";
+    private static final String LAST_PUSH_TARGET = "last_push_target";
     private static final String LAST_FCM_TOKEN = "last_fcm_token";
     private static final String LAST_FIREBASE_INSTALLATION_ID = "last_firebase_installation_id";
     private static final String INSTALLATION_ID_FILE = "auto_ai_installation_id";
@@ -37,15 +39,17 @@ public final class PushTokenRegistrar {
     }
 
     public static void registerAsync(Context context, String token) {
-        if (token == null || token.trim().isEmpty()) return;
+        String cleanToken = clean(token);
+        if (cleanToken == null) return;
         Context appContext = context.getApplicationContext();
-        Log.i(TAG, "Scheduling push token registration.");
+        Log.i(TAG, "Scheduling legacy push-token registration.");
         EXECUTOR.execute(() -> {
-            String cleanToken = token.trim();
             SharedPreferences preferences = appContext.getSharedPreferences(TOKEN_PREFERENCES, Context.MODE_PRIVATE);
-            preferences.edit().putString(LAST_FCM_TOKEN, cleanToken).commit();
-            String installationId = clean(preferences.getString(LAST_FIREBASE_INSTALLATION_ID, null));
-            registerUserDevice(appContext, cleanToken, installationId, null);
+            preferences.edit()
+                .putString(LAST_PUSH_TARGET, cleanToken)
+                .putString(LAST_FCM_TOKEN, cleanToken)
+                .commit();
+            registerUserDevice(appContext, cleanToken, null, null);
             registerUpdateToken(appContext, cleanToken);
         });
     }
@@ -53,66 +57,51 @@ public final class PushTokenRegistrar {
     public static void registerInstallationAsync(Context context, String installationId) {
         if (clean(installationId) == null) return;
         Context appContext = context.getApplicationContext();
-        refreshCurrentTokenAsync(appContext, installationId, null);
+        EXECUTOR.execute(() -> registerInstallationBlocking(appContext, installationId, null));
     }
 
     public static boolean registerInstallationBlocking(Context context, String installationId, String rotatingFromHash) {
-        String token = clean(context.getSharedPreferences(TOKEN_PREFERENCES, Context.MODE_PRIVATE)
-            .getString(LAST_FCM_TOKEN, null));
-        return registerInstallationBlocking(context, installationId, token, rotatingFromHash);
-    }
-
-    public static boolean registerInstallationBlocking(
-        Context context,
-        String installationId,
-        String fcmToken,
-        String rotatingFromHash
-    ) {
         String cleanInstallationId = clean(installationId);
-        String cleanToken = clean(fcmToken);
-        if (cleanInstallationId == null || !isUsableFcmToken(cleanToken, cleanInstallationId)) {
-            Log.w(TAG, "FCM registration deferred; installation id is not a messaging token.");
+        if (!isUsablePushTarget(cleanInstallationId)) {
+            Log.w(TAG, "FCM registration deferred; installation id is unavailable.");
             return false;
         }
         context.getSharedPreferences(TOKEN_PREFERENCES, Context.MODE_PRIVATE).edit()
+            .putString(LAST_PUSH_TARGET, cleanInstallationId)
             .putString(LAST_FIREBASE_INSTALLATION_ID, cleanInstallationId)
-            .putString(LAST_FCM_TOKEN, cleanToken)
             .commit();
-        boolean registered = registerUserDevice(context, cleanToken, cleanInstallationId, rotatingFromHash);
-        registerUpdateToken(context, cleanToken);
+        boolean registered = registerUserDevice(context, cleanInstallationId, cleanInstallationId, rotatingFromHash);
+        registerUpdateToken(context, cleanInstallationId);
         return registered;
     }
 
     public static void registerStoredUserDeviceIfAuthenticated(Context context) {
         Context appContext = context.getApplicationContext();
-        refreshCurrentTokenAsync(appContext, null, null);
+        refreshCurrentRegistrationAsync(appContext);
     }
 
-    public static void refreshCurrentTokenAsync(Context context) {
-        refreshCurrentTokenAsync(context.getApplicationContext(), null, null);
-    }
-
-    private static void refreshCurrentTokenAsync(Context context, String installationId, String rotatingFromHash) {
+    public static void refreshCurrentRegistrationAsync(Context context) {
         Context appContext = context.getApplicationContext();
         try {
-            FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task -> {
-                if (task.isSuccessful() && isUsableFcmToken(task.getResult(), installationId)) {
-                    String currentToken = task.getResult().trim();
-                    if (installationId == null) {
-                        registerAsync(appContext, currentToken);
-                    } else {
-                        EXECUTOR.execute(() -> registerInstallationBlocking(
-                            appContext, installationId, currentToken, rotatingFromHash
-                        ));
-                    }
+            FirebaseMessaging.getInstance().register().addOnCompleteListener(registrationTask -> {
+                if (!registrationTask.isSuccessful()) {
+                    Log.w(TAG, "FCM installation registration failed; retrying the stored target.", registrationTask.getException());
+                    EXECUTOR.execute(() -> registerStoredUserDevice(appContext, null));
                     return;
                 }
-                Log.w(TAG, "Fresh FCM token unavailable; retrying the last valid token.", task.getException());
-                EXECUTOR.execute(() -> registerStoredUserDevice(appContext, installationId, rotatingFromHash));
+                FirebaseInstallations.getInstance().getId().addOnCompleteListener(fidTask -> {
+                    String installationId = fidTask.isSuccessful() ? clean(fidTask.getResult()) : null;
+                    if (installationId != null) {
+                        registerInstallationAsync(appContext, installationId);
+                    } else {
+                        Log.w(TAG, "Registered FCM installation id unavailable; retrying the stored target.", fidTask.getException());
+                        EXECUTOR.execute(() -> registerStoredUserDevice(appContext, null));
+                    }
+                });
             });
         } catch (RuntimeException error) {
-            Log.w(TAG, "Fresh FCM token lookup failed; retrying the last valid token.", error);
-            EXECUTOR.execute(() -> registerStoredUserDevice(appContext, installationId, rotatingFromHash));
+            Log.w(TAG, "FCM installation refresh failed; retrying the stored target.", error);
+            EXECUTOR.execute(() -> registerStoredUserDevice(appContext, null));
         }
     }
 
@@ -141,29 +130,38 @@ public final class PushTokenRegistrar {
     }
 
     public static boolean hasStoredToken(Context context) {
-        String token = context.getSharedPreferences(TOKEN_PREFERENCES, Context.MODE_PRIVATE).getString(LAST_FCM_TOKEN, null);
-        return token != null && !token.trim().isEmpty();
-    }
-
-    static boolean isUsableFcmToken(String token, String installationId) {
-        String cleanToken = clean(token);
-        String cleanInstallationId = clean(installationId);
-        return cleanToken != null && (cleanInstallationId == null || !cleanToken.equals(cleanInstallationId));
-    }
-
-    private static boolean registerStoredUserDevice(Context context, String installationId, String rotatingFromHash) {
         SharedPreferences preferences = context.getSharedPreferences(TOKEN_PREFERENCES, Context.MODE_PRIVATE);
-        String storedInstallationId = clean(installationId);
-        if (storedInstallationId == null) {
-            storedInstallationId = clean(preferences.getString(LAST_FIREBASE_INSTALLATION_ID, null));
-        }
-        String token = clean(preferences.getString(LAST_FCM_TOKEN, null));
-        if (!isUsableFcmToken(token, storedInstallationId)) {
-            Log.i(TAG, "User device registration retry skipped; no valid stored FCM token.");
+        return firstClean(
+            preferences.getString(LAST_PUSH_TARGET, null),
+            preferences.getString(LAST_FIREBASE_INSTALLATION_ID, null),
+            preferences.getString(LAST_FCM_TOKEN, null)
+        ) != null;
+    }
+
+    static boolean isUsablePushTarget(String target) {
+        return clean(target) != null;
+    }
+
+    static String storedFirebaseInstallationId(Context context) {
+        return clean(context.getSharedPreferences(TOKEN_PREFERENCES, Context.MODE_PRIVATE)
+            .getString(LAST_FIREBASE_INSTALLATION_ID, null));
+    }
+
+    private static boolean registerStoredUserDevice(Context context, String rotatingFromHash) {
+        SharedPreferences preferences = context.getSharedPreferences(TOKEN_PREFERENCES, Context.MODE_PRIVATE);
+        String storedInstallationId = clean(preferences.getString(LAST_FIREBASE_INSTALLATION_ID, null));
+        String target = firstClean(
+            preferences.getString(LAST_PUSH_TARGET, null),
+            storedInstallationId,
+            preferences.getString(LAST_FCM_TOKEN, null)
+        );
+        if (!isUsablePushTarget(target)) {
+            Log.i(TAG, "User device registration retry skipped; no stored FCM target.");
             return false;
         }
-        boolean registered = registerUserDevice(context, token, storedInstallationId, rotatingFromHash);
-        registerUpdateToken(context, token);
+        String installationId = target.equals(storedInstallationId) ? storedInstallationId : null;
+        boolean registered = registerUserDevice(context, target, installationId, rotatingFromHash);
+        registerUpdateToken(context, target);
         return registered;
     }
 
@@ -202,9 +200,9 @@ public final class PushTokenRegistrar {
         }
     }
 
-    private static boolean registerUserDevice(Context context, String token, String firebaseInstallationId, String rotatingFromHash) {
-        if (!isUsableFcmToken(token, firebaseInstallationId)) {
-            Log.w(TAG, "User device registration rejected an invalid FCM identity.");
+    private static boolean registerUserDevice(Context context, String target, String firebaseInstallationId, String rotatingFromHash) {
+        if (!isUsablePushTarget(target)) {
+            Log.w(TAG, "User device registration rejected an empty FCM target.");
             return false;
         }
         String accessToken = AutoAiSecureStoragePlugin.readStoredValue(context, "auto-ai-access-token");
@@ -229,8 +227,9 @@ public final class PushTokenRegistrar {
             String legacyDeviceId = legacyDeviceId(context, "auto_ai_call_device");
             if (legacyDeviceId != null) body.put("legacyDeviceId", legacyDeviceId);
             body.put("platform", "android");
-            body.put("fcmToken", token);
+            body.put("fcmToken", target);
             if (firebaseInstallationId != null) body.put("firebaseInstallationId", firebaseInstallationId);
+            body.put("pushProvider", firebaseInstallationId != null && firebaseInstallationId.equals(target) ? "fcm_fid" : "fcm");
             if (rotatingFromHash != null) body.put("rotatingFromFirebaseInstallationHash", rotatingFromHash);
             body.put("appVersion", BuildConfig.VERSION_NAME);
             body.put("appVersionCode", BuildConfig.VERSION_CODE);
@@ -299,6 +298,15 @@ public final class PushTokenRegistrar {
     private static String clean(String value) {
         if (value == null || value.trim().isEmpty()) return null;
         return value.trim();
+    }
+
+    private static String firstClean(String... values) {
+        if (values == null) return null;
+        for (String value : values) {
+            String cleaned = clean(value);
+            if (cleaned != null) return cleaned;
+        }
+        return null;
     }
 
     private static String trimTrailingSlash(String value) {

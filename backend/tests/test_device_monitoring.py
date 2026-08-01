@@ -222,7 +222,7 @@ def test_register_service_upserts_without_telemetry_fields() -> None:
         assert activity_count(db) == 0
 
 
-def test_firebase_installation_id_never_overwrites_the_real_fcm_token() -> None:
+def test_firebase_installation_id_replaces_legacy_token_in_direct_send_mode() -> None:
     with db_session() as db:
         user = create_user(db, "push-identity-user")
         valid_token = "valid-fcm-registration-token-" + "x" * 32
@@ -238,7 +238,7 @@ def test_firebase_installation_id_never_overwrites_the_real_fcm_token() -> None:
                 firebaseInstallationId=installation_id,
             ),
         )
-        overwritten = upsert_registered_device(
+        direct_send = upsert_registered_device(
             db,
             user,
             DeviceRegisterRequest(
@@ -249,14 +249,15 @@ def test_firebase_installation_id_never_overwrites_the_real_fcm_token() -> None:
             ),
         )
 
-        assert first.id == overwritten.id
-        assert decrypt_token(overwritten.fcm_token_ciphertext) == valid_token
-        assert overwritten.fcm_token_hash == token_hash(valid_token)
-        assert overwritten.firebase_installation_id_hash == token_hash(installation_id)
-        assert overwritten.last_fcm_failure_code == "FCM_TOKEN_EQUALS_INSTALLATION_ID"
+        assert first.id == direct_send.id
+        assert decrypt_token(direct_send.fcm_token_ciphertext) == installation_id
+        assert direct_send.fcm_token_hash == token_hash(installation_id)
+        assert direct_send.firebase_installation_id_hash == token_hash(installation_id)
+        assert direct_send.last_fcm_failure_code is None
+        assert direct_send.push_provider == "fcm_fid"
 
 
-def test_installation_only_registration_waits_for_a_real_fcm_token() -> None:
+def test_installation_only_registration_uses_fid_as_direct_send_target() -> None:
     with db_session() as db:
         user = create_user(db, "installation-only-user")
         installation_id = "firebase-installation-only-456"
@@ -267,13 +268,13 @@ def test_installation_only_registration_waits_for_a_real_fcm_token() -> None:
             DeviceRegisterRequest(
                 deviceId="android-installation-only",
                 platform="android",
-                fcmToken=installation_id,
                 firebaseInstallationId=installation_id,
             ),
         )
 
         assert device.is_active is True
-        assert device.fcm_token_ciphertext is None
-        assert device.fcm_token_hash is None
+        assert decrypt_token(device.fcm_token_ciphertext) == installation_id
+        assert device.fcm_token_hash == token_hash(installation_id)
         assert device.firebase_installation_id_hash == token_hash(installation_id)
-        assert device.last_fcm_failure_code == "FCM_TOKEN_EQUALS_INSTALLATION_ID"
+        assert device.last_fcm_failure_code is None
+        assert device.push_provider == "fcm_fid"
