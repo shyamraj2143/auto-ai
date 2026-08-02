@@ -1,7 +1,7 @@
 import { AlarmClock, ArrowLeft, BellRing, Bot, CalendarDays, Check, Clock3, Edit3, Mic2, Plus, RefreshCw, ShieldCheck, Sparkles, Trash2, Volume2 } from "lucide-react";
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { combineLocalDateTime, countdownLabel, defaultAlarmDate, formatAlarmDate, localDateInput, localTimeInput, quickAlarmDate } from "./alarmTime";
+import { combineLocalDateTime, countdownLabel, defaultAlarmDate, formatAlarmCalendarDate, formatAlarmDate, formatAlarmTime24, localDateInput, localTimeInput, quickAlarmDate } from "./alarmTime";
 import { useAlarms } from "./AlarmContext";
 import type { AlarmDraft, AlarmLanguage, AlarmRingtone, AlarmVoiceStyle, UserAlarm } from "./types";
 import "./alarms.css";
@@ -15,6 +15,45 @@ type AlarmForm = {
   voice_style: AlarmVoiceStyle;
   ringtone: AlarmRingtone;
 };
+
+const HOURS_24 = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"));
+const MINUTES = Array.from({ length: 60 }, (_, index) => String(index).padStart(2, "0"));
+
+function LiveAlarmClock() {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const update = () => setNow(new Date());
+    const timer = window.setInterval(update, 1_000);
+    update();
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const [hours, minutes, seconds] = formatAlarmTime24(now, true).split(":");
+  return (
+    <div className="alarm-live-clock" aria-label={`Current time ${hours}:${minutes}:${seconds}, 24-hour format`}>
+      <header><span><Clock3 /> Live clock</span><i>24H</i></header>
+      <strong><span>{hours}:{minutes}</span><em>:{seconds}</em></strong>
+      <small>{formatAlarmCalendarDate(now)} · updates every second</small>
+    </div>
+  );
+}
+
+function Time24Input({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [hours = "00", minutes = "00"] = /^\d{2}:\d{2}$/.test(value) ? value.split(":") : ["00", "00"];
+  return (
+    <div className="alarm-time24-input" role="group" aria-label="Alarm time in 24-hour format">
+      <select aria-label="Hour from 00 to 23" value={hours} onChange={(event) => onChange(`${event.target.value}:${minutes}`)}>
+        {HOURS_24.map((hour) => <option key={hour} value={hour}>{hour}</option>)}
+      </select>
+      <span aria-hidden="true">:</span>
+      <select aria-label="Minute from 00 to 59" value={minutes} onChange={(event) => onChange(`${hours}:${event.target.value}`)}>
+        {MINUTES.map((minute) => <option key={minute} value={minute}>{minute}</option>)}
+      </select>
+      <small>24-hour</small>
+    </div>
+  );
+}
 
 function freshForm(): AlarmForm {
   const next = defaultAlarmDate();
@@ -120,14 +159,17 @@ export function AlarmPage() {
             <span>Set the date, time and purpose. AutoAI prepares a natural reminder in your language and speaks it when the alarm rings.</span>
           </div>
           <aside className="alarm-next-card">
-            <span><BellRing /> Next alarm</span>
-            {nextAlarm ? (
-              <>
-                <strong>{new Date(nextAlarm.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</strong>
-                <p>{nextAlarm.title}</p>
-                <small>{countdownLabel(nextAlarm.scheduled_at)} · {formatAlarmDate(nextAlarm.scheduled_at)}</small>
-              </>
-            ) : <div className="alarm-next-empty"><Clock3 /><p>No upcoming alarm</p><small>Create one below</small></div>}
+            <LiveAlarmClock />
+            <div className="alarm-next-summary">
+              <span><BellRing /> Next alarm</span>
+              {nextAlarm ? (
+                <>
+                  <strong>{formatAlarmTime24(nextAlarm.scheduled_at)}</strong>
+                  <p>{nextAlarm.title}</p>
+                  <small>{countdownLabel(nextAlarm.scheduled_at)} · {formatAlarmDate(nextAlarm.scheduled_at)}</small>
+                </>
+              ) : <div className="alarm-next-empty"><Clock3 /><p>No upcoming alarm</p><small>Create one below</small></div>}
+            </div>
           </aside>
         </section>
 
@@ -144,16 +186,16 @@ export function AlarmPage() {
             <header><span><Plus /></span><div><strong>{editingId ? "Edit AI alarm" : "Create an AI alarm"}</strong><small>Calendar, ringtone and personal voice reminder</small></div></header>
 
             <label className="alarm-field"><span>What should I remind you about?</span><input value={form.title} onChange={(event) => updateField("title", event.target.value)} placeholder="Office, exam, medicine..." maxLength={120} required /></label>
-            <label className="alarm-field"><span>Personal context</span><textarea value={form.note} onChange={(event) => updateField("note", event.target.value)} placeholder="Example: I have to leave for the office by 8:30 AM." maxLength={1000} rows={3} /></label>
+            <label className="alarm-field"><span>Personal context</span><textarea value={form.note} onChange={(event) => updateField("note", event.target.value)} placeholder="Example: I have to leave for the office by 08:30." maxLength={1000} rows={3} /></label>
 
             <div className="alarm-date-grid">
               <label className="alarm-field"><span><CalendarDays /> Date</span><input type="date" min={localDateInput(new Date())} value={form.date} onChange={(event) => updateField("date", event.target.value)} required /></label>
-              <label className="alarm-field"><span><Clock3 /> Time</span><input type="time" value={form.time} onChange={(event) => updateField("time", event.target.value)} required /></label>
+              <div className="alarm-field"><span><Clock3 /> Time (24-hour)</span><Time24Input value={form.time} onChange={(value) => updateField("time", value)} /></div>
             </div>
 
             <div className="alarm-quick-times" aria-label="Quick alarm times">
-              <button type="button" onClick={() => useQuickTime("tomorrow-morning")}>Tomorrow · 7:00 AM</button>
-              <button type="button" onClick={() => useQuickTime("today-evening")}>Evening · 6:00 PM</button>
+              <button type="button" onClick={() => useQuickTime("tomorrow-morning")}>Tomorrow · 07:00</button>
+              <button type="button" onClick={() => useQuickTime("today-evening")}>Evening · 18:00</button>
               <button type="button" onClick={() => useQuickTime("next-hour")}>Next hour</button>
             </div>
 
@@ -178,7 +220,7 @@ export function AlarmPage() {
               <div className="alarm-list">
                 {activeAlarms.map((alarm) => (
                   <article key={alarm.id} className={`alarm-row${alarm.enabled ? "" : " is-paused"}`}>
-                    <div className="alarm-row-time"><strong>{new Date(alarm.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</strong><small>{formatAlarmDate(alarm.scheduled_at)}</small></div>
+                    <div className="alarm-row-time"><strong>{formatAlarmTime24(alarm.scheduled_at)}</strong><small>{formatAlarmCalendarDate(alarm.scheduled_at)}</small></div>
                     <div className="alarm-row-copy"><span><strong>{alarm.title}</strong><em>{alarm.ai_generated ? "AI personalized" : "Reliable fallback"}</em></span><p>{alarm.assistant_message}</p><small><Mic2 /> {alarm.language.replace("-IN", "")} · {alarm.voice_style} <Volume2 /> {alarm.ringtone}</small></div>
                     <div className="alarm-row-controls">
                       <button type="button" className={`alarm-toggle${alarm.enabled ? " is-on" : ""}`} onClick={() => void updateAlarm(alarm.id, { enabled: !alarm.enabled }).catch(() => undefined)} aria-label={`${alarm.enabled ? "Pause" : "Enable"} ${alarm.title}`} aria-pressed={alarm.enabled}><span /></button>

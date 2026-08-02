@@ -35,6 +35,8 @@ public class AlarmRuntimeContractTest {
         assertTrue(service.contains("setFullScreenIntent(open, true)"));
         assertTrue(service.contains("configureVoice"));
         assertTrue(service.contains("isNetworkConnectionRequired"));
+        assertTrue(service.contains("ACTION_SPEAK_FEEDBACK"));
+        assertTrue(service.contains("ACTION_VERIFIED_SUCCESS"));
     }
 
     @Test public void lockScreenAlarmRequiresLiveAwakeVerificationToStop() throws Exception {
@@ -47,9 +49,12 @@ public class AlarmRuntimeContractTest {
         assertTrue(activity.contains("setTurnScreenOn(true)"));
         assertTrue(activity.contains("Snooze 10 min"));
         assertTrue(activity.contains("Stop alarm"));
+        assertTrue(activity.contains("HH:mm:ss"));
+        assertTrue(activity.contains("24-HOUR FORMAT"));
         assertTrue(activity.contains("AlarmAwakeVerificationActivity"));
         assertTrue(verifierActivity.contains("ImageCapture"));
-        assertTrue(verifierActivity.contains("EXTRA_AWAKE_VERIFIED, true"));
+        assertTrue(verifierActivity.contains("AlarmRingingService.speakAwakeFeedback"));
+        assertTrue(verifierActivity.contains("AlarmRingingService.speakVerifiedSuccess"));
         assertTrue(verifier.contains("FaceDetection.getClient"));
         assertTrue(verifier.contains("getLeftEyeOpenProbability"));
         assertTrue(verifier.contains("verify-awake"));
@@ -59,12 +64,22 @@ public class AlarmRuntimeContractTest {
         assertFalse(activity.contains("WebView"));
     }
 
+    @Test public void verificationSpeechExplainsFailureAndHandsOffToAiChat() throws Exception {
+        String speech = source("AlarmAssistantSpeech.java");
+        assertTrue(speech.contains("सोए हुए हैं"));
+        assertTrue(speech.contains("अलार्म बंद नहीं होगा"));
+        assertTrue(speech.contains("थैंक यू, अब आप जाग चुके हैं"));
+        assertTrue(speech.contains("AI Chat"));
+    }
+
     @Test public void offlineActionsRemainOrderedAndRefreshAuthentication() throws Exception {
         String worker = source("AlarmActionSyncWorker.java");
         String store = source("AlarmStore.java");
         assertTrue(worker.contains("ExistingWorkPolicy.APPEND_OR_REPLACE"));
         assertTrue(worker.contains("client_revision"));
         assertTrue(worker.contains("scheduled_at"));
+        assertTrue(worker.contains("if (scheduledAt > 0L)"));
+        assertTrue(source("AlarmActionReceiver.java").contains("scheduledAtEpochMs, completed.revision"));
         assertTrue(worker.contains("/auth/refresh"));
         assertTrue(store.contains("local.revision > remote.revision"));
         assertTrue(store.contains("preserveActiveRing"));

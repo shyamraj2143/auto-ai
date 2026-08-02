@@ -104,13 +104,18 @@ jobs:
           grep -q 'RingtoneManager.TYPE_ALARM' android/app/src/main/java/com/autoai/app/AlarmRingingService.java
           grep -q 'TextToSpeech' android/app/src/main/java/com/autoai/app/AlarmRingingService.java
           grep -q 'isNetworkConnectionRequired' android/app/src/main/java/com/autoai/app/AlarmRingingService.java
+          grep -q 'ACTION_VERIFIED_SUCCESS' android/app/src/main/java/com/autoai/app/AlarmRingingService.java
           grep -q 'START_STICKY' android/app/src/main/java/com/autoai/app/AlarmRingingService.java
           grep -q 'FaceDetection.getClient' android/app/src/main/java/com/autoai/app/AlarmAwakeVerifier.java
           grep -q 'EXTRA_AWAKE_VERIFIED, true' android/app/src/main/java/com/autoai/app/AlarmAwakeVerificationActivity.java
+          grep -q 'HH:mm:ss' android/app/src/main/java/com/autoai/app/AlarmRingingActivity.java
+          grep -q 'AI Chat' android/app/src/main/java/com/autoai/app/AlarmAssistantSpeech.java
           grep -q 'com.google.mlkit:face-detection:16.1.7' android/app/build.gradle
           grep -q 'android.permission.SCHEDULE_EXACT_ALARM' android/app/src/main/AndroidManifest.xml
           grep -q 'app.include_router(alarms.router' backend/app/main.py
           grep -q 'title="AI Alarm"' frontend/src/features/actionHub/ActionHubPage.tsx
+          grep -q 'FaceLandmarker.createFromOptions' frontend/src/features/alarms/webAwakeVerifier.ts
+          grep -q '64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff' frontend/scripts/prepare-alarm-vision-model.mjs
           metadata_step="$(sed -n '/- name: Publish APK metadata.*backend/,/- name: Notify installed Android.*apps/p' .github/workflows/android-release.yml)"
           grep -q -- '--force-update' <<< "$metadata_step"
           if grep -R -q 'FirebaseMessaging.getInstance().getToken' android/app/src/main/java/com/autoai/app; then
@@ -129,6 +134,7 @@ jobs:
           AUTO_AI_SKIP_COMPRESSION=1 VITE_API_URL="$AUTO_AI_API_BASE_URL" VITE_GOOGLE_WEB_CLIENT_ID="$AUTO_AI_GOOGLE_WEB_CLIENT_ID" npm run build
 
           test -f frontend/dist/index.html
+          test -s frontend/dist/models/face_landmarker.task
           grep -R -q --include='*.js' --include='*.css' 'chat-delete-dialog-backdrop' frontend/dist/assets
           grep -R -q --include='*.js' 'Delete chat?' frontend/dist/assets
           grep -R -q --include='*.css' 'z-index:95' frontend/dist/assets

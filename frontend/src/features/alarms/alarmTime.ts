@@ -9,6 +9,26 @@ export function localTimeInput(date: Date) {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
+export function formatAlarmTime24(value: string | number | Date, includeSeconds = false) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return includeSeconds ? "--:--:--" : "--:--";
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+  return includeSeconds ? `${hours}:${minutes}:${seconds}` : `${hours}:${minutes}`;
+}
+
+export function formatAlarmCalendarDate(value: string | number | Date) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Invalid date";
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+}
+
 export function defaultAlarmDate(now = new Date()) {
   const next = new Date(now);
   next.setDate(next.getDate() + 1);
@@ -25,13 +45,7 @@ export function combineLocalDateTime(date: string, time: string) {
 export function formatAlarmDate(value: string | number | Date) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Invalid date";
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
+  return `${formatAlarmCalendarDate(date)} · ${formatAlarmTime24(date)}`;
 }
 
 export function countdownLabel(value: string | number | Date, now = Date.now()) {

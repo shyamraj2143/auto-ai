@@ -178,7 +178,14 @@ def alarm_action(
     alarm = owned_alarm(db, current_user.id, alarm_id)
     requested_time = utc_naive(payload.scheduled_at) if payload.scheduled_at is not None else None
     if payload.client_revision is not None and payload.client_revision < alarm.revision:
-        return alarm_read(alarm)
+        same_occurrence_dismiss = (
+            payload.action == "dismiss"
+            and alarm.status in {"scheduled", "ringing"}
+            and requested_time is not None
+            and abs((alarm.scheduled_at - requested_time).total_seconds()) < 1
+        )
+        if not same_occurrence_dismiss:
+            return alarm_read(alarm)
     if payload.client_revision is not None and payload.client_revision == alarm.revision:
         if payload.action == "dismiss" and alarm.status == "completed":
             return alarm_read(alarm)

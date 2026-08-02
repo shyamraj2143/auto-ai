@@ -33,9 +33,27 @@ describe("AI Alarm feature contracts", () => {
 
   it("requires a live camera and awake verification before desktop dismissal", () => {
     const overlay = source("src/features/alarms/AlarmOverlay.tsx");
+    const verifier = source("src/features/alarms/webAwakeVerifier.ts");
+    const queue = source("src/features/alarms/alarmOfflineQueue.ts");
     expect(overlay).toContain("navigator.mediaDevices?.getUserMedia");
+    expect(overlay).toContain("verifyAwakeOnDevice(canvas)");
     expect(overlay).toContain("verifyAwake(activeAlarm.id, photo)");
     expect(overlay).toContain("Verify to stop");
     expect(overlay).toContain("setInterval(speakReminder");
+    expect(verifier).toContain("FaceLandmarker.createFromOptions");
+    expect(verifier).toContain("models/face_landmarker.task");
+    expect(queue).toContain("autoai-alarm-offline-actions-v1");
+    expect(queue).toContain("clientRevision");
+  });
+
+  it("shows a seconds clock and forces alarm setup to 24-hour controls", () => {
+    const page = source("src/features/alarms/AlarmPage.tsx");
+    const time = source("src/features/alarms/alarmTime.ts");
+    expect(page).toContain("LiveAlarmClock");
+    expect(page).toContain("formatAlarmTime24(now, true)");
+    expect(page).toContain("Hour from 00 to 23");
+    expect(page).toContain("Tomorrow · 07:00");
+    expect(page).toContain("Evening · 18:00");
+    expect(time).toContain("includeSeconds");
   });
 });

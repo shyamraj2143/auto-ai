@@ -153,6 +153,52 @@ def test_native_alarm_actions_are_ordered_and_idempotent(db: Session, monkeypatc
     assert stale.scheduled_at == repeated.scheduled_at
 
 
+def test_offline_dismiss_survives_ringing_revision_but_not_a_new_occurrence(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    current = user(db)
+    monkeypatch.setattr(alarm_ai_service, "compose", lambda **_: AlarmMessage("Wake up.", "groq-test", True))
+    created = create_alarm(alarm_payload(), BackgroundTasks(), db, current)
+    occurrence = created.scheduled_at
+
+    ringing = alarm_action(
+        created.id,
+        AlarmAction(action="ringing", client_revision=2),
+        BackgroundTasks(),
+        db,
+        current,
+    )
+    assert ringing.revision == 2
+    dismissed = alarm_action(
+        created.id,
+        AlarmAction(action="dismiss", scheduled_at=occurrence, client_revision=1),
+        BackgroundTasks(),
+        db,
+        current,
+    )
+    assert dismissed.status == "completed"
+    assert dismissed.revision == 3
+
+    replacement = create_alarm(alarm_payload(hours=3), BackgroundTasks(), db, current)
+    old_occurrence = replacement.scheduled_at
+    next_occurrence = datetime.now(UTC) + timedelta(hours=4)
+    snoozed = alarm_action(
+        replacement.id,
+        AlarmAction(action="snooze", scheduled_at=next_occurrence, client_revision=2),
+        BackgroundTasks(),
+        db,
+        current,
+    )
+    ignored = alarm_action(
+        replacement.id,
+        AlarmAction(action="dismiss", scheduled_at=old_occurrence, client_revision=1),
+        BackgroundTasks(),
+        db,
+        current,
+    )
+    assert ignored.status == "scheduled"
+    assert ignored.revision == snoozed.revision
+    assert ignored.scheduled_at == snoozed.scheduled_at
+
+
 def test_alarm_rejects_naive_and_past_times(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
     current = user(db)
     monkeypatch.setattr(alarm_ai_service, "compose", lambda **_: AlarmMessage("Wake up.", "groq-test", True))

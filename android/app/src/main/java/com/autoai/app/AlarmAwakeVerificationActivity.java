@@ -2,8 +2,10 @@ package com.autoai.app;
 
 import android.Manifest;
 import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -39,12 +41,22 @@ public final class AlarmAwakeVerificationActivity extends AppCompatActivity {
     private static final int CAMERA_PERMISSION_REQUEST = 8041;
 
     private String alarmId;
+    private AlarmPayload alarm;
     private PreviewView previewView;
     private TextView statusView;
     private Button captureButton;
     private ImageCapture imageCapture;
     private ProcessCameraProvider cameraProvider;
     private boolean verificationRunning;
+    private BroadcastReceiver changedReceiver;
+    private final Runnable verifiedDismissFallback = () -> {
+        AlarmPayload current = AlarmStore.get(this, alarmId);
+        if (current == null || !"ringing".equals(current.status)) return;
+        sendBroadcast(new Intent(this, AlarmActionReceiver.class)
+            .setAction(AlarmActionReceiver.ACTION_DISMISS)
+            .putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarmId)
+            .putExtra(AlarmActionReceiver.EXTRA_AWAKE_VERIFIED, true));
+    };
 
     static PendingIntent pendingIntent(Context context, AlarmPayload alarm) {
         Intent intent = new Intent(context, AlarmAwakeVerificationActivity.class)
@@ -69,12 +81,13 @@ public final class AlarmAwakeVerificationActivity extends AppCompatActivity {
         getWindow().setStatusBarColor(Color.BLACK);
         getWindow().setNavigationBarColor(Color.BLACK);
         alarmId = getIntent().getStringExtra(AlarmScheduler.EXTRA_ALARM_ID);
-        AlarmPayload alarm = AlarmStore.get(this, alarmId);
+        alarm = AlarmStore.get(this, alarmId);
         if (alarm == null || !alarm.enabled || !"ringing".equals(alarm.status)) {
             finishAndRemoveTask();
             return;
         }
         setContentView(content());
+        registerAlarmChangedReceiver();
         ensureCamera();
     }
 
@@ -82,6 +95,7 @@ public final class AlarmAwakeVerificationActivity extends AppCompatActivity {
         super.onNewIntent(intent);
         setIntent(intent);
         alarmId = intent.getStringExtra(AlarmScheduler.EXTRA_ALARM_ID);
+        alarm = AlarmStore.get(this, alarmId);
         ensureCamera();
     }
 
@@ -204,7 +218,9 @@ public final class AlarmAwakeVerificationActivity extends AppCompatActivity {
         if (!result.awake) {
             photo.delete();
             verificationRunning = false;
-            showStatus(result.reason, true);
+            String feedback = AlarmAssistantSpeech.localFailure(alarm, result);
+            showStatus(feedback, true);
+            AlarmRingingService.speakAwakeFeedback(this, alarmId, feedback);
             return;
         }
         showStatus("On-device check passed. Groq Vision is double-checking when internet is available…", false);
@@ -212,20 +228,31 @@ public final class AlarmAwakeVerificationActivity extends AppCompatActivity {
             photo.delete();
             if (online.available && !online.awake) {
                 verificationRunning = false;
-                showStatus(online.reason.isEmpty() ? "You do not look fully awake yet. Open both eyes and try again." : online.reason, true);
+                String feedback = AlarmAssistantSpeech.onlineFailure(alarm);
+                showStatus(feedback, true);
+                AlarmRingingService.speakAwakeFeedback(this, alarmId, feedback);
                 return;
             }
-            completeVerifiedDismissal(online.available ? "Awake verified by Groq Vision." : "Awake verified offline on this device.");
+            completeVerifiedDismissal(online.available ? "Awake verified on-device and by Groq Vision." : "Awake verified offline on this device.");
         }));
     }
 
     private void completeVerifiedDismissal(String message) {
-        showStatus(message, false);
-        sendBroadcast(new Intent(this, AlarmActionReceiver.class)
-            .setAction(AlarmActionReceiver.ACTION_DISMISS)
-            .putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarmId)
-            .putExtra(AlarmActionReceiver.EXTRA_AWAKE_VERIFIED, true));
-        captureButton.postDelayed(this::finishAndRemoveTask, 550L);
+        String success = AlarmAssistantSpeech.success(alarm);
+        showStatus(message + "\n\n" + success, false);
+        AlarmRingingService.speakVerifiedSuccess(this, alarmId, success);
+        captureButton.postDelayed(verifiedDismissFallback, 15_000L);
+    }
+
+    private void registerAlarmChangedReceiver() {
+        changedReceiver = new BroadcastReceiver() {
+            @Override public void onReceive(Context context, Intent intent) {
+                if (alarmId != null && alarmId.equals(intent.getStringExtra(AlarmScheduler.EXTRA_ALARM_ID))) finishAndRemoveTask();
+            }
+        };
+        IntentFilter filter = new IntentFilter(AlarmActionReceiver.ACTION_CHANGED);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) registerReceiver(changedReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        else registerReceiver(changedReceiver, filter);
     }
 
     private void showStatus(String message, boolean enableCapture) {
@@ -250,6 +277,10 @@ public final class AlarmAwakeVerificationActivity extends AppCompatActivity {
 
     @Override protected void onDestroy() {
         if (cameraProvider != null) cameraProvider.unbindAll();
+        if (captureButton != null) captureButton.removeCallbacks(verifiedDismissFallback);
+        if (changedReceiver != null) {
+            try { unregisterReceiver(changedReceiver); } catch (IllegalArgumentException ignored) {}
+        }
         super.onDestroy();
     }
 

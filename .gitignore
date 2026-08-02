@@ -11,6 +11,7 @@ venv/
 .android-signing/
 node_modules/
 dist/
+frontend/public/models/face_landmarker.task
 build/
 deploy_htdocs/
 deploy_htdocs_clean/

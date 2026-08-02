@@ -111,7 +111,7 @@ public final class AlarmActionSyncWorker extends Worker {
             int revision = getInputData().getInt(KEY_CLIENT_REVISION, 0);
             long scheduledAt = getInputData().getLong(KEY_SCHEDULED_AT_EPOCH_MS, 0L);
             if (revision > 0) body.put("client_revision", revision);
-            if ("snooze".equals(action) && scheduledAt > 0L) body.put("scheduled_at", isoUtc(scheduledAt));
+            if (scheduledAt > 0L) body.put("scheduled_at", isoUtc(scheduledAt));
             try (OutputStream output = connection.getOutputStream()) {
                 output.write(body.toString().getBytes(StandardCharsets.UTF_8));
             }

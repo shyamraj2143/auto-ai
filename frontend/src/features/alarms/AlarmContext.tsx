@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { alarmNative } from "./alarmNative";
+import { enqueueAlarmAction, flushAlarmActions } from "./alarmOfflineQueue";
 import { alarmsApi } from "./alarmsApi";
 import type { AlarmAwakeVerification, AlarmDraft, AlarmNativeStatus, UserAlarm } from "./types";
 
@@ -41,7 +42,7 @@ function accessMessage(status: AlarmNativeStatus) {
 }
 
 export function AlarmProvider({ children }: { children: ReactNode }) {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [alarms, setAlarms] = useState<UserAlarm[]>([]);
   const [activeAlarm, setActiveAlarm] = useState<UserAlarm | null>(null);
   const [loading, setLoading] = useState(true);
@@ -59,6 +60,9 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
     if (!token || refreshRunning.current) return;
     refreshRunning.current = true;
     try {
+      if (user?.id && !alarmNative.isAndroid() && (typeof navigator === "undefined" || navigator.onLine)) {
+        await flushAlarmActions(user.id, token);
+      }
       const result = await alarmsApi.list(token);
       const items = sortAlarms(result.items);
       setAlarms(items);
@@ -75,7 +79,7 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
       refreshRunning.current = false;
       setLoading(false);
     }
-  }, [token]);
+  }, [token, user?.id]);
 
   useEffect(() => {
     if (!token) {
@@ -94,16 +98,23 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
       }
     };
     window.addEventListener("focus", onVisible);
+    window.addEventListener("online", onVisible);
     document.addEventListener("visibilitychange", onVisible);
     let actionListener: { remove: () => Promise<void> } | null = null;
     void alarmNative.onAction(() => void refresh()).then((handle) => { actionListener = handle; });
     return () => {
       window.clearInterval(interval);
       window.removeEventListener("focus", onVisible);
+      window.removeEventListener("online", onVisible);
       document.removeEventListener("visibilitychange", onVisible);
       void actionListener?.remove();
     };
   }, [refresh, refreshStatus, token]);
+
+  useEffect(() => {
+    if (alarmNative.isAndroid() || !alarms.some((alarm) => alarm.enabled && ["scheduled", "ringing"].includes(alarm.status))) return;
+    void import("./webAwakeVerifier").then(({ prewarmWebAwakeVerifier }) => prewarmWebAwakeVerifier()).catch(() => undefined);
+  }, [alarms]);
 
   useEffect(() => {
     if (!token || alarmNative.isAndroid()) return;
@@ -199,17 +210,28 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
   }, [token]);
 
   const dismissAlarm = useCallback(async (alarmId: string) => {
-    if (!token) return;
+    if (!token || !user) return;
     setError("");
+    const current = alarms.find((alarm) => alarm.id === alarmId) ?? activeAlarm;
+    const clientRevision = Math.max(1, (current?.revision ?? 0) + 1);
+    setActiveAlarm(null);
+    setAlarms((items) => items.filter((item) => item.id !== alarmId));
     try {
-      const updated = await alarmsApi.action(token, alarmId, "dismiss");
-      setActiveAlarm(null);
-      setAlarms((items) => items.filter((item) => item.id !== updated.id));
+      await alarmsApi.action(token, alarmId, "dismiss", 10, { scheduledAt: current?.scheduled_at, clientRevision });
       await alarmNative.cancel(alarmId).catch(() => undefined);
     } catch (requestError) {
-      setError(readableError(requestError));
+      enqueueAlarmAction({
+        userId: user.id,
+        alarmId,
+        action: "dismiss",
+        snoozeMinutes: 10,
+        scheduledAt: current?.scheduled_at,
+        clientRevision,
+        queuedAt: new Date().toISOString(),
+      });
+      if (typeof navigator === "undefined" || navigator.onLine) setError(`${readableError(requestError)} The verified dismissal was saved offline and will sync automatically.`);
     }
-  }, [token]);
+  }, [activeAlarm, alarms, token, user]);
 
   const verifyAwake = useCallback(async (alarmId: string, photo: Blob) => {
     if (!token) throw new Error("Sign in to verify this alarm.");
@@ -217,16 +239,38 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
   }, [token]);
 
   const snoozeAlarm = useCallback(async (alarmId: string, minutes = 10) => {
-    if (!token) return;
+    if (!token || !user) return;
     setError("");
+    const current = alarms.find((alarm) => alarm.id === alarmId) ?? activeAlarm;
+    const scheduledAt = new Date(Date.now() + minutes * 60_000).toISOString();
+    const clientRevision = Math.max(1, (current?.revision ?? 0) + 1);
+    if (current) {
+      upsert({
+        ...current,
+        scheduled_at: scheduledAt,
+        enabled: true,
+        status: "scheduled",
+        snooze_count: current.snooze_count + 1,
+        revision: clientRevision,
+      });
+    }
+    setActiveAlarm(null);
     try {
-      const updated = upsert(await alarmsApi.action(token, alarmId, "snooze", minutes));
-      setActiveAlarm(null);
+      const updated = upsert(await alarmsApi.action(token, alarmId, "snooze", minutes, { scheduledAt, clientRevision }));
       await alarmNative.schedule(updated).catch(() => undefined);
     } catch (requestError) {
-      setError(readableError(requestError));
+      enqueueAlarmAction({
+        userId: user.id,
+        alarmId,
+        action: "snooze",
+        snoozeMinutes: minutes,
+        scheduledAt,
+        clientRevision,
+        queuedAt: new Date().toISOString(),
+      });
+      if (typeof navigator === "undefined" || navigator.onLine) setError(`${readableError(requestError)} Snooze was saved offline and will sync automatically.`);
     }
-  }, [token, upsert]);
+  }, [activeAlarm, alarms, token, upsert, user]);
 
   const previewAlarm = useCallback(async (alarm: UserAlarm) => {
     setError("");

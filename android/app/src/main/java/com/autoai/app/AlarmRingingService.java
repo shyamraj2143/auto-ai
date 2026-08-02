@@ -35,8 +35,14 @@ public final class AlarmRingingService extends Service {
     private static final String CHANNEL_ID = "auto_ai_alarm_ringing_v1";
     private static final String ACTION_START = "com.autoai.app.alarm.START_RINGING";
     private static final String ACTION_STOP = "com.autoai.app.alarm.STOP_RINGING";
-    private static final String UTTERANCE_ID = "auto_ai_alarm_voice";
+    private static final String ACTION_SPEAK_FEEDBACK = "com.autoai.app.alarm.SPEAK_AWAKE_FEEDBACK";
+    private static final String ACTION_VERIFIED_SUCCESS = "com.autoai.app.alarm.SPEAK_VERIFIED_SUCCESS";
+    private static final String EXTRA_SPEECH_MESSAGE = "alarm_speech_message";
+    private static final String UTTERANCE_REMINDER = "auto_ai_alarm_reminder";
+    private static final String UTTERANCE_FEEDBACK = "auto_ai_alarm_awake_feedback";
+    private static final String UTTERANCE_SUCCESS = "auto_ai_alarm_verified_success";
     private static volatile String activeAlarmId;
+    private static volatile AlarmRingingService activeInstance;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private AlarmPayload currentAlarm;
@@ -48,6 +54,12 @@ public final class AlarmRingingService extends Service {
     private AudioFocusRequest audioFocusRequest;
     private float ringtoneVolume = .82f;
     private boolean speaking;
+    private boolean completingVerifiedDismissal;
+    private boolean verifiedDismissSent;
+    private String pendingSpeech;
+    private String pendingUtteranceId;
+    private final Runnable reminderSpeech = this::speakCurrent;
+    private final Runnable verifiedDismissFallback = this::finishVerifiedDismissal;
     private final Runnable fallbackTonePulse = new Runnable() {
         @Override public void run() {
             if (fallbackTone == null || currentAlarm == null) return;
@@ -69,6 +81,24 @@ public final class AlarmRingingService extends Service {
         context.stopService(new Intent(context, AlarmRingingService.class));
     }
 
+    static void speakAwakeFeedback(Context context, String alarmId, String message) {
+        control(context, ACTION_SPEAK_FEEDBACK, alarmId, message);
+    }
+
+    static void speakVerifiedSuccess(Context context, String alarmId, String message) {
+        control(context, ACTION_VERIFIED_SUCCESS, alarmId, message);
+    }
+
+    private static void control(Context context, String action, String alarmId, String message) {
+        if (alarmId == null || !alarmId.equals(activeAlarmId)) return;
+        AlarmRingingService service = activeInstance;
+        if (service == null) return;
+        service.handler.post(() -> {
+            if (ACTION_VERIFIED_SUCCESS.equals(action)) service.beginVerifiedSuccess(message);
+            else service.speakFeedback(message);
+        });
+    }
+
     static void createChannel(Context context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
@@ -84,6 +114,7 @@ public final class AlarmRingingService extends Service {
 
     @Override public void onCreate() {
         super.onCreate();
+        activeInstance = this;
         createChannel(this);
     }
 
@@ -93,6 +124,14 @@ public final class AlarmRingingService extends Service {
         if (ACTION_STOP.equals(action)) {
             if (currentAlarm == null || alarmId == null || currentAlarm.alarmId.equals(alarmId)) stopSelfSafely();
             return START_NOT_STICKY;
+        }
+        if (ACTION_SPEAK_FEEDBACK.equals(action) || ACTION_VERIFIED_SUCCESS.equals(action)) {
+            if (currentAlarm != null && alarmId != null && currentAlarm.alarmId.equals(alarmId)) {
+                String message = intent.getStringExtra(EXTRA_SPEECH_MESSAGE);
+                if (ACTION_VERIFIED_SUCCESS.equals(action)) beginVerifiedSuccess(message);
+                else speakFeedback(message);
+            }
+            return START_STICKY;
         }
         AlarmPayload payload = alarmId == null ? AlarmStore.ringing(this) : AlarmStore.get(this, alarmId);
         if (payload == null || !payload.enabled) {
@@ -205,24 +244,96 @@ public final class AlarmRingingService extends Service {
             configureVoice(textToSpeech, alarm.language, alarm.voiceStyle);
             textToSpeech.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                 @Override public void onStart(String utteranceId) { speaking = true; lowerRingtone(true); }
-                @Override public void onDone(String utteranceId) {
-                    speaking = false;
-                    handler.post(() -> {
-                        lowerRingtone(false);
-                        if (currentAlarm != null) handler.postDelayed(AlarmRingingService.this::speakCurrent, 16_000L);
-                    });
-                }
-                @Override public void onError(String utteranceId) { onDone(utteranceId); }
+                @Override public void onDone(String utteranceId) { handler.post(() -> speechFinished(utteranceId)); }
+                @Override public void onError(String utteranceId) { handler.post(() -> speechFinished(utteranceId)); }
             });
-            handler.postDelayed(this::speakCurrent, 1_600L);
+            if (pendingSpeech != null) speakPending();
+            else handler.postDelayed(reminderSpeech, 1_600L);
         });
     }
 
     private void speakCurrent() {
-        if (currentAlarm == null || textToSpeech == null || speaking) return;
+        if (currentAlarm == null || textToSpeech == null || speaking || completingVerifiedDismissal) return;
         Bundle params = new Bundle();
         params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1f);
-        textToSpeech.speak(currentAlarm.assistantMessage, TextToSpeech.QUEUE_FLUSH, params, UTTERANCE_ID);
+        int result = textToSpeech.speak(currentAlarm.assistantMessage, TextToSpeech.QUEUE_FLUSH, params, UTTERANCE_REMINDER);
+        if (result == TextToSpeech.ERROR) handler.post(() -> speechFinished(UTTERANCE_REMINDER));
+    }
+
+    private void speakFeedback(String message) {
+        if (message == null || message.trim().isEmpty() || completingVerifiedDismissal) return;
+        handler.removeCallbacks(reminderSpeech);
+        pendingSpeech = message.trim();
+        pendingUtteranceId = UTTERANCE_FEEDBACK;
+        speakPending();
+    }
+
+    private void beginVerifiedSuccess(String message) {
+        if (completingVerifiedDismissal || verifiedDismissSent) return;
+        completingVerifiedDismissal = true;
+        handler.removeCallbacks(reminderSpeech);
+        stopAlarmToneOnly();
+        pendingSpeech = message == null ? "" : message.trim();
+        pendingUtteranceId = UTTERANCE_SUCCESS;
+        handler.removeCallbacks(verifiedDismissFallback);
+        handler.postDelayed(verifiedDismissFallback, 14_000L);
+        if (pendingSpeech.isEmpty()) {
+            handler.postDelayed(verifiedDismissFallback, 650L);
+            return;
+        }
+        speakPending();
+    }
+
+    private void speakPending() {
+        if (pendingSpeech == null || pendingUtteranceId == null || textToSpeech == null || speaking) return;
+        String message = pendingSpeech;
+        String utteranceId = pendingUtteranceId;
+        pendingSpeech = null;
+        pendingUtteranceId = null;
+        Bundle params = new Bundle();
+        params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1f);
+        int result = textToSpeech.speak(message, TextToSpeech.QUEUE_FLUSH, params, utteranceId);
+        if (result == TextToSpeech.ERROR) handler.post(() -> speechFinished(utteranceId));
+    }
+
+    private void speechFinished(String utteranceId) {
+        speaking = false;
+        if (UTTERANCE_SUCCESS.equals(utteranceId)) {
+            finishVerifiedDismissal();
+            return;
+        }
+        lowerRingtone(false);
+        if (pendingSpeech != null) {
+            speakPending();
+            return;
+        }
+        if (currentAlarm != null && !completingVerifiedDismissal) {
+            handler.removeCallbacks(reminderSpeech);
+            handler.postDelayed(reminderSpeech, UTTERANCE_FEEDBACK.equals(utteranceId) ? 10_000L : 16_000L);
+        }
+    }
+
+    private void finishVerifiedDismissal() {
+        if (!completingVerifiedDismissal || verifiedDismissSent || currentAlarm == null) return;
+        verifiedDismissSent = true;
+        handler.removeCallbacks(verifiedDismissFallback);
+        sendBroadcast(new Intent(this, AlarmActionReceiver.class)
+            .setAction(AlarmActionReceiver.ACTION_DISMISS)
+            .putExtra(AlarmScheduler.EXTRA_ALARM_ID, currentAlarm.alarmId)
+            .putExtra(AlarmActionReceiver.EXTRA_AWAKE_VERIFIED, true));
+    }
+
+    private void stopAlarmToneOnly() {
+        handler.removeCallbacks(fallbackTonePulse);
+        if (ringtonePlayer != null) {
+            try { ringtonePlayer.stop(); } catch (IllegalStateException ignored) {}
+            ringtonePlayer.release();
+            ringtonePlayer = null;
+        }
+        if (fallbackTone != null) {
+            fallbackTone.release();
+            fallbackTone = null;
+        }
     }
 
     static void configureVoice(TextToSpeech speech, String language, String style) {
@@ -279,15 +390,7 @@ public final class AlarmRingingService extends Service {
 
     private void stopPlayback() {
         handler.removeCallbacksAndMessages(null);
-        if (ringtonePlayer != null) {
-            try { ringtonePlayer.stop(); } catch (IllegalStateException ignored) {}
-            ringtonePlayer.release();
-            ringtonePlayer = null;
-        }
-        if (fallbackTone != null) {
-            fallbackTone.release();
-            fallbackTone = null;
-        }
+        stopAlarmToneOnly();
         if (textToSpeech != null) {
             textToSpeech.stop();
             textToSpeech.shutdown();
@@ -300,11 +403,16 @@ public final class AlarmRingingService extends Service {
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         wakeLock = null;
         speaking = false;
+        completingVerifiedDismissal = false;
+        verifiedDismissSent = false;
+        pendingSpeech = null;
+        pendingUtteranceId = null;
         activeAlarmId = null;
         currentAlarm = null;
     }
 
     @Override public void onDestroy() {
+        if (activeInstance == this) activeInstance = null;
         stopPlayback();
         super.onDestroy();
     }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { combineLocalDateTime, countdownLabel, defaultAlarmDate, localDateInput, localTimeInput, quickAlarmDate } from "./alarmTime";
+import { combineLocalDateTime, countdownLabel, defaultAlarmDate, formatAlarmDate, formatAlarmTime24, localDateInput, localTimeInput, quickAlarmDate } from "./alarmTime";
 
 describe("alarm time helpers", () => {
   it("defaults to tomorrow at seven in the user's local time", () => {
@@ -16,6 +16,15 @@ describe("alarm time helpers", () => {
     expect(alarm?.getDate()).toBe(3);
     expect(alarm?.getHours()).toBe(8);
     expect(alarm?.getMinutes()).toBe(15);
+  });
+
+  it("renders every alarm clock value in explicit 24-hour format", () => {
+    const midnight = new Date(2026, 7, 3, 0, 5, 9);
+    const evening = new Date(2026, 7, 3, 23, 7, 4);
+    expect(formatAlarmTime24(midnight)).toBe("00:05");
+    expect(formatAlarmTime24(evening, true)).toBe("23:07:04");
+    expect(formatAlarmDate(evening)).toMatch(/23:07$/);
+    expect(formatAlarmDate(evening)).not.toMatch(/AM|PM/i);
   });
 
   it("creates bounded quick times and readable countdowns", () => {

@@ -39,10 +39,12 @@ public final class AlarmActionReceiver extends BroadcastReceiver {
             }
             broadcast(context, alarmId, "snooze");
         } else if (ACTION_DISMISS.equals(action)) {
+            AlarmPayload occurrence = AlarmStore.get(context, alarmId);
+            long scheduledAtEpochMs = occurrence == null ? 0L : occurrence.scheduledAtEpochMs;
             AlarmScheduler.cancel(context, alarmId);
             AlarmPayload completed = AlarmStore.markCompleted(context, alarmId);
             if (completed != null) {
-                AlarmActionSyncWorker.enqueue(context, alarmId, "dismiss", 0, 0L, completed.revision);
+                AlarmActionSyncWorker.enqueue(context, alarmId, "dismiss", 0, scheduledAtEpochMs, completed.revision);
             }
             broadcast(context, alarmId, "dismiss");
         }

@@ -14,7 +14,7 @@ import { RecentActivity, type HubActivityItem } from "./RecentActivity";
 import { callSearchRoute, isActiveScreenShareState } from "./actionHubNavigation";
 import "./actionHub.css";
 import { useAlarms } from "../alarms/AlarmContext";
-import { countdownLabel, formatAlarmDate } from "../alarms/alarmTime";
+import { countdownLabel, formatAlarmDate, formatAlarmTime24 } from "../alarms/alarmTime";
 
 function greeting() {
   const hour = new Date().getHours();
@@ -158,7 +158,7 @@ export function ActionHubPage() {
               <article><span><Activity size={16} /> AI conversations</span><strong>{chats.length}</strong><small>Available chat threads</small></article>
               <article><span><MonitorUp size={16} /> Screen sharing</span><strong>{isActiveScreenShareState(screenShare.uiState) ? "Live" : "Ready"}</strong><small>{screenShare.networkQuality === "unknown" ? "Secure relay" : `${screenShare.networkQuality} network`}</small></article>
               <article><span><Phone size={16} /> Call history</span><strong>{calls.length}</strong><small>Recent call records</small></article>
-              <article><span><AlarmClock size={16} /> Next alarm</span><strong>{nextAlarm ? new Date(nextAlarm.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Ready"}</strong><small>{nextAlarm ? formatAlarmDate(nextAlarm.scheduled_at) : "No alarm scheduled"}</small></article>
+              <article><span><AlarmClock size={16} /> Next alarm</span><strong>{nextAlarm ? formatAlarmTime24(nextAlarm.scheduled_at) : "Ready"}</strong><small>{nextAlarm ? formatAlarmDate(nextAlarm.scheduled_at) : "No alarm scheduled"}</small></article>
             </section>
 
             <section className="hub-dashboard-lower">

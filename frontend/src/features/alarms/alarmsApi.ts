@@ -23,13 +23,24 @@ export const alarmsApi = {
       body: JSON.stringify(payload),
     },
   ),
-  action: (token: string, alarmId: string, action: "ringing" | "dismiss" | "snooze", snoozeMinutes = 10) => apiFetch<UserAlarm>(
+  action: (
+    token: string,
+    alarmId: string,
+    action: "ringing" | "dismiss" | "snooze",
+    snoozeMinutes = 10,
+    options: { scheduledAt?: string; clientRevision?: number } = {},
+  ) => apiFetch<UserAlarm>(
     `/alarms/${encodeURIComponent(alarmId)}/action`,
     {
       method: "POST",
       token,
       operation: `alarms.${action}`,
-      body: JSON.stringify({ action, snooze_minutes: snoozeMinutes }),
+      body: JSON.stringify({
+        action,
+        snooze_minutes: snoozeMinutes,
+        scheduled_at: options.scheduledAt,
+        client_revision: options.clientRevision,
+      }),
     },
   ),
   verifyAwake: (token: string, alarmId: string, photo: Blob) => {
@@ -39,7 +50,7 @@ export const alarmsApi = {
       method: "POST",
       token,
       operation: "alarms.verifyAwake",
-      timeoutMs: 12_000,
+      timeoutMs: 5_500,
       body: form,
     });
   },

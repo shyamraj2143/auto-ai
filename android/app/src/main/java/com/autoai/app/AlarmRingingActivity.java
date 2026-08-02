@@ -12,6 +12,8 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
@@ -27,6 +29,17 @@ import java.util.Locale;
 public final class AlarmRingingActivity extends Activity {
     private String alarmId;
     private BroadcastReceiver changedReceiver;
+    private TextView timeView;
+    private final Handler clockHandler = new Handler(Looper.getMainLooper());
+    private final SimpleDateFormat clockFormat = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
+    private final Runnable clockTick = new Runnable() {
+        @Override public void run() {
+            if (timeView == null) return;
+            long now = System.currentTimeMillis();
+            timeView.setText(clockFormat.format(new Date(now)));
+            clockHandler.postDelayed(this, Math.max(120L, 1_000L - now % 1_000L));
+        }
+    };
 
     static PendingIntent pendingIntent(Context context, AlarmPayload alarm) {
         Intent intent = new Intent(context, AlarmRingingActivity.class)
@@ -54,6 +67,7 @@ public final class AlarmRingingActivity extends Activity {
         AlarmPayload alarm = AlarmStore.get(this, alarmId);
         if (alarm == null) { finish(); return; }
         setContentView(content(alarm));
+        startClock();
         changedReceiver = new BroadcastReceiver() {
             @Override public void onReceive(Context context, Intent intent) {
                 if (alarmId != null && alarmId.equals(intent.getStringExtra(AlarmScheduler.EXTRA_ALARM_ID))) finishAndRemoveTask();
@@ -74,6 +88,7 @@ public final class AlarmRingingActivity extends Activity {
             return;
         }
         setContentView(content(alarm));
+        startClock();
     }
 
     private View content(AlarmPayload alarm) {
@@ -98,9 +113,14 @@ public final class AlarmRingingActivity extends Activity {
         iconParams.topMargin = dp(22);
         root.addView(icon, iconParams);
 
-        TextView time = text(new SimpleDateFormat("hh:mm a", Locale.getDefault()).format(new Date()), 48, Color.WHITE, Typeface.BOLD);
-        time.setGravity(Gravity.CENTER);
-        root.addView(time, matchWrap(dp(24)));
+        TextView clockLabel = text("LIVE CLOCK • 24-HOUR FORMAT", 10, Color.rgb(137, 159, 188), Typeface.BOLD);
+        clockLabel.setGravity(Gravity.CENTER);
+        clockLabel.setLetterSpacing(.08f);
+        root.addView(clockLabel, matchWrap(dp(22)));
+
+        timeView = text(clockFormat.format(new Date()), 48, Color.WHITE, Typeface.BOLD);
+        timeView.setGravity(Gravity.CENTER);
+        root.addView(timeView, matchWrap(dp(6)));
 
         TextView title = text(alarm.title, 24, Color.WHITE, Typeface.BOLD);
         title.setGravity(Gravity.CENTER);
@@ -132,6 +152,11 @@ public final class AlarmRingingActivity extends Activity {
         root.addView(helper, matchWrap(dp(16)));
         scroll.addView(root, new ScrollView.LayoutParams(-1, -1));
         return scroll;
+    }
+
+    private void startClock() {
+        clockHandler.removeCallbacks(clockTick);
+        clockTick.run();
     }
 
     private void act(String action) {
@@ -193,6 +218,7 @@ public final class AlarmRingingActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        clockHandler.removeCallbacks(clockTick);
         if (changedReceiver != null) {
             try { unregisterReceiver(changedReceiver); } catch (IllegalArgumentException ignored) {}
         }
