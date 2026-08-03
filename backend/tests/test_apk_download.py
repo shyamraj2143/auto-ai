@@ -23,6 +23,7 @@ def test_download_streams_github_apk_when_railway_file_is_missing(monkeypatch) -
             version_name="1.2.3",
             version_code=123,
             file_name="auto-ai.apk",
+            file_size=55_374_476,
             sha256="a" * 64,
         ),
     )
@@ -43,6 +44,7 @@ def test_download_streams_github_apk_when_railway_file_is_missing(monkeypatch) -
     assert response.status_code == 200
     assert response.media_type == "application/vnd.android.package-archive"
     assert response.headers["x-auto-ai-apk-version-code"] == "123"
+    assert response.headers["content-length"] == str(github_release.read.file_size)
     assert "location" not in response.headers
     db.commit.assert_called_once()
 
@@ -108,3 +110,24 @@ async def test_apk_upload_uses_dedicated_size_limit(tmp_path, monkeypatch: pytes
     assert error.value.status_code == 413
     assert error.value.detail == "APK upload exceeds 1 MB."
     assert list(tmp_path.iterdir()) == []
+
+
+def test_github_apk_asset_url_is_repository_scoped() -> None:
+    from app.services.github_apk_release import GitHubApkReleaseService
+
+    assert GitHubApkReleaseService._trusted_asset_url(
+        "https://github.com/shyamraj2143/auto-ai/releases/download/android-123/auto-ai.apk"
+    )
+    assert not GitHubApkReleaseService._trusted_asset_url(
+        "https://evil.example/shyamraj2143/auto-ai/releases/download/android-123/auto-ai.apk"
+    )
+    assert not GitHubApkReleaseService._trusted_asset_url(
+        "https://github.com/other/repo/releases/download/android-123/auto-ai.apk"
+    )
+
+
+def test_github_proxy_rejects_incomplete_metadata() -> None:
+    release = SimpleNamespace(read=SimpleNamespace(file_size=0, sha256=""), asset_url="https://github.com/shyamraj2143/auto-ai/releases/download/v1/auto-ai.apk")
+    with pytest.raises(HTTPException) as error:
+        download_routes.stream_github_apk(release)
+    assert error.value.status_code == 503

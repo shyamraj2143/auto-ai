@@ -1,5 +1,6 @@
 import os
 import re
+from urllib.parse import urlparse
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -63,7 +64,7 @@ class GitHubApkReleaseService:
                 for item in assets
                 if isinstance(item, dict)
                 and str(item.get("name", "")).lower().endswith(".apk")
-                and str(item.get("browser_download_url", "")).startswith("https://")
+                and self._trusted_asset_url(str(item.get("browser_download_url", "")))
             ),
             None,
         )
@@ -79,6 +80,9 @@ class GitHubApkReleaseService:
             return None
         version_name = self._parse_text(body, r"Version-Name:\s*([^\s]+)") or f"1.0.{version_code}"
         sha256 = self._parse_text(body, r"SHA256:\s*([A-Fa-f0-9]{64})") or ""
+        file_size = int(asset.get("size") or 0)
+        if not sha256 or file_size <= 0:
+            return None
         released_at = self._parse_datetime(str(payload.get("published_at") or payload.get("created_at") or ""))
         download_url = f"{GITHUB_DOWNLOAD_URL}?version={version_name}"
         release_notes = self._release_notes(body)
@@ -90,7 +94,7 @@ class GitHubApkReleaseService:
             version_name=version_name,
             apk_url=download_url,
             file_name=asset_name,
-            file_size=int(asset.get("size") or 0),
+            file_size=file_size,
             changelog=changelog,
             force_update=GITHUB_RELEASES_REQUIRE_UPDATE,
             is_active=True,
@@ -107,6 +111,15 @@ class GitHubApkReleaseService:
             download_url=download_url,
         )
         return GitHubApkRelease(read=read, asset_url=str(asset["browser_download_url"]))
+
+    @staticmethod
+    def _trusted_asset_url(value: str) -> bool:
+        try:
+            parsed = urlparse(value)
+            expected_prefix = f"/{GITHUB_REPO}/releases/download/"
+            return parsed.scheme == "https" and parsed.hostname == "github.com" and parsed.username is None and parsed.password is None and parsed.path.startswith(expected_prefix) and parsed.path.lower().endswith(".apk")
+        except (TypeError, ValueError):
+            return False
 
     @staticmethod
     def _parse_int(value: str, pattern: str) -> int | None:

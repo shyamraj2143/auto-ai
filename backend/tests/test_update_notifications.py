@@ -9,7 +9,13 @@ from app.api.routes import notifications
 from app.core.config import settings
 from app.db.base import Base
 from app.schemas.download import ApkVersionUpsert
-from app.schemas.notifications import ApkUpdateNotificationRequest
+from app.schemas.notifications import ApkUpdateNotificationRequest, DeviceTokenRegisterRequest
+from app.models.call import UserDevice
+from app.models.user import User
+from app.services.device_token_security import encrypt_token, token_hash
+from app.services.firebase_notifications import FcmSendResult
+from fastapi import HTTPException
+import pytest
 
 
 def test_apk_update_notification_is_queued_without_blocking_request(monkeypatch) -> None:
@@ -66,3 +72,26 @@ def test_admin_metadata_publish_queues_update_notification(tmp_path, monkeypatch
 
     assert release.version_code == 101491
     assert len(background_tasks.tasks) == 1
+
+
+def test_legacy_unauthenticated_push_token_registration_is_rejected() -> None:
+    with pytest.raises(HTTPException) as error:
+        notifications.register_device_token(DeviceTokenRegisterRequest(token="x" * 32), object())
+    assert error.value.status_code == 410
+
+
+def test_update_notifications_use_encrypted_user_device_token(monkeypatch) -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        user = User(id="push-user", email="push@example.test", name="Push", username="push-user", hashed_password="x", is_active=True)
+        target = "firebase-target-12345678901234567890"
+        db.add(user); db.add(UserDevice(user_id=user.id, device_id="android-1", platform="android", is_active=True, fcm_token_ciphertext=encrypt_token(target), fcm_token_hash=token_hash(target))); db.commit()
+    class SessionContext:
+        def __enter__(self): self.db = Session(engine); return self.db
+        def __exit__(self, *_): self.db.close()
+    sent = []
+    monkeypatch.setattr(notifications, "SessionLocal", SessionContext)
+    monkeypatch.setattr(notifications.firebase_notification_service, "send_update_notification", lambda token, **kwargs: sent.append((token, kwargs)) or FcmSendResult(ok=True))
+    notifications.dispatch_apk_update_notifications(101500, "1.0.101500", "Secure push")
+    assert sent[0][0] == target

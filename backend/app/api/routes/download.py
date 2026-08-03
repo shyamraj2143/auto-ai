@@ -41,6 +41,8 @@ def stream_github_apk(release):
                 if chunk:
                     yield chunk
 
+    if release.read.file_size <= 0 or not release.read.sha256:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Published APK metadata is incomplete.")
     return StreamingResponse(
         stream_apk(),
         media_type="application/vnd.android.package-archive",
@@ -50,6 +52,7 @@ def stream_github_apk(release):
             "X-Auto-AI-APK-Version": release.read.version_name,
             "X-Auto-AI-APK-Version-Code": str(release.read.version_code),
             "X-Auto-AI-APK-SHA256": release.read.sha256,
+            "Content-Length": str(release.read.file_size),
             "X-Content-Type-Options": "nosniff",
         },
     )

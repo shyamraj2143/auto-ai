@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import SessionLocal, get_db
-from app.models.push import PushDeviceToken
+from app.models.call import UserDevice
 from app.schemas.notifications import (
     ApkUpdateNotificationRequest,
     ApkUpdateNotificationResponse,
@@ -16,6 +16,7 @@ from app.schemas.notifications import (
     DeviceTokenRegisterResponse,
 )
 from app.services.firebase_notifications import firebase_notification_service
+from app.services.device_token_security import decrypt_token
 
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
@@ -43,19 +44,8 @@ def register_device_token(
     payload: DeviceTokenRegisterRequest,
     db: Session = Depends(get_db),
 ) -> DeviceTokenRegisterResponse:
-    now = datetime.utcnow()
-    token = db.scalar(select(PushDeviceToken).where(PushDeviceToken.token == payload.token))
-    if not token:
-        token = PushDeviceToken(token=payload.token)
-        db.add(token)
-    token.platform = payload.platform or "android"
-    token.app_version = payload.app_version
-    token.version_code = payload.version_code
-    token.is_active = True
-    token.last_seen_at = now
-    token.updated_at = now
-    db.commit()
-    return DeviceTokenRegisterResponse(registered=True)
+    del payload, db
+    raise HTTPException(status_code=status.HTTP_410_GONE, detail="Use the authenticated device registration endpoint.")
 
 
 @router.post("/apk-update", response_model=ApkUpdateNotificationResponse)
@@ -82,15 +72,22 @@ def dispatch_apk_update_notifications(version_code: int, version_name: str, chan
     failed = 0
     inactive = 0
     with SessionLocal() as db:
-        tokens = db.scalars(
-            select(PushDeviceToken).where(
-                PushDeviceToken.is_active == True,  # noqa: E712
-                PushDeviceToken.platform == "android",
+        devices = db.scalars(
+            select(UserDevice).where(
+                UserDevice.is_active == True,  # noqa: E712
+                UserDevice.platform == "android",
+                (UserDevice.fcm_token_ciphertext.is_not(None) | UserDevice.fcm_token.is_not(None)),
             )
         ).all()
-        for token in tokens:
+        for device in devices:
+            target = decrypt_token(device.fcm_token_ciphertext, device.fcm_token)
+            if not target:
+                device.is_active = False
+                device.last_fcm_failure_code = "FCM_TOKEN_MISSING"
+                inactive += 1; failed += 1
+                continue
             result = firebase_notification_service.send_update_notification(
-                token.token,
+                target,
                 version_code=version_code,
                 version_name=version_name,
                 changelog=changelog,
@@ -101,8 +98,12 @@ def dispatch_apk_update_notifications(version_code: int, version_name: str, chan
             failed += 1
             if result.inactive:
                 inactive += 1
-                token.is_active = False
-                token.updated_at = datetime.utcnow()
+                device.is_active = False
+                device.fcm_token = None
+                device.fcm_token_ciphertext = None
+                device.fcm_token_hash = None
+                device.last_fcm_failure_code = result.failure_code
+                device.updated_at = datetime.utcnow()
         db.commit()
     logger.info(
         "apk_update_notification_dispatch version_code=%d sent=%d failed=%d inactive=%d",

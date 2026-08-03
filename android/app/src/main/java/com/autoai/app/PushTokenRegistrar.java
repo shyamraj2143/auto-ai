@@ -42,7 +42,7 @@ public final class PushTokenRegistrar {
         String cleanToken = clean(token);
         if (cleanToken == null) return;
         Context appContext = context.getApplicationContext();
-        Log.i(TAG, "Scheduling legacy push-token registration.");
+        Log.i(TAG, "Scheduling authenticated push-token registration.");
         EXECUTOR.execute(() -> {
             SharedPreferences preferences = appContext.getSharedPreferences(TOKEN_PREFERENCES, Context.MODE_PRIVATE);
             preferences.edit()
@@ -50,7 +50,6 @@ public final class PushTokenRegistrar {
                 .putString(LAST_FCM_TOKEN, cleanToken)
                 .commit();
             registerUserDevice(appContext, cleanToken, null, null);
-            registerUpdateToken(appContext, cleanToken);
         });
     }
 
@@ -71,7 +70,6 @@ public final class PushTokenRegistrar {
             .putString(LAST_FIREBASE_INSTALLATION_ID, cleanInstallationId)
             .commit();
         boolean registered = registerUserDevice(context, cleanInstallationId, cleanInstallationId, rotatingFromHash);
-        registerUpdateToken(context, cleanInstallationId);
         return registered;
     }
 
@@ -161,43 +159,7 @@ public final class PushTokenRegistrar {
         }
         String installationId = target.equals(storedInstallationId) ? storedInstallationId : null;
         boolean registered = registerUserDevice(context, target, installationId, rotatingFromHash);
-        registerUpdateToken(context, target);
         return registered;
-    }
-
-    private static void registerUpdateToken(Context context, String token) {
-        HttpURLConnection connection = null;
-        try {
-            URL url = new URL(trimTrailingSlash(BuildConfig.AUTO_AI_API_BASE_URL) + "/notifications/device-token");
-            connection = (HttpURLConnection) url.openConnection();
-            connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
-            connection.setReadTimeout(READ_TIMEOUT_MS);
-            connection.setRequestMethod("POST");
-            connection.setRequestProperty("Accept", "application/json");
-            connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
-            connection.setDoOutput(true);
-
-            JSONObject body = new JSONObject();
-            body.put("token", token);
-            body.put("platform", "android");
-            body.put("app_version", BuildConfig.VERSION_NAME);
-            body.put("version_code", BuildConfig.VERSION_CODE);
-            try (OutputStream output = connection.getOutputStream()) {
-                output.write(body.toString().getBytes(StandardCharsets.UTF_8));
-            }
-            int status = connection.getResponseCode();
-            if (status < 200 || status >= 300) {
-                throw new IllegalStateException("Push token register failed: " + status);
-            }
-            Log.i(TAG, "Update push token registered status=" + status);
-        } catch (Exception ignored) {
-            Log.w(TAG, "Update push token registration failed.", ignored);
-            // Push token sync should never block normal app usage.
-        } finally {
-            if (connection != null) {
-                connection.disconnect();
-            }
-        }
     }
 
     private static boolean registerUserDevice(Context context, String target, String firebaseInstallationId, String rotatingFromHash) {
