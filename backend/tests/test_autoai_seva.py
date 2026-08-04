@@ -75,10 +75,13 @@ def test_seva_demo_seed_is_idempotent_and_never_configures_a_government_portal(d
     )
     assert service and service.category == "demonstration" and service.verified is True
     assert service.provider == "AutoAI Safe Government-Service Simulator"
-    assert service.support_contact == {"label": "AutoAI Seva demo"}
+    assert service.support_contact["label"] == "AutoAI Seva demo"
+    assert service.support_contact["service_code"] == "AUTOAI_DEMO_BR_INCOME_CERTIFICATE"
+    assert service.support_contact["legal_validity"] is False
     assert len(adapters) == 1
     assert adapters[0].adapter_type == "local_verified"
     assert adapters[0].configuration["simulation"] is True
+    assert adapters[0].configuration["government_submission"] is False
 
 
 @pytest.mark.asyncio
