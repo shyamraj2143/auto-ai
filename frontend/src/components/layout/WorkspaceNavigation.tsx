@@ -1,6 +1,7 @@
 import {
   BarChart3,
   AlarmClock,
+  FileCheck2,
   LayoutDashboard,
   LogOut,
   MessageCircle,
@@ -19,6 +20,7 @@ import "./workspaceNavigation.css";
 const primaryItems = [
   { to: "/hub", label: "Dashboard", icon: LayoutDashboard },
   { to: "/chat", label: "AI Chat", icon: MessageCircle },
+  { to: "/seva", label: "AutoAI Seva", icon: FileCheck2 },
   { to: "/screen-share", label: "Screen Sharing", icon: MonitorUp },
   { to: "/call-hub/calls", label: "Calls", icon: Phone },
   { to: "/messages", label: "Messages", icon: MessagesSquare },
@@ -83,7 +85,7 @@ export function WorkspaceMobileNavigation() {
       {primaryItems.slice(0, 5).map(({ to, label, icon: Icon }) => (
         <NavLink key={to} to={to} className={({ isActive }) => isActive ? "active" : undefined}>
           <Icon size={21} />
-          <span>{label === "Screen Sharing" ? "Share" : label}</span>
+          <span>{label === "Screen Sharing" ? "Share" : label === "AutoAI Seva" ? "Seva" : label}</span>
         </NavLink>
       ))}
       <NavLink to="/settings" className={({ isActive }) => isActive ? "active autoai-mobile-more" : "autoai-mobile-more"}>
