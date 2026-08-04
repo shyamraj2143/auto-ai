@@ -34,7 +34,6 @@ def _upsert_demo_service(db: Session) -> None:
             {"key": "occupation", "label": "Occupation / व्यवसाय", "type": "text", "required": True, "min_length": 2, "max_length": 120},
             {"key": "annual_income", "label": "Annual household income / वार्षिक पारिवारिक आय", "type": "number", "required": True, "min": 0, "max": 100000000},
             {"key": "certificate_purpose", "label": "Certificate purpose / प्रमाण पत्र का उद्देश्य", "type": "select", "required": True, "options": ["Education", "Scholarship", "Government scheme", "Banking", "Other"]},
-            {"key": "demo_scenario", "label": "Demo result scenario", "type": "select", "required": False, "options": ["success", "timeout", "rejection", "additional_document", "duplicate"], "explanation": "Optional test control. Success is used when no scenario is selected."},
             {"key": "declaration", "label": "I confirm the demo details are accurate", "type": "checkbox", "required": True},
         ],
         "required_documents": [
