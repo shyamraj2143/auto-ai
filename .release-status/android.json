@@ -1,10 +1,10 @@
 {
-  "release_tag": "",
+  "release_tag": "android-403081",
   "run_attempt": "1",
-  "run_id": "30949428840",
-  "source_commit": "20f58ca217afeed1ddc7f9bf608710d94f625187",
+  "run_id": "30949507064",
+  "source_commit": "94a3c3b4f1b266e67921d2d020ae7e0ee560d14c",
   "status": "cancelled",
-  "updated_at": "2026-08-04T20:48:06.395272+00:00",
-  "version_code": "",
-  "version_name": ""
+  "updated_at": "2026-08-04T20:49:37.702288+00:00",
+  "version_code": "403081",
+  "version_name": "1.0.403081"
 }
