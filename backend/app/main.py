@@ -21,6 +21,7 @@ from app.services.presence_service import RealtimeUnavailable, presence_service
 from app.services.relationship_followup_scheduler import relationship_followup_worker
 from app.services.form_service_registry import ensure_service_registry
 from app.services.form_service_service import cleanup_expired_form_service_data
+from app.services.autoai_seva_seed import ensure_autoai_seva_demo
 from app.services.orchestration.model_registry import model_registry
 from app.websockets import call_signaling, screen_share as screen_share_signaling, user_chat
 
@@ -172,6 +173,7 @@ def create_app() -> FastAPI:
         init_db()
         with SessionLocal() as db:
             ensure_service_registry(db)
+            ensure_autoai_seva_demo(db)
             cleanup_expired_form_service_data(db)
             create_admin_from_env(db)
             apk_service.sync_filesystem_release(db)
