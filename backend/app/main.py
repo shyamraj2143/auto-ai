@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import admin, ai, alarms, assistant_actions, auth, calls, chat_sessions, chats, cms, demo_chat, device_monitoring, documents, download, form_services, health, human, intent_engine, library, live, live_websocket, memory, notifications, payments, relationship_followups, screen_share, search, social, trust_hub, user_messages, users, voice
+from app.api.routes import admin, ai, alarms, assistant_actions, auth, calls, chat_sessions, chats, cms, demo_chat, device_monitoring, documents, download, form_services, health, human, intent_engine, library, live, live_websocket, memory, notifications, payments, relationship_followups, screen_share, search, service_applications, social, trust_hub, user_messages, users, voice
 from app.core.config import settings
 from app.core.rate_limit import InMemoryRateLimitMiddleware
 from app.db.session import SessionLocal, init_db
@@ -22,6 +22,7 @@ from app.services.relationship_followup_scheduler import relationship_followup_w
 from app.services.form_service_registry import ensure_service_registry
 from app.services.form_service_service import cleanup_expired_form_service_data
 from app.services.autoai_seva_seed import ensure_autoai_seva_demo
+from app.services import autoai_seva_review as _autoai_seva_review  # noqa: F401
 from app.services.orchestration.model_registry import model_registry
 from app.websockets import call_signaling, screen_share as screen_share_signaling, user_chat
 
@@ -234,7 +235,6 @@ def create_app() -> FastAPI:
             await asyncio.gather(relationship_worker_task, return_exceptions=True)
         await presence_service.close()
 
-
     app.include_router(health.router)
     app.include_router(health.router, prefix=settings.API_V1_STR)
     app.include_router(auth.router, prefix=settings.API_V1_STR)
@@ -246,6 +246,7 @@ def create_app() -> FastAPI:
     app.include_router(assistant_actions.router, prefix=settings.API_V1_STR)
     app.include_router(intent_engine.router, prefix=settings.API_V1_STR)
     app.include_router(form_services.router, prefix=settings.API_V1_STR)
+    app.include_router(service_applications.router, prefix=settings.API_V1_STR)
     app.include_router(trust_hub.router, prefix=settings.API_V1_STR)
     app.include_router(demo_chat.router, prefix=settings.API_V1_STR)
     app.include_router(documents.router, prefix=settings.API_V1_STR)
