@@ -1,58 +1,144 @@
-# Auto-AI
+<p align="center">
+  <img src="docs/assets/auto-ai-banner.svg" alt="Auto AI — multi-model assistant platform" width="100%" />
+</p>
 
-Auto-AI is a ChatGPT-style AI assistant built with React, TypeScript, Tailwind CSS, FastAPI, SQLAlchemy, JWT authentication, and selectable OpenAI, Groq, or Amazon Bedrock chat providers.
+<p align="center">
+  <a href="https://github.com/shyamraj2143/auto-ai"><img src="https://img.shields.io/badge/status-active%20development-0866FF?style=for-the-badge" alt="Status: active development" /></a>
+  <img src="https://img.shields.io/badge/frontend-React%20%2B%20TypeScript-202A44?style=for-the-badge&logo=react" alt="React and TypeScript" />
+  <img src="https://img.shields.io/badge/backend-FastAPI-0B8F78?style=for-the-badge&logo=fastapi" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/platform-Web%20%2B%20Android-293A5F?style=for-the-badge&logo=android" alt="Web and Android" />
+</p>
 
-## Features
+<h1 align="center">Auto AI</h1>
+<p align="center"><strong>A full-stack, multi-model AI assistant built for chat, documents, voice, vision, personalization and real-time communication.</strong></p>
 
-- ChatGPT-style chat interface with sidebar history
-- Per-message OpenAI/Groq/Bedrock provider and model selection
-- Light and dark modes
-- Streaming OpenAI or Groq responses, with Bedrock responses returned through the same chat stream flow
-- Markdown rendering, syntax highlighting, and copyable code blocks
-- JWT login/register/logout
-- Persistent chats and messages
-- PDF, TXT, and DOCX upload with AI summaries
-- Chat with selected uploaded documents
-- Browser voice input with Groq speech-to-text
-- Browser text-to-speech for assistant messages
-- Privacy-safe registered-user discovery and real WebRTC audio/video calls
-- Redis-backed multi-instance presence, secure signaling tickets and busy locks
-- Android incoming-call FCM notifications and active-call foreground service
-- Ultra Human Mode adaptive conversation layer with emotion, tone, memory, personality, and relationship engines
-- User-owned memory APIs for inspectable, editable long-term personalization
+> **Project status:** actively developed. The repository combines a production-minded FastAPI backend, React web client and Android communication layer. Runtime code and behavior are independent from this documentation presentation.
+
+## Product snapshot
+
+| Area | What Auto AI provides |
+|---|---|
+| **AI workspace** | ChatGPT-style conversations, streaming responses, Markdown, code highlighting and model/provider selection |
+| **Multimodal tools** | Document upload and summarization, document chat, image analysis, speech-to-text and text-to-speech |
+| **Human layer** | Adaptive tone, emotion-aware conversation, inspectable long-term memory and user-controlled personalization |
+| **Communication** | Privacy-safe user discovery, WebRTC audio/video calls, Redis presence, TURN relay credentials and Android call delivery |
+| **Operations** | JWT authentication, admin statistics, Docker support, persistent production data and automated Android releases |
+
+## System architecture
+
+```mermaid
+flowchart LR
+    U[Web / Android User] --> F[React + TypeScript Client]
+    U --> A[Android Call Layer]
+    F --> API[FastAPI API]
+    A --> API
+    API --> AUTH[JWT + User Services]
+    API --> CHAT[Chat + Memory Engine]
+    API --> DOCS[Document Pipeline]
+    API --> RTC[Realtime Signaling]
+    CHAT --> MODELS[OpenAI / Groq / Bedrock]
+    DOCS --> MODELS
+    RTC --> REDIS[(Redis)]
+    RTC --> TURN[STUN / TURN]
+    API --> DB[(Persistent Database)]
+    API --> FCM[Firebase Cloud Messaging]
+```
+
+## Core capabilities
+
+### Intelligence
+
+- Selectable OpenAI, Groq and Amazon Bedrock providers
+- Streaming chat responses through a unified conversation flow
 - Web search mode through Groq Compound
-- Image analysis through a configurable Groq vision model
-- Code generation, debugging, and explanation endpoint
-- Admin dashboard with usage and system stats
-- Docker support
+- Configurable image-analysis and speech-transcription models
+- Code generation, debugging and explanation endpoint
+- Ultra Human Mode for adaptive tone, memory, personality and relationship context
 
-## Requirements
+### Documents and knowledge
+
+- PDF, TXT and DOCX upload
+- AI-generated summaries
+- Chat with selected uploaded documents
+- Persistent chats, messages and user-owned memory APIs
+
+### Real-time communication
+
+- Registered-user discovery with privacy boundaries
+- WebRTC audio and video calls
+- Redis-backed presence, secure signaling tickets and busy locks
+- Short-lived TURN relay credentials
+- Android incoming-call FCM delivery and active-call foreground service
+
+### Platform and administration
+
+- JWT login, registration and logout
+- Admin dashboard with usage and system statistics
+- Light and dark themes
+- Docker and Docker Compose support
+- Automated Android build and release workflow
+- Persistent production database safeguards
+
+## Technology map
+
+| Layer | Technologies |
+|---|---|
+| **Frontend** | React, TypeScript, Tailwind CSS, Markdown rendering, browser media APIs |
+| **Backend** | Python 3.12+, FastAPI, SQLAlchemy, JWT, WebSocket/realtime services |
+| **AI providers** | OpenAI, Groq, Amazon Bedrock |
+| **Realtime** | WebRTC, Redis, STUN/TURN, Firebase Cloud Messaging |
+| **Data** | SQLite for local development; managed SQL or volume-backed SQLite for production |
+| **Delivery** | Docker, GitHub Actions, Railway-compatible deployment configuration |
+
+## Quick start
+
+### Requirements
 
 - Python 3.12+
 - Node.js 20+
-- An OpenAI, Groq, or Amazon Bedrock API key
+- An API key for at least one supported AI provider
 
-## Setup
-
-1. Copy environment variables:
+### 1. Configure environment variables
 
 ```bash
 cp .env.example .env
 ```
 
-2. Set `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and `ADMIN_NAME` in `.env`. Set `AI_PROVIDER=bedrock` and `BEDROCK_API_KEY`, or select OpenAI/Groq and configure `AUTO_AI_OPENAI_API_KEY` or `GROQ_API_KEY`.
+Set the initial admin credentials and configure at least one provider:
 
-3. Start the backend:
+```text
+ADMIN_EMAIL=...
+ADMIN_PASSWORD=...
+ADMIN_NAME=...
+
+AI_PROVIDER=groq
+GROQ_API_KEY=...
+```
+
+### 2. Start the backend
 
 ```bash
 cd backend
 python -m venv .venv
+```
+
+Windows:
+
+```powershell
 .venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-4. Start the frontend:
+macOS / Linux:
+
+```bash
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### 3. Start the frontend
 
 ```bash
 cd frontend
@@ -60,89 +146,98 @@ npm install
 npm run dev
 ```
 
-5. Open:
+Open `http://localhost:5173`.
 
-```text
-http://localhost:5173
-```
-
-The first admin is created from `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and `ADMIN_NAME` on backend startup. Public registration always creates normal user accounts.
+The first admin is created from `ADMIN_EMAIL`, `ADMIN_PASSWORD` and `ADMIN_NAME` during backend startup. Public registration creates standard user accounts.
 
 ## Docker
 
-From the project root:
+From the repository root:
 
 ```bash
 cp .env.example .env
 docker compose up --build
 ```
 
-Or from the `docker` folder:
+Or from the Docker folder:
 
 ```bash
 cd docker
 docker compose up --build
 ```
 
-Frontend: `http://localhost:5173`
+| Service | Local address |
+|---|---|
+| Frontend | `http://localhost:5173` |
+| Backend health | `http://localhost:8000/api/v1/health` |
 
-Backend health: `http://localhost:8000/api/v1/health`
+## Configuration reference
 
-## Configuration
+<details>
+<summary><strong>AI providers and models</strong></summary>
 
-Important environment variables:
+| Variable | Purpose |
+|---|---|
+| `AI_PROVIDER` | Default provider: `openai`, `groq` or `bedrock` |
+| `AUTO_AI_OPENAI_API_KEY` | Project-specific OpenAI API key |
+| `OPENAI_MODEL` | Default OpenAI chat model |
+| `GROQ_API_KEY` | Groq API key |
+| `GROQ_MODEL` | Default Groq chat model |
+| `GROQ_SEARCH_MODEL` | Groq search-capable model |
+| `GROQ_VISION_MODEL` | Image-analysis model |
+| `GROQ_AUDIO_MODEL` | Audio transcription model |
+| `BEDROCK_API_KEY` | Amazon Bedrock API key |
+| `BEDROCK_REGION` | Bedrock runtime region |
+| `BEDROCK_MODEL` | Bedrock chat model |
+| `BEDROCK_ENDPOINT_MODE` | `mantle`, `runtime` or `auto` |
+| `BEDROCK_MANTLE_BASE_URL` | Optional Mantle endpoint override |
+| `BEDROCK_AUTH_MODE` | `auto`, `api_key` or `aws` |
+| `AWS_ACCESS_KEY_ID` | Optional SigV4 credential |
+| `AWS_SECRET_ACCESS_KEY` | Optional SigV4 credential |
+| `AWS_SESSION_TOKEN` | Optional temporary SigV4 credential |
 
-- `AI_PROVIDER`: chat provider, `openai`, `groq`, or `bedrock`
-- `AUTO_AI_OPENAI_API_KEY`: project-specific OpenAI API key
-- `OPENAI_MODEL`: OpenAI chat model, default `gpt-4.1-mini`
-- `GROQ_API_KEY`: Groq API key
-- `GROQ_MODEL`: Groq chat model, default `openai/gpt-oss-120b`
-- `GROQ_SEARCH_MODEL`: Groq search-capable model, default `groq/compound-mini`
-- `GROQ_VISION_MODEL`: Groq image analysis model
-- `GROQ_AUDIO_MODEL`: Groq transcription model
-- `BEDROCK_API_KEY`: Amazon Bedrock API key
-- `BEDROCK_REGION`: Amazon Bedrock runtime region, default `us-south-1`
-- `BEDROCK_MODEL`: Bedrock chat model, default `openai.gpt-oss-120b`
-- `BEDROCK_ENDPOINT_MODE`: Bedrock endpoint mode, `mantle`, `runtime`, or `auto`; default `mantle`
-- `BEDROCK_MANTLE_BASE_URL`: optional Bedrock Mantle base URL override
-- `BEDROCK_AUTH_MODE`: Bedrock auth mode, `auto`, `api_key`, or `aws`; default `auto`
-- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`: optional SigV4 fallback credentials for Bedrock
-- `SECRET_KEY`: JWT signing secret
-- `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME`: startup-only first admin bootstrap credentials
-- `DATABASE_URL`: production PostgreSQL/MySQL URL, such as Railway MySQL/PostgreSQL
-- `MYSQL_URL`: Railway MySQL URL fallback when `DATABASE_URL` is not used
-- `SQLITE_PATH`: SQLite database path; production SQLite must use a mounted volume path
-- `BACKEND_CORS_ORIGINS`: frontend origins allowed by FastAPI
-- `PASSWORD_RESET_*`, `SMTP_*`: forgot-password reset token lifetime and SMTP email delivery settings
-- `CALL_FEATURE_ENABLED`, `REDIS_URL`: calling feature switch and shared realtime state
-- `TURN_SERVER_URLS`, `TURN_SHARED_SECRET`, `TURN_REALM`, `TURN_CREDENTIAL_TTL`: short-lived Coturn relay credentials
-- `FCM_PROJECT_ID`, `FCM_SERVICE_ACCOUNT_JSON`: Android background incoming-call delivery
+</details>
 
-## Production Data Persistence
+<details>
+<summary><strong>Application, database and communication</strong></summary>
 
-Production user data must never be stored inside the source code folder. Redeploys replace the app filesystem, so paths such as `database/auto_ai.db` are development-only and unsafe for production.
+| Variable | Purpose |
+|---|---|
+| `SECRET_KEY` | JWT signing secret |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME` | Initial admin bootstrap values |
+| `DATABASE_URL` | Managed production SQL database URL |
+| `MYSQL_URL` | Railway MySQL fallback URL |
+| `SQLITE_PATH` | SQLite file path; production requires a mounted volume |
+| `BACKEND_CORS_ORIGINS` | Allowed frontend origins |
+| `PASSWORD_RESET_*`, `SMTP_*` | Password-reset and email delivery settings |
+| `CALL_FEATURE_ENABLED` | Realtime calling feature switch |
+| `REDIS_URL` | Shared realtime state |
+| `TURN_SERVER_URLS` | STUN/TURN endpoints |
+| `TURN_SHARED_SECRET`, `TURN_REALM`, `TURN_CREDENTIAL_TTL` | Short-lived relay credential configuration |
+| `FCM_PROJECT_ID`, `FCM_SERVICE_ACCOUNT_JSON` | Android background incoming-call delivery |
 
-Startup uses additive schema creation/migrations only:
+</details>
+
+## Production data persistence
+
+Production user data must not live inside the source-code directory because redeployments can replace the application filesystem.
+
+The startup path uses additive schema creation and migrations:
 
 - Existing tables are not dropped.
 - Existing rows are not deleted.
 - Missing columns are added.
-- Admin bootstrap creates the configured admin only when it does not already exist.
-- Existing admin passwords and normal users are not reset.
+- Admin bootstrap creates an account only when it does not already exist.
+- Existing user and admin passwords are not reset.
+- Database targets are logged in masked form without printing credentials.
 
-The backend logs the database backend and a masked target on startup. Passwords and secrets are not printed.
+### Railway SQLite volume
 
-### Railway SQLite Volume
-
-Use this only if you are intentionally running SQLite in production.
-
-Railway volume:
+Use only when intentionally running SQLite in production.
 
 ```text
 Mount Path: /data
 ```
-
-Railway environment:
 
 ```text
 ENVIRONMENT=production
@@ -150,51 +245,40 @@ DB_BACKEND=sqlite
 SQLITE_PATH=/data/auto_ai.db
 ```
 
-Do not set `SQLITE_PATH=database/auto_ai.db` in production.
+Do not use `database/auto_ai.db` as a production path.
 
-### Railway MySQL
-
-Use Railway MySQL for persistent production data.
-
-Railway environment:
+### Railway managed database
 
 ```text
 ENVIRONMENT=production
-DATABASE_URL=<Railway MySQL URL>
+DATABASE_URL=<managed database URL>
 ```
 
-If Railway exposes `MYSQL_URL` instead, either set `DATABASE_URL` to that value or set:
+When Railway exposes `MYSQL_URL`, it can be assigned directly or copied into `DATABASE_URL`.
 
-```text
-ENVIRONMENT=production
-MYSQL_URL=<Railway MySQL URL>
-```
+If production starts without a persistent database URL or a safe `/data` SQLite path, the backend fails clearly instead of silently creating a disposable local database.
 
-If `ENVIRONMENT=production` and no persistent database URL or safe `/data` SQLite path is configured, the backend fails startup with a clear error instead of silently creating a new local SQLite database.
+## APK metadata and automatic Android releases
 
-## APK Version Persistence
+APK version metadata and download counts are stored in the database.
 
-APK version metadata and download counts are stored in the database, not hardcoded in the frontend.
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/v1/download/apk/latest` | Latest active database version |
+| `POST /api/v1/download/apk/count` | Increment download count |
+| `GET /api/v1/download/apk/versions` | Version history, timestamps and counts |
+| `POST /api/v1/admin/apk/version` | Admin version metadata management |
 
-- `GET /api/v1/download/apk/latest` returns the latest active DB version.
-- `POST /api/v1/download/apk/count` increments `download_count` in the database.
-- `GET /api/v1/download/apk/versions` returns all versions with release/update timestamps and counts.
-- `POST /api/v1/admin/apk/version` lets admins add or update version metadata.
+Pushes to `main` run `.github/workflows/android-release.yml`. The workflow builds a signed APK, increments `versionCode`, publishes a GitHub release and exposes the new version to mobile update checks.
 
-Do not store APK stats in source files. Use the same persistent production database as users, chats, subscriptions, tokens, and admin data.
-
-## Automatic Android Releases
-
-Pushes to `main` run `.github/workflows/android-release.yml`. The workflow builds a signed APK, increments the Android `versionCode`, publishes a GitHub APK release, and mobile apps show an update dialog plus Android notification when the backend detects the new release.
-
-Required GitHub repository secrets:
+Required repository secrets:
 
 - `AUTO_AI_ANDROID_KEYSTORE_BASE64`
 - `AUTO_AI_ANDROID_KEYSTORE_PASSWORD`
 - `AUTO_AI_ANDROID_KEY_ALIAS`
 - `AUTO_AI_ANDROID_KEY_PASSWORD`
 
-Optional secrets:
+Optional release secrets:
 
 - `AUTO_AI_API_BASE_URL`
 - `AUTO_AI_ADMIN_EMAIL`
@@ -202,20 +286,18 @@ Optional secrets:
 - `AUTO_AI_GOOGLE_WEB_CLIENT_ID`
 - `AUTO_AI_APK_FORCE_UPDATE`
 
-## Notes
+## Documentation
 
-SQLite under `database/auto_ai.db` is for local development only. Production must use a Railway volume-backed SQLite file at `/data/auto_ai.db` or a managed database URL.
+- `docs/human-mode.md` — adaptive conversation architecture, prompts, APIs and memory model
+- `docs/calling.md` — calling architecture, privacy boundaries, Redis/TURN/FCM deployment and verification
 
-See `docs/human-mode.md` for the adaptive conversation architecture, database schema, APIs, prompts, and memory design.
+## Security notes
 
-See `docs/calling.md` for calling architecture, privacy boundaries, Redis/TURN/FCM deployment, Android behavior, and cross-device verification.
+- Never commit API keys, JWT secrets, SMTP credentials or service-account JSON.
+- Store production secrets in the deployment provider or GitHub Actions secrets.
+- Use a managed database or mounted volume for persistent production data.
+- Treat call signaling, TURN credentials and user discovery as security-sensitive surfaces.
 
-Provider endpoints used by this build:
+---
 
-- OpenAI Chat Completions endpoint: `https://api.openai.com/v1/chat/completions`
-- Chat completions endpoint: `https://api.groq.com/openai/v1/chat/completions`
-- OpenAI-compatible Groq API base URL: `https://api.groq.com/openai/v1`
-- Amazon Bedrock Mantle Chat Completions endpoint: `https://bedrock-mantle.{region}.api.aws/v1/chat/completions`
-- Amazon Bedrock Converse endpoint: `https://bedrock-runtime.{region}.amazonaws.com/model/{modelId}/converse`
-
-Bedrock uses the Mantle Chat Completions endpoint by default because AWS recommends it for OpenAI-compatible chat. If the native runtime endpoint returns `Operation not allowed`, the key/role can read account model metadata but cannot invoke runtime models; enable Bedrock model invocation permissions such as `bedrock:InvokeModel`/Converse for the selected model and region or keep `BEDROCK_ENDPOINT_MODE=mantle`.
+<p align="center"><strong>Designed and engineered by Shyamraj.</strong></p>
