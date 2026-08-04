@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any, Protocol
 
 from app.core.config import settings
@@ -22,6 +21,21 @@ class UnsupportedAdapterOperation(AdapterError):
 
 class SubmissionOutcomeUnknown(AdapterError):
     code = "SUBMISSION_UNVERIFIED"
+    retryable = True
+
+
+class AdapterKillSwitchActive(AdapterError):
+    code = "ADAPTER_DISABLED"
+    retryable = False
+
+
+class DemoSubmissionRejected(AdapterError):
+    code = "DEMO_REJECTED"
+    retryable = False
+
+
+class AdditionalDocumentRequired(AdapterError):
+    code = "ADDITIONAL_DOCUMENT_REQUIRED"
     retryable = True
 
 
@@ -129,6 +143,51 @@ class LocalVerifiedAdapter(BaseAdapter):
         return {"accepted": accepted, "session_status": "VERIFIED" if accepted else "REJECTED"}
 
 
+class MockPortalAdapter(LocalVerifiedAdapter):
+    """Deterministic simulator for the complete AutoAI Seva demo lifecycle."""
+
+    key = "mock_portal"
+
+    def _scenario(self, context: AdapterContext) -> str:
+        configured = str((context.adapter.configuration or {}).get("demo_scenario", "success"))
+        selected = str(context.fields.get("demo_scenario") or configured).strip().casefold()
+        return selected if selected in {"success", "timeout", "rejection", "additional_document", "duplicate"} else "success"
+
+    def prepare(self, context: AdapterContext) -> dict[str, Any]:
+        result = super().prepare(context)
+        return {
+            **result,
+            "simulation": True,
+            "scenario": self._scenario(context),
+            "protected_actions": ["final_confirmation"],
+            "government_submission": False,
+        }
+
+    def submit(self, context: AdapterContext, idempotency_key: str) -> SubmissionResult:
+        scenario = self._scenario(context)
+        if scenario == "timeout":
+            raise SubmissionOutcomeUnknown("The demo portal timed out after receiving the request")
+        if scenario == "rejection":
+            raise DemoSubmissionRejected("The demo portal rejected the application for testing")
+        if scenario == "additional_document":
+            raise AdditionalDocumentRequired("The demo portal requested one additional supporting document")
+        # Both success and duplicate use the stable parent implementation. The task-level
+        # idempotency record ensures the duplicate scenario cannot create a second receipt.
+        return super().submit(context, idempotency_key)
+
+    def consume_secret(self, context: AdapterContext, kind: str, secret: str) -> dict[str, Any]:
+        del context
+        accepted = (
+            (kind == "otp" and secret.isdigit() and len(secret) == 6)
+            or (kind == "captcha" and bool(secret.strip()) and len(secret) <= 32)
+        )
+        return {
+            "accepted": accepted,
+            "session_status": "VERIFIED" if accepted else "REJECTED",
+            "persisted_secret": False,
+        }
+
+
 class GuidedBrowserAdapter(BaseAdapter):
     key = "guided_browser"
 
@@ -142,6 +201,46 @@ class GuidedBrowserAdapter(BaseAdapter):
     def prepare(self, context: AdapterContext) -> dict[str, Any]:
         result = super().prepare(context)
         return {**result, "guided_only": True, "portal_url": context.portal.entry_url if context.portal else None}
+
+
+class BiharIncomeAssistedAdapter(GuidedBrowserAdapter):
+    """User-assisted Bihar ServicePlus flow; never represents autonomous submission."""
+
+    key = "bihar_income_assisted"
+
+    def availability(self, context: AdapterContext) -> dict[str, Any]:
+        result = super().availability(context)
+        return {
+            **result,
+            "mode": "USER_ASSISTED_BROWSER",
+            "protected_actions": ["otp", "captcha", "declaration", "final_submit"],
+        }
+
+    def prepare(self, context: AdapterContext) -> dict[str, Any]:
+        result = super().prepare(context)
+        return {
+            **result,
+            "mode": "USER_ASSISTED_BROWSER",
+            "assisted_steps": [
+                "Review the prepared applicant information",
+                "Open the verified Bihar ServicePlus destination",
+                "Enter OTP or login details directly on the official portal",
+                "Solve CAPTCHA directly on the official portal",
+                "Review the official declaration and submit yourself",
+                "Return to AutoAI with the application reference for tracking",
+            ],
+            "auto_submit": False,
+            "government_submission": False,
+        }
+
+    def track(self, context: AdapterContext, application_id: str | None) -> dict[str, Any]:
+        del context
+        return {
+            "status": "CHECK_OFFICIAL_PORTAL" if application_id else "AWAITING_APPLICATION_REFERENCE",
+            "verified": False,
+            "application_id": application_id,
+            "message": "Use the official Bihar ServicePlus tracking page and confirm the returned status.",
+        }
 
 
 class OfficialApiAdapter(BaseAdapter):
@@ -161,6 +260,20 @@ class HumanHandoffAdapter(BaseAdapter):
 
 
 def adapter_for(record: PortalAdapterRecord) -> ServiceAdapter:
+    configuration = record.configuration or {}
+    if not record.enabled or configuration.get("kill_switch_active") is True:
+        raise AdapterKillSwitchActive("This service adapter has been disabled by the safety kill switch")
+
+    # Adapter keys select narrowly scoped implementations without changing legacy
+    # adapter_type values used by existing authorization and submit guards.
+    keyed_adapters: dict[str, ServiceAdapter] = {
+        "autoai_seva_demo_local_verified": MockPortalAdapter(),
+        "bihar_serviceplus_guided": BiharIncomeAssistedAdapter(),
+    }
+    keyed = keyed_adapters.get(record.adapter_key)
+    if keyed:
+        return keyed
+
     adapters: dict[str, ServiceAdapter] = {
         "local_verified": LocalVerifiedAdapter(),
         "guided_browser": GuidedBrowserAdapter(),
