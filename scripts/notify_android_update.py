@@ -19,7 +19,7 @@ def read_http_error(exc: error.HTTPError) -> str:
     try:
         return exc.read().decode("utf-8", errors="replace")
     except Exception:
-        return exc.reason
+        return str(exc.reason)
 
 
 def post_notification(base_url: str, secret: str, payload: dict[str, object]) -> dict[str, object]:
@@ -34,7 +34,8 @@ def post_notification(base_url: str, secret: str, payload: dict[str, object]) ->
         method="POST",
     )
     with request.urlopen(req, timeout=120) as response:
-        return json.loads(response.read().decode("utf-8"))
+        body = response.read().decode("utf-8")
+        return json.loads(body) if body else {}
 
 
 def main() -> int:
@@ -47,8 +48,8 @@ def main() -> int:
     args = parser.parse_args()
 
     if not args.secret:
-        print("AUTO_AI_UPDATE_NOTIFY_SECRET is missing; skipping app update push notification.")
-        return 0
+        print("AUTO_AI_UPDATE_NOTIFY_SECRET is required for automatic mobile updates.", file=sys.stderr)
+        return 1
 
     try:
         result = post_notification(
@@ -65,6 +66,14 @@ def main() -> int:
         return 1
     except Exception as exc:
         print(f"Notification failed: {exc}", file=sys.stderr)
+        return 1
+
+    if bool(result.get("skipped")):
+        print(f"Notification dispatch was skipped: {result.get('detail', 'unknown reason')}", file=sys.stderr)
+        return 1
+    detail = str(result.get("detail") or "")
+    if "queued" not in detail.casefold():
+        print(f"Notification API returned an unexpected response: {json.dumps(result, sort_keys=True)}", file=sys.stderr)
         return 1
 
     print(json.dumps(result, indent=2, sort_keys=True))
