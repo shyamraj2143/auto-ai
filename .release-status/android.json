@@ -1,10 +1,10 @@
 {
-  "release_tag": "android-403051",
+  "release_tag": "",
   "run_attempt": "1",
-  "run_id": "30949229802",
-  "source_commit": "1dc4f9977cef2f0bd246382fed5569409f14356f",
+  "run_id": "30949361011",
+  "source_commit": "8e2c8990bef470510b71272dfbfd180b05e35ec3",
   "status": "cancelled",
-  "updated_at": "2026-08-04T20:46:20.831061+00:00",
-  "version_code": "403051",
-  "version_name": "1.0.403051"
+  "updated_at": "2026-08-04T20:47:03.837654+00:00",
+  "version_code": "",
+  "version_name": ""
 }
