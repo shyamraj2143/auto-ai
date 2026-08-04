@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class UserCreate(BaseModel):
@@ -63,6 +63,32 @@ class UserProfileUpdate(BaseModel):
     phone_number: str | None = Field(default=None, max_length=32)
     memory_enabled: bool | None = None
     feedback_learning_enabled: bool | None = None
+
+
+class PhoneVerificationSend(BaseModel):
+    phone_country_code: str = Field(min_length=2, max_length=8)
+    phone_number: str = Field(min_length=6, max_length=32)
+
+
+class PhoneVerificationCheck(BaseModel):
+    code: str = Field(min_length=4, max_length=10)
+
+    @field_validator("code")
+    @classmethod
+    def digits_only(cls, value: str) -> str:
+        normalized = "".join(character for character in value if character.isdigit())
+        if not 4 <= len(normalized) <= 10:
+            raise ValueError("Enter a valid verification code.")
+        return normalized
+
+
+class PhoneVerificationStatus(BaseModel):
+    message: str
+    destination: str
+    expires_in_seconds: int = 600
+    resend_after_seconds: int = 30
+    verified: bool = False
+    user: UserRead | None = None
 
 
 class UsernameAvailability(BaseModel):
