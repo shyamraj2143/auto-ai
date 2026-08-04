@@ -8,7 +8,8 @@ from typing import Any, Callable
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.form_service import ConsentGrant, ServicePortal, ServiceTask, SubmissionConfirmation
+from app.models.form_service import ServicePortal, ServiceTask, SubmissionConfirmation
+from app.services.autoai_seva_review import validate_review_binding
 from app.services.form_service_registry import RegistrySecurityError, validate_portal_url
 from app.services.trust_gateway import GatewayInput, GatewayStatus, authorize_and_execute
 
@@ -63,15 +64,13 @@ def evaluate_task_action(
             return ServiceGatewayResult(ServiceDecision.REQUIRE_CONFIRMATION, "USER_CONFIRMATION_REQUIRED", "A valid task confirmation is required")
         if confirmation.status != "CONFIRMED" or confirmation.expires_at <= datetime.utcnow():
             return ServiceGatewayResult(ServiceDecision.REQUIRE_CONFIRMATION, "USER_CONFIRMATION_REQUIRED", "Submission confirmation is missing or expired")
-        active_consent = db.scalar(
-            select(ConsentGrant).where(
-                ConsentGrant.task_id == task.id,
-                ConsentGrant.user_id == user_id,
-                ConsentGrant.status == "ACTIVE",
-            ).order_by(ConsentGrant.created_at.desc())
-        )
-        if not active_consent or (active_consent.expires_at and active_consent.expires_at <= datetime.utcnow()):
-            return ServiceGatewayResult(ServiceDecision.DENY, "POLICY_BLOCKED", "Active scoped consent is required before submission")
+        review_valid, review_explanation = validate_review_binding(db, task, confirmation)
+        if not review_valid:
+            return ServiceGatewayResult(
+                ServiceDecision.REQUIRE_CONFIRMATION,
+                "REVIEW_HASH_MISMATCH",
+                review_explanation,
+            )
     return ServiceGatewayResult(ServiceDecision.ALLOW, "ALLOW", "Service policy checks passed")
 
 
@@ -87,8 +86,9 @@ def execute_through_trust_gateway(
     decision = evaluate_task_action(db, user_id=user_id, task=task, action="submit", confirmation=confirmation)
     if decision.decision != ServiceDecision.ALLOW:
         return decision
-    # Trust Hub receives a preconfirmed high-risk action after the service gateway
-    # validates the concrete confirmation, preserving emergency-pause and policy enforcement.
+    # Trust Hub receives a preconfirmed high-risk action only after the service gateway
+    # validates ownership, portal origin, the deterministic review hash, and a matching
+    # final-consent lease. Emergency-pause and policy enforcement remain centralized.
     result = authorize_and_execute(
         db,
         user_id,
