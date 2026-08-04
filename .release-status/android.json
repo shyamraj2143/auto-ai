@@ -1,10 +1,10 @@
 {
-  "release_tag": "android-402721",
+  "release_tag": "android-402731",
   "run_attempt": "1",
-  "run_id": "30909629462",
-  "source_commit": "e6669f4d9a15cf3d5711fff2ad0dffd88cb1d8ae",
-  "status": "success",
-  "updated_at": "2026-08-04T12:36:58.815075+00:00",
-  "version_code": "402721",
-  "version_name": "1.0.402721"
+  "run_id": "30910182215",
+  "source_commit": "0e0b4f6dac45cbae2375ff9bd67f718fb5a9c417",
+  "status": "cancelled",
+  "updated_at": "2026-08-04T12:41:49.115413+00:00",
+  "version_code": "402731",
+  "version_name": "1.0.402731"
 }
