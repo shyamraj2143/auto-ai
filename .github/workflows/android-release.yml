@@ -1,4 +1,4 @@
-name: Automatic Android update
+name: Android release
 
 on:
   push:
@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: auto-android-update-main
-  cancel-in-progress: true
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -18,6 +18,7 @@ jobs:
     name: Build, publish and notify
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    environment: production
     env:
       AUTO_AI_API_BASE_URL: https://auto-ai-production-a6ef.up.railway.app/api/v1
       AUTO_AI_ADMIN_EMAIL: ${{ secrets.AUTO_AI_ADMIN_EMAIL }}
@@ -64,7 +65,7 @@ jobs:
           java-version: 21
           cache: gradle
 
-      - name: Validate automatic-release secrets
+      - name: Validate production signing secrets
         shell: bash
         run: |
           missing=()
@@ -75,15 +76,13 @@ jobs:
             AUTO_AI_ANDROID_KEY_PASSWORD \
             AUTO_AI_ADMIN_EMAIL \
             AUTO_AI_ADMIN_PASSWORD \
-            AUTO_AI_UPDATE_NOTIFY_SECRET \
             AUTO_AI_EXPECTED_SIGNING_SHA256; do
             if [ -z "${!name:-}" ]; then
               missing+=("$name")
             fi
           done
           if [ "${#missing[@]}" -gt 0 ]; then
-            printf 'Missing GitHub Actions repository secrets: %s\n' "${missing[*]}" >&2
-            echo 'Add these as repository Actions secrets so main pushes never wait for an environment approval.' >&2
+            printf 'Missing production environment secrets: %s\n' "${missing[*]}" >&2
             exit 1
           fi
 
@@ -99,7 +98,7 @@ jobs:
           changelog="$(git log -1 --pretty=%s | tr '\r\n' ' ' | cut -c1-180)"
           {
             echo 'AUTO_AI_CHANGELOG<<AUTOAI_EOF'
-            echo "${changelog:-AutoAI automatic update}"
+            echo "${changelog:-AutoAI update}"
             echo 'AUTOAI_EOF'
           } >> "$GITHUB_ENV"
           if [ -n "${AUTO_AI_GOOGLE_SERVICES_JSON_BASE64:-}" ]; then
@@ -212,7 +211,8 @@ jobs:
           done
           test "$success" -eq 1
 
-      - name: Notify every registered Android installation
+      - name: Notify registered Android installations when configured
+        if: ${{ env.AUTO_AI_UPDATE_NOTIFY_SECRET != '' }}
         shell: bash
         run: |
           success=0
