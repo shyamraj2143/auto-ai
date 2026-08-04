@@ -1,121 +1,206 @@
 <p align="center">
-  <img src="docs/assets/auto-ai-banner.svg" alt="Auto AI — multi-model assistant platform" width="100%" />
+  <img src="docs/assets/auto-ai-hero-3d.svg" width="100%" alt="Auto AI — advanced 3D multi-model intelligence platform" />
 </p>
 
 <p align="center">
-  <a href="https://github.com/shyamraj2143/auto-ai"><img src="https://img.shields.io/badge/status-active%20development-0866FF?style=for-the-badge" alt="Status: active development" /></a>
-  <img src="https://img.shields.io/badge/frontend-React%20%2B%20TypeScript-202A44?style=for-the-badge&logo=react" alt="React and TypeScript" />
-  <img src="https://img.shields.io/badge/backend-FastAPI-0B8F78?style=for-the-badge&logo=fastapi" alt="FastAPI" />
-  <img src="https://img.shields.io/badge/platform-Web%20%2B%20Android-293A5F?style=for-the-badge&logo=android" alt="Web and Android" />
+  <img src="https://img.shields.io/badge/STATUS-ACTIVE%20DEVELOPMENT-6C4DFF?style=for-the-badge" alt="Active development" />
+  <img src="https://img.shields.io/badge/PLATFORM-WEB%20%2B%20ANDROID-00B8FF?style=for-the-badge&logo=android&logoColor=white" alt="Web and Android" />
+  <img src="https://img.shields.io/badge/AI-MULTI--MODEL-FF4FCB?style=for-the-badge" alt="Multi-model AI" />
+  <img src="https://img.shields.io/badge/REALTIME-WEBRTC-00D9C0?style=for-the-badge&logo=webrtc&logoColor=white" alt="WebRTC" />
 </p>
 
-<h1 align="center">Auto AI</h1>
-<p align="center"><strong>A full-stack, multi-model AI assistant built for chat, documents, voice, vision, personalization and real-time communication.</strong></p>
+<p align="center">
+  <a href="#-experience-layer">Experience</a> ·
+  <a href="#-intelligence-engine">Intelligence</a> ·
+  <a href="#-system-architecture">Architecture</a> ·
+  <a href="#-technology-universe">Technology</a> ·
+  <a href="#-launch-locally">Setup</a> ·
+  <a href="#-production-readiness">Production</a>
+</p>
 
-> **Project status:** actively developed. The repository combines a production-minded FastAPI backend, React web client and Android communication layer. Runtime code and behavior are independent from this documentation presentation.
+<h1 align="center">AUTO AI</h1>
+<h3 align="center">One intelligent workspace for conversation, documents, voice, vision, memory and realtime communication.</h3>
 
-## Product snapshot
+<p align="center">
+  Auto AI is a full-stack AI product built around a unified assistant experience. It connects multiple AI providers with persistent conversations, multimodal tools, user-controlled memory, Android integration and secure realtime calling.
+</p>
 
-| Area | What Auto AI provides |
-|---|---|
-| **AI workspace** | ChatGPT-style conversations, streaming responses, Markdown, code highlighting and model/provider selection |
-| **Multimodal tools** | Document upload and summarization, document chat, image analysis, speech-to-text and text-to-speech |
-| **Human layer** | Adaptive tone, emotion-aware conversation, inspectable long-term memory and user-controlled personalization |
-| **Communication** | Privacy-safe user discovery, WebRTC audio/video calls, Redis presence, TURN relay credentials and Android call delivery |
-| **Operations** | JWT authentication, admin statistics, Docker support, persistent production data and automated Android releases |
+---
 
-## System architecture
+## ✨ Experience Layer
+
+<table>
+<tr>
+<td width="33%" valign="top">
+
+### 🧠 Adaptive Intelligence
+
+Conversation behavior can adapt to user tone, emotion, memory and relationship context while keeping personalization inspectable and user-controlled.
+
+</td>
+<td width="33%" valign="top">
+
+### ⚡ Multi-Model Workspace
+
+OpenAI, Groq and Amazon Bedrock providers operate behind one assistant surface with model selection and unified streaming behavior.
+
+</td>
+<td width="33%" valign="top">
+
+### 📡 Realtime Communication
+
+Privacy-safe discovery, WebRTC audio/video calling, Redis presence, TURN relays and Android incoming-call delivery.
+
+</td>
+</tr>
+<tr>
+<td width="33%" valign="top">
+
+### 📄 Document Intelligence
+
+Upload PDF, TXT and DOCX files, generate summaries and continue conversations against selected documents.
+
+</td>
+<td width="33%" valign="top">
+
+### 🎙️ Voice + Vision
+
+Speech-to-text, text-to-speech, image analysis and browser media APIs extend the assistant beyond text.
+
+</td>
+<td width="33%" valign="top">
+
+### 🛡️ Operations Console
+
+Authentication, usage statistics, system monitoring, persistent data safeguards, Docker and automated Android releases.
+
+</td>
+</tr>
+</table>
+
+## 🚀 Product Command Center
+
+| Capability | User experience | Engineering foundation |
+|---|---|---|
+| **AI Chat** | Streaming, Markdown, syntax highlighting and model selection | Unified provider abstraction across OpenAI, Groq and Bedrock |
+| **Knowledge** | Upload, summarize and chat with documents | Persistent document pipeline and message context |
+| **Memory** | Long-term personalization with user visibility and control | User-owned memory APIs and adaptive conversation engines |
+| **Voice** | Browser speech input and assistant playback | Groq transcription plus browser TTS |
+| **Vision** | Analyze uploaded images | Configurable vision model integration |
+| **Calling** | Realtime audio/video communication | WebRTC, Redis, signaling tickets, busy locks and TURN |
+| **Android** | Background call delivery and update flow | FCM, foreground service and automated release metadata |
+| **Administration** | User and system visibility | JWT security, database-backed analytics and admin APIs |
+
+## 🧠 Intelligence Engine
+
+```mermaid
+flowchart TB
+    UI[Chat / Voice / Vision / Documents] --> ORCH[Auto AI Orchestrator]
+    ORCH --> CONTEXT[Conversation Context]
+    ORCH --> MEMORY[User-Owned Memory]
+    ORCH --> TOOLS[Search + Document + Media Tools]
+    ORCH --> ROUTER{Provider Router}
+    ROUTER --> OPENAI[OpenAI]
+    ROUTER --> GROQ[Groq]
+    ROUTER --> BEDROCK[Amazon Bedrock]
+    OPENAI --> STREAM[Unified Response Stream]
+    GROQ --> STREAM
+    BEDROCK --> STREAM
+    CONTEXT --> STREAM
+    MEMORY --> STREAM
+    TOOLS --> STREAM
+    STREAM --> UI
+```
+
+### Intelligence features
+
+- Selectable OpenAI, Groq and Amazon Bedrock providers
+- Streaming responses through one chat flow
+- Groq Compound-powered web search mode
+- Configurable image-analysis and audio-transcription models
+- Code generation, debugging and explanation endpoint
+- Emotion, tone, memory, personality and relationship engines
+- Inspectable, editable long-term personalization
+
+## 🌐 System Architecture
 
 ```mermaid
 flowchart LR
-    U[Web / Android User] --> F[React + TypeScript Client]
-    U --> A[Android Call Layer]
-    F --> API[FastAPI API]
-    A --> API
+    WEB[React Web Client] --> API[FastAPI Gateway]
+    ANDROID[Android Client] --> API
     API --> AUTH[JWT + User Services]
     API --> CHAT[Chat + Memory Engine]
-    API --> DOCS[Document Pipeline]
+    API --> DOCS[Document Intelligence]
+    API --> ADMIN[Admin + Usage APIs]
     API --> RTC[Realtime Signaling]
-    CHAT --> MODELS[OpenAI / Groq / Bedrock]
+    CHAT --> MODELS[AI Providers]
     DOCS --> MODELS
-    RTC --> REDIS[(Redis)]
-    RTC --> TURN[STUN / TURN]
     API --> DB[(Persistent Database)]
+    RTC --> REDIS[(Redis Presence)]
+    RTC --> TURN[STUN / TURN]
     API --> FCM[Firebase Cloud Messaging]
+    CI[GitHub Actions] --> APK[Signed Android Release]
 ```
 
-## Core capabilities
+## 🎨 Interface DNA
 
-### Intelligence
-
-- Selectable OpenAI, Groq and Amazon Bedrock providers
-- Streaming chat responses through a unified conversation flow
-- Web search mode through Groq Compound
-- Configurable image-analysis and speech-transcription models
-- Code generation, debugging and explanation endpoint
-- Ultra Human Mode for adaptive tone, memory, personality and relationship context
-
-### Documents and knowledge
-
-- PDF, TXT and DOCX upload
-- AI-generated summaries
-- Chat with selected uploaded documents
-- Persistent chats, messages and user-owned memory APIs
-
-### Real-time communication
-
-- Registered-user discovery with privacy boundaries
-- WebRTC audio and video calls
-- Redis-backed presence, secure signaling tickets and busy locks
-- Short-lived TURN relay credentials
-- Android incoming-call FCM delivery and active-call foreground service
-
-### Platform and administration
-
-- JWT login, registration and logout
-- Admin dashboard with usage and system statistics
+- ChatGPT-style conversation layout
+- Sidebar conversation history
 - Light and dark themes
-- Docker and Docker Compose support
-- Automated Android build and release workflow
-- Persistent production database safeguards
+- Markdown rendering and highlighted code blocks
+- Copyable assistant code output
+- Streaming conversation updates
+- Browser media controls
+- Responsive web and Android-oriented flows
 
-## Technology map
+## 🪐 Technology Universe
 
-| Layer | Technologies |
+<p align="center">
+  <img src="https://skillicons.dev/icons?i=python,fastapi,react,ts,tailwind,postgres,mysql,sqlite,redis,docker,githubactions,androidstudio,firebase,aws&perline=7" alt="Auto AI technology stack" />
+</p>
+
+| Layer | Stack |
 |---|---|
-| **Frontend** | React, TypeScript, Tailwind CSS, Markdown rendering, browser media APIs |
-| **Backend** | Python 3.12+, FastAPI, SQLAlchemy, JWT, WebSocket/realtime services |
-| **AI providers** | OpenAI, Groq, Amazon Bedrock |
-| **Realtime** | WebRTC, Redis, STUN/TURN, Firebase Cloud Messaging |
-| **Data** | SQLite for local development; managed SQL or volume-backed SQLite for production |
-| **Delivery** | Docker, GitHub Actions, Railway-compatible deployment configuration |
+| **Frontend** | React, TypeScript, Tailwind CSS, Markdown, browser media APIs |
+| **Backend** | Python 3.12+, FastAPI, SQLAlchemy, JWT, realtime services |
+| **AI** | OpenAI, Groq, Amazon Bedrock |
+| **Communication** | WebRTC, Redis, STUN/TURN, Firebase Cloud Messaging |
+| **Data** | SQLite locally; managed SQL or mounted-volume SQLite in production |
+| **Delivery** | Docker, GitHub Actions and Railway-compatible deployment |
 
-## Quick start
+## ⚙️ Launch Locally
 
-### Requirements
+<details open>
+<summary><strong>1 — Requirements</strong></summary>
 
 - Python 3.12+
 - Node.js 20+
-- An API key for at least one supported AI provider
+- At least one supported AI-provider key
 
-### 1. Configure environment variables
+</details>
+
+<details open>
+<summary><strong>2 — Environment</strong></summary>
 
 ```bash
 cp .env.example .env
 ```
 
-Set the initial admin credentials and configure at least one provider:
+Minimum example:
 
 ```text
 ADMIN_EMAIL=...
 ADMIN_PASSWORD=...
 ADMIN_NAME=...
-
 AI_PROVIDER=groq
 GROQ_API_KEY=...
+SECRET_KEY=...
 ```
 
-### 2. Start the backend
+</details>
+
+<details open>
+<summary><strong>3 — Backend</strong></summary>
 
 ```bash
 cd backend
@@ -138,7 +223,10 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 3. Start the frontend
+</details>
+
+<details open>
+<summary><strong>4 — Frontend</strong></summary>
 
 ```bash
 cd frontend
@@ -148,156 +236,147 @@ npm run dev
 
 Open `http://localhost:5173`.
 
-The first admin is created from `ADMIN_EMAIL`, `ADMIN_PASSWORD` and `ADMIN_NAME` during backend startup. Public registration creates standard user accounts.
+</details>
 
-## Docker
-
-From the repository root:
+## 🐳 Docker Launch
 
 ```bash
 cp .env.example .env
 docker compose up --build
 ```
 
-Or from the Docker folder:
-
-```bash
-cd docker
-docker compose up --build
-```
-
-| Service | Local address |
+| Service | Address |
 |---|---|
 | Frontend | `http://localhost:5173` |
 | Backend health | `http://localhost:8000/api/v1/health` |
 
-## Configuration reference
+## 🔐 Configuration Vault
 
 <details>
-<summary><strong>AI providers and models</strong></summary>
+<summary><strong>AI provider variables</strong></summary>
 
 | Variable | Purpose |
 |---|---|
-| `AI_PROVIDER` | Default provider: `openai`, `groq` or `bedrock` |
-| `AUTO_AI_OPENAI_API_KEY` | Project-specific OpenAI API key |
-| `OPENAI_MODEL` | Default OpenAI chat model |
-| `GROQ_API_KEY` | Groq API key |
+| `AI_PROVIDER` | `openai`, `groq` or `bedrock` |
+| `AUTO_AI_OPENAI_API_KEY` | OpenAI credential |
+| `OPENAI_MODEL` | Default OpenAI model |
+| `GROQ_API_KEY` | Groq credential |
 | `GROQ_MODEL` | Default Groq chat model |
-| `GROQ_SEARCH_MODEL` | Groq search-capable model |
-| `GROQ_VISION_MODEL` | Image-analysis model |
-| `GROQ_AUDIO_MODEL` | Audio transcription model |
-| `BEDROCK_API_KEY` | Amazon Bedrock API key |
-| `BEDROCK_REGION` | Bedrock runtime region |
-| `BEDROCK_MODEL` | Bedrock chat model |
+| `GROQ_SEARCH_MODEL` | Search-capable Groq model |
+| `GROQ_VISION_MODEL` | Vision model |
+| `GROQ_AUDIO_MODEL` | Transcription model |
+| `BEDROCK_API_KEY` | Bedrock credential |
+| `BEDROCK_REGION` | Bedrock region |
+| `BEDROCK_MODEL` | Bedrock model |
 | `BEDROCK_ENDPOINT_MODE` | `mantle`, `runtime` or `auto` |
-| `BEDROCK_MANTLE_BASE_URL` | Optional Mantle endpoint override |
 | `BEDROCK_AUTH_MODE` | `auto`, `api_key` or `aws` |
-| `AWS_ACCESS_KEY_ID` | Optional SigV4 credential |
-| `AWS_SECRET_ACCESS_KEY` | Optional SigV4 credential |
-| `AWS_SESSION_TOKEN` | Optional temporary SigV4 credential |
 
 </details>
 
 <details>
-<summary><strong>Application, database and communication</strong></summary>
+<summary><strong>Application, data and realtime variables</strong></summary>
 
 | Variable | Purpose |
 |---|---|
 | `SECRET_KEY` | JWT signing secret |
-| `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NAME` | Initial admin bootstrap values |
-| `DATABASE_URL` | Managed production SQL database URL |
-| `MYSQL_URL` | Railway MySQL fallback URL |
-| `SQLITE_PATH` | SQLite file path; production requires a mounted volume |
+| `DATABASE_URL` | Managed production database |
+| `MYSQL_URL` | Railway MySQL fallback |
+| `SQLITE_PATH` | SQLite path |
 | `BACKEND_CORS_ORIGINS` | Allowed frontend origins |
-| `PASSWORD_RESET_*`, `SMTP_*` | Password-reset and email delivery settings |
-| `CALL_FEATURE_ENABLED` | Realtime calling feature switch |
-| `REDIS_URL` | Shared realtime state |
-| `TURN_SERVER_URLS` | STUN/TURN endpoints |
-| `TURN_SHARED_SECRET`, `TURN_REALM`, `TURN_CREDENTIAL_TTL` | Short-lived relay credential configuration |
-| `FCM_PROJECT_ID`, `FCM_SERVICE_ACCOUNT_JSON` | Android background incoming-call delivery |
+| `CALL_FEATURE_ENABLED` | Realtime calling switch |
+| `REDIS_URL` | Presence and shared realtime state |
+| `TURN_SERVER_URLS` | Relay endpoints |
+| `TURN_SHARED_SECRET` | TURN credential signing |
+| `FCM_PROJECT_ID` | Firebase project |
+| `FCM_SERVICE_ACCOUNT_JSON` | Android call-delivery credential |
 
 </details>
 
-## Production data persistence
+## 🏭 Production Readiness
 
-Production user data must not live inside the source-code directory because redeployments can replace the application filesystem.
+### Persistent data guarantee
 
-The startup path uses additive schema creation and migrations:
+Production data must not be stored inside the source directory. Redeployments can replace that filesystem.
 
 - Existing tables are not dropped.
 - Existing rows are not deleted.
-- Missing columns are added.
-- Admin bootstrap creates an account only when it does not already exist.
-- Existing user and admin passwords are not reset.
-- Database targets are logged in masked form without printing credentials.
+- Missing columns are added through additive migrations.
+- Admin bootstrap does not overwrite existing accounts.
+- Database targets are logged only in masked form.
 
-### Railway SQLite volume
-
-Use only when intentionally running SQLite in production.
+### Railway volume-backed SQLite
 
 ```text
 Mount Path: /data
-```
-
-```text
 ENVIRONMENT=production
 DB_BACKEND=sqlite
 SQLITE_PATH=/data/auto_ai.db
 ```
 
-Do not use `database/auto_ai.db` as a production path.
-
-### Railway managed database
+### Managed SQL
 
 ```text
 ENVIRONMENT=production
 DATABASE_URL=<managed database URL>
 ```
 
-When Railway exposes `MYSQL_URL`, it can be assigned directly or copied into `DATABASE_URL`.
+Production startup fails clearly when no persistent database target is configured.
 
-If production starts without a persistent database URL or a safe `/data` SQLite path, the backend fails clearly instead of silently creating a disposable local database.
+## 📲 Android Release Engine
 
-## APK metadata and automatic Android releases
+```mermaid
+flowchart LR
+    PUSH[Push to main] --> ACTION[GitHub Actions]
+    ACTION --> BUILD[Build signed APK]
+    BUILD --> VERSION[Increment versionCode]
+    VERSION --> RELEASE[Publish GitHub release]
+    RELEASE --> API[Backend version metadata]
+    API --> APP[Update dialog + notification]
+```
 
-APK version metadata and download counts are stored in the database.
-
-| Endpoint | Purpose |
+| Endpoint | Responsibility |
 |---|---|
-| `GET /api/v1/download/apk/latest` | Latest active database version |
-| `POST /api/v1/download/apk/count` | Increment download count |
-| `GET /api/v1/download/apk/versions` | Version history, timestamps and counts |
-| `POST /api/v1/admin/apk/version` | Admin version metadata management |
+| `GET /api/v1/download/apk/latest` | Latest active version |
+| `POST /api/v1/download/apk/count` | Download counter |
+| `GET /api/v1/download/apk/versions` | Version history |
+| `POST /api/v1/admin/apk/version` | Admin metadata management |
 
-Pushes to `main` run `.github/workflows/android-release.yml`. The workflow builds a signed APK, increments `versionCode`, publishes a GitHub release and exposes the new version to mobile update checks.
-
-Required repository secrets:
+Required GitHub secrets:
 
 - `AUTO_AI_ANDROID_KEYSTORE_BASE64`
 - `AUTO_AI_ANDROID_KEYSTORE_PASSWORD`
 - `AUTO_AI_ANDROID_KEY_ALIAS`
 - `AUTO_AI_ANDROID_KEY_PASSWORD`
 
-Optional release secrets:
+## 🗺️ Evolution Roadmap
 
-- `AUTO_AI_API_BASE_URL`
-- `AUTO_AI_ADMIN_EMAIL`
-- `AUTO_AI_ADMIN_PASSWORD`
-- `AUTO_AI_GOOGLE_WEB_CLIENT_ID`
-- `AUTO_AI_APK_FORCE_UPDATE`
+- [x] Multi-provider AI chat
+- [x] Document intelligence
+- [x] Voice and vision tools
+- [x] Persistent conversation history
+- [x] User-owned memory APIs
+- [x] Realtime WebRTC communication foundation
+- [x] Android FCM call-delivery foundation
+- [x] Admin and production-data safeguards
+- [ ] Expanded automated testing coverage
+- [ ] Richer observability and performance dashboards
+- [ ] Broader deployment and release verification
 
-## Documentation
+## 📚 Engineering Notes
 
-- `docs/human-mode.md` — adaptive conversation architecture, prompts, APIs and memory model
-- `docs/calling.md` — calling architecture, privacy boundaries, Redis/TURN/FCM deployment and verification
+- `docs/human-mode.md` — adaptive conversation architecture and memory design
+- `docs/calling.md` — realtime communication architecture and privacy boundaries
 
-## Security notes
+## 🛡️ Security Principles
 
-- Never commit API keys, JWT secrets, SMTP credentials or service-account JSON.
-- Store production secrets in the deployment provider or GitHub Actions secrets.
-- Use a managed database or mounted volume for persistent production data.
-- Treat call signaling, TURN credentials and user discovery as security-sensitive surfaces.
+- Never commit credentials or service-account JSON.
+- Keep production secrets inside the deployment provider or GitHub Actions.
+- Use a managed database or mounted persistent volume.
+- Treat signaling, TURN credentials and user discovery as security-sensitive surfaces.
 
 ---
 
-<p align="center"><strong>Designed and engineered by Shyamraj.</strong></p>
+<p align="center">
+  <strong>Designed, engineered and continuously evolved by Shyamraj.</strong><br/>
+  <sub>AI systems · Full-stack products · Android · Realtime communication</sub>
+</p>
