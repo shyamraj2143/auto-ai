@@ -6,6 +6,11 @@ on:
       - main
     paths-ignore:
       - '.release-status/**'
+  workflow_run:
+    workflows:
+      - Android release
+    types:
+      - completed
   workflow_dispatch:
 
 concurrency:
@@ -18,8 +23,9 @@ permissions:
 jobs:
   notify-after-release:
     name: Notify registered Android phones
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     environment: production
     env:
       AUTO_AI_API_BASE_URL: https://auto-ai-production-a6ef.up.railway.app/api/v1
@@ -38,59 +44,29 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Wait for signed APK release from this commit
+      - name: Resolve latest verified Android release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          EXPECTED_COMMIT: ${{ github.sha }}
         run: |
           set -euo pipefail
-          matched=0
-          for attempt in $(seq 1 150); do
-            encoded="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.release-status/android.json?ref=main" --jq .content 2>/dev/null || true)"
-            if [ -n "$encoded" ]; then
-              payload="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode 2>/dev/null || true)"
-              status="$(printf '%s' "$payload" | jq -r '.status // empty' 2>/dev/null || true)"
-              source_commit="$(printf '%s' "$payload" | jq -r '.source_commit // empty' 2>/dev/null || true)"
-              version_code="$(printf '%s' "$payload" | jq -r '.version_code // empty' 2>/dev/null || true)"
-              version_name="$(printf '%s' "$payload" | jq -r '.version_name // empty' 2>/dev/null || true)"
-              release_tag="$(printf '%s' "$payload" | jq -r '.release_tag // empty' 2>/dev/null || true)"
-              if [ "$status" = "success" ] && [ "$source_commit" = "$EXPECTED_COMMIT" ] && [ -n "$version_code" ] && [ -n "$version_name" ]; then
-                echo "AUTO_AI_ANDROID_VERSION_CODE=$version_code" >> "$GITHUB_ENV"
-                echo "AUTO_AI_ANDROID_VERSION_NAME=$version_name" >> "$GITHUB_ENV"
-                echo "AUTO_AI_ANDROID_RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
-                matched=1
-                break
-              fi
-              if [ "$status" = "failure" ] && [ "$source_commit" = "$EXPECTED_COMMIT" ]; then
-                echo "Android release failed for commit $EXPECTED_COMMIT." >&2
-                exit 1
-              fi
-            fi
-            echo "Waiting for signed APK release ($attempt/150)..."
-            sleep 10
-          done
-          test "$matched" -eq 1
+          release_json="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName,body,assets)"
+          release_tag="$(printf '%s' "$release_json" | jq -r '.tagName // empty')"
+          release_body="$(printf '%s' "$release_json" | jq -r '.body // empty')"
+          apk_count="$(printf '%s' "$release_json" | jq '[.assets[] | select(.name == "auto-ai.apk")] | length')"
+          version_code="$(printf '%s\n' "$release_body" | sed -n 's/^Version-Code:[[:space:]]*//p' | head -1 | tr -d '\r')"
+          version_name="$(printf '%s\n' "$release_body" | sed -n 's/^Version-Name:[[:space:]]*//p' | head -1 | tr -d '\r')"
+          sha256="$(printf '%s\n' "$release_body" | sed -n 's/^SHA256:[[:space:]]*//p' | head -1 | tr -d '\r')"
 
-      - name: Wait for matching Railway deployment
-        shell: bash
-        env:
-          EXPECTED_COMMIT: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          health_url="${AUTO_AI_API_BASE_URL%/}/health"
-          ready=0
-          for attempt in $(seq 1 12); do
-            if python scripts/wait_for_railway_deployment.py \
-              --health-url "$health_url" \
-              --commit-sha "$EXPECTED_COMMIT"; then
-              ready=1
-              break
-            fi
-            echo "Railway is not ready for admin notification fallback ($attempt/12)."
-            sleep $((attempt * 10))
-          done
-          test "$ready" -eq 1
+          if [ -z "$release_tag" ] || [ "$apk_count" -lt 1 ] || ! [[ "$version_code" =~ ^[0-9]+$ ]] || [ -z "$version_name" ] || ! [[ "$sha256" =~ ^[A-Fa-f0-9]{64}$ ]]; then
+            echo 'Latest GitHub release does not contain complete verified AutoAI APK metadata.' >&2
+            exit 1
+          fi
+
+          echo "AUTO_AI_ANDROID_VERSION_CODE=$version_code" >> "$GITHUB_ENV"
+          echo "AUTO_AI_ANDROID_VERSION_NAME=$version_name" >> "$GITHUB_ENV"
+          echo "AUTO_AI_ANDROID_RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
+          echo "Resolved $release_tag ($version_name / $version_code)."
 
       - name: Dispatch update notification through administrator authentication
         shell: bash
@@ -100,8 +76,9 @@ jobs:
             echo 'Production administrator credentials are missing.' >&2
             exit 1
           fi
+
           success=0
-          for attempt in $(seq 1 12); do
+          for attempt in $(seq 1 20); do
             if python scripts/notify_android_update.py \
               --api-url "$AUTO_AI_API_BASE_URL" \
               --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
@@ -110,8 +87,8 @@ jobs:
               success=1
               break
             fi
-            echo "Phone notification attempt $attempt failed; retrying..."
-            sleep $((attempt * 10))
+            echo "Phone notification attempt $attempt failed; waiting for the deployed backend..."
+            sleep $((attempt < 6 ? 10 : 30))
           done
           test "$success" -eq 1
 
@@ -140,6 +117,7 @@ jobs:
               json.dump(payload, handle, indent=2, sort_keys=True)
               handle.write('\n')
           PY
+
           encoded="$(base64 -w0 .release-status/notification.json)"
           current_sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.release-status/notification.json?ref=main" --jq .sha 2>/dev/null || true)"
           if [ -n "$current_sha" ]; then
