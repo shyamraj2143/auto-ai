@@ -1,0 +1,96 @@
+name: AutoAI Seva Validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "backend/app/api/routes/service_applications.py"
+      - "backend/app/main.py"
+      - "backend/app/models/autoai_seva.py"
+      - "backend/app/models/form_service.py"
+      - "backend/app/models/__init__.py"
+      - "backend/app/services/autoai_seva_*.py"
+      - "backend/app/services/form_service_*.py"
+      - "backend/tests/test_autoai_seva*.py"
+      - "backend/tests/test_form_service*.py"
+      - "frontend/src/features/autoaiSeva/**"
+      - "frontend/src/features/actionHub/**"
+      - "frontend/src/components/layout/WorkspaceNavigation.tsx"
+      - "frontend/src/App.tsx"
+      - ".github/workflows/autoai-seva-validation.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: autoai-seva-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-seva-tests:
+    name: Backend Seva tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      ENVIRONMENT: test
+      DB_BACKEND: sqlite
+      SQLITE_PATH: /tmp/autoai-seva-validation.db
+      SECRET_KEY: autoai-seva-ci-secret-key
+      JWT_SECRET_KEY: autoai-seva-ci-jwt-secret-key
+      CALL_FEATURE_ENABLED: "false"
+      RELATIONSHIP_FOLLOWUP_WORKER_ENABLED: "false"
+      FCM_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest pytest-asyncio
+      - name: Compile Seva modules
+        run: |
+          python -m py_compile \
+            app/api/routes/service_applications.py \
+            app/models/autoai_seva.py \
+            app/services/autoai_seva_conflicts.py \
+            app/services/autoai_seva_review.py \
+            app/services/autoai_seva_seed.py \
+            app/services/form_service_adapters.py \
+            app/services/form_service_gateway.py \
+            app/services/form_service_state.py
+      - name: Run Seva and form-service regression tests
+        run: |
+          pytest -q \
+            tests/test_autoai_seva.py \
+            tests/test_autoai_seva_security.py \
+            tests/test_form_services.py \
+            tests/test_form_service_intent_matching.py
+
+  frontend-production-build:
+    name: Frontend production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Build production frontend
+        run: npm run build
+      - name: Run form-service component tests
+        run: npm test -- ServiceTaskCard
