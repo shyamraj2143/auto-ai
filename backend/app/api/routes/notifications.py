@@ -7,36 +7,71 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.security import decode_access_token
 from app.db.session import SessionLocal, get_db
 from app.models.call import UserDevice
+from app.models.user import User
 from app.schemas.notifications import (
     ApkUpdateNotificationRequest,
     ApkUpdateNotificationResponse,
     DeviceTokenRegisterRequest,
     DeviceTokenRegisterResponse,
 )
-from app.services.firebase_notifications import firebase_notification_service
 from app.services.device_token_security import decrypt_token
+from app.services.firebase_notifications import firebase_notification_service
 
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 logger = logging.getLogger(__name__)
+ADMIN_ROLES = {"admin", "super_admin", "administrator"}
 
 
 def notify_secret_value() -> str:
     return settings.UPDATE_NOTIFY_SECRET.get_secret_value() if settings.UPDATE_NOTIFY_SECRET else ""
 
 
-def require_notify_secret(request: Request) -> None:
-    configured = notify_secret_value()
-    if not configured:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Update notifications are not configured.")
-    provided = request.headers.get("x-auto-ai-notify-secret", "")
-    auth = request.headers.get("authorization", "")
-    if not provided and auth.lower().startswith("bearer "):
-        provided = auth.split(" ", 1)[1].strip()
-    if not hmac.compare_digest(provided, configured):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid notification secret.")
+def authorize_apk_update_notification(request: Request, db: Session) -> str:
+    """Allow the dedicated secret or a valid active administrator access token."""
+    configured_secret = notify_secret_value()
+    provided_secret = request.headers.get("x-auto-ai-notify-secret", "").strip()
+    authorization = request.headers.get("authorization", "").strip()
+    bearer_token = ""
+    if authorization.lower().startswith("bearer "):
+        bearer_token = authorization.split(" ", 1)[1].strip()
+
+    if configured_secret:
+        if provided_secret and hmac.compare_digest(provided_secret, configured_secret):
+            return "notification_secret"
+        # Preserve compatibility with older release scripts that supplied the
+        # notification secret as a bearer token.
+        if bearer_token and hmac.compare_digest(bearer_token, configured_secret):
+            return "notification_secret"
+
+    if bearer_token:
+        user_id = decode_access_token(bearer_token)
+        user = db.get(User, user_id) if user_id else None
+        if (
+            user
+            and user.is_active
+            and user.is_admin
+            and (user.role or "").lower() in ADMIN_ROLES
+            and (user.subscription_status or "").lower() not in {"blocked", "suspended"}
+        ):
+            return "authenticated_admin"
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator access is required to dispatch application updates.",
+        )
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=(
+            "Provide the update notification secret or authenticate as an administrator."
+            if configured_secret
+            else "Authenticate as an administrator to dispatch application updates."
+        ),
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 @router.post("/device-token", response_model=DeviceTokenRegisterResponse)
@@ -45,7 +80,10 @@ def register_device_token(
     db: Session = Depends(get_db),
 ) -> DeviceTokenRegisterResponse:
     del payload, db
-    raise HTTPException(status_code=status.HTTP_410_GONE, detail="Use the authenticated device registration endpoint.")
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Use the authenticated device registration endpoint.",
+    )
 
 
 @router.post("/apk-update", response_model=ApkUpdateNotificationResponse)
@@ -53,10 +91,14 @@ def notify_apk_update(
     payload: ApkUpdateNotificationRequest,
     request: Request,
     background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
 ) -> ApkUpdateNotificationResponse:
-    require_notify_secret(request)
+    authorization_mode = authorize_apk_update_notification(request, db)
     if not firebase_notification_service.configured:
-        return ApkUpdateNotificationResponse(skipped=True, detail="Firebase service account is not configured.")
+        return ApkUpdateNotificationResponse(
+            skipped=True,
+            detail="Firebase service account is not configured.",
+        )
 
     background_tasks.add_task(
         dispatch_apk_update_notifications,
@@ -64,10 +106,19 @@ def notify_apk_update(
         payload.version_name,
         payload.changelog,
     )
+    logger.info(
+        "apk_update_notification_queued version_code=%d authorization=%s",
+        payload.version_code,
+        authorization_mode,
+    )
     return ApkUpdateNotificationResponse(detail="Notification dispatch queued.")
 
 
-def dispatch_apk_update_notifications(version_code: int, version_name: str, changelog: str | None) -> None:
+def dispatch_apk_update_notifications(
+    version_code: int,
+    version_name: str,
+    changelog: str | None,
+) -> None:
     sent = 0
     failed = 0
     inactive = 0
@@ -76,7 +127,10 @@ def dispatch_apk_update_notifications(version_code: int, version_name: str, chan
             select(UserDevice).where(
                 UserDevice.is_active == True,  # noqa: E712
                 UserDevice.platform == "android",
-                (UserDevice.fcm_token_ciphertext.is_not(None) | UserDevice.fcm_token.is_not(None)),
+                (
+                    UserDevice.fcm_token_ciphertext.is_not(None)
+                    | UserDevice.fcm_token.is_not(None)
+                ),
             )
         ).all()
         for device in devices:
@@ -84,7 +138,8 @@ def dispatch_apk_update_notifications(version_code: int, version_name: str, chan
             if not target:
                 device.is_active = False
                 device.last_fcm_failure_code = "FCM_TOKEN_MISSING"
-                inactive += 1; failed += 1
+                inactive += 1
+                failed += 1
                 continue
             result = firebase_notification_service.send_update_notification(
                 target,
