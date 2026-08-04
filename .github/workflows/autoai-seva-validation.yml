@@ -36,6 +36,7 @@ jobs:
       run:
         working-directory: backend
     env:
+      PYTHONPATH: .
       ENVIRONMENT: test
       DB_BACKEND: sqlite
       SQLITE_PATH: /tmp/autoai-seva-validation.db
