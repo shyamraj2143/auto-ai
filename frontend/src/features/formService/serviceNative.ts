@@ -10,6 +10,7 @@ type NativeCapabilities = {
   documentPicker: NativeCapabilityStatus;
   biometric: NativeCapabilityStatus;
   customTabs: NativeCapabilityStatus;
+  printing: NativeCapabilityStatus;
   network: "ONLINE" | "OFFLINE" | "UNKNOWN";
   batteryPercent: number | null;
 };
@@ -19,16 +20,28 @@ interface AutoAiServiceCapabilitiesPlugin {
   requestCameraPermission(): Promise<{ status: NativePermissionStatus }>;
   openPortal(options: { url: string; officialOrigin: string }): Promise<{ opened: boolean }>;
   confirmHighRisk(options: { title: string; subtitle: string }): Promise<{ confirmed: boolean; method: string }>;
+  printHtml(options: { title: string; html: string }): Promise<{ opened: boolean }>;
   openAppSettings(): Promise<{ opened: boolean }>;
 }
 
 const NativeServiceCapabilities = registerPlugin<AutoAiServiceCapabilitiesPlugin>("AutoAiServiceCapabilities");
 
+function printInBrowser(title: string, html: string) {
+  const popup = window.open("", "_blank", "noopener,noreferrer");
+  if (!popup) throw new Error("The print preview was blocked. Allow pop-ups and try again.");
+  popup.document.open();
+  popup.document.write(html);
+  popup.document.title = title;
+  popup.document.close();
+  popup.focus();
+  window.setTimeout(() => popup.print(), 250);
+}
+
 export const serviceNative = {
   isAndroid: () => Capacitor.getPlatform() === "android",
-  async capabilities(): Promise<NativeCapabilities | { platform: "web"; camera: "UNSUPPORTED"; cameraPermission: "UNAVAILABLE"; documentPicker: "SUPPORTED"; biometric: "UNSUPPORTED"; customTabs: "UNSUPPORTED"; network: "ONLINE" | "OFFLINE"; batteryPercent: null }> {
+  async capabilities(): Promise<NativeCapabilities | { platform: "web"; camera: "UNSUPPORTED"; cameraPermission: "UNAVAILABLE"; documentPicker: "SUPPORTED"; biometric: "UNSUPPORTED"; customTabs: "UNSUPPORTED"; printing: "SUPPORTED"; network: "ONLINE" | "OFFLINE"; batteryPercent: null }> {
     if (!this.isAndroid()) {
-      return { platform: "web", camera: "UNSUPPORTED", cameraPermission: "UNAVAILABLE", documentPicker: "SUPPORTED", biometric: "UNSUPPORTED", customTabs: "UNSUPPORTED", network: navigator.onLine ? "ONLINE" : "OFFLINE", batteryPercent: null };
+      return { platform: "web", camera: "UNSUPPORTED", cameraPermission: "UNAVAILABLE", documentPicker: "SUPPORTED", biometric: "UNSUPPORTED", customTabs: "UNSUPPORTED", printing: "SUPPORTED", network: navigator.onLine ? "ONLINE" : "OFFLINE", batteryPercent: null };
     }
     return NativeServiceCapabilities.getCapabilities();
   },
@@ -51,6 +64,16 @@ export const serviceNative = {
     if (result.confirmed) return "confirmed";
     if (result.method === "cancelled") throw new Error("Device confirmation was cancelled. Nothing was authorized.");
     return "unavailable";
+  },
+  async printHtml(title: string, html: string): Promise<void> {
+    if (!html.trim()) throw new Error("There is no printable application content yet.");
+    if (html.length > 250_000) throw new Error("The printable application is too large. Download the official receipt instead.");
+    if (!this.isAndroid()) {
+      printInBrowser(title, html);
+      return;
+    }
+    const result = await NativeServiceCapabilities.printHtml({ title, html });
+    if (!result.opened) throw new Error("Android print preview could not be opened.");
   },
   async openSettings(): Promise<void> {
     if (this.isAndroid()) await NativeServiceCapabilities.openAppSettings();
