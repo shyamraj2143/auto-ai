@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import ipaddress
+import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
+from difflib import SequenceMatcher
 from urllib.parse import urlparse
 
 from sqlalchemy import select
@@ -202,6 +205,77 @@ SERVICE_SEEDS: tuple[dict, ...] = (
 )
 
 
+SERVICE_ALIASES: tuple[tuple[str, tuple[str, ...], float], ...] = (
+    ("autoai.safe-test-unverified-form", ("unverified test form", "timeout test form", "unknown outcome test form"), 0.99),
+    ("autoai.safe-test-otp-form", ("otp test form", "test otp form", "otp demo form", "otp वाला टेस्ट फॉर्म"), 0.99),
+    (
+        "bihar.income-certificate",
+        (
+            "income certificate",
+            "incom certificate",
+            "income certficate",
+            "income certifcate",
+            "income certificate apply",
+            "aay praman",
+            "aay praman patra",
+            "aay certificate",
+            "income praman patra",
+            "आय प्रमाण",
+            "आय प्रमाण पत्र",
+            "इनकम सर्टिफिकेट",
+        ),
+        0.97,
+    ),
+    ("india.national-scholarship", ("scholarship", "scholar ship", "छात्रवृत्ति", "स्कॉलरशिप"), 0.96),
+    ("india.ors-appointment", ("doctor appointment", "hospital appointment", "opd appointment", "डॉक्टर अपॉइंटमेंट", "अस्पताल अपॉइंटमेंट"), 0.94),
+    ("autoai.safe-test-form", ("test form", "demo form", "simple information form", "टेस्ट फॉर्म"), 0.99),
+)
+
+_COMMON_CORRECTIONS = {
+    "incom": "income",
+    "incme": "income",
+    "certficate": "certificate",
+    "certifcate": "certificate",
+    "certicate": "certificate",
+    "sertificate": "certificate",
+    "scholership": "scholarship",
+    "scholarhip": "scholarship",
+    "aply": "apply",
+    "aplly": "apply",
+}
+
+
+def normalize_service_message(message: str) -> str:
+    normalized = unicodedata.normalize("NFKC", message).casefold()
+    normalized = re.sub(r"[^\w\s\u0900-\u097f-]", " ", normalized)
+    words = [_COMMON_CORRECTIONS.get(word, word) for word in normalized.split()]
+    return " ".join(words)
+
+
+def _alias_score(normalized: str, alias: str) -> float:
+    candidate = normalize_service_message(alias)
+    if candidate in normalized:
+        return 1.0
+    query_tokens = set(normalized.split())
+    alias_tokens = set(candidate.split())
+    token_overlap = len(query_tokens & alias_tokens) / max(1, len(alias_tokens))
+    sequence = SequenceMatcher(None, normalized, candidate).ratio()
+    return max(token_overlap, sequence)
+
+
+def match_service_alias(message: str) -> tuple[str, float] | None:
+    normalized = normalize_service_message(message)
+    best: tuple[str, float] | None = None
+    for service_id, aliases, base_confidence in SERVICE_ALIASES:
+        score = max(_alias_score(normalized, alias) for alias in aliases)
+        if score < 0.78:
+            continue
+        confidence = round(min(base_confidence, max(0.78, score * base_confidence)), 4)
+        if best is None or confidence > best[1]:
+            best = (service_id, confidence)
+    return best
+
+
 def ensure_service_registry(db: Session) -> None:
     now = datetime.utcnow()
     for seed in SERVICE_SEEDS:
@@ -246,20 +320,8 @@ def ensure_service_registry(db: Session) -> None:
 
 
 def resolve_service(db: Session, message: str) -> RegistryResolution | None:
-    normalized = " ".join(message.casefold().split())
-    rules = (
-        ("autoai.safe-test-unverified-form", ("unverified test form", "timeout test form", "unknown outcome test form"), 0.99),
-        ("autoai.safe-test-otp-form", ("otp test form", "test otp form", "otp demo form", "otp वाला टेस्ट फॉर्म"), 0.99),
-        ("bihar.income-certificate", ("income certificate", "aay praman", "aay certificate", "आय प्रमाण", "इनकम सर्टिफिकेट"), 0.97),
-        ("india.national-scholarship", ("scholarship", "छात्रवृत्ति", "स्कॉलरशिप"), 0.96),
-        ("india.ors-appointment", ("doctor appointment", "hospital appointment", "opd appointment", "डॉक्टर अपॉइंटमेंट", "अस्पताल अपॉइंटमेंट"), 0.94),
-        ("autoai.safe-test-form", ("test form", "demo form", "simple information form", "टेस्ट फॉर्म"), 0.99),
-    )
-    match = next(((service_id, confidence) for service_id, tokens, confidence in rules if any(token in normalized for token in tokens)), None)
+    match = match_service_alias(message)
     if match is None:
-        service_language = ("apply", "application", "form", "certificate", "portal", "book appointment", "फॉर्म", "आवेदन", "प्रमाण पत्र")
-        if any(token in normalized for token in service_language):
-            return None
         return None
     service = db.get(ServiceDefinition, match[0])
     if not service or not service.active:
