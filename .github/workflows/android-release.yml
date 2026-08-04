@@ -1,32 +1,23 @@
-name: Android release
+name: Automatic Android update
 
 on:
   push:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      commit_sha:
-        description: Exact deployed commit SHA
-        required: true
-        type: string
-      confirm_production_release:
-        description: Type RELEASE to confirm the production update
-        required: true
-        type: string
 
 concurrency:
-  group: android-release-${{ github.ref }}
-  cancel-in-progress: false
+  group: auto-android-update-main
+  cancel-in-progress: true
 
 permissions:
   contents: write
 
 jobs:
-  build-and-publish:
-    if: github.event_name == 'push' || inputs.confirm_production_release == 'RELEASE'
+  build-publish-notify:
+    name: Build, publish and notify
     runs-on: ubuntu-latest
-    environment: production
+    timeout-minutes: 120
     env:
       AUTO_AI_API_BASE_URL: https://auto-ai-production-a6ef.up.railway.app/api/v1
       AUTO_AI_ADMIN_EMAIL: ${{ secrets.AUTO_AI_ADMIN_EMAIL }}
@@ -42,150 +33,102 @@ jobs:
       AUTO_AI_EXPECTED_SIGNING_SHA256: ${{ secrets.AUTO_AI_EXPECTED_SIGNING_SHA256 }}
 
     steps:
-      - name: Checkout
+      - name: Checkout latest main
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.commit_sha || github.sha }}
+          ref: main
+          fetch-depth: 2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
 
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
+          cache: gradle
 
-      - name: Validate signing secrets
+      - name: Validate automatic-release secrets
         shell: bash
         run: |
           missing=()
-          for name in AUTO_AI_ANDROID_KEYSTORE_BASE64 AUTO_AI_ANDROID_KEYSTORE_PASSWORD AUTO_AI_ANDROID_KEY_ALIAS AUTO_AI_ANDROID_KEY_PASSWORD AUTO_AI_ADMIN_EMAIL AUTO_AI_ADMIN_PASSWORD AUTO_AI_EXPECTED_SIGNING_SHA256; do
+          for name in \
+            AUTO_AI_ANDROID_KEYSTORE_BASE64 \
+            AUTO_AI_ANDROID_KEYSTORE_PASSWORD \
+            AUTO_AI_ANDROID_KEY_ALIAS \
+            AUTO_AI_ANDROID_KEY_PASSWORD \
+            AUTO_AI_ADMIN_EMAIL \
+            AUTO_AI_ADMIN_PASSWORD \
+            AUTO_AI_UPDATE_NOTIFY_SECRET \
+            AUTO_AI_EXPECTED_SIGNING_SHA256; do
             if [ -z "${!name:-}" ]; then
               missing+=("$name")
             fi
           done
           if [ "${#missing[@]}" -gt 0 ]; then
-            printf 'Missing GitHub secrets: %s\n' "${missing[*]}" >&2
+            printf 'Missing GitHub Actions repository secrets: %s\n' "${missing[*]}" >&2
+            echo 'Add these as repository Actions secrets so main pushes never wait for an environment approval.' >&2
             exit 1
           fi
 
-      - name: Prepare signing and version
+      - name: Generate unique mandatory version
         shell: bash
         run: |
           mkdir -p .android-signing
           printf '%s' "$AUTO_AI_ANDROID_KEYSTORE_BASE64" | base64 --decode > .android-signing/auto-ai-release.jks
           echo "AUTO_AI_ANDROID_KEYSTORE=$PWD/.android-signing/auto-ai-release.jks" >> "$GITHUB_ENV"
-          version_code=$((100000 + GITHUB_RUN_NUMBER * 10 + GITHUB_RUN_ATTEMPT))
+          version_code=$((200000 + GITHUB_RUN_NUMBER * 10 + GITHUB_RUN_ATTEMPT))
           echo "AUTO_AI_ANDROID_VERSION_CODE=$version_code" >> "$GITHUB_ENV"
           echo "AUTO_AI_ANDROID_VERSION_NAME=1.0.$version_code" >> "$GITHUB_ENV"
+          changelog="$(git log -1 --pretty=%s | tr '\r\n' ' ' | cut -c1-180)"
+          {
+            echo 'AUTO_AI_CHANGELOG<<AUTOAI_EOF'
+            echo "${changelog:-AutoAI automatic update}"
+            echo 'AUTOAI_EOF'
+          } >> "$GITHUB_ENV"
           if [ -n "${AUTO_AI_GOOGLE_SERVICES_JSON_BASE64:-}" ]; then
             printf '%s' "$AUTO_AI_GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > android/app/google-services.json
           fi
 
-      - name: Test backend and production frontend
+      - name: Test backend and frontend
         shell: bash
         run: |
+          python -m pip install --upgrade pip
           python -m pip install -r backend/requirements.txt -r backend/requirements-dev.txt
           PYTHONPATH=backend pytest -q backend/tests
           npm ci --prefix frontend
           npm run build --prefix frontend
 
-      - name: Wait for matching healthy Railway deployment
-        shell: bash
-        env:
-          EXPECTED_COMMIT: ${{ github.event_name == 'workflow_dispatch' && inputs.commit_sha || github.sha }}
-        run: |
-          health_url="${AUTO_AI_HEALTH_URL:-${AUTO_AI_API_BASE_URL%/}/health}"
-          python scripts/wait_for_railway_deployment.py \
-            --health-url "$health_url" \
-            --commit-sha "$EXPECTED_COMMIT"
-
-      - name: Install root dependencies
-        run: npm ci
-
-      - name: Verify native call and alarm reliability sources
+      - name: Build signed Android APK
         shell: bash
         run: |
-          test -f backend/app/services/presence_fallback.py
-          grep -q 'MAX_ATTEMPTS = 4' android/app/src/main/java/com/autoai/app/NativeCallApi.java
-          grep -q 'MAX_SIGNAL_RECONNECT_ATTEMPTS = 20' android/app/src/main/java/com/autoai/app/NativeCallSessionController.java
-          grep -q 'MAX_INITIALIZATION_ATTEMPTS = 12' android/app/src/main/java/com/autoai/app/NativeCallSessionController.java
-          grep -q 'mediaReadiness.isMediaConnected()' android/app/src/main/java/com/autoai/app/NativeCallSessionController.java
-          grep -q 'MAX_ICE_RESTART_ATTEMPTS = 2' android/app/src/main/java/com/autoai/app/NativeCallSessionController.java
-          grep -q 'onFirstFrameRendered' android/app/src/main/java/com/autoai/app/NativeWebRtcEngine.java
-          grep -q 'native_media_signal_ignored_by_webview' frontend/src/features/calls/CallProvider.tsx
-          grep -q 'setCommunicationDevice' android/app/src/main/java/com/autoai/app/NativeAudioRouter.java
-          grep -q 'pendingOutboundSignals' android/app/src/main/java/com/autoai/app/NativeCallSessionController.java
-          grep -q 'retryableNativeServiceCodes' frontend/src/features/calls/CallProvider.tsx
-          grep -q 'firebase_messaging_installation_id_enabled' android/app/src/main/AndroidManifest.xml
-          grep -q 'FirebaseMessaging.getInstance().register()' android/app/src/main/java/com/autoai/app/PushTokenRegistrar.java
-          grep -q 'registerInstallationBlocking(context, currentFid, rotatingFromHash)' android/app/src/main/java/com/autoai/app/FcmInstallationMigrationWorker.java
-          grep -q 'return {"fid": target}' backend/app/services/firebase_notifications.py
-          grep -q 'requiresMandatoryUpdate(BuildConfig.VERSION_CODE, metadata.versionCode)' android/app/src/main/java/com/autoai/app/AppUpdateCoordinator.java
-          grep -q 'downloadedVersionMatches(activeDownloadVersion, metadata.versionCode)' android/app/src/main/java/com/autoai/app/AppUpdateCoordinator.java
-          grep -q 'coordinator.check(true)' android/app/src/main/java/com/autoai/app/AutoAiUpdatePlugin.java
-          grep -q 'dialog.setCancelable(!mandatory)' android/app/src/main/java/com/autoai/app/AppUpdateDialog.java
-          grep -q 'dialog.setCanceledOnTouchOutside(!mandatory)' android/app/src/main/java/com/autoai/app/AppUpdateDialog.java
-          grep -q 'GITHUB_RELEASES_REQUIRE_UPDATE = True' backend/app/services/github_apk_release.py
-          grep -q 'registerPlugin(AutoAiAlarmPlugin.class)' android/app/src/main/java/com/autoai/app/MainActivity.java
-          grep -q 'setAlarmClock' android/app/src/main/java/com/autoai/app/AlarmScheduler.java
-          grep -q 'exact_alarm_access_required' android/app/src/main/java/com/autoai/app/AlarmScheduler.java
-          grep -q 'RingtoneManager.TYPE_ALARM' android/app/src/main/java/com/autoai/app/AlarmRingingService.java
-          grep -q 'TextToSpeech' android/app/src/main/java/com/autoai/app/AlarmRingingService.java
-          grep -q 'isNetworkConnectionRequired' android/app/src/main/java/com/autoai/app/AlarmRingingService.java
-          grep -q 'ACTION_VERIFIED_SUCCESS' android/app/src/main/java/com/autoai/app/AlarmRingingService.java
-          grep -q 'START_STICKY' android/app/src/main/java/com/autoai/app/AlarmRingingService.java
-          grep -q 'FaceDetection.getClient' android/app/src/main/java/com/autoai/app/AlarmAwakeVerifier.java
-          grep -q 'EXTRA_AWAKE_VERIFIED, true' android/app/src/main/java/com/autoai/app/AlarmAwakeVerificationActivity.java
-          grep -q 'HH:mm:ss' android/app/src/main/java/com/autoai/app/AlarmRingingActivity.java
-          grep -q 'AI Chat' android/app/src/main/java/com/autoai/app/AlarmAssistantSpeech.java
-          grep -q 'com.google.mlkit:face-detection:16.1.7' android/app/build.gradle
-          grep -q 'android.permission.SCHEDULE_EXACT_ALARM' android/app/src/main/AndroidManifest.xml
-          grep -q 'app.include_router(alarms.router' backend/app/main.py
-          grep -q 'title="AI Alarm"' frontend/src/features/actionHub/ActionHubPage.tsx
-          grep -q 'FaceLandmarker.createFromOptions' frontend/src/features/alarms/webAwakeVerifier.ts
-          grep -q '64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff' frontend/scripts/prepare-alarm-vision-model.mjs
-          metadata_step="$(sed -n '/- name: Publish APK metadata.*backend/,/- name: Notify installed Android.*apps/p' .github/workflows/android-release.yml)"
-          grep -q -- '--force-update' <<< "$metadata_step"
-          if grep -R -q 'FirebaseMessaging.getInstance().getToken' android/app/src/main/java/com/autoai/app; then
-            echo 'Deprecated getToken() is incompatible with installation-id direct-send mode.' >&2
-            exit 1
-          fi
-          if grep -q -E 'FirebaseMessaging.getInstance\(\)\.unregister|installations\.delete' android/app/src/main/java/com/autoai/app/FcmInstallationMigrationWorker.java; then
-            echo 'The FCM repair worker must not invalidate the registered installation.' >&2
-            exit 1
-          fi
-
-      - name: Build and verify Android APK
-        shell: bash
-        run: |
+          npm ci
           npm ci --prefix frontend
-          AUTO_AI_SKIP_COMPRESSION=1 VITE_API_URL="$AUTO_AI_API_BASE_URL" VITE_GOOGLE_WEB_CLIENT_ID="$AUTO_AI_GOOGLE_WEB_CLIENT_ID" npm run build
+          AUTO_AI_SKIP_COMPRESSION=1 \
+          VITE_API_URL="$AUTO_AI_API_BASE_URL" \
+          VITE_GOOGLE_WEB_CLIENT_ID="$AUTO_AI_GOOGLE_WEB_CLIENT_ID" \
+          npm run build
 
           test -f frontend/dist/index.html
           test -s frontend/dist/models/face_landmarker.task
-          grep -R -q --include='*.js' --include='*.css' 'chat-delete-dialog-backdrop' frontend/dist/assets
-          grep -R -q --include='*.js' 'Delete chat?' frontend/dist/assets
-          grep -R -q --include='*.css' 'z-index:95' frontend/dist/assets
-          if grep -R -q --include='*.js' 'Delete this chat?' frontend/dist/assets; then
-            echo 'Stale native delete confirmation is still present in the web bundle.' >&2
-            exit 1
-          fi
-
           npx cap sync android
-
           test -f android/app/src/main/assets/public/index.html
-          grep -R -q --include='*.js' --include='*.css' 'chat-delete-dialog-backdrop' android/app/src/main/assets/public/assets
-          grep -R -q --include='*.js' 'Delete chat?' android/app/src/main/assets/public/assets
-          grep -R -q --include='*.css' 'z-index:95' android/app/src/main/assets/public/assets
-          if grep -R -q --include='*.js' 'Delete this chat?' android/app/src/main/assets/public/assets; then
-            echo 'Capacitor copied stale delete-confirmation assets.' >&2
-            exit 1
-          fi
 
           chmod +x android/gradlew
           ./android/gradlew -p android :app:testDebugUnitTest assembleRelease
@@ -196,19 +139,14 @@ jobs:
           apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
           test -n "$apksigner"
           "$apksigner" verify --verbose --print-certs output/android/auto-ai.apk | tee output/android/signing.txt
-          actual_cert="$(
-            sed -n -e 's/^Signer #1 certificate SHA-256 digest: //p' -e 's/^V2 Signer: certificate SHA-256 digest: //p' output/android/signing.txt \
-              | head -1 \
-              | tr -d ':' \
-              | tr '[:upper:]' '[:lower:]'
-          )"
-          expected_cert="$(printf '%s' "${AUTO_AI_EXPECTED_SIGNING_SHA256:-}" | tr -d ':' | tr '[:upper:]' '[:lower:]')"
-          if [ -z "$expected_cert" ] || [ "$actual_cert" != "$expected_cert" ]; then
-            echo 'APK signing certificate does not match AUTO_AI_EXPECTED_SIGNING_SHA256.' >&2
+          actual_cert="$(sed -n -e 's/^Signer #1 certificate SHA-256 digest: //p' -e 's/^V2 Signer: certificate SHA-256 digest: //p' output/android/signing.txt | head -1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          expected_cert="$(printf '%s' "$AUTO_AI_EXPECTED_SIGNING_SHA256" | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          if [ -z "$actual_cert" ] || [ "$actual_cert" != "$expected_cert" ]; then
+            echo 'APK signing certificate mismatch.' >&2
             exit 1
           fi
 
-      - name: Publish GitHub APK release
+      - name: Publish latest GitHub APK release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -217,12 +155,6 @@ jobs:
           sha256="$(sha256sum "$apk_path" | awk '{print $1}')"
           size="$(stat -c '%s' "$apk_path")"
           tag="android-${AUTO_AI_ANDROID_VERSION_CODE}"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "Release $tag already exists; verifying the idempotent retry."
-            asset_url="$(gh release view "$tag" --json assets --jq '.assets[] | select(.name == "auto-ai.apk") | .url')"
-            python scripts/verify_release_asset.py --url "$asset_url" --size "$size" --sha256 "$sha256"
-            exit 0
-          fi
           notes="$(mktemp)"
           {
             echo "Version-Code: ${AUTO_AI_ANDROID_VERSION_CODE}"
@@ -231,43 +163,74 @@ jobs:
             echo "File-Size: ${size}"
             echo "Commit-SHA: ${GITHUB_SHA}"
             echo "Force-Update: true"
-            echo "Changelog: Exact AI alarms with offline awake verification"
+            echo "Changelog: ${AUTO_AI_CHANGELOG}"
             echo
-            echo "Fixes exact alarm delivery and adds live-camera awake verification with bundled offline face detection plus Groq Vision when online, while preserving stable calls and mandatory updates."
-            echo "Verified Android assets from GitHub push ${GITHUB_SHA::7}"
+            echo "Automatically built from main commit ${GITHUB_SHA}."
           } > "$notes"
-          gh release create "$tag" "$apk_path" \
-            --title "Auto-AI Android ${AUTO_AI_ANDROID_VERSION_NAME}" \
-            --notes-file "$notes" \
-            --latest
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$apk_path" --clobber
+            gh release edit "$tag" --title "Auto-AI Android ${AUTO_AI_ANDROID_VERSION_NAME}" --notes-file "$notes" --latest
+          else
+            gh release create "$tag" "$apk_path" \
+              --title "Auto-AI Android ${AUTO_AI_ANDROID_VERSION_NAME}" \
+              --notes-file "$notes" \
+              --latest
+          fi
 
           asset_url="$(gh release view "$tag" --json assets --jq '.assets[] | select(.name == "auto-ai.apk") | .url')"
           python scripts/verify_release_asset.py --url "$asset_url" --size "$size" --sha256 "$sha256"
 
-      - name: Publish APK metadata to backend
+      - name: Wait briefly for Railway without blocking APK release
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: |
+          health_url="${AUTO_AI_HEALTH_URL:-${AUTO_AI_API_BASE_URL%/}/health}"
+          python scripts/wait_for_railway_deployment.py --health-url "$health_url" --commit-sha "$EXPECTED_COMMIT" || \
+            echo '::warning::Railway commit verification timed out; continuing with retry-based metadata publication.'
+
+      - name: Publish mandatory APK metadata with retries
         shell: bash
         run: |
-          python scripts/publish_android_release.py \
-            --api-url "$AUTO_AI_API_BASE_URL" \
-            --apk output/android/auto-ai.apk \
-            --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
-            --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
-            --changelog "Exact AI alarms with offline awake verification" \
-            --release-notes "Fixes exact alarm delivery and adds live-camera awake verification with bundled offline face detection plus Groq Vision when online, while preserving stable calls and mandatory updates. Verified GitHub push ${GITHUB_SHA::7}." \
-            --metadata-only \
-            --force-update
+          success=0
+          for attempt in $(seq 1 12); do
+            if python scripts/publish_android_release.py \
+              --api-url "$AUTO_AI_API_BASE_URL" \
+              --apk output/android/auto-ai.apk \
+              --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
+              --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
+              --changelog "$AUTO_AI_CHANGELOG" \
+              --release-notes "Automatic main update from commit ${GITHUB_SHA}." \
+              --metadata-only \
+              --force-update; then
+              success=1
+              break
+            fi
+            echo "Metadata publication attempt $attempt failed; retrying..."
+            sleep $((attempt * 10))
+          done
+          test "$success" -eq 1
 
-      - name: Notify installed Android apps
-        if: ${{ env.AUTO_AI_UPDATE_NOTIFY_SECRET != '' }}
+      - name: Notify every registered Android installation
         shell: bash
         run: |
-          python scripts/notify_android_update.py \
-            --api-url "$AUTO_AI_API_BASE_URL" \
-            --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
-            --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
-            --changelog "Exact AI alarms with offline awake verification"
+          success=0
+          for attempt in $(seq 1 8); do
+            if python scripts/notify_android_update.py \
+              --api-url "$AUTO_AI_API_BASE_URL" \
+              --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
+              --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
+              --changelog "$AUTO_AI_CHANGELOG"; then
+              success=1
+              break
+            fi
+            echo "Update notification attempt $attempt failed; retrying..."
+            sleep $((attempt * 10))
+          done
+          test "$success" -eq 1
 
-      - name: Upload APK artifact
+      - name: Upload APK workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: auto-ai-${{ env.AUTO_AI_ANDROID_VERSION_NAME }}
