@@ -127,7 +127,7 @@ def test_api_enforces_ownership_and_refresh_returns_latest_card(db: Session) -> 
     created = client.post("/api/v1/form-services/interpret", json={"message": "Fill a test form", "timezone": "Asia/Kolkata", "locale": "en-IN", "client_request_id": "service-api-create-1"})
     assert created.status_code == 200 and created.json()["handled"] is True
     task_id = created.json()["task"]["id"]
-    assert client.get(f"/api/v1/form-services/tasks/{task_id}").json()["active_card"]["type"] == "service_plan"
+    assert client.get(f"/api/v1/form-services/tasks/{task_id}").json()["active_card"]["type"] == "information_request"
     current["user"] = other
     assert client.get(f"/api/v1/form-services/tasks/{task_id}").status_code == 404
 
