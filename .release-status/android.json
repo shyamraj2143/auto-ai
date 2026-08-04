@@ -1,10 +1,10 @@
 {
   "release_tag": "",
   "run_attempt": "1",
-  "run_id": "30947536207",
-  "source_commit": "dc771d968b071f27cf0998e1fa0a84287d11d5d8",
+  "run_id": "30947593169",
+  "source_commit": "5504c51a95d381354a6790ac8b1b769ddb9e753d",
   "status": "cancelled",
-  "updated_at": "2026-08-04T20:22:49.733652+00:00",
+  "updated_at": "2026-08-04T20:23:11.786687+00:00",
   "version_code": "",
   "version_name": ""
 }
