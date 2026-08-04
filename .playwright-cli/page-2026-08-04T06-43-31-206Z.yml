@@ -1,0 +1,29 @@
+- generic [ref=f1e64]:
+  - link [ref=f1e65] [cursor=pointer]:
+    - /url: /
+    - img "AutoAI" [ref=f1e67]
+    - text: Auto-AI
+  - generic [ref=f1e81]:
+    - paragraph [ref=f1e82]: Personal AI layer
+    - heading "Create your workspace." [level=1] [ref=f1e93]
+    - paragraph [ref=f1e94]: Start with streaming chat, memory management, document context, image analysis, and voice input ready on day one.
+  - generic [ref=f1e95]:
+    - generic [ref=f1e96]:
+      - paragraph [ref=f1e97]: Register
+      - heading "Launch Auto-AI" [level=2] [ref=f1e98]
+    - paragraph [ref=f1e115]: Please check the registration details.
+    - generic [ref=f1e99]: or use email
+    - generic [ref=f1e101]:
+      - generic [ref=f1e102]: Name
+      - textbox "Name" [ref=f1e103]: Alarm QA
+    - generic [ref=f1e104]:
+      - generic [ref=f1e105]: Email
+      - textbox "Email" [ref=f1e106]: alarm.qa.20260804@example.test
+    - generic [ref=f1e107]:
+      - generic [ref=f1e108]: Password
+      - textbox "Password" [ref=f1e109]: AlarmQa!2026Secure
+    - button "Create account" [ref=f1e110] [cursor=pointer]
+    - paragraph [ref=f1e113]:
+      - text: Already registered?
+      - link "Log in" [ref=f1e114] [cursor=pointer]:
+        - /url: /login

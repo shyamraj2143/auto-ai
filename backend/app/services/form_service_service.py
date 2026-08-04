@@ -132,6 +132,63 @@ def _latest_receipt(db: Session, task: ServiceTask) -> ServiceActionReceipt | No
     return db.scalar(select(ServiceActionReceipt).where(ServiceActionReceipt.task_id == task.id, ServiceActionReceipt.user_id == task.user_id))
 
 
+def _workflow_summary(db: Session, task: ServiceTask, service: ServiceDefinition, portal: ServicePortal | None) -> dict[str, Any]:
+    responses = {
+        item.field_key: item
+        for item in db.scalars(
+            select(UserFieldResponse).where(UserFieldResponse.task_id == task.id, UserFieldResponse.user_id == task.user_id)
+        )
+    }
+    values = _task_fields(db, task)
+    fields = []
+    for definition in service.requirements:
+        key = str(definition["key"])
+        response = responses.get(key)
+        value = values.get(key)
+        fields.append(
+            {
+                "key": key,
+                "label": definition.get("label", key.replace("_", " ").title()),
+                "value": value if value not in (None, "") else "Missing",
+                "source": response.source if response else "missing",
+                "status": "complete" if response else "missing",
+                "confidence": "user-confirmed" if response else "not available",
+            }
+        )
+    documents = _task_documents(db, task)
+    required_documents = len(service.required_documents)
+    completed_fields = sum(item["status"] == "complete" for item in fields)
+    completed_documents = sum(item["validation_status"] == "VALID" for item in documents)
+    next_field = next((item["label"] for item in fields if item["status"] != "complete"), None)
+    next_document = next((item["label"] for item in documents if item["validation_status"] != "VALID"), None)
+    if not next_document and completed_documents < required_documents:
+        next_document = next(
+            (item.get("label") for item in service.required_documents if item.get("key") not in {doc.get("requirement_key") for doc in documents}),
+            None,
+        )
+    return {
+        "portal_name": portal.name if portal else "AutoAI verified local adapter",
+        "official_origin": portal.origin if portal else None,
+        "current_stage": task.state.replace("_", " ").title(),
+        "completed_fields": completed_fields,
+        "total_fields": len(service.requirements),
+        "completed_documents": completed_documents,
+        "total_documents": required_documents,
+        "currently_filling": next_field or next_document or "Ready for the next verified step",
+        "fields": fields,
+        "documents": [
+            {
+                "label": item["label"],
+                "filename": item["filename"],
+                "status": item["validation_status"],
+                "warnings": item.get("warnings", []),
+            }
+            for item in documents
+        ],
+        "submission_ready": task.state in {TaskState.REVIEW_REQUIRED.value, TaskState.SUBMISSION_CONFIRMATION_REQUIRED.value},
+    }
+
+
 def build_task_view(db: Session, task: ServiceTask) -> ServiceTaskView:
     service, portal, adapter_record = _service_parts(db, task)
     state = TaskState(task.state)
@@ -275,6 +332,22 @@ def build_task_view(db: Session, task: ServiceTask) -> ServiceTaskView:
         }
         for handoff in active_handoffs
     ]
+    workflow_steps = list(
+        db.scalars(
+            select(ServiceTaskStep)
+            .where(ServiceTaskStep.task_id == task.id, ServiceTaskStep.user_id == task.user_id)
+            .order_by(ServiceTaskStep.position)
+        )
+    )
+    data["workflow"] = {
+        "workflow_id": task.id,
+        "current_step": next((index + 1 for index, step in enumerate(workflow_steps) if step.status != "COMPLETED"), len(workflow_steps)),
+        "total_steps": len(workflow_steps),
+        "progress_percent": task.progress_percent,
+        "current_operation": description,
+        "completed_steps": [step.title for step in workflow_steps if step.status == "COMPLETED"],
+    }
+    data["application_preview"] = _workflow_summary(db, task, service, portal)
     return ServiceTaskView(
         id=task.id,
         chat_id=task.chat_id,
@@ -348,12 +421,21 @@ def create_task(db: Session, user_id: str, resolution: RegistryResolution, *, ch
     return task
 
 
-def start_task(db: Session, task: ServiceTask, *, expected_version: int, request_id: str) -> None:
+def start_task(
+    db: Session,
+    task: ServiceTask,
+    *,
+    expected_version: int,
+    request_id: str,
+    actor: str = "user",
+    source: str = "service_plan",
+    reason: str = "User started the selected service",
+) -> None:
     ensure_version(task, expected_version)
     if task.state != TaskState.CREATED.value:
         raise service_error("POLICY_BLOCKED", "This task has already started")
     service, _, _ = _service_parts(db, task)
-    transition_task(db, task, TaskState.INTENT_CONFIRMED, actor="user", source="service_plan", reason="User started the selected service", request_id=request_id)
+    transition_task(db, task, TaskState.INTENT_CONFIRMED, actor=actor, source=source, reason=reason, request_id=request_id)
     transition_task(db, task, TaskState.SERVICE_DISCOVERY, actor="system", source="registry", reason="Resolving verified service configuration", request_id=request_id)
     for index, chunk_start in enumerate(range(0, len(service.requirements), 4)):
         fields = service.requirements[chunk_start:chunk_start + 4]

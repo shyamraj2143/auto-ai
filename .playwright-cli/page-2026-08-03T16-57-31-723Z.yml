@@ -1,0 +1,164 @@
+- generic [ref=f4e3]:
+  - complementary "AutoAI workspace" [ref=f4e4]:
+    - link "AutoAI Dashboard" [ref=f4e5] [cursor=pointer]:
+      - /url: /hub
+      - img "AutoAI" [ref=f4e6]
+      - strong [ref=f4e20]: AutoAI
+    - navigation [ref=f4e21]:
+      - link "Dashboard" [ref=f4e22] [cursor=pointer]:
+        - /url: /hub
+      - link "AI Chat" [ref=f4e29] [cursor=pointer]:
+        - /url: /chat
+      - link "Screen Sharing" [ref=f4e33] [cursor=pointer]:
+        - /url: /screen-share
+      - link "Calls" [ref=f4e38] [cursor=pointer]:
+        - /url: /call-hub/calls
+      - link "Messages" [ref=f4e42] [cursor=pointer]:
+        - /url: /messages
+      - link "AI Alarm" [ref=f4e47] [cursor=pointer]:
+        - /url: /alarms
+      - link "Contacts" [ref=f4e56] [cursor=pointer]:
+        - /url: /call-hub/chats
+      - link "Analytics" [ref=f4e62] [cursor=pointer]:
+        - /url: /activity
+      - link "Settings" [ref=f4e66] [cursor=pointer]:
+        - /url: /settings
+    - generic [ref=f4e71]:
+      - generic [ref=f4e72]: RS
+      - generic [ref=f4e73]:
+        - strong [ref=f4e74]: Relationship Smoke
+        - generic [ref=f4e75]: relationship.smoke.20260803@example.com
+      - button "Sign out" [ref=f4e76] [cursor=pointer]
+  - main [ref=f4e80]:
+    - generic [ref=f4e82]:
+      - generic [ref=f4e83]:
+        - button "Back to Action Hub" [ref=f4e84] [cursor=pointer]
+        - generic [ref=f4e87]:
+          - paragraph [ref=f4e88]: Social life & family
+          - heading "Relationship Follow-up" [level=1] [ref=f4e89]
+          - generic [ref=f4e95]: Stay connected intentionally. No contacts permission required.
+        - button "Add person" [ref=f4e96] [cursor=pointer]
+      - status [ref=f4e195]:
+        - text: Contact recorded and next reminder calculated.
+        - button "Dismiss message" [ref=f4e199] [cursor=pointer]
+      - main [ref=f4e98]:
+        - region "Follow-up summary" [ref=f4e99]:
+          - button [ref=f4e100] [cursor=pointer]:
+            - generic [ref=f4e101]: Due today
+            - strong [ref=f4e106]: "0"
+          - button [ref=f4e107] [cursor=pointer]:
+            - generic [ref=f4e108]: Overdue
+            - strong [ref=f4e112]: "0"
+          - button [ref=f4e203] [cursor=pointer]:
+            - generic [ref=f4e114]: Upcoming
+            - strong [ref=f4e120]: "1"
+        - region "Search and filters" [ref=f4e121]:
+          - generic [ref=f4e122]:
+            - generic [ref=f4e123]: Search people
+            - textbox "Search people" [ref=f4e124]:
+              - /placeholder: Search people…
+          - generic [ref=f4e125]:
+            - generic [ref=f4e126]: Relationship filter
+            - combobox "Relationship filter" [ref=f4e127]:
+              - option "All relationships" [selected]
+              - option "Family / परिवार"
+              - option "Friend / मित्र"
+              - option "Relative / रिश्तेदार"
+              - option "Teacher / Mentor"
+              - option "Colleague / सहकर्मी"
+              - option "Professional contact"
+              - option "Other / अन्य"
+          - generic [ref=f4e128]:
+            - generic [ref=f4e129]: Priority filter
+            - combobox "Priority filter" [ref=f4e130]:
+              - option "All priorities" [selected]
+              - option "Normal"
+              - option "Important"
+              - option "High"
+          - generic [ref=f4e131]:
+            - generic [ref=f4e132]: Sort by due date
+            - combobox "Sort by due date" [ref=f4e133]:
+              - option "Due first" [selected]
+              - option "Latest first"
+          - button "Paused" [ref=f4e134] [cursor=pointer]
+          - button "Archived" [ref=f4e135] [cursor=pointer]
+        - region "Relationship follow-ups" [ref=f4e136]:
+          - article [ref=f4e309]:
+            - generic [ref=f4e310]:
+              - generic [ref=f4e311]: A
+              - generic [ref=f4e312]:
+                - heading "Anita Sharma" [level=2] [ref=f4e313]
+                - paragraph [ref=f4e314]: Family / परिवार
+              - generic [ref=f4e315]: active
+            - generic [ref=f4e321]:
+              - generic [ref=f4e322]: Next follow-up
+              - strong [ref=f4e323]: Sep 3, 2026, 10:00 AM
+            - paragraph [ref=f4e324]: Every month · normal
+            - generic [ref=f4e325]:
+              - button "Contacted" [ref=f4e326] [cursor=pointer]
+              - button "Details" [ref=f4e330] [cursor=pointer]
+              - button "Edit Anita Sharma" [ref=f4e331] [cursor=pointer]
+        - region [ref=f4e147]:
+          - generic [ref=f4e152]:
+            - heading "Reminder notifications" [level=2] [ref=f4e153]
+            - paragraph [ref=f4e154]: In-app reminders always work. Android push is optional and requested only when you enable it.
+          - generic [ref=f4e155]:
+            - switch "Enable push" [ref=f4e156] [cursor=pointer]
+            - generic [ref=f4e158]:
+              - checkbox "Show person name in notification" [ref=f4e159]
+              - text: Show person name in notification
+      - dialog [ref=f4e230]:
+        - generic [ref=f4e231]:
+          - heading "Anita Sharma" [level=2] [ref=f4e232]
+          - button "Close dialog" [active] [ref=f4e233] [cursor=pointer]
+        - generic [ref=f4e237]:
+          - generic [ref=f4e336]:
+            - generic [ref=f4e337]: Family / परिवार
+            - strong [ref=f4e338]: "Next: Sep 3, 2026, 10:00 AM"
+            - generic [ref=f4e339]: "Last contacted: Aug 3, 2026, 10:27 PM"
+          - generic [ref=f4e340]:
+            - heading "Private context" [level=3] [ref=f4e341]
+            - paragraph [ref=f4e342]: Ask about the new job
+          - region "Reminder actions" [ref=f4e343]:
+            - generic [ref=f4e344]:
+              - text: Optional interaction note
+              - textbox "Optional interaction note" [ref=f4e345]: Talked by phone
+            - button "Mark contacted" [ref=f4e346] [cursor=pointer]
+            - button "Snooze 1 day" [ref=f4e350] [cursor=pointer]
+            - button "Pause" [ref=f4e354] [cursor=pointer]
+            - button "Archive" [ref=f4e358] [cursor=pointer]
+            - button "Edit" [ref=f4e362] [cursor=pointer]
+          - generic [ref=f4e366]:
+            - generic [ref=f4e367]:
+              - text: Reschedule reminder
+              - textbox "Reschedule reminder" [ref=f4e368]: 2026-09-03T10:00
+            - button "Reschedule" [ref=f4e369] [cursor=pointer]
+          - generic [ref=f4e370]:
+            - generic [ref=f4e374]:
+              - heading "AI message suggestion" [level=3] [ref=f4e375]
+              - paragraph [ref=f4e376]: Only name, relationship and context below are sent. Review before sharing; AutoAI never sends automatically.
+            - generic [ref=f4e377]:
+              - combobox "Suggestion tone" [ref=f4e378]:
+                - option "Friendly" [selected]
+                - option "Formal"
+                - option "Caring"
+              - 'textbox "Optional: birthday, illness, professional follow-up…" [ref=f4e379]'
+              - button "Suggest" [ref=f4e380] [cursor=pointer]
+            - textbox "Editable AI suggestion" [ref=f4e383]:
+              - /placeholder: Generated message stays editable.
+            - button "Review in share sheet" [disabled] [ref=f4e384]
+          - generic [ref=f4e388]:
+            - generic [ref=f4e389]:
+              - heading "Interaction history" [level=3] [ref=f4e390]
+              - article [ref=f4e395]:
+                - strong [ref=f4e396]: Aug 3, 2026, 10:27 PM
+                - generic [ref=f4e397]: Manual
+                - paragraph [ref=f4e398]: Talked by phone
+            - generic [ref=f4e399]:
+              - heading "Reminder timeline" [level=3] [ref=f4e400]
+              - article [ref=f4e406]:
+                - strong [ref=f4e407]: Sep 3, 2026, 10:00 AM
+                - generic [ref=f4e408]: pending
+              - article [ref=f4e409]:
+                - strong [ref=f4e410]: Aug 4, 2026, 10:00 AM
+                - generic [ref=f4e411]: completed

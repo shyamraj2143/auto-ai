@@ -115,6 +115,14 @@ def transition_task(
         db,
         task,
         "TASK_STATE_CHANGED",
-        {"previous_state": previous.value, "new_state": new_state.value, "actor": actor, "source": source, "reason": reason, "evidence_reference": evidence_reference},
+        {
+            "previous_state": previous.value,
+            "new_state": new_state.value,
+            "actor": actor,
+            "source": source,
+            "reason": reason,
+            "progress_percent": task.progress_percent,
+            "evidence_reference": evidence_reference,
+        },
         request_id,
     )

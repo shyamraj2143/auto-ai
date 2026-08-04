@@ -118,6 +118,16 @@ def interpret_service_request(payload: ServiceIntentRequest, user: User = Depend
         return ServiceIntentResponse(handled=False, confidence=0, reason="No verified service matched this message", chat_id=payload.chat_id)
     mode = ExecutionMode.EXECUTE_WITH_CONFIRMATION if resolution.adapter.adapter_type == "local_verified" else ExecutionMode.ASSIST
     task = create_task(db, user.id, resolution, chat_id=payload.chat_id, original_request=payload.message, execution_mode=mode, timezone=payload.timezone, locale=payload.locale, client_request_id=payload.client_request_id)
+    if task.state == "CREATED":
+        start_task(
+            db,
+            task,
+            expected_version=task.version,
+            request_id=f"intent-start-{task.id}",
+            actor="system",
+            source="intent_router",
+            reason="High-confidence service intent detected; verified requirements are loading",
+        )
     return ServiceIntentResponse(handled=True, confidence=resolution.confidence, reason="Matched against the persisted verified service registry", chat_id=task.chat_id, task=build_task_view(db, task))
 
 
@@ -529,7 +539,7 @@ def stream_task_events(task_id: str, after: str | None = Query(default=None), us
                 if rows:
                     for row in rows:
                         last_id = row.id
-                        payload = {"id": row.id, "event_type": row.event_type, "details": row.details, "request_id": row.request_id, "created_at": row.created_at.isoformat() + "Z"}
+                        payload = {"id": row.id, "workflow_id": task_id, "event_type": row.event_type, "details": row.details, "request_id": row.request_id, "created_at": row.created_at.isoformat() + "Z"}
                         yield f"id: {row.id}\nevent: task_update\ndata: {json.dumps(payload, separators=(',', ':'))}\n\n"
                     idle_rounds = 0
                 else:

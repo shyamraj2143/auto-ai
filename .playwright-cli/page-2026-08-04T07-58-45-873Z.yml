@@ -1,0 +1,140 @@
+- generic [ref=f2e115]:
+  - complementary "AutoAI workspace" [ref=f2e116]:
+    - link "AutoAI Dashboard" [ref=f2e117] [cursor=pointer]:
+      - /url: /hub
+      - img "AutoAI" [ref=f2e118]
+      - strong [ref=f2e132]: AutoAI
+    - navigation [ref=f2e133]:
+      - link "Dashboard" [ref=f2e134] [cursor=pointer]:
+        - /url: /hub
+      - link "AI Chat" [ref=f2e141] [cursor=pointer]:
+        - /url: /chat
+      - link "Screen Sharing" [ref=f2e145] [cursor=pointer]:
+        - /url: /screen-share
+      - link "Calls" [ref=f2e150] [cursor=pointer]:
+        - /url: /call-hub/calls
+      - link "Messages" [ref=f2e154] [cursor=pointer]:
+        - /url: /messages
+      - link "AI Alarm" [ref=f2e159] [cursor=pointer]:
+        - /url: /alarms
+      - link "Contacts" [ref=f2e168] [cursor=pointer]:
+        - /url: /call-hub/chats
+      - link "Analytics" [ref=f2e174] [cursor=pointer]:
+        - /url: /activity
+      - link "Settings" [ref=f2e178] [cursor=pointer]:
+        - /url: /settings
+    - generic [ref=f2e183]:
+      - generic [ref=f2e184]: FS
+      - generic [ref=f2e185]:
+        - strong [ref=f2e186]: Form Smoke User
+        - generic [ref=f2e187]: form.smoke.20260804.1319@example.com
+      - button "Sign out" [ref=f2e188] [cursor=pointer]
+  - complementary [ref=f2e367]:
+    - generic [ref=f2e368]:
+      - generic [ref=f2e369]:
+        - img "AutoAI" [ref=f2e371]
+        - link "Auto-AI" [ref=f2e385] [cursor=pointer]:
+          - /url: /hub
+      - button "Hide chat history" [ref=f2e386] [cursor=pointer]
+    - generic [ref=f2e390]:
+      - button "New chat" [ref=f2e391] [cursor=pointer]
+      - link "User messages" [ref=f2e394] [cursor=pointer]:
+        - /url: /messages
+      - textbox "Search conversations" [ref=f2e401]:
+        - /placeholder: Search chats
+    - generic [ref=f2e402]:
+      - generic [ref=f2e403]: Chat history
+      - generic [ref=f2e404]: "1"
+    - navigation [ref=f2e405]:
+      - generic [ref=f2e470]:
+        - 'button "Service: AutoAI Safe Test Form instant / openai.gpt-oss-120b Aug 04, 2026, 1:28 PM" [ref=f2e471] [cursor=pointer]':
+          - generic [ref=f2e472]: "Service: AutoAI Safe Test Form"
+          - generic [ref=f2e473]: instant / openai.gpt-oss-120b
+          - generic "Tuesday, August 4, 2026 at 1:28 PM India Standard Time" [ref=f2e474]:
+            - time [ref=f2e479]: Aug 04, 2026, 1:28 PM
+        - button "Rename chat" [ref=f2e480] [cursor=pointer]
+        - button "Delete chat" [ref=f2e484] [cursor=pointer]
+    - generic [ref=f2e408]:
+      - button "Open profile menu" [ref=f2e409] [cursor=pointer]:
+        - generic [ref=f2e410]: F
+        - generic [ref=f2e411]:
+          - generic [ref=f2e412]: Form Smoke User
+          - generic [ref=f2e413]: Active subscription
+      - link "Open subscription" [ref=f2e414] [cursor=pointer]:
+        - /url: /settings?section=subscription
+  - main [ref=f2e192]:
+    - generic [ref=f2e490]:
+      - generic [ref=f2e491]:
+        - generic [ref=f2e492]:
+          - generic [ref=f2e493]:
+            - 'img "Auto-AI status: ready"'
+            - 'heading "Service: AutoAI Safe Test Form" [level=1] [ref=f2e494]'
+          - paragraph [ref=f2e495]: instant intelligence
+        - generic [ref=f2e496]:
+          - button "Search conversations" [ref=f2e497] [cursor=pointer]: Search
+          - button "New chat" [ref=f2e501] [cursor=pointer]
+          - button "Open chat actions" [ref=f2e504] [cursor=pointer]: More
+      - generic [ref=f2e509]:
+        - 'separator "Conversation date: Tuesday, August 4, 2026" [ref=f2e510]':
+          - generic [ref=f2e511]: Today
+        - article [ref=f2e512]:
+          - generic [ref=f2e513]:
+            - generic [ref=f2e514]:
+              - paragraph [ref=f2e516]: Open a simple test form
+              - time [ref=f2e517]: 1:28 PM
+            - generic "User message actions" [ref=f2e518]:
+              - button "Copy message" [ref=f2e519] [cursor=pointer]
+        - article [ref=f2e523]:
+          - generic [ref=f2e524]:
+            - generic [ref=f2e525]:
+              - paragraph [ref=f2e527]: I found a supported service. Review this plan before AutoAI collects any information.
+              - region "Required information — step 1" [ref=f2e610]:
+                - generic [ref=f2e534]:
+                  - generic [ref=f2e535]: EXECUTE WITH CONFIRMATION · collecting information
+                  - heading "Required information — step 1" [level=3] [ref=f2e611]
+                  - paragraph [ref=f2e537]: Provide these values exactly as they should appear on the application.
+                - generic [ref=f2e539]: Step saved
+                - generic [ref=f2e613]:
+                  - generic [ref=f2e614]:
+                    - generic [ref=f2e615]: Applicant name *
+                    - textbox "Applicant name" [ref=f2e616]
+                    - generic [ref=f2e617]: Name shown on the test receipt.
+                  - generic [ref=f2e618]:
+                    - generic [ref=f2e619]: Email *
+                    - textbox "Email" [ref=f2e620]
+                    - generic [ref=f2e621]: Used only in this test application.
+                  - generic [ref=f2e622]:
+                    - generic [ref=f2e623]: Date of birth *
+                    - textbox "Date of birth" [ref=f2e624]
+                    - generic [ref=f2e625]: Must be a date in the past.
+                  - generic [ref=f2e626]:
+                    - generic [ref=f2e627]: District *
+                    - combobox "District" [ref=f2e628]:
+                      - option "Select an option" [selected]
+                      - option "Patna"
+                      - option "Gaya"
+                      - option "Muzaffarpur"
+                      - option "Other"
+                    - generic [ref=f2e629]: Choose the applicable district.
+                  - button "Save and continue" [ref=f2e630] [cursor=pointer]
+                - generic [ref=f2e555]:
+                  - button "Pause" [ref=f2e633] [cursor=pointer]
+                  - button "Cancel" [ref=f2e559] [cursor=pointer]
+                  - button "Refresh task" [ref=f2e560] [cursor=pointer]
+              - time [ref=f2e566]: 1:28 PM
+            - generic "Assistant message actions" [ref=f2e567]:
+              - button "Copy message" [ref=f2e568] [cursor=pointer]
+              - button "Like response" [ref=f2e572] [cursor=pointer]
+              - button "Dislike response" [ref=f2e575] [cursor=pointer]
+              - button "Share response" [ref=f2e578] [cursor=pointer]
+              - button "Regenerate response" [ref=f2e585] [cursor=pointer]
+      - generic [ref=f2e592]:
+        - generic [ref=f2e593]:
+          - button "Add to chat" [ref=f2e595] [cursor=pointer]
+          - button "Auto" [ref=f2e598] [cursor=pointer]
+          - generic [ref=f2e599]: Auto detected
+        - generic [ref=f2e600]:
+          - textbox "Ask anything..." [ref=f2e601]
+          - generic [ref=f2e602]:
+            - button "Start AI voice input" [ref=f2e603] [cursor=pointer]
+            - button "Send message" [disabled] [ref=f2e607]

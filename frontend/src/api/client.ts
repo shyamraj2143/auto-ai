@@ -1588,6 +1588,65 @@ export async function streamGenerationActivity(
   }
 }
 
+export type ServiceTaskEvent = {
+  id: string;
+  workflow_id: string;
+  event_type: string;
+  details: Record<string, unknown>;
+  request_id: string;
+  created_at: string;
+};
+
+export async function streamServiceTaskEvents(
+  token: string,
+  taskId: string,
+  onEvent: (event: ServiceTaskEvent) => void,
+  options: { after?: string; signal?: AbortSignal } = {}
+) {
+  const query = options.after ? `?after=${encodeURIComponent(options.after)}` : "";
+  const path = `/form-services/tasks/${encodeURIComponent(taskId)}/events${query}`;
+  const response = await fetchWithNetworkMessage(
+    joinApiUrl(API_BASE_URL, path),
+    {
+      headers: { Authorization: `Bearer ${token}`, Accept: "text/event-stream" },
+      signal: options.signal
+    },
+    { path, method: "GET", operation: "formService.task.events" }
+  );
+  if (!response.ok || !response.body) {
+    const errorPayload = await readErrorPayload(response);
+    throw createHttpError(
+      response.status,
+      response.statusText,
+      errorPayload,
+      response.url,
+      response.headers.get("x-request-id"),
+      { path, method: "GET", operation: "formService.task.events" }
+    );
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) return;
+    buffer += decoder.decode(value, { stream: true });
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() ?? "";
+    for (const frame of frames) {
+      const data = frame
+        .split("\n")
+        .find((line) => line.startsWith("data:"))
+        ?.replace(/^data:\s*/, "");
+      if (!data) continue;
+      const parsed = JSON.parse(data) as Partial<ServiceTaskEvent>;
+      if (parsed.id && parsed.workflow_id === taskId && parsed.event_type && parsed.details && parsed.request_id && parsed.created_at) {
+        onEvent(parsed as ServiceTaskEvent);
+      }
+    }
+  }
+}
+
 function normalizeStreamEvent(payload: unknown): StreamEvent | null {
   if (!payload || typeof payload !== "object" || !("type" in payload)) return null;
   const event = payload as Record<string, unknown>;

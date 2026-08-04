@@ -1,0 +1,144 @@
+- generic [ref=f1e1]:
+  - generic [ref=f1e3]:
+    - main [ref=f1e4]:
+      - generic [ref=f1e6]:
+        - generic [ref=f1e7]:
+          - button "Back to Action Hub" [ref=f1e8] [cursor=pointer]
+          - generic [ref=f1e11]:
+            - paragraph [ref=f1e12]: Social life & family
+            - heading "Relationship Follow-up" [level=1] [ref=f1e13]
+          - button "Add person" [ref=f1e14] [cursor=pointer]
+        - main [ref=f1e16]:
+          - region "Follow-up summary" [ref=f1e17]:
+            - button [ref=f1e18] [cursor=pointer]:
+              - generic [ref=f1e19]: Due today
+              - strong [ref=f1e24]: "0"
+            - button [ref=f1e25] [cursor=pointer]:
+              - generic [ref=f1e26]: Overdue
+              - strong [ref=f1e30]: "0"
+            - button [ref=f1e31] [cursor=pointer]:
+              - generic [ref=f1e32]: Upcoming
+              - strong [ref=f1e38]: "1"
+          - region "Search and filters" [ref=f1e39]:
+            - generic [ref=f1e40]:
+              - generic [ref=f1e41]: Search people
+              - textbox "Search people" [ref=f1e42]:
+                - /placeholder: Search people…
+            - generic [ref=f1e43]:
+              - generic [ref=f1e44]: Relationship filter
+              - combobox "Relationship filter" [ref=f1e45]:
+                - option "All relationships" [selected]
+                - option "Family / परिवार"
+                - option "Friend / मित्र"
+                - option "Relative / रिश्तेदार"
+                - option "Teacher / Mentor"
+                - option "Colleague / सहकर्मी"
+                - option "Professional contact"
+                - option "Other / अन्य"
+            - generic [ref=f1e46]:
+              - generic [ref=f1e47]: Priority filter
+              - combobox "Priority filter" [ref=f1e48]:
+                - option "All priorities" [selected]
+                - option "Normal"
+                - option "Important"
+                - option "High"
+            - generic [ref=f1e49]:
+              - generic [ref=f1e50]: Sort by due date
+              - combobox "Sort by due date" [ref=f1e51]:
+                - option "Due first" [selected]
+                - option "Latest first"
+            - button "Paused" [ref=f1e52] [cursor=pointer]
+            - button "Archived" [ref=f1e53] [cursor=pointer]
+          - region "Relationship follow-ups" [ref=f1e54]:
+            - article [ref=f1e56]:
+              - generic [ref=f1e57]:
+                - generic [ref=f1e58]: A
+                - generic [ref=f1e59]:
+                  - heading "Anita Sharma" [level=2] [ref=f1e60]
+                  - paragraph [ref=f1e61]: Family / परिवार
+                - generic [ref=f1e62]: active
+              - generic [ref=f1e68]:
+                - generic [ref=f1e69]: Next follow-up
+                - strong [ref=f1e70]: Sep 3, 2026, 10:00 AM
+              - paragraph [ref=f1e71]: Every month · normal
+              - generic [ref=f1e72]:
+                - button "Contacted" [ref=f1e73] [cursor=pointer]
+                - button "Details" [ref=f1e77] [cursor=pointer]
+                - button "Edit Anita Sharma" [ref=f1e78] [cursor=pointer]
+          - region [ref=f1e82]:
+            - generic [ref=f1e87]:
+              - heading "Reminder notifications" [level=2] [ref=f1e88]
+              - paragraph [ref=f1e89]: In-app reminders always work. Android push is optional and requested only when you enable it.
+            - generic [ref=f1e90]:
+              - switch "Enable push" [ref=f1e91] [cursor=pointer]
+              - generic [ref=f1e93]:
+                - checkbox "Show person name in notification" [ref=f1e94]
+                - text: Show person name in notification
+    - navigation "Primary navigation" [ref=f1e95]:
+      - link "Dashboard" [ref=f1e96] [cursor=pointer]:
+        - /url: /hub
+      - link "AI Chat" [ref=f1e103] [cursor=pointer]:
+        - /url: /chat
+      - link "Share" [ref=f1e107] [cursor=pointer]:
+        - /url: /screen-share
+      - link "Calls" [ref=f1e112] [cursor=pointer]:
+        - /url: /call-hub/calls
+      - link "Messages" [ref=f1e116] [cursor=pointer]:
+        - /url: /messages
+      - link "More" [ref=f1e121] [cursor=pointer]:
+        - /url: /settings
+  - dialog [ref=f1e126]:
+    - banner [ref=f1e127]:
+      - heading "Anita Sharma" [level=2] [ref=f1e128]
+      - button "Close dialog" [active] [ref=f1e129] [cursor=pointer]
+    - generic [ref=f1e133]:
+      - generic [ref=f1e135]:
+        - generic [ref=f1e136]: Family / परिवार
+        - strong [ref=f1e137]: "Next: Sep 3, 2026, 10:00 AM"
+        - generic [ref=f1e138]: "Last contacted: Aug 3, 2026, 10:27 PM"
+      - generic [ref=f1e139]:
+        - heading "Private context" [level=3] [ref=f1e140]
+        - paragraph [ref=f1e141]: Ask about the new job
+      - region "Reminder actions" [ref=f1e142]:
+        - generic [ref=f1e143]:
+          - text: Optional interaction note
+          - textbox "Optional interaction note" [ref=f1e144]
+        - button "Mark contacted" [ref=f1e145] [cursor=pointer]
+        - button "Snooze 1 day" [ref=f1e149] [cursor=pointer]
+        - button "Pause" [ref=f1e153] [cursor=pointer]
+        - button "Archive" [ref=f1e157] [cursor=pointer]
+        - button "Edit" [ref=f1e161] [cursor=pointer]
+      - generic [ref=f1e165]:
+        - generic [ref=f1e166]:
+          - text: Reschedule reminder
+          - textbox "Reschedule reminder" [ref=f1e167]: 2026-09-03T10:00
+        - button "Reschedule" [ref=f1e168] [cursor=pointer]
+      - generic [ref=f1e169]:
+        - generic [ref=f1e173]:
+          - heading "AI message suggestion" [level=3] [ref=f1e174]
+          - paragraph [ref=f1e175]: Only name, relationship and context below are sent. Review before sharing; AutoAI never sends automatically.
+        - generic [ref=f1e176]:
+          - combobox "Suggestion tone" [ref=f1e177]:
+            - option "Friendly" [selected]
+            - option "Formal"
+            - option "Caring"
+          - 'textbox "Optional: birthday, illness, professional follow-up…" [ref=f1e178]'
+          - button "Suggest" [ref=f1e179] [cursor=pointer]
+        - textbox "Editable AI suggestion" [ref=f1e182]:
+          - /placeholder: Generated message stays editable.
+        - button "Review in share sheet" [disabled] [ref=f1e183]
+      - generic [ref=f1e187]:
+        - generic [ref=f1e188]:
+          - heading "Interaction history" [level=3] [ref=f1e189]
+          - article [ref=f1e194]:
+            - strong [ref=f1e195]: Aug 3, 2026, 10:27 PM
+            - generic [ref=f1e196]: Manual
+            - paragraph [ref=f1e197]: Talked by phone
+        - generic [ref=f1e198]:
+          - heading "Reminder timeline" [level=3] [ref=f1e199]
+          - article [ref=f1e205]:
+            - strong [ref=f1e206]: Sep 3, 2026, 10:00 AM
+            - generic [ref=f1e207]: pending
+          - article [ref=f1e208]:
+            - strong [ref=f1e209]: Aug 4, 2026, 10:00 AM
+            - generic [ref=f1e210]: completed

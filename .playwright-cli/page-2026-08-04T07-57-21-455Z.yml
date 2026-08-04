@@ -1,0 +1,137 @@
+- generic [ref=f2e115]:
+  - complementary "AutoAI workspace" [ref=f2e116]:
+    - link "AutoAI Dashboard" [ref=f2e117] [cursor=pointer]:
+      - /url: /hub
+      - img "AutoAI" [ref=f2e118]
+      - strong [ref=f2e132]: AutoAI
+    - navigation [ref=f2e133]:
+      - link "Dashboard" [ref=f2e134] [cursor=pointer]:
+        - /url: /hub
+      - link "AI Chat" [active] [ref=f2e141] [cursor=pointer]:
+        - /url: /chat
+      - link "Screen Sharing" [ref=f2e145] [cursor=pointer]:
+        - /url: /screen-share
+      - link "Calls" [ref=f2e150] [cursor=pointer]:
+        - /url: /call-hub/calls
+      - link "Messages" [ref=f2e154] [cursor=pointer]:
+        - /url: /messages
+      - link "AI Alarm" [ref=f2e159] [cursor=pointer]:
+        - /url: /alarms
+      - link "Contacts" [ref=f2e168] [cursor=pointer]:
+        - /url: /call-hub/chats
+      - link "Analytics" [ref=f2e174] [cursor=pointer]:
+        - /url: /activity
+      - link "Settings" [ref=f2e178] [cursor=pointer]:
+        - /url: /settings
+    - generic [ref=f2e183]:
+      - generic [ref=f2e184]: FS
+      - generic [ref=f2e185]:
+        - strong [ref=f2e186]: Form Smoke User
+        - generic [ref=f2e187]: form.smoke.20260804.1319@example.com
+      - button "Sign out" [ref=f2e188] [cursor=pointer]
+  - main [ref=f2e192]:
+    - generic [ref=f2e194]:
+      - generic [ref=f2e195]:
+        - button "Open Quick Connect" [ref=f2e196] [cursor=pointer]:
+          - generic [ref=f2e200]: Search or type a command...
+          - generic [ref=f2e201]: ⌘ K
+        - generic [ref=f2e202]:
+          - link "Open notifications" [ref=f2e203] [cursor=pointer]:
+            - /url: /call-hub/alerts
+          - link "Open settings" [ref=f2e207] [cursor=pointer]:
+            - /url: /settings
+          - link "Open profile" [ref=f2e211] [cursor=pointer]:
+            - /url: /settings?section=general
+            - generic [ref=f2e212]: F
+          - button "Logout" [ref=f2e213] [cursor=pointer]
+      - main [ref=f2e217]:
+        - region [ref=f2e218]:
+          - paragraph [ref=f2e219]: Your AI Control Center
+          - heading "Good afternoon, Form" [level=1] [ref=f2e220]
+          - generic [ref=f2e221]: Choose a workspace and get things done.
+        - region "Primary AutoAI actions" [ref=f2e222]:
+          - article [ref=f2e224]:
+            - generic [ref=f2e228]:
+              - heading "AI Chat" [level=2] [ref=f2e229]
+              - paragraph [ref=f2e230]: Intelligent conversations that get things done.
+              - generic [ref=f2e231]: Voice · Images · Files · Models
+              - button "Start Chat" [ref=f2e233] [cursor=pointer]:
+                - text: Start Chat
+                - generic [ref=f2e234]: ›
+          - article [ref=f2e236]:
+            - generic [ref=f2e241]:
+              - heading "Screen Sharing" [level=2] [ref=f2e242]
+              - paragraph [ref=f2e243]: Share, collaborate and solve problems together.
+              - generic [ref=f2e244]: Ready to share · secure relay
+              - generic [ref=f2e245]:
+                - button "Share Screen" [ref=f2e246] [cursor=pointer]:
+                  - text: Share Screen
+                  - generic [ref=f2e247]: ›
+                - button "Join code" [ref=f2e248] [cursor=pointer]
+          - article [ref=f2e250]:
+            - generic [ref=f2e254]:
+              - heading "Audio / Video Call" [level=2] [ref=f2e255]
+              - paragraph [ref=f2e256]: Crystal clear calls with contacts and teams.
+              - generic [ref=f2e257]: Contacts · Recent calls · Alerts
+              - generic [ref=f2e258]:
+                - button "Start Call" [ref=f2e259] [cursor=pointer]:
+                  - text: Start Call
+                  - generic [ref=f2e260]: ›
+                - button "History" [ref=f2e261] [cursor=pointer]
+          - article [ref=f2e263]:
+            - generic [ref=f2e272]:
+              - heading "AI Alarm" [level=2] [ref=f2e273]
+              - paragraph [ref=f2e274]: Wake up with a personal reminder in your language.
+              - generic [ref=f2e275]: Calendar · AI voice · Native ringtone
+              - button "Set Alarm" [ref=f2e277] [cursor=pointer]:
+                - text: Set Alarm
+                - generic [ref=f2e278]: ›
+          - article [ref=f2e280]:
+            - generic [ref=f2e287]:
+              - heading "Relationship Follow-up" [level=2] [ref=f2e288]
+              - paragraph [ref=f2e289]: Stay connected with people who matter.
+              - generic [ref=f2e290]: 0 due · Manual entry · Private notes
+              - generic [ref=f2e291]:
+                - button "Open" [ref=f2e292] [cursor=pointer]:
+                  - text: Open
+                  - generic [ref=f2e293]: ›
+                - button "Add person" [ref=f2e294] [cursor=pointer]
+        - region "Workspace metrics" [ref=f2e295]:
+          - article [ref=f2e296]:
+            - generic [ref=f2e297]: AI conversations
+            - strong [ref=f2e300]: "0"
+            - text: Available chat threads
+          - article [ref=f2e301]:
+            - generic [ref=f2e302]: Screen sharing
+            - strong [ref=f2e306]: Ready
+            - text: Secure relay
+          - article [ref=f2e307]:
+            - generic [ref=f2e308]: Call history
+            - strong [ref=f2e311]: "0"
+            - text: Recent call records
+          - article [ref=f2e312]:
+            - generic [ref=f2e313]: Next alarm
+            - strong [ref=f2e321]: Ready
+            - text: No alarm scheduled
+        - generic [ref=f2e322]:
+          - region [ref=f2e323]:
+            - heading "Continue where you left off" [level=2] [ref=f2e326]
+            - generic [ref=f2e332]:
+              - strong [ref=f2e333]: No recent activity yet
+              - paragraph [ref=f2e334]: Start a chat, screen share, or call and it will appear here.
+          - complementary [ref=f2e335]:
+            - generic [ref=f2e336]:
+              - generic [ref=f2e337]: Workspace Status
+              - generic [ref=f2e338]: Live app state
+            - generic [ref=f2e339]:
+              - generic [ref=f2e340]: AI Chat
+              - generic [ref=f2e344]: Ready
+            - generic [ref=f2e346]:
+              - generic [ref=f2e347]: Calling Service
+              - generic [ref=f2e351]: Connected
+            - generic [ref=f2e353]:
+              - generic [ref=f2e354]: Screen Sharing
+              - generic [ref=f2e358]: Operational
+            - generic [ref=f2e360]:
+              - generic [ref=f2e361]: Network
+              - generic [ref=f2e365]: Online

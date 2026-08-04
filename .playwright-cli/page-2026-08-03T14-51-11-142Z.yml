@@ -1,0 +1,92 @@
+- generic [ref=e71]:
+  - complementary "AutoAI workspace" [ref=e72]:
+    - link "AutoAI Dashboard" [ref=e73] [cursor=pointer]:
+      - /url: /hub
+      - img "AutoAI" [ref=e74]
+      - strong [ref=e88]: AutoAI
+    - navigation [ref=e89]:
+      - link "Dashboard" [ref=e90] [cursor=pointer]:
+        - /url: /hub
+      - link "AI Chat" [ref=e97] [cursor=pointer]:
+        - /url: /chat
+      - link "Screen Sharing" [ref=e101] [cursor=pointer]:
+        - /url: /screen-share
+      - link "Calls" [ref=e106] [cursor=pointer]:
+        - /url: /call-hub/calls
+      - link "Messages" [ref=e110] [cursor=pointer]:
+        - /url: /messages
+      - link "AI Alarm" [ref=e115] [cursor=pointer]:
+        - /url: /alarms
+      - link "Contacts" [ref=e124] [cursor=pointer]:
+        - /url: /call-hub/chats
+      - link "Analytics" [ref=e130] [cursor=pointer]:
+        - /url: /activity
+      - link "Settings" [ref=e134] [cursor=pointer]:
+        - /url: /settings
+    - generic [ref=e139]:
+      - generic [ref=e140]: RS
+      - generic [ref=e141]:
+        - strong [ref=e142]: Relationship Smoke
+        - generic [ref=e143]: relationship.smoke.20260803@example.com
+      - button "Sign out" [ref=e144] [cursor=pointer]
+  - main [ref=e148]:
+    - generic [ref=e332]:
+      - generic [ref=e333]:
+        - button "Back to Action Hub" [ref=e334] [cursor=pointer]
+        - generic [ref=e337]:
+          - paragraph [ref=e338]: Social life & family
+          - heading "Relationship Follow-up" [level=1] [ref=e339]
+          - generic [ref=e345]: Stay connected intentionally. No contacts permission required.
+        - button "Add person" [ref=e346] [cursor=pointer]
+      - main [ref=e348]:
+        - region "Follow-up summary" [ref=e349]:
+          - button [ref=e350] [cursor=pointer]:
+            - generic [ref=e351]: Due today
+            - strong [ref=e356]: —
+          - button [ref=e357] [cursor=pointer]:
+            - generic [ref=e358]: Overdue
+            - strong [ref=e362]: —
+          - button [ref=e363] [cursor=pointer]:
+            - generic [ref=e364]: Upcoming
+            - strong [ref=e370]: —
+        - region "Search and filters" [ref=e371]:
+          - generic [ref=e372]:
+            - generic [ref=e373]: Search people
+            - textbox "Search people" [ref=e374]:
+              - /placeholder: Search people…
+          - generic [ref=e375]:
+            - generic [ref=e376]: Relationship filter
+            - combobox "Relationship filter" [ref=e377]:
+              - option "All relationships" [selected]
+              - option "Family / परिवार"
+              - option "Friend / मित्र"
+              - option "Relative / रिश्तेदार"
+              - option "Teacher / Mentor"
+              - option "Colleague / सहकर्मी"
+              - option "Professional contact"
+              - option "Other / अन्य"
+          - generic [ref=e378]:
+            - generic [ref=e379]: Priority filter
+            - combobox "Priority filter" [ref=e380]:
+              - option "All priorities" [selected]
+              - option "Normal"
+              - option "Important"
+              - option "High"
+          - generic [ref=e381]:
+            - generic [ref=e382]: Sort by due date
+            - combobox "Sort by due date" [ref=e383]:
+              - option "Due first" [selected]
+              - option "Latest first"
+          - button "Paused" [ref=e384] [cursor=pointer]
+          - button "Archived" [ref=e385] [cursor=pointer]
+        - region "Relationship follow-ups" [ref=e386]:
+          - status [ref=e387]: Loading follow-ups…
+        - region [ref=e390]:
+          - generic [ref=e395]:
+            - heading "Reminder notifications" [level=2] [ref=e396]
+            - paragraph [ref=e397]: In-app reminders always work. Android push is optional and requested only when you enable it.
+          - generic [ref=e398]:
+            - switch "Enable push" [ref=e399] [cursor=pointer]
+            - generic [ref=e401]:
+              - checkbox "Show person name in notification" [ref=e402]
+              - text: Show person name in notification

@@ -1,0 +1,162 @@
+- generic [ref=f3e4]:
+  - complementary "AutoAI workspace" [ref=f3e5]:
+    - link "AutoAI Dashboard" [ref=f3e6] [cursor=pointer]:
+      - /url: /hub
+      - img "AutoAI" [ref=f3e7]
+      - strong [ref=f3e21]: AutoAI
+    - navigation [ref=f3e22]:
+      - link "Dashboard" [ref=f3e23] [cursor=pointer]:
+        - /url: /hub
+      - link "AI Chat" [ref=f3e30] [cursor=pointer]:
+        - /url: /chat
+      - link "Screen Sharing" [ref=f3e34] [cursor=pointer]:
+        - /url: /screen-share
+      - link "Calls" [ref=f3e39] [cursor=pointer]:
+        - /url: /call-hub/calls
+      - link "Messages" [ref=f3e43] [cursor=pointer]:
+        - /url: /messages
+      - link "AI Alarm" [ref=f3e48] [cursor=pointer]:
+        - /url: /alarms
+      - link "Contacts" [ref=f3e57] [cursor=pointer]:
+        - /url: /call-hub/chats
+      - link "Analytics" [ref=f3e63] [cursor=pointer]:
+        - /url: /activity
+      - link "Settings" [ref=f3e67] [cursor=pointer]:
+        - /url: /settings
+    - generic [ref=f3e72]:
+      - generic [ref=f3e73]: RS
+      - generic [ref=f3e74]:
+        - strong [ref=f3e75]: Relationship Smoke
+        - generic [ref=f3e76]: relationship.smoke.20260803@example.com
+      - button "Sign out" [ref=f3e77] [cursor=pointer]
+  - main [ref=f3e81]:
+    - generic [ref=f3e265]:
+      - generic [ref=f3e266]:
+        - button "Back to Action Hub" [ref=f3e267] [cursor=pointer]
+        - generic [ref=f3e270]:
+          - paragraph [ref=f3e271]: Social life & family
+          - heading "Relationship Follow-up" [level=1] [ref=f3e272]
+          - generic [ref=f3e278]: Stay connected intentionally. No contacts permission required.
+        - button "Add person" [ref=f3e279] [cursor=pointer]
+      - main [ref=f3e281]:
+        - region "Follow-up summary" [ref=f3e282]:
+          - button [ref=f3e371] [cursor=pointer]:
+            - generic [ref=f3e284]: Due today
+            - strong [ref=f3e289]: "0"
+          - button [ref=f3e372] [cursor=pointer]:
+            - generic [ref=f3e291]: Overdue
+            - strong [ref=f3e295]: "0"
+          - button [ref=f3e373] [cursor=pointer]:
+            - generic [ref=f3e297]: Upcoming
+            - strong [ref=f3e303]: "0"
+        - region "Search and filters" [ref=f3e304]:
+          - generic [ref=f3e305]:
+            - generic [ref=f3e306]: Search people
+            - textbox "Search people" [ref=f3e307]:
+              - /placeholder: Search people…
+          - generic [ref=f3e308]:
+            - generic [ref=f3e309]: Relationship filter
+            - combobox "Relationship filter" [ref=f3e310]:
+              - option "All relationships" [selected]
+              - option "Family / परिवार"
+              - option "Friend / मित्र"
+              - option "Relative / रिश्तेदार"
+              - option "Teacher / Mentor"
+              - option "Colleague / सहकर्मी"
+              - option "Professional contact"
+              - option "Other / अन्य"
+          - generic [ref=f3e311]:
+            - generic [ref=f3e312]: Priority filter
+            - combobox "Priority filter" [ref=f3e313]:
+              - option "All priorities" [selected]
+              - option "Normal"
+              - option "Important"
+              - option "High"
+          - generic [ref=f3e314]:
+            - generic [ref=f3e315]: Sort by due date
+            - combobox "Sort by due date" [ref=f3e316]:
+              - option "Due first" [selected]
+              - option "Latest first"
+          - button "Paused" [ref=f3e317] [cursor=pointer]
+          - button "Archived" [ref=f3e318] [cursor=pointer]
+        - region "Relationship follow-ups" [ref=f3e319]:
+          - generic [ref=f3e374]:
+            - heading "Add someone important" [level=2] [ref=f3e380]
+            - paragraph [ref=f3e381]: Manual entry works without contacts, call-log or message permissions.
+            - button "Add first person" [ref=f3e382] [cursor=pointer]
+        - region [ref=f3e323]:
+          - generic [ref=f3e328]:
+            - heading "Reminder notifications" [level=2] [ref=f3e329]
+            - paragraph [ref=f3e330]: In-app reminders always work. Android push is optional and requested only when you enable it.
+          - generic [ref=f3e331]:
+            - switch "Enable push" [ref=f3e332] [cursor=pointer]
+            - generic [ref=f3e334]:
+              - checkbox "Show person name in notification" [ref=f3e335]
+              - text: Show person name in notification
+      - dialog [ref=f3e336]:
+        - generic [ref=f3e337]:
+          - heading "Add important person" [level=2] [ref=f3e338]
+          - button "Close dialog" [ref=f3e339] [cursor=pointer]
+        - generic [ref=f3e343]:
+          - generic [ref=f3e344]:
+            - generic [ref=f3e345]:
+              - text: Name / नाम
+              - textbox "Name / नाम" [active] [ref=f3e346]: Anita Sharma
+            - generic [ref=f3e347]:
+              - text: Relationship
+              - combobox "Relationship" [ref=f3e348]:
+                - option "Family / परिवार"
+                - option "Friend / मित्र" [selected]
+                - option "Relative / रिश्तेदार"
+                - option "Teacher / Mentor"
+                - option "Colleague / सहकर्मी"
+                - option "Professional contact"
+                - option "Other / अन्य"
+            - generic [ref=f3e349]:
+              - text: Priority
+              - combobox "Priority" [ref=f3e350]:
+                - option "Normal"
+                - option "Important"
+                - option "High" [selected]
+            - generic [ref=f3e351]:
+              - text: Contact method
+              - combobox "Contact method" [ref=f3e352]:
+                - option "None (manual only)"
+                - option "Phone" [selected]
+                - option "Email"
+                - option "WhatsApp"
+                - option "Other"
+            - generic [ref=f3e353]:
+              - text: Optional contact detail
+              - textbox "Optional contact detail" [ref=f3e354]:
+                - /placeholder: Stored privately
+            - generic [ref=f3e355]:
+              - text: Last contacted
+              - textbox "Last contacted" [ref=f3e356]
+            - generic [ref=f3e357]:
+              - text: Next reminder
+              - textbox "Next reminder" [ref=f3e358]: 2026-08-04T10:00
+            - generic [ref=f3e359]:
+              - text: Frequency
+              - combobox "Frequency" [ref=f3e360]:
+                - option "Every week"
+                - option "Every 15 days"
+                - option "Every month" [selected]
+                - option "Every 3 months"
+                - option "Custom interval"
+            - generic [ref=f3e361]:
+              - text: Timezone
+              - textbox "Timezone Detected from this device" [ref=f3e362]: Asia/Calcutta
+              - generic [ref=f3e363]: Detected from this device
+            - generic [ref=f3e364]:
+              - text: Message language
+              - combobox "Message language" [ref=f3e365]:
+                - option "Hindi" [selected]
+                - option "English"
+            - generic [ref=f3e366]:
+              - text: Private note
+              - textbox "Private note" [ref=f3e367]:
+                - /placeholder: Context only you can see
+          - generic [ref=f3e368]:
+            - button "Cancel" [ref=f3e369] [cursor=pointer]
+            - button "Add person" [ref=f3e370] [cursor=pointer]

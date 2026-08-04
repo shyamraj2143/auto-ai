@@ -1,0 +1,22 @@
+- status [ref=f3e3]:
+  - generic [ref=f3e4]:
+    - generic "AutoAI" [ref=f3e5]:
+      - generic [ref=f3e11]:
+        - generic [ref=f3e12]: Auto
+        - strong [ref=f3e13]: AI
+    - generic [ref=f3e14]:
+      - heading "Quick Start" [level=1] [ref=f3e15]
+      - paragraph [ref=f3e16]: Preparing your workspace
+    - generic [ref=f3e17]:
+      - progressbar [ref=f3e18]
+      - button "Retry startup" [ref=f3e20] [cursor=pointer]: Retry
+    - list "Startup progress" [ref=f3e23]:
+      - listitem [ref=f3e24]:
+        - strong [ref=f3e26]: Restoring session
+      - listitem [ref=f3e27]:
+        - strong [ref=f3e29]: Connecting securely
+      - listitem [ref=f3e30]:
+        - strong [ref=f3e32]: Loading workspace
+      - listitem [ref=f3e33]:
+        - strong [ref=f3e35]: Ready
+    - generic [ref=f3e36]: Restoring session

@@ -1,0 +1,14 @@
+- status [ref=f2e3]:
+  - generic [ref=f2e4]:
+    - generic "AutoAI" [ref=f2e5]:
+      - generic [ref=f2e11]:
+        - generic [ref=f2e12]: Auto
+        - strong [ref=f2e13]: AI
+    - generic [ref=f2e14]:
+      - heading "Starting AutoAI" [level=1] [ref=f2e15]
+      - paragraph [ref=f2e16]: Preparing your workspace
+    - generic [ref=f2e17]:
+      - progressbar [ref=f2e18]
+      - button "Retry" [ref=f2e20] [cursor=pointer]
+    - complementary [ref=f2e24]
+    - generic [ref=f2e63]: Preparing workspace

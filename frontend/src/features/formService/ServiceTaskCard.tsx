@@ -17,7 +17,7 @@ import {
   XCircle
 } from "lucide-react";
 
-import { api } from "../../api/client";
+import { api, streamServiceTaskEvents, type ServiceTaskEvent } from "../../api/client";
 import type { LibraryAsset, ServiceFieldDefinition, ServiceTaskView } from "../../types";
 import { serviceNative, type NativePermissionStatus } from "./serviceNative";
 import "./serviceTaskCard.css";
@@ -30,6 +30,8 @@ type ExtractedDocumentField = { label: string; value: string; confidence: number
 type DocumentView = { id: string; requirement_id: string; label: string; filename: string; content_type: string; file_size: number; validation_status: string; detected_type?: string | null; warnings?: string[]; preview_url?: string; analysis_status?: string; ocr_status?: string; extracted_fields?: Record<string, ExtractedDocumentField>; page_count?: number | null; image_dimensions?: { width?: number; height?: number } };
 type ShareableField = { key: string; label: string };
 type ActiveHandoff = { id: string; purpose: string; approved_field_keys: string[]; approved_document_ids: string[]; agent_identity: { status?: string; verified?: boolean }; expires_at: string };
+type WorkflowSummary = { workflow_id?: string; current_step?: number; total_steps?: number; progress_percent?: number; current_operation?: string; completed_steps?: string[] };
+type ApplicationPreviewData = { portal_name?: string; official_origin?: string | null; current_stage?: string; completed_fields?: number; total_fields?: number; completed_documents?: number; total_documents?: number; currently_filling?: string; fields?: Array<{ key: string; label: string; value: unknown; source: string; status: string; confidence: string }>; documents?: Array<{ label: string; filename: string; status: string; warnings?: string[] }>; submission_ready?: boolean };
 
 function dataValue<T>(task: ServiceTaskView, key: string, fallback: T): T {
   const value = task.active_card.data[key];
@@ -202,6 +204,30 @@ function ReviewCard({ task }: { task: ServiceTaskView }) {
   );
 }
 
+function WorkflowWorkingCard({ workflow, startedAt, latestEvent }: { workflow: WorkflowSummary; startedAt: number; latestEvent: ServiceTaskEvent | null }) {
+  const [elapsedSeconds, setElapsedSeconds] = useState(() => Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+  useEffect(() => {
+    const timer = window.setInterval(() => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000))), 1000);
+    return () => window.clearInterval(timer);
+  }, [startedAt]);
+  const operation = String(latestEvent?.details.reason || workflow.current_operation || "Processing the current verified step");
+  return <section className="service-workflow-working" aria-live="polite" aria-label="Workflow working">
+    <LoaderCircle className="spin" size={19} />
+    <span><strong>{operation}</strong><small>Step {workflow.current_step || 1} of {workflow.total_steps || 1} · {elapsedSeconds}s elapsed</small></span>
+  </section>;
+}
+
+function ApplicationPreview({ preview, open, onToggle }: { preview: ApplicationPreviewData; open: boolean; onToggle: () => void }) {
+  const fields = preview.fields || [];
+  const documents = preview.documents || [];
+  return <section className="service-application-preview" aria-label="Application preview">
+    <header><span><FileCheck2 size={17} /><strong>Application preview</strong></span><button className="service-secondary" type="button" aria-expanded={open} onClick={onToggle}>{open ? "Hide preview" : "Open full preview"}</button></header>
+    <div className="service-preview-summary"><span><small>Portal</small><b>{preview.portal_name || "Preparing application"}</b></span><span><small>Status</small><b>{preview.current_stage || "Preparing"}</b></span><span><small>Completed</small><b>{preview.completed_fields || 0}/{preview.total_fields || 0} fields</b></span></div>
+    <p>Currently filling: <strong>{preview.currently_filling || "Loading requirements"}</strong></p>
+    {open ? <div className="service-preview-detail"><dl>{fields.map((field) => <div key={field.key} className={field.status === "complete" ? "complete" : "missing"}><dt>{field.label}</dt><dd>{String(field.value)}</dd><small>Source: {field.source} · {field.confidence}</small></div>)}</dl>{documents.length ? <div className="service-preview-documents"><strong>Documents</strong>{documents.map((document) => <span key={`${document.label}-${document.filename}`}><FileText size={14} />{document.label}: {document.filename} · {document.status}</span>)}</div> : null}<small className="service-preview-origin">Verified destination: {preview.official_origin || "AutoAI local adapter"}</small></div> : null}
+  </section>;
+}
+
 function ReceiptCard({ task }: { task: ServiceTaskView }) {
   const data = task.active_card.data;
   const evidence = Array.isArray(data.evidence) ? data.evidence as Array<Record<string, unknown>> : [];
@@ -231,7 +257,12 @@ export function ServiceTaskCard({ task: initialTask, token }: Props) {
   const [approvedFields, setApprovedFields] = useState<string[]>([]);
   const [approvedDocuments, setApprovedDocuments] = useState<string[]>([]);
   const [handoffResult, setHandoffResult] = useState("");
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [latestEvent, setLatestEvent] = useState<ServiceTaskEvent | null>(null);
+  const [eventStreamKey, setEventStreamKey] = useState(0);
+  const [workingStartedAt, setWorkingStartedAt] = useState<number | null>(null);
   const idempotencyRef = useRef<string>(crypto.randomUUID());
+  const latestEventIdRef = useRef("");
 
   useEffect(() => setTask(initialTask), [initialTask]);
   useEffect(() => {
@@ -242,17 +273,47 @@ export function ServiceTaskCard({ task: initialTask, token }: Props) {
     return () => { window.removeEventListener("online", online); window.removeEventListener("offline", offlineHandler); };
   }, []);
 
-  const update = (next: ServiceTaskView) => { setTask(next); setStatus("success"); setError(""); window.setTimeout(() => setStatus("idle"), 1200); };
+  useEffect(() => {
+    if (!token) return;
+    const controller = new AbortController();
+    let refreshScheduled = false;
+    const refresh = () => {
+      if (refreshScheduled || controller.signal.aborted) return;
+      refreshScheduled = true;
+      window.setTimeout(() => {
+        refreshScheduled = false;
+        if (controller.signal.aborted) return;
+        void api.getServiceTask(token, task.id)
+          .then((next) => setTask((current) => new Date(next.updated_at) >= new Date(current.updated_at) ? next : current))
+          .catch((cause) => {
+            if (!controller.signal.aborted) setError(cause instanceof Error ? `Live update unavailable: ${cause.message}` : "Live update is temporarily unavailable. Use refresh to retry.");
+          });
+      }, 100);
+    };
+    void streamServiceTaskEvents(token, task.id, (event) => {
+      if (event.id === latestEventIdRef.current) return;
+      latestEventIdRef.current = event.id;
+      setLatestEvent(event);
+      refresh();
+    }, { after: latestEventIdRef.current || undefined, signal: controller.signal }).catch((cause) => {
+      if (!controller.signal.aborted && cause instanceof Error) setError(`Live update unavailable: ${cause.message}`);
+    });
+    return () => controller.abort();
+  }, [eventStreamKey, task.id, token]);
+
+  const update = (next: ServiceTaskView) => { setTask(next); setStatus("success"); setWorkingStartedAt(null); setError(""); setEventStreamKey((value) => value + 1); window.setTimeout(() => setStatus("idle"), 1200); };
   const fail = (cause: unknown) => { setStatus("error"); setError(cause instanceof Error ? cause.message : "The service step could not be completed. Retry is safe."); };
   const run = async (work: () => Promise<ServiceTaskView>) => {
     if (!token || status === "working") return;
-    setStatus("working"); setError("");
+    setStatus("working"); setWorkingStartedAt(Date.now()); setError(""); setEventStreamKey((value) => value + 1);
     try { update(await work()); } catch (cause) { fail(cause); }
   };
   const card = task.active_card;
   const officialOrigin = dataValue<string>(task, "official_origin", "");
   const entryUrl = dataValue<string>(task, "entry_url", "");
   const secureChallengeId = dataValue<string>(task, "challenge_id", "");
+  const workflow = dataValue<WorkflowSummary>(task, "workflow", {});
+  const preview = dataValue<ApplicationPreviewData>(task, "application_preview", {});
   const isBusy = status === "working";
 
   async function openPortal() {
@@ -313,6 +374,7 @@ export function ServiceTaskCard({ task: initialTask, token }: Props) {
       <header className="service-card-header"><span className="service-card-icon">{headingIcon}</span><span><span className="service-card-kicker">{task.execution_mode.replace(/_/g, " ")} · {stateLabel(task.state)}</span><h3>{card.title}</h3><p>{card.description}</p></span></header>
       <div className="service-progress"><span style={{ width: `${task.progress_percent}%` }} /></div>
       <span className="sr-only" aria-live="polite">{status === "working" ? "Working" : status === "success" ? "Step saved" : error}</span>
+      {isBusy && workingStartedAt ? <WorkflowWorkingCard workflow={workflow} startedAt={workingStartedAt} latestEvent={latestEvent} /> : null}
       {offline ? <div className="service-inline-warning"><AlertTriangle size={16} /> Offline: saved non-secret fields remain visible, but external actions will wait for connectivity.</div> : null}
       {card.type === "service_plan" ? <div className="service-plan"><div className="service-plan-grid"><span><small>Service</small><strong>{String(card.data.service)}</strong></span><span><small>Provider</small><strong>{String(card.data.provider)}</strong></span><span><small>Estimated steps</small><strong>{String(card.data.estimated_steps)}</strong></span><span><small>Portal</small><strong>{String(card.data.official_origin || "Safe local test")}</strong></span></div><p className="service-mode-notice">{String(card.data.mode_notice || "")}</p>{requirementsOpen ? <div className="service-requirements-detail"><strong>Information</strong><ul>{dataValue<string[]>(task, "requirements", []).map((item) => <li key={item}><CheckCircle2 size={15} />{item}</li>)}</ul><strong>Documents</strong>{dataValue<string[]>(task, "required_documents", []).length ? <ul>{dataValue<string[]>(task, "required_documents", []).map((item) => <li key={item}><FileText size={15} />{item}</li>)}</ul> : <p>No documents required.</p>}</div> : null}</div> : null}
       {card.type === "information_request" && token ? <InformationCard task={task} working={isBusy} onSubmit={(requestId, values) => run(() => api.saveServiceFields(token, task.id, task.version, requestId, values))} /> : null}
@@ -328,6 +390,7 @@ export function ServiceTaskCard({ task: initialTask, token }: Props) {
       {handoffOpen && dataValue<ActiveHandoff[]>(task, "active_handoffs", []).length ? <section className="service-handoff service-handoff-active-list" aria-label="Active human assistance"><h4>Active assistance access</h4>{dataValue<ActiveHandoff[]>(task, "active_handoffs", []).map((handoff) => <article className="service-handoff-active" key={handoff.id}><strong>{handoff.purpose}</strong><small>Agent: {handoff.agent_identity.verified ? "verified" : handoff.agent_identity.status || "unassigned"} · expires {new Date(handoff.expires_at).toLocaleTimeString()}</small><button className="service-quiet-danger" disabled={isBusy} onClick={() => void revokeHandoff(handoff.id)} type="button">Revoke access</button></article>)}</section> : null}
       {card.type === "task_progress" ? <div className="service-step-list">{dataValue<Array<{ label: string; complete: boolean }>>(task, "steps", []).map((step) => <span key={step.label} className={step.complete ? "complete" : ""}>{step.complete ? <CheckCircle2 size={17} /> : <span className="service-step-dot" />}{step.label}</span>)}</div> : null}
       {card.type === "task_error" || card.type === "recovery_options" ? <div className="service-recovery"><AlertTriangle size={19} /><span><strong>{String(card.data.code || stateLabel(task.state))}</strong><p>{card.description}</p></span></div> : null}
+      <ApplicationPreview preview={preview} open={previewOpen} onToggle={() => setPreviewOpen((value) => !value)} />
       {handoffOpen ? <section className="service-handoff" aria-label="Human assistance handoff"><h4>Approve exactly what may be shared</h4><p>Passwords, OTPs, PINs, biometrics, and unrelated data are never included. Final authentication and submission remain yours.</p><fieldset><legend>Information fields</legend>{dataValue<ShareableField[]>(task, "shareable_fields", []).length ? dataValue<ShareableField[]>(task, "shareable_fields", []).map((field) => <label key={field.key}><input type="checkbox" checked={approvedFields.includes(field.key)} onChange={(event) => setApprovedFields((current) => event.target.checked ? [...current, field.key] : current.filter((key) => key !== field.key))} />{field.label}</label>) : <small>No information fields selected.</small>}</fieldset><fieldset><legend>Documents</legend>{dataValue<DocumentView[]>(task, "shareable_documents", []).length ? dataValue<DocumentView[]>(task, "shareable_documents", []).map((document) => <label key={document.id}><input type="checkbox" checked={approvedDocuments.includes(document.id)} onChange={(event) => setApprovedDocuments((current) => event.target.checked ? [...current, document.id] : current.filter((id) => id !== document.id))} />{document.label}: {document.filename}</label>) : <small>No documents selected.</small>}</fieldset><label>Purpose<input value={handoffPurpose} minLength={3} maxLength={240} onChange={(event) => setHandoffPurpose(event.target.value)} /></label>{handoffResult ? <p role="status">{handoffResult}</p> : null}<button className="service-primary" disabled={isBusy || !handoffPurpose.trim()} onClick={() => void requestHandoff()} type="button">Approve handoff request</button></section> : null}
       {error ? <div className="service-inline-error" role="alert"><XCircle size={16} /><span>{error}</span><button type="button" onClick={() => setError("")}>Dismiss</button></div> : null}
       <div className="service-card-actions">

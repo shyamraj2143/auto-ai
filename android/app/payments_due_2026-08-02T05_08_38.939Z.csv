@@ -1,0 +1,6 @@
+﻿Issued date,Invoice ID,Type,Due date,Status,Currency,Invoice amount,Balance due,Billing period,Service provider,Charge type,Purchase order ID,Payer account ID
+"August 1, 2026","2751641989","Invoice","August 1, 2026","Past due","INR","22,998.02","22,998.02","July 2026","AWS India","Usage","-","123561211885"
+"July 1, 2026","2705804569","Invoice","July 1, 2026","Past due","INR","19,957.71","19,957.71","June 2026","AWS India","Usage","-","123561211885"
+"June 1, 2026","2657863485","Invoice","June 1, 2026","Past due","INR","22,799.63","22,799.63","May 2026","AWS India","Usage","-","123561211885"
+"May 1, 2026","2625194409","Invoice","May 1, 2026","Past due","INR","22,236.17","22,236.17","April 2026","AWS India","Usage","-","123561211885"
+"April 1, 2026","2576064645","Invoice","April 1, 2026","Past due","INR","15,605.18","15,605.18","March 2026","AWS India","Usage","-","123561211885"

@@ -9,10 +9,29 @@ export function DynamicInteractionCard({ interaction, token }: { interaction: In
   const [values,setValues]=useState<Record<string,unknown>>({});
   const [status,setStatus]=useState<"idle"|"sending"|"complete"|"error">("idle");
   const [error,setError]=useState("");
+  const [completion,setCompletion]=useState("");
+  function validateRequiredFields() {
+    const missing = interaction.fields
+      .filter((field) => supported.has(field.type) && field.required)
+      .filter((field) => {
+        const value = values[field.id];
+        return value === undefined || value === null || value === "" || value === false || (Array.isArray(value) && value.length === 0);
+      })
+      .map((field) => field.label);
+    if (!missing.length) return true;
+    setError(`Complete ${missing.join(", ")} before continuing.`);
+    return false;
+  }
   async function act(decision: "submit"|"confirm"|"cancel"|"retry"|"pause") {
     if (!token || !interaction.workflow_id) return;
+    if ((decision === "submit" || decision === "confirm") && !validateRequiredFields()) return;
     setStatus("sending");setError("");
-    try { await api.submitIntentInteraction(token,interaction.workflow_id,{values,decision});setStatus("complete"); }
+    try {
+      const result = await api.submitIntentInteraction(token,interaction.workflow_id,{values,decision});
+      if (!result.workflow_id || !result.state) throw new Error("The workflow did not confirm persistence.");
+      setCompletion(decision === "cancel" ? "Workflow cancelled." : `${interaction.title} submitted and persisted. Current workflow state: ${result.state.replace(/_/g, " ").toLowerCase()}.`);
+      setStatus("complete");
+    }
     catch (cause) { setError(cause instanceof Error?cause.message:"Unable to continue workflow");setStatus("error"); }
   }
   async function authenticate() {
@@ -20,10 +39,15 @@ export function DynamicInteractionCard({ interaction, token }: { interaction: In
     const secret=String(values.secret||"");
     if(!secret){setError("Enter the secure value.");return;}
     setStatus("sending");setError("");
-    try { const challenge=await api.createSecureChallenge(token,interaction.workflow_id,"otp");await api.submitSecureChallenge(token,challenge.id,secret);setValues({});setStatus("complete"); }
+    try {
+      const challenge=await api.createSecureChallenge(token,interaction.workflow_id,"otp");
+      const result=await api.submitSecureChallenge(token,challenge.id,secret);
+      if (!result.workflow_id || !result.status) throw new Error("The secure workflow did not confirm persistence.");
+      setValues({});setCompletion("Secure verification accepted for this active workflow.");setStatus("complete");
+    }
     catch(cause){setValues({});setError(cause instanceof Error?cause.message:"Secure verification failed");setStatus("error");}
   }
-  if (status==="complete") return <section className="not-prose rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-4" aria-live="polite"><span className="flex items-center gap-2"><CheckCircle2 size={17}/>Response saved. AutoAI will continue from this workflow.</span></section>;
+  if (status==="complete") return <section className="not-prose rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-4" aria-live="polite"><span className="flex items-center gap-2"><CheckCircle2 size={17}/>{completion}</span></section>;
   return <section className="not-prose rounded-xl border border-cyan-300/20 bg-slate-950/60 p-4" aria-label={interaction.title}>
     <header className="mb-3"><h3 className="flex items-center gap-2 text-sm font-semibold text-white">{interaction.type==="secure_input"?<LockKeyhole size={16}/>:null}{interaction.title}</h3>{interaction.description?<p className="mt-1 text-xs leading-5 text-slate-300">{interaction.description}</p>:null}</header>
     <div className="grid gap-3">{interaction.fields.map(field=>{
