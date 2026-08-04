@@ -196,7 +196,12 @@ jobs:
           apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
           test -n "$apksigner"
           "$apksigner" verify --verbose --print-certs output/android/auto-ai.apk | tee output/android/signing.txt
-          actual_cert="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' output/android/signing.txt | head -1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          actual_cert="$(
+            sed -n -e 's/^Signer #1 certificate SHA-256 digest: //p' -e 's/^V2 Signer: certificate SHA-256 digest: //p' output/android/signing.txt \
+              | head -1 \
+              | tr -d ':' \
+              | tr '[:upper:]' '[:lower:]'
+          )"
           expected_cert="$(printf '%s' "${AUTO_AI_EXPECTED_SIGNING_SHA256:-}" | tr -d ':' | tr '[:upper:]' '[:lower:]')"
           if [ -z "$expected_cert" ] || [ "$actual_cert" != "$expected_cert" ]; then
             echo 'APK signing certificate does not match AUTO_AI_EXPECTED_SIGNING_SHA256.' >&2
