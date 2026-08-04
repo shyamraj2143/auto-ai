@@ -10,7 +10,12 @@ import android.net.ConnectivityManager;
 import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.BatteryManager;
+import android.print.PrintAttributes;
+import android.print.PrintDocumentAdapter;
+import android.print.PrintManager;
 import android.provider.Settings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 
 import androidx.biometric.BiometricManager;
 import androidx.biometric.BiometricPrompt;
@@ -34,7 +39,9 @@ import com.getcapacitor.annotation.PermissionCallback;
 public final class AutoAiServiceCapabilitiesPlugin extends Plugin {
     private static final String PREFS = "auto_ai_form_service_permissions";
     private static final String CAMERA_PROMPTED = "camera_prompted";
+    private static final int MAX_PRINT_HTML_LENGTH = 250_000;
     private PluginCall pendingBiometricCall;
+    private WebView activePrintWebView;
 
     @PluginMethod
     public void getCapabilities(PluginCall call) {
@@ -46,6 +53,7 @@ public final class AutoAiServiceCapabilitiesPlugin extends Plugin {
         result.put("documentPicker", "SUPPORTED");
         result.put("biometric", biometricAvailable() ? "SUPPORTED" : "UNSUPPORTED");
         result.put("customTabs", "SUPPORTED");
+        result.put("printing", getContext().getSystemService(Context.PRINT_SERVICE) != null ? "SUPPORTED" : "UNSUPPORTED");
         result.put("network", networkState());
         BatteryManager battery = (BatteryManager) getContext().getSystemService(Context.BATTERY_SERVICE);
         int percent = battery == null ? -1 : battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY);
@@ -148,6 +156,57 @@ public final class AutoAiServiceCapabilitiesPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void printHtml(PluginCall call) {
+        String title = call.getString("title", "AutoAI Application").trim();
+        String html = call.getString("html", "");
+        if (html.trim().isEmpty()) {
+            call.reject("There is no printable application content.", "INVALID_CONTENT");
+            return;
+        }
+        if (html.length() > MAX_PRINT_HTML_LENGTH) {
+            call.reject("Printable application content is too large.", "CONTENT_TOO_LARGE");
+            return;
+        }
+        Activity activity = getActivity();
+        if (activity == null) {
+            call.reject("Android print preview is unavailable.", "UNAVAILABLE");
+            return;
+        }
+        PrintManager printManager = (PrintManager) activity.getSystemService(Context.PRINT_SERVICE);
+        if (printManager == null) {
+            call.reject("Android print service is unavailable.", "UNAVAILABLE");
+            return;
+        }
+        String jobName = title.isEmpty() ? "AutoAI Application" : title.substring(0, Math.min(title.length(), 80));
+        activity.runOnUiThread(() -> {
+            WebView webView = new WebView(activity);
+            activePrintWebView = webView;
+            webView.getSettings().setJavaScriptEnabled(false);
+            webView.getSettings().setAllowFileAccess(false);
+            webView.getSettings().setAllowContentAccess(false);
+            webView.setWebViewClient(new WebViewClient() {
+                private boolean printed;
+
+                @Override public void onPageFinished(WebView view, String url) {
+                    super.onPageFinished(view, url);
+                    if (printed) return;
+                    printed = true;
+                    try {
+                        PrintDocumentAdapter adapter = view.createPrintDocumentAdapter(jobName);
+                        printManager.print(jobName, adapter, new PrintAttributes.Builder().build());
+                        JSObject result = new JSObject();
+                        result.put("opened", true);
+                        call.resolve(result);
+                    } catch (RuntimeException error) {
+                        call.reject("Android print preview could not be opened.", "UNAVAILABLE", error);
+                    }
+                }
+            });
+            webView.loadDataWithBaseURL("https://autoai.local/", html, "text/html", "UTF-8", null);
+        });
+    }
+
+    @PluginMethod
     public void openAppSettings(PluginCall call) {
         try {
             Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getContext().getPackageName()));
@@ -159,6 +218,15 @@ public final class AutoAiServiceCapabilitiesPlugin extends Plugin {
         } catch (RuntimeException error) {
             call.reject("Android app settings could not be opened.", "UNAVAILABLE", error);
         }
+    }
+
+    @Override
+    protected void handleOnDestroy() {
+        if (activePrintWebView != null) {
+            activePrintWebView.destroy();
+            activePrintWebView = null;
+        }
+        super.handleOnDestroy();
     }
 
     private boolean biometricAvailable() {
