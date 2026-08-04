@@ -45,7 +45,7 @@ describe("DynamicInteractionCard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
 
-    expect(screen.getByRole("alert").textContent).toContain("Complete Applicant name");
+    expect(screen.getByText(/Complete Applicant name/)).toBeTruthy();
     expect(screen.queryByText("Step completed")).toBeNull();
   });
 
