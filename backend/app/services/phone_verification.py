@@ -161,13 +161,19 @@ class PhoneVerificationService:
             self._resolved_service_sid = resolved_sid
             return resolved_sid
 
-    def _post_to_service(self, resource: str, payload: dict[str, str]) -> dict[str, object]:
+    def _post_to_service(
+        self,
+        resource: str,
+        payload: dict[str, str],
+        *,
+        repair_missing_service: bool = True,
+    ) -> dict[str, object]:
         service_sid = self._resolve_service_sid()
         url = f"{VERIFY_BASE_URL}/Services/{parse.quote(service_sid)}/{resource}"
         try:
             return self._request_json(url, method="POST", payload=payload)
         except RuntimeError as exc:
-            if str(exc) != "TWILIO_VERIFY_RESOURCE_NOT_FOUND":
+            if str(exc) != "TWILIO_VERIFY_RESOURCE_NOT_FOUND" or not repair_missing_service:
                 raise
 
         # A configured VA SID may have been deleted. Repair it once by finding or
@@ -186,6 +192,7 @@ class PhoneVerificationService:
         payload = self._post_to_service(
             "Verifications",
             {"To": phone_number, "Channel": "sms"},
+            repair_missing_service=True,
         )
         status = str(payload.get("status") or "pending")
         return PhoneVerificationResult(
@@ -203,6 +210,7 @@ class PhoneVerificationService:
             payload = self._post_to_service(
                 "VerificationCheck",
                 {"To": phone_number, "Code": code},
+                repair_missing_service=False,
             )
         except RuntimeError as exc:
             if str(exc) == "TWILIO_VERIFY_RESOURCE_NOT_FOUND":
