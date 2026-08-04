@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - '.release-status/**'
   workflow_dispatch:
 
 concurrency:
@@ -218,3 +220,45 @@ jobs:
           path: output/android/auto-ai.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Record release result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_JOB_STATUS: ${{ job.status }}
+        shell: bash
+        run: |
+          set +e
+          mkdir -p .release-status
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          payload = {
+              "status": os.environ.get("RELEASE_JOB_STATUS", "unknown"),
+              "source_commit": os.environ.get("GITHUB_SHA", ""),
+              "run_id": os.environ.get("GITHUB_RUN_ID", ""),
+              "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
+              "version_code": os.environ.get("AUTO_AI_ANDROID_VERSION_CODE", ""),
+              "version_name": os.environ.get("AUTO_AI_ANDROID_VERSION_NAME", ""),
+              "release_tag": f"android-{os.environ.get('AUTO_AI_ANDROID_VERSION_CODE', '')}" if os.environ.get("AUTO_AI_ANDROID_VERSION_CODE") else "",
+              "updated_at": datetime.now(timezone.utc).isoformat(),
+          }
+          with open('.release-status/android.json', 'w', encoding='utf-8') as handle:
+              json.dump(payload, handle, indent=2, sort_keys=True)
+              handle.write('\n')
+          PY
+
+          encoded="$(base64 -w0 .release-status/android.json)"
+          current_sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.release-status/android.json?ref=main" --jq .sha 2>/dev/null || true)"
+          if [ -n "$current_sha" ]; then
+            gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/.release-status/android.json" \
+              -f message='chore: record Android release result [skip ci]' \
+              -f content="$encoded" \
+              -f sha="$current_sha" \
+              -f branch=main >/dev/null
+          else
+            gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/.release-status/android.json" \
+              -f message='chore: record Android release result [skip ci]' \
+              -f content="$encoded" \
+              -f branch=main >/dev/null
+          fi
