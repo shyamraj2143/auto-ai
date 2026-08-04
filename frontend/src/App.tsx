@@ -48,6 +48,9 @@ const ActionHubPage = lazy(() => import("./features/actionHub/ActionHubPage").th
 const TrustHubPage = lazy(() => import("./features/trustHub/TrustHubPage").then((module) => ({ default: module.TrustHubPage })));
 const AlarmPage = lazy(() => import("./features/alarms/AlarmPage").then((module) => ({ default: module.AlarmPage })));
 const RelationshipFollowupsPage = lazy(() => import("./features/relationshipFollowups/RelationshipFollowupsPage").then((module) => ({ default: module.RelationshipFollowupsPage })));
+const AutoAISevaPage = lazy(() => import("./features/autoaiSeva/AutoAISevaPages").then((module) => ({ default: module.AutoAISevaPage })));
+const SevaApplicationsPage = lazy(() => import("./features/autoaiSeva/AutoAISevaPages").then((module) => ({ default: module.SevaApplicationsPage })));
+const SevaApplicationPage = lazy(() => import("./features/autoaiSeva/AutoAISevaPages").then((module) => ({ default: module.SevaApplicationPage })));
 
 /** Shows LandingPage for guests, redirects logged-in users to the Action Hub. */
 function RootRedirect() {
@@ -168,6 +171,9 @@ function AppRoutes() {
               <Route path="/activity" element={<ActionHubPage />} />
               <Route path="/alarms" element={<AlarmPage />} />
               <Route path="/relationships" element={<RelationshipFollowupsPage />} />
+              <Route path="/seva" element={<AutoAISevaPage />} />
+              <Route path="/seva/applications" element={<SevaApplicationsPage />} />
+              <Route path="/seva/applications/:applicationId" element={<SevaApplicationPage />} />
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/chat/:chatId" element={<ChatPage />} />
               <Route path="/messages" element={<UserMessagesPage />} />
