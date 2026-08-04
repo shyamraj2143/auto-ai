@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 
-export type HubFeatureTone = "ai" | "screen" | "call" | "alarm" | "relationship";
+export type HubFeatureTone = "ai" | "screen" | "call" | "alarm" | "relationship" | "seva";
 
 type FeatureAction = {
   label: string;
