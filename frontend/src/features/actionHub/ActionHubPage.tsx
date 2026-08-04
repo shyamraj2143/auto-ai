@@ -1,4 +1,4 @@
-import { Activity, AlarmClock, CheckCircle2, HeartHandshake, MessageCircle, MonitorUp, Phone, Zap } from "lucide-react";
+import { Activity, AlarmClock, CheckCircle2, FileCheck2, HeartHandshake, MessageCircle, MonitorUp, Phone, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
@@ -13,6 +13,7 @@ import { QuickConnect, type QuickConnectAction } from "./QuickConnect";
 import { RecentActivity, type HubActivityItem } from "./RecentActivity";
 import { callSearchRoute, isActiveScreenShareState } from "./actionHubNavigation";
 import "./actionHub.css";
+import "./sevaHub.css";
 import { useAlarms } from "../alarms/AlarmContext";
 import { countdownLabel, formatAlarmDate, formatAlarmTime24 } from "../alarms/alarmTime";
 import { relationshipFollowupsApi } from "../relationshipFollowups/relationshipFollowupsApi";
@@ -167,6 +168,9 @@ export function ActionHubPage() {
               </div>
               <div className="hub-card-position hub-card-relationship">
                 <FeatureCard tone="relationship" icon={HeartHandshake} title="Relationship Follow-up" description="Stay connected with people who matter." details={`${relationshipSummary?.unread_due ?? 0} due · Manual entry · Private notes`} primaryAction={{ label: "Open", onClick: () => navigate("/relationships") }} secondaryAction={{ label: "Add person", onClick: () => navigate("/relationships", { state: { addPerson: true } }) }} />
+              </div>
+              <div className="hub-card-position hub-card-seva">
+                <FeatureCard tone="seva" icon={FileCheck2} title="AutoAI Seva" description="Prepare government-service applications with guided verification." details="Income Certificate · Documents · Receipt · Tracking" primaryAction={{ label: "Open Seva", onClick: () => navigate("/seva") }} secondaryAction={{ label: "My applications", onClick: () => navigate("/seva/applications") }} />
               </div>
             </section>
 
