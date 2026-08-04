@@ -63,7 +63,7 @@ function verifiedTask(): ServiceTaskView {
 
 describe("ServiceTaskCard printable application", () => {
   it("opens native or browser print with a complete masked application summary", async () => {
-    const print = vi.spyOn(serviceNative, "printHtml").mockResolvedValue();
+    const print = vi.spyOn(serviceNative, "printHtml").mockResolvedValue(undefined);
     render(<ServiceTaskCard task={verifiedTask()} token="token" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Print application" }));
