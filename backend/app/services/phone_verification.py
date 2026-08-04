@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 import re
 import threading
@@ -12,6 +13,7 @@ from urllib import error, parse, request
 VERIFY_SERVICE_PATTERN = re.compile(r"^VA[0-9a-fA-F]{32}$")
 DEFAULT_VERIFY_FRIENDLY_NAME = "AutoAI Phone Verification"
 VERIFY_BASE_URL = "https://verify.twilio.com/v2"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -53,7 +55,7 @@ class PhoneVerificationService:
         return {
             "Accept": "application/json",
             "Authorization": f"Basic {credentials}",
-            "User-Agent": "AutoAI-Phone-Verification/2.0",
+            "User-Agent": "AutoAI-Phone-Verification/2.1",
         }
 
     def _request_json(
@@ -84,16 +86,23 @@ class PhoneVerificationService:
             except Exception:
                 pass
 
+            logger.warning(
+                "twilio_verify_request_failed http_status=%s provider_code=%s",
+                exc.code,
+                provider_code or "unknown",
+            )
             if exc.code in {401, 403}:
                 raise RuntimeError("SMS provider authentication failed. Check the Twilio account credentials.") from exc
-            if exc.code == 429:
+            if provider_code == "60203":
+                raise RuntimeError("Maximum OTP send attempts reached. Wait a few minutes before trying again.") from exc
+            if provider_code == "60202":
+                raise RuntimeError("Too many incorrect OTP attempts. Request a new code after a short wait.") from exc
+            if provider_code == "60200":
+                raise RuntimeError("The SMS provider rejected this destination number. Recheck the country code and mobile number.") from exc
+            if exc.code == 429 or provider_code == "20429":
                 raise RuntimeError("Too many OTP requests. Wait a moment and try again.") from exc
             if exc.code == 404:
                 raise RuntimeError("TWILIO_VERIFY_RESOURCE_NOT_FOUND") from exc
-            if provider_code in {"60200", "60203"}:
-                raise RuntimeError("Enter a valid mobile number in international format.") from exc
-            if provider_code in {"60202", "20429"}:
-                raise RuntimeError("Too many OTP requests. Wait before requesting another code.") from exc
             if provider_message:
                 raise RuntimeError("The SMS provider could not process this verification request.") from exc
             raise RuntimeError("The SMS provider temporarily rejected the verification request.") from exc
@@ -176,8 +185,6 @@ class PhoneVerificationService:
             if str(exc) != "TWILIO_VERIFY_RESOURCE_NOT_FOUND" or not repair_missing_service:
                 raise
 
-        # A configured VA SID may have been deleted. Repair it once by finding or
-        # creating the AutoAI Verify service, then repeat the original operation.
         self._resolved_service_sid = None
         repaired_sid = self._resolve_service_sid(ignore_configured_sid=True)
         repaired_url = f"{VERIFY_BASE_URL}/Services/{parse.quote(repaired_sid)}/{resource}"
@@ -189,9 +196,10 @@ class PhoneVerificationService:
             raise
 
     def send_code(self, phone_number: str) -> PhoneVerificationResult:
+        canonical_phone = f"+{re.sub(r'\D', '', phone_number)}"
         payload = self._post_to_service(
             "Verifications",
-            {"To": phone_number, "Channel": "sms"},
+            {"To": canonical_phone, "Channel": "sms"},
             repair_missing_service=True,
         )
         status = str(payload.get("status") or "pending")
@@ -206,10 +214,11 @@ class PhoneVerificationService:
         )
 
     def check_code(self, phone_number: str, code: str) -> PhoneVerificationResult:
+        canonical_phone = f"+{re.sub(r'\D', '', phone_number)}"
         try:
             payload = self._post_to_service(
                 "VerificationCheck",
-                {"To": phone_number, "Code": code},
+                {"To": canonical_phone, "Code": code},
                 repair_missing_service=False,
             )
         except RuntimeError as exc:
