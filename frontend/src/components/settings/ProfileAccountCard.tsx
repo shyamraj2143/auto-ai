@@ -5,11 +5,18 @@ import { api, apiFetch, resolveApiAssetUrl } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import type { User } from "../../types";
 import { CrystalBadge, CrystalCard } from "../crystal/Crystal";
-import { AppSelect } from "../common/AppSelect";
 
 const USERNAME_PATTERN = /^[a-z0-9._]{3,30}$/;
 const RESERVED_USERNAMES = new Set(["admin", "administrator", "support", "autoai", "system", "api", "null"]);
-const COUNTRY_CODES = ["+91", "+1", "+44", "+61", "+971", "+65"];
+const COUNTRY_OPTIONS = [
+  { value: "+91", label: "India (+91)", nationalDigits: 10 },
+  { value: "+1", label: "US/Canada (+1)", nationalDigits: 10 },
+  { value: "+44", label: "United Kingdom (+44)", nationalDigits: 10 },
+  { value: "+61", label: "Australia (+61)", nationalDigits: 9 },
+  { value: "+971", label: "UAE (+971)", nationalDigits: 9 },
+  { value: "+65", label: "Singapore (+65)", nationalDigits: 8 }
+] as const;
+const COUNTRY_CODES = COUNTRY_OPTIONS.map((option) => option.value);
 const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
@@ -39,15 +46,57 @@ function usernameLocalError(value: string) {
   return "";
 }
 
+function optionForCountry(country: string) {
+  return COUNTRY_OPTIONS.find((option) => option.value === country) || COUNTRY_OPTIONS[0];
+}
+
+function prepareNationalNumber(country: string, value: string) {
+  let digits = value.replace(/\D/g, "");
+  const countryDigits = country.replace(/\D/g, "");
+  const expectedLength = optionForCountry(country).nationalDigits;
+
+  if (digits.startsWith(countryDigits) && digits.length > expectedLength) {
+    digits = digits.slice(countryDigits.length);
+  }
+  if (country === "+91" && digits.length === 11 && digits.startsWith("0")) {
+    digits = digits.slice(1);
+  }
+  return digits.slice(0, Math.max(expectedLength, 12));
+}
+
+function phoneValidationError(country: string, value: string) {
+  const digits = prepareNationalNumber(country, value);
+  if (!digits) return "Enter your mobile number.";
+  if (country === "+91") {
+    if (!/^[6-9]\d{9}$/.test(digits)) {
+      return "Enter a valid 10-digit Indian mobile number starting with 6, 7, 8 or 9.";
+    }
+    return "";
+  }
+  if (digits.length < 7 || digits.length > 12) {
+    return "Enter a valid mobile number for the selected country.";
+  }
+  return "";
+}
+
 function splitPhone(user: User | null) {
   const stored = user?.phone_number || user?.mobile || "";
-  const country = user?.phone_country_code || COUNTRY_CODES.find((code) => stored.startsWith(code)) || "+91";
-  return { country, number: stored.startsWith(country) ? stored.slice(country.length) : stored.replace(/^\+?\d{1,4}/, "") };
+  const detectedCountry = [...COUNTRY_CODES]
+    .sort((left, right) => right.length - left.length)
+    .find((code) => stored.startsWith(code));
+  const country = user?.phone_country_code || detectedCountry || "+91";
+  const number = stored.startsWith(country) ? stored.slice(country.length) : stored;
+  return { country, number: prepareNationalNumber(country, number) };
 }
 
 function normalizedPhone(country: string, number: string) {
-  const digits = number.replace(/\D/g, "");
+  const digits = prepareNationalNumber(country, number);
   return digits ? `${country}${digits}` : "";
+}
+
+function readableRequestError(cause: unknown, fallback: string) {
+  const message = cause instanceof Error ? cause.message : fallback;
+  return message.replace(/^Request failed\s*\(\d+\):\s*/i, "").trim() || fallback;
 }
 
 async function compressAvatar(file: File) {
@@ -91,6 +140,8 @@ export function ProfileAccountCard() {
   const currentAvatar = resolveApiAssetUrl(user?.avatar || user?.picture);
   const shownAvatar = avatarAction === "remove" ? "" : avatarPreview || currentAvatar;
   const initialPhone = splitPhone(user);
+  const preparedNumber = prepareNationalNumber(country, number);
+  const expectedNationalDigits = optionForCountry(country).nationalDigits;
   const phoneMatchesSaved = normalizedPhone(country, number) === normalizedPhone(initialPhone.country, initialPhone.number);
   const mobileVerified = Boolean(user?.phone_verified && phoneMatchesSaved);
 
@@ -99,7 +150,7 @@ export function ProfileAccountCard() {
     return name.trim() !== (user?.name || "") ||
       normalizeUsername(username) !== (user?.username || "") ||
       country !== initialPhone.country ||
-      number.trim() !== initialPhone.number ||
+      prepareNationalNumber(country, number) !== initialPhone.number ||
       avatarAction !== "keep";
   }, [avatarAction, country, editing, initialPhone.country, initialPhone.number, name, number, user?.name, user?.username, username]);
 
@@ -191,6 +242,14 @@ export function ProfileAccountCard() {
       setError(localError);
       return;
     }
+    const nextNumber = prepareNationalNumber(country, number);
+    if (nextNumber) {
+      const mobileError = phoneValidationError(country, nextNumber);
+      if (mobileError) {
+        setError(mobileError);
+        return;
+      }
+    }
     setSaving(true);
     setError("");
     setMessage("");
@@ -199,7 +258,7 @@ export function ProfileAccountCard() {
         name: name.trim(),
         username: normalized,
         phone_country_code: country,
-        phone_number: number.trim()
+        phone_number: nextNumber
       });
       if (avatarAction === "replace" && avatarFile) nextUser = await api.uploadAvatar(token, avatarFile);
       if (avatarAction === "remove") {
@@ -211,7 +270,7 @@ export function ProfileAccountCard() {
       setEditing(false);
       setMessage("Profile updated.");
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Unable to save profile.");
+      setError(readableRequestError(saveError, "Unable to save profile."));
     } finally {
       setSaving(false);
     }
@@ -219,10 +278,13 @@ export function ProfileAccountCard() {
 
   async function sendOtp() {
     if (!token || otpBusy || resendSeconds > 0) return;
-    if (number.replace(/\D/g, "").length < 8) {
-      setError("Enter a valid mobile number.");
+    const nextNumber = prepareNationalNumber(country, number);
+    const mobileError = phoneValidationError(country, nextNumber);
+    if (mobileError) {
+      setError(mobileError);
       return;
     }
+    setPhone((current) => ({ ...current, number: nextNumber }));
     setOtpBusy(true);
     setError("");
     setMessage("");
@@ -232,7 +294,7 @@ export function ProfileAccountCard() {
         token,
         operation: "users.phone.sendOtp",
         timeoutMs: 30000,
-        body: JSON.stringify({ phone_country_code: country, phone_number: number.trim() })
+        body: JSON.stringify({ phone_country_code: country, phone_number: nextNumber })
       });
       const nextUser = await api.profile(token);
       updateUser(nextUser);
@@ -242,7 +304,7 @@ export function ProfileAccountCard() {
       setResendSeconds(result.resend_after_seconds || 30);
       setMessage(result.message);
     } catch (otpError) {
-      setError(otpError instanceof Error ? otpError.message : "Unable to send verification code.");
+      setError(readableRequestError(otpError, "Unable to send verification code."));
     } finally {
       setOtpBusy(false);
     }
@@ -267,7 +329,7 @@ export function ProfileAccountCard() {
       setOtpCode("");
       setMessage(result.message);
     } catch (otpError) {
-      setError(otpError instanceof Error ? otpError.message : "Verification failed.");
+      setError(readableRequestError(otpError, "Verification failed."));
     } finally {
       setOtpBusy(false);
     }
@@ -303,19 +365,63 @@ export function ProfileAccountCard() {
               </div>
             </div>
 
-            <div className="grid gap-2">
-              <label className="grid gap-1 text-[11px] font-semibold text-slate-300">Full name<input className="input-dark" value={name} maxLength={120} onChange={(event) => setName(event.target.value)} /></label>
-              <label className="grid gap-1 text-[11px] font-semibold text-slate-300">Username<div className="relative"><input className="input-dark pr-8" value={username} maxLength={30} onChange={(event) => setUsername(event.target.value.toLowerCase())} /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500">{checkingUsername ? <LoaderCircle className="animate-spin" size={14} /> : usernameStatus === "Username available" ? <CheckCircle2 size={14} /> : usernameStatus ? <XCircle size={14} /> : null}</span></div>{usernameStatus && <span className={clsx("text-[10px]", usernameStatus === "Username available" ? "text-emerald-300" : "text-amber-300")}>{usernameStatus}</span>}</label>
+            <div className="grid min-w-0 gap-2">
+              <label className="grid gap-1 text-[11px] font-semibold text-slate-300">Full name<input className="input-dark min-w-0" value={name} maxLength={120} onChange={(event) => setName(event.target.value)} /></label>
+              <label className="grid gap-1 text-[11px] font-semibold text-slate-300">Username<div className="relative min-w-0"><input className="input-dark min-w-0 pr-8" value={username} maxLength={30} onChange={(event) => setUsername(event.target.value.toLowerCase())} /><span className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500">{checkingUsername ? <LoaderCircle className="animate-spin" size={14} /> : usernameStatus === "Username available" ? <CheckCircle2 size={14} /> : usernameStatus ? <XCircle size={14} /> : null}</span></div>{usernameStatus && <span className={clsx("text-[10px]", usernameStatus === "Username available" ? "text-emerald-300" : "text-amber-300")}>{usernameStatus}</span>}</label>
 
-              <div className="grid gap-2 rounded-xl border border-white/10 bg-white/[0.025] p-3">
+              <div className="grid min-w-0 gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3">
                 <div className="flex items-center justify-between gap-2"><span className="flex items-center gap-2 text-[11px] font-semibold text-slate-300"><Phone size={14} /> Mobile number</span>{mobileVerified ? <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300/25 bg-emerald-400/10 px-2 py-1 text-[10px] text-emerald-200"><ShieldCheck size={12} /> Verified</span> : <span className="rounded-full border border-amber-300/20 bg-amber-400/10 px-2 py-1 text-[10px] text-amber-200">Not verified</span>}</div>
-                <div className="grid grid-cols-[92px_1fr] gap-2"><AppSelect label="Country code" value={country} onChange={(value) => { setPhone((current) => ({ ...current, country: value })); setOtpOpen(false); }} options={COUNTRY_CODES.map((code) => ({ value: code, label: code }))} /><input aria-label="Mobile number" className="input-dark" value={number} inputMode="tel" autoComplete="tel-national" onChange={(event) => { setPhone((current) => ({ ...current, number: event.target.value.replace(/[^\d\s-]/g, "") })); setOtpOpen(false); }} /></div>
-                {!mobileVerified && <button className="btn-secondary min-h-9 justify-center px-3 text-[11px]" type="button" disabled={otpBusy || resendSeconds > 0 || !number.trim()} onClick={() => void sendOtp()}>{otpBusy && !otpOpen ? <LoaderCircle className="animate-spin" size={14} /> : <ShieldCheck size={14} />}{resendSeconds > 0 ? `Resend in ${resendSeconds}s` : otpOpen ? "Resend OTP" : "Send verification OTP"}</button>}
+
+                <div className="grid min-w-0 grid-cols-1 gap-2 min-[480px]:grid-cols-[150px_minmax(0,1fr)]">
+                  <label className="grid min-w-0 gap-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                    Country code
+                    <select
+                      aria-label="Country code"
+                      className="input-dark min-w-0 w-full appearance-auto"
+                      value={country}
+                      onChange={(event) => {
+                        const nextCountry = event.target.value;
+                        setPhone((current) => ({ country: nextCountry, number: prepareNationalNumber(nextCountry, current.number) }));
+                        setOtpOpen(false);
+                        setError("");
+                      }}
+                    >
+                      {COUNTRY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </label>
+
+                  <label className="grid min-w-0 gap-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+                    Mobile number
+                    <div className="relative min-w-0">
+                      <input
+                        aria-label="Mobile number"
+                        className="input-dark min-w-0 w-full pr-14"
+                        value={number}
+                        inputMode="numeric"
+                        autoComplete="tel-national"
+                        placeholder={country === "+91" ? "10-digit number" : "Mobile number"}
+                        onChange={(event) => {
+                          const nextNumber = prepareNationalNumber(country, event.target.value);
+                          setPhone((current) => ({ ...current, number: nextNumber }));
+                          setOtpOpen(false);
+                          setError("");
+                        }}
+                      />
+                      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] tabular-nums text-slate-500">{preparedNumber.length}/{expectedNationalDigits}</span>
+                    </div>
+                  </label>
+                </div>
+
+                <p className="rounded-lg border border-cyan-300/10 bg-cyan-400/[0.035] px-3 py-2 text-[10px] leading-4 text-slate-400">
+                  OTP destination: <strong className="font-semibold text-cyan-100">{preparedNumber ? `${country} ${preparedNumber}` : `${country} —`}</strong>. Enter only the national mobile number; do not repeat the country code.
+                </p>
+
+                {!mobileVerified && <button className="btn-secondary min-h-10 justify-center px-3 text-[11px]" type="button" disabled={otpBusy || resendSeconds > 0 || !preparedNumber} onClick={() => void sendOtp()}>{otpBusy && !otpOpen ? <LoaderCircle className="animate-spin" size={14} /> : <ShieldCheck size={14} />}{resendSeconds > 0 ? `Resend in ${resendSeconds}s` : otpOpen ? "Resend OTP" : "Send verification OTP"}</button>}
                 {otpOpen && !mobileVerified && <div className="grid gap-2 rounded-lg border border-cyan-300/15 bg-cyan-400/[0.04] p-3"><p className="text-[11px] leading-5 text-slate-300">Enter the OTP sent to <strong className="text-white">{otpDestination}</strong>.</p><input aria-label="Verification OTP" className="input-dark text-center tracking-[0.35em]" value={otpCode} inputMode="numeric" autoComplete="one-time-code" maxLength={10} onChange={(event) => setOtpCode(event.target.value.replace(/\D/g, ""))} /><button className="btn-primary min-h-9 justify-center px-3 text-[11px]" type="button" disabled={otpBusy || otpCode.length < 4} onClick={() => void verifyOtp()}>{otpBusy ? <LoaderCircle className="animate-spin" size={14} /> : <CheckCircle2 size={14} />} Verify mobile</button></div>}
               </div>
 
-              <label className="grid gap-1 text-[11px] font-semibold text-slate-300">Email address<input className="input-dark opacity-70" value={user?.email || ""} readOnly /></label>
-              {error && <p className="rounded-md border border-red-300/20 bg-red-500/10 px-3 py-2 text-[11px] text-red-100" role="alert">{error}</p>}
+              <label className="grid gap-1 text-[11px] font-semibold text-slate-300">Email address<input className="input-dark min-w-0 opacity-70" value={user?.email || ""} readOnly /></label>
+              {error && <p className="rounded-md border border-red-300/20 bg-red-500/10 px-3 py-2 text-[11px] leading-5 text-red-100" role="alert">{error}</p>}
               <div className="flex flex-wrap justify-end gap-2"><button className="btn-secondary min-h-9 px-3 text-[11px]" type="button" onClick={cancelEdit} disabled={saving || otpBusy}>Cancel</button><button className="btn-primary min-h-9 px-3 text-[11px]" type="button" onClick={() => void save()} disabled={saving || otpBusy || !dirty}>{saving ? <LoaderCircle className="animate-spin" size={14} /> : <UserCircle2 size={14} />} Save Changes</button></div>
             </div>
           </div>
