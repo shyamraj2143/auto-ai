@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -40,9 +42,69 @@ LEGAL_TRANSITIONS: dict[TaskState, set[TaskState]] = {
     TaskState.EXPIRED: set(),
 }
 
+_SECRET_KEYS = ("password", "otp", "pin", "secret", "token", "cvv", "captcha", "recovery_code")
+_IDENTITY_KEYS = (
+    "aadhaar",
+    "aadhar",
+    "pan",
+    "account_number",
+    "bank_account",
+    "identity_number",
+    "document_number",
+    "passport_number",
+    "voter_id",
+)
+_PAN_PATTERN = re.compile(r"\b[A-Z]{5}[0-9]{4}[A-Z]\b", re.IGNORECASE)
+_LONG_DIGIT_PATTERN = re.compile(r"(?<!\d)(\d{8,18})(?!\d)")
+
 
 class InvalidTaskTransition(ValueError):
     pass
+
+
+def _mask_identity(value: Any) -> Any:
+    if not isinstance(value, str):
+        return "[MASKED]" if value is not None else None
+    compact = value.strip()
+    if not compact:
+        return compact
+    if _PAN_PATTERN.fullmatch(compact):
+        return f"*****{compact[-4:]}*"
+    digits = re.sub(r"\D", "", compact)
+    if len(digits) >= 8:
+        return f"{'*' * max(4, len(digits) - 4)}{digits[-4:]}"
+    return "[MASKED]"
+
+
+def sanitize_audit_details(value: Any, *, parent_key: str = "") -> Any:
+    """Recursively remove secrets and mask identity numbers before audit hashing.
+
+    This function intentionally operates before the event hash is calculated so the
+    immutable hash chain always covers the redacted payload actually stored in the DB.
+    """
+    key = parent_key.casefold()
+    if any(token in key for token in _SECRET_KEYS):
+        return "[REDACTED]"
+    if any(token in key for token in _IDENTITY_KEYS):
+        if isinstance(value, list):
+            return [_mask_identity(item) for item in value]
+        return _mask_identity(value)
+    if isinstance(value, dict):
+        return {
+            str(child_key): sanitize_audit_details(child_value, parent_key=str(child_key))
+            for child_key, child_value in value.items()
+        }
+    if isinstance(value, (list, tuple, set)):
+        return [sanitize_audit_details(item, parent_key=parent_key) for item in value]
+    if isinstance(value, str):
+        # Mask obvious PAN and long identity-like numeric strings even when a nested
+        # provider returned them under a generic key such as `value` or `reference`.
+        masked = _PAN_PATTERN.sub(lambda match: f"*****{match.group(0)[-4:]}*", value)
+        return _LONG_DIGIT_PATTERN.sub(
+            lambda match: f"{'*' * max(4, len(match.group(1)) - 4)}{match.group(1)[-4:]}",
+            masked,
+        )
+    return value
 
 
 def append_audit_event(
@@ -59,7 +121,7 @@ def append_audit_event(
         .limit(1)
     )
     previous_hash = previous.event_hash if previous else ""
-    safe_details = {key: value for key, value in details.items() if not any(secret in key.casefold() for secret in ("password", "otp", "pin", "secret", "token", "cvv"))}
+    safe_details = sanitize_audit_details(details)
     canonical = json.dumps(
         {"task": task.id, "type": event_type, "details": safe_details, "request_id": request_id, "previous": previous_hash},
         sort_keys=True,
