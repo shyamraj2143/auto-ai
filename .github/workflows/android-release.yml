@@ -79,7 +79,7 @@ jobs:
           mkdir -p .android-signing
           printf '%s' "$AUTO_AI_ANDROID_KEYSTORE_BASE64" | base64 --decode > .android-signing/auto-ai-release.jks
           echo "AUTO_AI_ANDROID_KEYSTORE=$PWD/.android-signing/auto-ai-release.jks" >> "$GITHUB_ENV"
-          version_code=$((100000 + GITHUB_RUN_NUMBER))
+          version_code=$((100000 + GITHUB_RUN_NUMBER * 10 + GITHUB_RUN_ATTEMPT))
           echo "AUTO_AI_ANDROID_VERSION_CODE=$version_code" >> "$GITHUB_ENV"
           echo "AUTO_AI_ANDROID_VERSION_NAME=1.0.$version_code" >> "$GITHUB_ENV"
           if [ -n "${AUTO_AI_GOOGLE_SERVICES_JSON_BASE64:-}" ]; then
@@ -99,12 +99,9 @@ jobs:
         env:
           EXPECTED_COMMIT: ${{ github.event_name == 'workflow_dispatch' && inputs.commit_sha || github.sha }}
         run: |
-          if [ -z "${AUTO_AI_HEALTH_URL:-}" ]; then
-            echo 'AUTO_AI_HEALTH_URL is required.' >&2
-            exit 1
-          fi
+          health_url="${AUTO_AI_HEALTH_URL:-${AUTO_AI_API_BASE_URL%/}/health}"
           python scripts/wait_for_railway_deployment.py \
-            --health-url "$AUTO_AI_HEALTH_URL" \
+            --health-url "$health_url" \
             --commit-sha "$EXPECTED_COMMIT"
 
       - name: Install root dependencies
@@ -254,6 +251,16 @@ jobs:
             --release-notes "Fixes exact alarm delivery and adds live-camera awake verification with bundled offline face detection plus Groq Vision when online, while preserving stable calls and mandatory updates. Verified GitHub push ${GITHUB_SHA::7}." \
             --metadata-only \
             --force-update
+
+      - name: Notify installed Android apps
+        if: ${{ env.AUTO_AI_UPDATE_NOTIFY_SECRET != '' }}
+        shell: bash
+        run: |
+          python scripts/notify_android_update.py \
+            --api-url "$AUTO_AI_API_BASE_URL" \
+            --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
+            --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
+            --changelog "Exact AI alarms with offline awake verification"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
