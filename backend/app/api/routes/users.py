@@ -37,6 +37,7 @@ ALLOWED_AVATAR_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 MAX_AVATAR_BYTES = 5 * 1024 * 1024
 E164_PATTERN = re.compile(r"^\+[1-9]\d{7,14}$")
 COUNTRY_CODE_PATTERN = re.compile(r"^\+[1-9]\d{0,3}$")
+INDIA_MOBILE_PATTERN = re.compile(r"^[6-9]\d{9}$")
 PHONE_OTP_RESEND_SECONDS = 30
 PHONE_OTP_MAX_CHECKS_PER_WINDOW = 6
 PHONE_OTP_CHECK_WINDOW_SECONDS = 10 * 60
@@ -85,17 +86,83 @@ def username_taken(db: Session, username: str, current_user_id: str | None = Non
     return db.scalar(statement) is not None
 
 
+def normalize_country_code(phone_country_code: str | None) -> str:
+    digits = re.sub(r"\D", "", phone_country_code or "")
+    country = f"+{digits}" if digits else ""
+    if not COUNTRY_CODE_PATTERN.fullmatch(country):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Select a valid country calling code.",
+        )
+    return country
+
+
+def normalize_national_number(raw_number: str, country: str) -> str:
+    stripped = raw_number.strip()
+    had_international_prefix = stripped.startswith("+") or stripped.startswith("00")
+    digits = re.sub(r"\D", "", stripped)
+    if stripped.startswith("00"):
+        digits = digits[2:]
+
+    country_digits = country[1:]
+    if had_international_prefix:
+        if not digits.startswith(country_digits):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="The mobile number does not match the selected country code.",
+            )
+        digits = digits[len(country_digits):]
+    elif digits.startswith(country_digits) and len(digits) > 10:
+        digits = digits[len(country_digits):]
+
+    if country == "+91":
+        if len(digits) == 11 and digits.startswith("0"):
+            digits = digits[1:]
+        if not INDIA_MOBILE_PATTERN.fullmatch(digits):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Enter a valid 10-digit Indian mobile number starting with 6, 7, 8 or 9.",
+            )
+        return digits
+
+    if digits.startswith("0") and 7 <= len(digits[1:]) <= 12:
+        digits = digits[1:]
+    if not 7 <= len(digits) <= 12:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Enter a valid mobile number for the selected country.",
+        )
+    return digits
+
+
 def normalize_phone(phone_number: str | None, phone_country_code: str | None) -> tuple[str | None, str | None]:
     raw_number = (phone_number or "").strip()
-    raw_country = (phone_country_code or "").strip()
     if not raw_number:
         return None, None
-    country = raw_country if raw_country.startswith("+") else f"+{raw_country}" if raw_country else ""
-    digits = re.sub(r"\D", "", raw_number)
-    candidate = raw_number if raw_number.startswith("+") else f"{country}{digits}"
-    if not country or not COUNTRY_CODE_PATTERN.fullmatch(country) or not E164_PATTERN.fullmatch(candidate):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Enter a valid international mobile number.")
+    country = normalize_country_code(phone_country_code)
+    national_number = normalize_national_number(raw_number, country)
+    candidate = f"{country}{national_number}"
+    if not E164_PATTERN.fullmatch(candidate):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Enter a valid mobile number for the selected country.",
+        )
     return candidate, country
+
+
+def phone_provider_http_status(message: str) -> int:
+    lowered = message.casefold()
+    user_input_markers = (
+        "valid mobile number",
+        "valid international",
+        "destination",
+        "selected country",
+    )
+    if any(marker in lowered for marker in user_input_markers):
+        return status.HTTP_422_UNPROCESSABLE_ENTITY
+    if "too many" in lowered or "wait" in lowered or "maximum otp" in lowered:
+        return status.HTTP_429_TOO_MANY_REQUESTS
+    return status.HTTP_502_BAD_GATEWAY
 
 
 def masked_phone(phone_number: str) -> str:
@@ -213,9 +280,10 @@ def send_phone_otp(
     try:
         result = phone_verification_service.send_code(phone_number)
     except RuntimeError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+        detail = str(exc)
+        raise HTTPException(status_code=phone_provider_http_status(detail), detail=detail) from exc
     if not result.ok:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=result.detail)
+        raise HTTPException(status_code=phone_provider_http_status(result.detail), detail=result.detail)
     _phone_send_times[current_user.id] = now
     _phone_check_windows[current_user.id] = (now, 0)
     return PhoneVerificationStatus(
@@ -257,7 +325,8 @@ def verify_phone_otp(
     try:
         result = phone_verification_service.check_code(phone_number, payload.code)
     except RuntimeError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+        detail = str(exc)
+        raise HTTPException(status_code=phone_provider_http_status(detail), detail=detail) from exc
     if not result.ok:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.detail)
 
