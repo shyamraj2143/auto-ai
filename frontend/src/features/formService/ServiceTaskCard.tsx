@@ -4,12 +4,14 @@ import {
   CheckCircle2,
   ChevronRight,
   CirclePause,
+  Download,
   ExternalLink,
   FileCheck2,
   FileText,
   Fingerprint,
   LoaderCircle,
   LockKeyhole,
+  Printer,
   RefreshCw,
   RotateCcw,
   ShieldCheck,
@@ -46,6 +48,59 @@ function readableBytes(value: number) {
 
 function stateLabel(value: string) {
   return value.toLowerCase().replace(/_/g, " ");
+}
+
+function escapeHtml(value: unknown) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function printableValue(key: string, value: unknown) {
+  const text = String(value ?? "Not provided");
+  if (/password|passcode|otp|pin|secret|cvv|recovery[_ -]?code/i.test(key)) return "[Excluded from printable copy]";
+  if (/aadha?ar|identity[_ -]?number|account[_ -]?number|card[_ -]?number|pan[_ -]?number/i.test(key)) {
+    const visible = text.slice(-4);
+    return visible ? `${"•".repeat(Math.min(8, Math.max(4, text.length - 4)))}${visible}` : "[Masked]";
+  }
+  return text;
+}
+
+function printableApplicationHtml(task: ServiceTaskView) {
+  const data = task.active_card.data;
+  const preview = dataValue<ApplicationPreviewData>(task, "application_preview", {});
+  const fields = preview.fields || [];
+  const documents = preview.documents || [];
+  const evidence = Array.isArray(data.evidence) ? data.evidence as Array<Record<string, unknown>> : [];
+  const status = String(data.status || stateLabel(task.state));
+  const verified = task.state === "COMPLETED_VERIFIED";
+  const submitted = data.submission_timestamp ? new Date(String(data.submission_timestamp)).toLocaleString() : "Not verified";
+  const fieldRows = fields.length
+    ? fields.map((field) => `<tr><th>${escapeHtml(field.label)}</th><td>${escapeHtml(printableValue(field.key, field.value))}</td><td>${escapeHtml(field.status)}</td></tr>`).join("")
+    : `<tr><td colspan="3">No printable field preview is available.</td></tr>`;
+  const documentRows = documents.length
+    ? documents.map((document) => `<tr><th>${escapeHtml(document.label)}</th><td>${escapeHtml(document.filename)}</td><td>${escapeHtml(document.status)}</td></tr>`).join("")
+    : `<tr><td colspan="3">No uploaded documents are listed.</td></tr>`;
+  const evidenceRows = evidence.length
+    ? evidence.map((item) => `<li>${escapeHtml(item.type)} — ${item.verified ? "Verified" : "Unverified"}</li>`).join("")
+    : `<li>No independent evidence is available.</li>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(task.service_name)} application</title><style>@page{size:A4;margin:14mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#111827;margin:0;font-size:12px;line-height:1.45}.header{border-bottom:2px solid #111827;padding-bottom:12px;margin-bottom:16px}.brand{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#475569}.title{font-size:22px;margin:4px 0}.status{display:inline-block;padding:5px 10px;border-radius:999px;border:1px solid ${verified ? "#15803d" : "#b45309"};color:${verified ? "#166534" : "#92400e"};font-weight:700}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}.item{border:1px solid #cbd5e1;border-radius:8px;padding:9px}.item small{display:block;color:#64748b}.section{margin-top:18px}.section h2{font-size:15px;margin:0 0 8px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #cbd5e1;padding:7px;text-align:left;vertical-align:top}th{width:34%;background:#f8fafc}ul{margin:0;padding-left:20px}.notice{margin-top:18px;padding:10px;border:1px solid #cbd5e1;background:#f8fafc}.footer{margin-top:24px;padding-top:10px;border-top:1px solid #cbd5e1;color:#64748b;font-size:10px}@media print{button{display:none}}</style></head><body><header class="header"><div class="brand">AutoAI application summary</div><h1 class="title">${escapeHtml(task.service_name)}</h1><div>${escapeHtml(task.provider)}</div><p class="status">${verified ? "VERIFIED COMPLETION" : "UNVERIFIED / IN PROGRESS"} — ${escapeHtml(status)}</p></header><section class="grid"><div class="item"><small>Application ID</small><strong>${escapeHtml(data.application_id || "Not provided")}</strong></div><div class="item"><small>Transaction ID</small><strong>${escapeHtml(data.transaction_id || "Not provided")}</strong></div><div class="item"><small>Official portal</small><strong>${escapeHtml(data.verified_portal || preview.official_origin || "Not available")}</strong></div><div class="item"><small>Submitted</small><strong>${escapeHtml(submitted)}</strong></div></section><section class="section"><h2>Application information</h2><table><tbody>${fieldRows}</tbody></table></section><section class="section"><h2>Documents</h2><table><tbody>${documentRows}</tbody></table></section><section class="section"><h2>Verification evidence</h2><ul>${evidenceRows}</ul></section><div class="notice"><strong>Privacy:</strong> Passwords, OTPs, PINs and authentication secrets are never included. Sensitive identity numbers are masked. This printable summary does not replace an official portal receipt unless the status and evidence above are verified.</div><footer class="footer">Workflow ID: ${escapeHtml(task.id)} · Generated ${escapeHtml(new Date().toLocaleString())}</footer></body></html>`;
+}
+
+function downloadPrintableApplication(task: ServiceTaskView) {
+  const html = printableApplicationHtml(task);
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${task.service_name.replace(/[^A-Za-z0-9._-]+/g, "-").slice(0, 100) || "AutoAI-Application"}.html`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function FieldControl({ field, value, onChange }: { field: ServiceFieldDefinition; value: unknown; onChange: (value: unknown) => void }) {
@@ -340,6 +395,15 @@ export function ServiceTaskCard({ task: initialTask, token }: Props) {
     } catch (cause) { fail(cause); }
   }
 
+  async function printApplication() {
+    setError("");
+    try {
+      await serviceNative.printHtml(`${task.service_name} application`, printableApplicationHtml(task));
+    } catch (cause) {
+      fail(cause);
+    }
+  }
+
   async function reportPortalOutcome(outcome: "submitted" | "rejected" | "not_submitted" | "unknown") {
     if (!token) return;
     await run(() => api.reportServicePortalOutcome(token, task.id, task.version, outcome, applicationId.trim(), transactionId.trim()));
@@ -413,6 +477,8 @@ export function ServiceTaskCard({ task: initialTask, token }: Props) {
         {card.actions.includes("allow_once") ? <button className="service-primary" disabled={isBusy} onClick={() => void allowCamera()} type="button">Allow once</button> : null}
         {card.actions.includes("continue_without") && token ? <button className="service-secondary" disabled={isBusy} onClick={() => void run(() => api.resolveServicePermission(token, task.id, dataValue<string>(task, "permission_id", ""), task.version, "DENIED"))} type="button">Continue without camera</button> : null}
         {card.actions.includes("open_settings") ? <button className="service-secondary" onClick={() => void serviceNative.openSettings()} type="button">Open Android Settings</button> : null}
+        {card.actions.includes("view_receipt") || card.type === "action_receipt" ? <button className="service-primary" disabled={isBusy} onClick={() => void printApplication()} type="button"><Printer size={16} /> Print application</button> : null}
+        {card.actions.includes("view_receipt") || card.type === "action_receipt" ? <button className="service-secondary" disabled={isBusy} onClick={() => downloadPrintableApplication(task)} type="button"><Download size={16} /> Download printable summary</button> : null}
         {card.actions.includes("track") && token ? <button className="service-secondary" disabled={isBusy || offline} onClick={() => void (async () => { setStatus("working"); try { await api.trackServiceTask(token, task.id); update(await api.getServiceTask(token, task.id)); } catch (cause) { fail(cause); } })()} type="button"><RefreshCw size={16} /> Track</button> : null}
         {card.actions.includes("retry") && token ? <button className="service-secondary" disabled={isBusy} onClick={() => void run(() => api.serviceTaskAction(token, task.id, "retry", task.version))} type="button"><RotateCcw size={16} /> Retry</button> : null}
         {(card.actions.includes("retry_verification") || card.actions.includes("recovery")) && token ? <button className="service-secondary" disabled={isBusy || offline} onClick={() => void run(() => api.serviceTaskAction(token, task.id, "retry", task.version))} type="button"><RotateCcw size={16} /> Verify again</button> : null}
