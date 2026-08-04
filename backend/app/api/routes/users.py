@@ -1,6 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 import re
+import time
 import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
@@ -12,7 +13,15 @@ from app.api.deps import get_current_user
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.auth import UserProfileUpdate, UserRead, UsernameAvailability
+from app.schemas.auth import (
+    PhoneVerificationCheck,
+    PhoneVerificationSend,
+    PhoneVerificationStatus,
+    UserProfileUpdate,
+    UserRead,
+    UsernameAvailability,
+)
+from app.services.phone_verification import phone_verification_service
 from app.services.user_identity import normalize_username, username_error
 from app.services.user_avatar import public_avatar
 
@@ -28,6 +37,11 @@ ALLOWED_AVATAR_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 MAX_AVATAR_BYTES = 5 * 1024 * 1024
 E164_PATTERN = re.compile(r"^\+[1-9]\d{7,14}$")
 COUNTRY_CODE_PATTERN = re.compile(r"^\+[1-9]\d{0,3}$")
+PHONE_OTP_RESEND_SECONDS = 30
+PHONE_OTP_MAX_CHECKS_PER_WINDOW = 6
+PHONE_OTP_CHECK_WINDOW_SECONDS = 10 * 60
+_phone_send_times: dict[str, float] = {}
+_phone_check_windows: dict[str, tuple[float, int]] = {}
 
 
 def avatar_directory() -> Path:
@@ -84,6 +98,23 @@ def normalize_phone(phone_number: str | None, phone_country_code: str | None) ->
     return candidate, country
 
 
+def masked_phone(phone_number: str) -> str:
+    if len(phone_number) <= 6:
+        return phone_number
+    return f"{phone_number[:3]}{'•' * max(4, len(phone_number) - 7)}{phone_number[-4:]}"
+
+
+def ensure_unique_phone(db: Session, phone_number: str, current_user_id: str) -> None:
+    owner = db.scalar(
+        select(User.id).where(
+            User.mobile == phone_number,
+            User.id != current_user_id,
+        )
+    )
+    if owner:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This mobile number is already linked to another account.")
+
+
 def serialize_user(user: User) -> UserRead:
     serialized = UserRead.model_validate(user)
     return serialized.model_copy(update={"avatar": public_avatar(user) or None})
@@ -116,11 +147,15 @@ def update_profile(
         current_user.username = username
     if "phone_number" in data or "phone_country_code" in data:
         phone_number, phone_country_code = normalize_phone(data.get("phone_number"), data.get("phone_country_code"))
+        if phone_number:
+            ensure_unique_phone(db, phone_number, current_user.id)
+        phone_changed = phone_number != current_user.phone_number
         current_user.mobile = phone_number
         current_user.phone_number = phone_number
         current_user.phone_country_code = phone_country_code
-        current_user.phone_verified = False
-        current_user.phone_verified_at = None
+        if phone_changed:
+            current_user.phone_verified = False
+            current_user.phone_verified_at = None
     if "memory_enabled" in data and data["memory_enabled"] is not None:
         current_user.memory_enabled = data["memory_enabled"]
     if "feedback_learning_enabled" in data and data["feedback_learning_enabled"] is not None:
@@ -137,6 +172,109 @@ def update_profile(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Unable to update profile.") from exc
     db.refresh(current_user)
     return serialize_user(current_user)
+
+
+@router.post("/me/phone/send-otp", response_model=PhoneVerificationStatus)
+def send_phone_otp(
+    payload: PhoneVerificationSend,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PhoneVerificationStatus:
+    phone_number, phone_country_code = normalize_phone(payload.phone_number, payload.phone_country_code)
+    if not phone_number or not phone_country_code:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Enter a mobile number first.")
+    ensure_unique_phone(db, phone_number, current_user.id)
+    if not phone_verification_service.configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="SMS verification is not configured on the server yet.",
+        )
+
+    now = time.monotonic()
+    previous = _phone_send_times.get(current_user.id, 0.0)
+    remaining = int(PHONE_OTP_RESEND_SECONDS - (now - previous))
+    if remaining > 0:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Wait {remaining} seconds before requesting another code.",
+        )
+
+    phone_changed = current_user.phone_number != phone_number
+    current_user.mobile = phone_number
+    current_user.phone_number = phone_number
+    current_user.phone_country_code = phone_country_code
+    if phone_changed:
+        current_user.phone_verified = False
+        current_user.phone_verified_at = None
+    current_user.updated_at = datetime.utcnow()
+    current_user.profile_updated_at = current_user.updated_at
+    db.commit()
+
+    try:
+        result = phone_verification_service.send_code(phone_number)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    if not result.ok:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=result.detail)
+    _phone_send_times[current_user.id] = now
+    _phone_check_windows[current_user.id] = (now, 0)
+    return PhoneVerificationStatus(
+        message=result.detail,
+        destination=masked_phone(phone_number),
+        expires_in_seconds=600,
+        resend_after_seconds=PHONE_OTP_RESEND_SECONDS,
+        verified=False,
+    )
+
+
+@router.post("/me/phone/verify-otp", response_model=PhoneVerificationStatus)
+def verify_phone_otp(
+    payload: PhoneVerificationCheck,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PhoneVerificationStatus:
+    phone_number = current_user.phone_number or current_user.mobile
+    if not phone_number:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Save a mobile number before verification.")
+    if current_user.phone_verified:
+        return PhoneVerificationStatus(
+            message="Mobile number is already verified.",
+            destination=masked_phone(phone_number),
+            verified=True,
+            user=serialize_user(current_user),
+        )
+    if not phone_verification_service.configured:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="SMS verification is not configured on the server yet.")
+
+    now = time.monotonic()
+    window_started, attempts = _phone_check_windows.get(current_user.id, (now, 0))
+    if now - window_started > PHONE_OTP_CHECK_WINDOW_SECONDS:
+        window_started, attempts = now, 0
+    if attempts >= PHONE_OTP_MAX_CHECKS_PER_WINDOW:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many incorrect attempts. Request a new code.")
+    _phone_check_windows[current_user.id] = (window_started, attempts + 1)
+
+    try:
+        result = phone_verification_service.check_code(phone_number, payload.code)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    if not result.ok:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.detail)
+
+    current_user.phone_verified = True
+    current_user.phone_verified_at = datetime.utcnow()
+    current_user.updated_at = current_user.phone_verified_at
+    current_user.profile_updated_at = current_user.phone_verified_at
+    db.commit()
+    db.refresh(current_user)
+    _phone_check_windows.pop(current_user.id, None)
+    _phone_send_times.pop(current_user.id, None)
+    return PhoneVerificationStatus(
+        message="Mobile number verified successfully.",
+        destination=masked_phone(phone_number),
+        verified=True,
+        user=serialize_user(current_user),
+    )
 
 
 @router.post("/me/avatar", response_model=UserRead)
