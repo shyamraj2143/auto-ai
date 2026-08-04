@@ -27,8 +27,9 @@ interface AutoAiServiceCapabilitiesPlugin {
 const NativeServiceCapabilities = registerPlugin<AutoAiServiceCapabilitiesPlugin>("AutoAiServiceCapabilities");
 
 function printInBrowser(title: string, html: string) {
-  const popup = window.open("", "_blank", "noopener,noreferrer");
+  const popup = window.open("", "_blank");
   if (!popup) throw new Error("The print preview was blocked. Allow pop-ups and try again.");
+  try { popup.opener = null; } catch { /* Browser may prevent changing opener. */ }
   popup.document.open();
   popup.document.write(html);
   popup.document.title = title;
