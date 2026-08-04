@@ -28,4 +28,6 @@ def health():
         "groq_configured": bool(settings.groq_api_key),
         "openai_configured": bool(settings.OPENAI_API_KEY),
         "bedrock_configured": bedrock_configured,
+        "commit_sha": settings.RAILWAY_GIT_COMMIT_SHA,
+        "deployment_id": settings.RAILWAY_DEPLOYMENT_ID,
     }

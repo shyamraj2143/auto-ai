@@ -14,7 +14,6 @@ public final class AlarmActionReceiver extends BroadcastReceiver {
     static final String ACTION_CHANGED = "com.autoai.app.alarm.CHANGED";
     static final String EXTRA_ACTION = "alarm_action";
     static final String EXTRA_AWAKE_VERIFIED = "awake_verified";
-    private static final int SNOOZE_MINUTES = 10;
 
     @Override public void onReceive(Context context, Intent intent) {
         String alarmId = intent == null ? null : intent.getStringExtra(AlarmScheduler.EXTRA_ALARM_ID);
@@ -25,14 +24,16 @@ public final class AlarmActionReceiver extends BroadcastReceiver {
             && (intent == null || !intent.getBooleanExtra(EXTRA_AWAKE_VERIFIED, false))) return;
         AlarmRingingService.stop(context, alarmId);
         if (ACTION_SNOOZE.equals(action)) {
-            AlarmPayload snoozed = AlarmStore.snooze(context, alarmId, System.currentTimeMillis() + SNOOZE_MINUTES * 60_000L);
+            AlarmPayload current = AlarmStore.get(context, alarmId);
+            int snoozeMinutes = current == null ? 10 : current.snoozeMinutes;
+            AlarmPayload snoozed = AlarmStore.snooze(context, alarmId, System.currentTimeMillis() + snoozeMinutes * 60_000L);
             if (snoozed != null) AlarmScheduler.schedule(context, snoozed);
             if (snoozed != null) {
                 AlarmActionSyncWorker.enqueue(
                     context,
                     alarmId,
                     "snooze",
-                    SNOOZE_MINUTES,
+                    snoozeMinutes,
                     snoozed.scheduledAtEpochMs,
                     snoozed.revision
                 );
@@ -42,7 +43,9 @@ public final class AlarmActionReceiver extends BroadcastReceiver {
             AlarmPayload occurrence = AlarmStore.get(context, alarmId);
             long scheduledAtEpochMs = occurrence == null ? 0L : occurrence.scheduledAtEpochMs;
             AlarmScheduler.cancel(context, alarmId);
-            AlarmPayload completed = AlarmStore.markCompleted(context, alarmId);
+            AlarmPayload repeated = occurrence == null ? null : occurrence.nextRepeat(System.currentTimeMillis());
+            AlarmPayload completed = repeated != null ? repeated : AlarmStore.markCompleted(context, alarmId);
+            if (repeated != null) { AlarmStore.upsert(context, repeated); AlarmScheduler.schedule(context, repeated); }
             if (completed != null) {
                 AlarmActionSyncWorker.enqueue(context, alarmId, "dismiss", 0, scheduledAtEpochMs, completed.revision);
             }

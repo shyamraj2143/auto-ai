@@ -112,9 +112,9 @@ final class AlarmStore {
     static synchronized void markRinging(Context context, String alarmId) {
         AlarmPayload existing = get(context, alarmId);
         if (existing == null || "ringing".equals(existing.status)) return;
-        upsert(context, new AlarmPayload(existing.alarmId, existing.title, existing.note,
+        upsert(context, existing.inherited(new AlarmPayload(existing.alarmId, existing.title, existing.note,
             existing.scheduledAtEpochMs, existing.timezone, existing.language, existing.voiceStyle,
-            existing.ringtone, existing.assistantMessage, existing.enabled, "ringing", existing.revision));
+            existing.ringtone, existing.repeat, existing.snoozeMinutes, existing.vibration, existing.assistantMessage, existing.enabled, "ringing", existing.revision)));
     }
 
     private static void save(Context context, List<AlarmPayload> alarms) {

@@ -55,6 +55,7 @@ final class AlarmScheduler {
         PendingIntent pending = pendingIntent(context, payload.alarmId, payload.revision, PendingIntent.FLAG_UPDATE_CURRENT);
         PendingIntent show = AlarmRingingActivity.pendingIntent(context, payload);
         try {
+            manager.cancel(pending);
             manager.setAlarmClock(new AlarmManager.AlarmClockInfo(triggerAt, show), pending);
         } catch (SecurityException denied) {
             return new Result(false, false, triggerAt, "none", "exact_alarm_access_required");

@@ -5,17 +5,28 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: Exact deployed commit SHA
+        required: true
+        type: string
+      confirm_production_release:
+        description: Type RELEASE to confirm the production update
+        required: true
+        type: string
 
 concurrency:
   group: android-release-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
 
 jobs:
   build-and-publish:
+    if: github.event_name == 'push' || inputs.confirm_production_release == 'RELEASE'
     runs-on: ubuntu-latest
+    environment: production
     env:
       AUTO_AI_API_BASE_URL: https://auto-ai-production-a6ef.up.railway.app/api/v1
       AUTO_AI_ADMIN_EMAIL: ${{ secrets.AUTO_AI_ADMIN_EMAIL }}
@@ -27,10 +38,14 @@ jobs:
       AUTO_AI_GOOGLE_WEB_CLIENT_ID: ${{ secrets.AUTO_AI_GOOGLE_WEB_CLIENT_ID }}
       AUTO_AI_GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.AUTO_AI_GOOGLE_SERVICES_JSON_BASE64 }}
       AUTO_AI_UPDATE_NOTIFY_SECRET: ${{ secrets.AUTO_AI_UPDATE_NOTIFY_SECRET }}
+      AUTO_AI_HEALTH_URL: ${{ secrets.AUTO_AI_HEALTH_URL }}
+      AUTO_AI_EXPECTED_SIGNING_SHA256: ${{ secrets.AUTO_AI_EXPECTED_SIGNING_SHA256 }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.commit_sha || github.sha }}
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -48,7 +63,7 @@ jobs:
         shell: bash
         run: |
           missing=()
-          for name in AUTO_AI_ANDROID_KEYSTORE_BASE64 AUTO_AI_ANDROID_KEYSTORE_PASSWORD AUTO_AI_ANDROID_KEY_ALIAS AUTO_AI_ANDROID_KEY_PASSWORD; do
+          for name in AUTO_AI_ANDROID_KEYSTORE_BASE64 AUTO_AI_ANDROID_KEYSTORE_PASSWORD AUTO_AI_ANDROID_KEY_ALIAS AUTO_AI_ANDROID_KEY_PASSWORD AUTO_AI_ADMIN_EMAIL AUTO_AI_ADMIN_PASSWORD AUTO_AI_EXPECTED_SIGNING_SHA256; do
             if [ -z "${!name:-}" ]; then
               missing+=("$name")
             fi
@@ -64,12 +79,33 @@ jobs:
           mkdir -p .android-signing
           printf '%s' "$AUTO_AI_ANDROID_KEYSTORE_BASE64" | base64 --decode > .android-signing/auto-ai-release.jks
           echo "AUTO_AI_ANDROID_KEYSTORE=$PWD/.android-signing/auto-ai-release.jks" >> "$GITHUB_ENV"
-          version_code=$((100000 + GITHUB_RUN_NUMBER * 10 + GITHUB_RUN_ATTEMPT))
+          version_code=$((100000 + GITHUB_RUN_NUMBER))
           echo "AUTO_AI_ANDROID_VERSION_CODE=$version_code" >> "$GITHUB_ENV"
           echo "AUTO_AI_ANDROID_VERSION_NAME=1.0.$version_code" >> "$GITHUB_ENV"
           if [ -n "${AUTO_AI_GOOGLE_SERVICES_JSON_BASE64:-}" ]; then
             printf '%s' "$AUTO_AI_GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > android/app/google-services.json
           fi
+
+      - name: Test backend and production frontend
+        shell: bash
+        run: |
+          python -m pip install -r backend/requirements.txt -r backend/requirements-dev.txt
+          PYTHONPATH=backend pytest -q backend/tests
+          npm ci --prefix frontend
+          npm run build --prefix frontend
+
+      - name: Wait for matching healthy Railway deployment
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ github.event_name == 'workflow_dispatch' && inputs.commit_sha || github.sha }}
+        run: |
+          if [ -z "${AUTO_AI_HEALTH_URL:-}" ]; then
+            echo 'AUTO_AI_HEALTH_URL is required.' >&2
+            exit 1
+          fi
+          python scripts/wait_for_railway_deployment.py \
+            --health-url "$AUTO_AI_HEALTH_URL" \
+            --commit-sha "$EXPECTED_COMMIT"
 
       - name: Install root dependencies
         run: npm ci
@@ -160,6 +196,16 @@ jobs:
           mkdir -p output/android
           cp android/app/build/outputs/apk/release/app-release.apk output/android/auto-ai.apk
 
+          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          test -n "$apksigner"
+          "$apksigner" verify --verbose --print-certs output/android/auto-ai.apk | tee output/android/signing.txt
+          actual_cert="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' output/android/signing.txt | head -1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          expected_cert="$(printf '%s' "${AUTO_AI_EXPECTED_SIGNING_SHA256:-}" | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          if [ -z "$expected_cert" ] || [ "$actual_cert" != "$expected_cert" ]; then
+            echo 'APK signing certificate does not match AUTO_AI_EXPECTED_SIGNING_SHA256.' >&2
+            exit 1
+          fi
+
       - name: Publish GitHub APK release
         shell: bash
         env:
@@ -167,12 +213,21 @@ jobs:
         run: |
           apk_path="output/android/auto-ai.apk"
           sha256="$(sha256sum "$apk_path" | awk '{print $1}')"
+          size="$(stat -c '%s' "$apk_path")"
           tag="android-${AUTO_AI_ANDROID_VERSION_CODE}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; verifying the idempotent retry."
+            asset_url="$(gh release view "$tag" --json assets --jq '.assets[] | select(.name == "auto-ai.apk") | .url')"
+            python scripts/verify_release_asset.py --url "$asset_url" --size "$size" --sha256 "$sha256"
+            exit 0
+          fi
           notes="$(mktemp)"
           {
             echo "Version-Code: ${AUTO_AI_ANDROID_VERSION_CODE}"
             echo "Version-Name: ${AUTO_AI_ANDROID_VERSION_NAME}"
             echo "SHA256: ${sha256}"
+            echo "File-Size: ${size}"
+            echo "Commit-SHA: ${GITHUB_SHA}"
             echo "Force-Update: true"
             echo "Changelog: Exact AI alarms with offline awake verification"
             echo
@@ -184,8 +239,10 @@ jobs:
             --notes-file "$notes" \
             --latest
 
+          asset_url="$(gh release view "$tag" --json assets --jq '.assets[] | select(.name == "auto-ai.apk") | .url')"
+          python scripts/verify_release_asset.py --url "$asset_url" --size "$size" --sha256 "$sha256"
+
       - name: Publish APK metadata to backend
-        if: ${{ env.AUTO_AI_ADMIN_EMAIL != '' && env.AUTO_AI_ADMIN_PASSWORD != '' }}
         shell: bash
         run: |
           python scripts/publish_android_release.py \
@@ -198,19 +255,10 @@ jobs:
             --metadata-only \
             --force-update
 
-      - name: Notify installed Android apps
-        if: ${{ env.AUTO_AI_UPDATE_NOTIFY_SECRET != '' }}
-        shell: bash
-        run: |
-          python scripts/notify_android_update.py \
-            --api-url "$AUTO_AI_API_BASE_URL" \
-            --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
-            --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
-            --changelog "Exact AI alarms with offline awake verification"
-
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: auto-ai-${{ env.AUTO_AI_ANDROID_VERSION_NAME }}
           path: output/android/auto-ai.apk
           if-no-files-found: error
+          retention-days: 14

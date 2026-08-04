@@ -27,7 +27,7 @@ public final class NotificationDeepLink {
     public enum Destination {
         MESSAGE_THREAD, AI_CONVERSATION, INCOMING_CALL, MISSED_CALL, CALL_HISTORY,
         FOLLOW_REQUEST, FOLLOW_ACCEPTED, SOCIAL_ALERT, SCREEN_SHARE_SESSION,
-        APP_UPDATE, SETTINGS_SECTION, PAYMENT_RESULT
+        APP_UPDATE, SETTINGS_SECTION, PAYMENT_RESULT, RELATIONSHIP_FOLLOWUP
     }
 
     private NotificationDeepLink() { }
@@ -126,6 +126,7 @@ public final class NotificationDeepLink {
         if ("follow_request".equals(type)) return Destination.FOLLOW_REQUEST.name();
         if ("follow_accept".equals(type)) return Destination.FOLLOW_ACCEPTED.name();
         if ("apk_update".equals(type)) return Destination.APP_UPDATE.name();
+        if ("relationship_followup".equals(type)) return Destination.RELATIONSHIP_FOLLOWUP.name();
         return null;
     }
 
@@ -144,6 +145,7 @@ public final class NotificationDeepLink {
             case FOLLOW_ACCEPTED: return "actor_id";
             case SOCIAL_ALERT: return "notification_id";
             case SCREEN_SHARE_SESSION: return "session_id";
+            case RELATIONSHIP_FOLLOWUP: return "contact_id";
             default: return null;
         }
     }

@@ -16,6 +16,8 @@ public final class AlarmReceiver extends BroadcastReceiver {
         String action = intent == null ? "" : intent.getAction();
         if (Intent.ACTION_BOOT_COMPLETED.equals(action)
             || Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)
+            || Intent.ACTION_TIME_CHANGED.equals(action)
+            || Intent.ACTION_TIMEZONE_CHANGED.equals(action)
             || AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED.equals(action)) {
             PendingResult pending = goAsync();
             EXECUTOR.execute(() -> {

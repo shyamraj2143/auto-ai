@@ -17,6 +17,7 @@ from app.core.security import get_password_hash
 from app.db.session import get_db
 from app.models.admin_control import AuditLog, FeatureFlag, PaymentRecord, PlanLimit, UserSubscription
 from app.models.api_usage import APIUsage
+from app.models.apk import ApkRelease
 from app.models.chat import Chat
 from app.models.document import Document
 from app.models.message import Message
@@ -1359,8 +1360,14 @@ def upsert_apk_version(
 ) -> ApkReleaseRead:
     data = payload.model_dump()
     release_id = data.pop("id", None)
+    existing = db.get(ApkRelease, release_id) if release_id else db.scalar(
+        select(ApkRelease).where(
+            or_(ApkRelease.version_code == payload.version_code, ApkRelease.version_name == payload.version_name)
+        )
+    )
+    should_notify = existing is None or (not existing.is_active and payload.is_active)
     release = apk_service.upsert_version(db, release_id=release_id, **data)
-    if firebase_notification_service.configured:
+    if should_notify and firebase_notification_service.configured:
         background_tasks.add_task(
             dispatch_apk_update_notifications,
             release.version_code,

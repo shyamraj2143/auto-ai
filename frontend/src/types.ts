@@ -108,6 +108,7 @@ export type Message = {
     attachments?: ChatAttachment[];
     client_message_id?: string;
     internal_context?: MessageInternalContext;
+    service_task?: ServiceTaskView;
     [key: string]: unknown;
   };
   created_at: string;
@@ -162,6 +163,93 @@ export type DocumentItem = {
   summary?: string | null;
   document_metadata: Record<string, unknown>;
   created_at: string;
+};
+
+export type IntentFieldType = "text" | "email" | "phone" | "number" | "date" | "time" | "address" | "select" | "multiselect" | "radio" | "checkbox" | "textarea" | "file" | "camera" | "pdf" | "image" | "signature" | "secure_password" | "otp" | "captcha" | "biometric" | "permission" | "review" | "confirmation" | "progress" | "receipt";
+export type IntentInteraction = {
+  type: "clarification" | "intent_confirmation" | "information_request" | "document_request" | "secure_input" | "permission_request" | "action_plan" | "workflow_progress" | "human_action" | "final_confirmation" | "action_receipt" | "automation_proposal" | "recoverable_error";
+  title: string;
+  description: string;
+  fields: Array<{ id: string; type: IntentFieldType; label: string; required: boolean; options: string[]; validation?: { minLength?: number; maxLength?: number; pattern?: string; min?: number; max?: number } }>;
+  actions: Array<"submit" | "confirm" | "cancel" | "retry" | "undo" | "pause" | "authenticate">;
+  workflow_id?: string | null;
+};
+export type IntentEngineResponse = {
+  event_id: string;
+  workflow_id?: string | null;
+  intent: { domain: string; primary_intent: string; secondary_intent?: string | null; action_type: string; entities: Record<string, unknown>; missing_requirements: string[]; required_capabilities: string[]; confidence: number; urgency: string; risk_level: string; requested_autonomy: string; clarification_required: boolean; workflow_id?: string | null };
+  decision: { outcome: string; reason: string; user_message: string; interaction?: IntentInteraction | null; tool_name?: string | null; requires_confirmation: boolean };
+};
+
+export type ServiceTaskState =
+  | "CREATED" | "INTENT_CONFIRMED" | "SERVICE_DISCOVERY" | "REQUIREMENTS_READY"
+  | "COLLECTING_INFORMATION" | "COLLECTING_DOCUMENTS" | "AWAITING_PERMISSION"
+  | "AWAITING_AUTHENTICATION" | "READY_TO_PREPARE" | "PREPARING" | "PORTAL_SESSION_ACTIVE"
+  | "AWAITING_USER_ACTION" | "VALIDATING" | "REVIEW_REQUIRED"
+  | "SUBMISSION_CONFIRMATION_REQUIRED" | "SUBMITTING" | "SUBMITTED_UNVERIFIED"
+  | "VERIFYING" | "COMPLETED_VERIFIED" | "FAILED_RECOVERABLE" | "FAILED_FINAL"
+  | "PAUSED" | "CANCELLED" | "EXPIRED";
+
+export type ServiceExecutionMode = "EXPLAIN" | "PREPARE" | "ASSIST" | "EXECUTE_WITH_CONFIRMATION";
+
+export type ServiceCardType =
+  | "service_plan" | "information_request" | "secure_input_request" | "document_request"
+  | "permission_request" | "portal_session" | "user_action_required" | "form_review"
+  | "submission_confirmation" | "task_progress" | "action_receipt" | "task_error"
+  | "recovery_options";
+
+export type ServiceFieldDefinition = {
+  key: string;
+  label: string;
+  type: "text" | "email" | "phone" | "date" | "number" | "address" | "select" | "multiselect" | "checkbox" | "radio" | "textarea";
+  required?: boolean;
+  options?: string[];
+  min_length?: number;
+  max_length?: number;
+  min?: number;
+  max?: number;
+  pattern?: string;
+  explanation?: string;
+  depends_on?: { field: string; equals: unknown };
+  repeatable?: boolean;
+};
+
+export type ServiceInteractiveCard = {
+  type: ServiceCardType;
+  title: string;
+  description: string;
+  state: ServiceTaskState;
+  status: string;
+  task_id: string;
+  task_version: number;
+  progress_percent: number;
+  execution_mode: ServiceExecutionMode;
+  data: Record<string, unknown>;
+  actions: string[];
+  updated_at: string;
+};
+
+export type ServiceTaskView = {
+  id: string;
+  chat_id?: string | null;
+  service_id: string;
+  service_name: string;
+  provider: string;
+  state: ServiceTaskState;
+  execution_mode: ServiceExecutionMode;
+  progress_percent: number;
+  version: number;
+  active_card: ServiceInteractiveCard;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ServiceIntentResponse = {
+  handled: boolean;
+  confidence: number;
+  reason: string;
+  chat_id?: string | null;
+  task?: ServiceTaskView | null;
 };
 
 export type LibraryAsset = {

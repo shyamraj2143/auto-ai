@@ -18,6 +18,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32.png?v=20260731" />
     <link rel="shortcut icon" type="image/png" href="/icons/icon-32.png?v=20260731" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=20260731" />
+    <link rel="stylesheet" href="/src/styles/performance.css" />
     <meta property="og:site_name" content="Auto-AI" />
     <meta property="og:title" content="Auto-AI | AutoAI Workspace for AI Chat, Memory and Files" />
     <meta
@@ -50,14 +51,47 @@
   </head>
   <body>
     <div id="root">
-      <main class="app-loading static-landing-fallback">
-        <section>
-          <p>Ultra Premium AI Workspace</p>
-          <h1>Auto-AI</h1>
-          <p>
-            Auto-AI, also known as AutoAI and Auto AI, is an AI workspace with memory, uploads, voice input, web research, streaming chat, and Android access.
-          </p>
-        </section>
+      <main class="industrial-loader" data-stage="0" data-error="false" role="status" aria-live="polite" aria-busy="true">
+        <div class="industrial-loader-frame">
+          <div class="industrial-loader-brand" aria-label="AutoAI">
+            <svg class="industrial-loader-mark" viewBox="0 0 128 116" aria-hidden="true">
+              <defs>
+                <linearGradient id="autoai-static-a" x1="18" y1="94" x2="90" y2="15" gradientUnits="userSpaceOnUse"><stop stop-color="#39c2ff"/><stop offset=".52" stop-color="#1c9cff"/><stop offset="1" stop-color="#116df0"/></linearGradient>
+                <linearGradient id="autoai-static-b" x1="59" y1="16" x2="110" y2="98" gradientUnits="userSpaceOnUse"><stop stop-color="#31b7ff"/><stop offset="1" stop-color="#1268ec"/></linearGradient>
+              </defs>
+              <path d="M19 94 54 20c3.9-8.2 15.3-8.2 19.2 0L109 94" fill="none" stroke="#061427" stroke-width="24" stroke-linecap="round" stroke-linejoin="round" opacity=".72"/>
+              <path d="M19 94 54 20c3.9-8.2 15.3-8.2 19.2 0" fill="none" stroke="url(#autoai-static-a)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="m68 23 41 71" fill="none" stroke="url(#autoai-static-b)" stroke-width="18" stroke-linecap="round"/>
+              <path d="M53 78c7.6-7.9 17.5-8.6 25.5-1.2 3.8 3.6 6.4 8.1 8 13.8-11.9 6.7-24.4 4.7-32-3.5-2.2-2.4-2.7-5.7-1.5-9.1Z" fill="url(#autoai-static-b)"/>
+            </svg>
+            <div class="industrial-loader-wordmark"><span>Auto</span><strong>AI</strong></div>
+          </div>
+          <div class="industrial-loader-copy">
+            <h1><span class="industrial-loader-desktop-title">Starting AutoAI</span><span class="industrial-loader-mobile-title">Quick Start</span></h1>
+            <p>Preparing your workspace</p>
+          </div>
+          <div class="industrial-loader-progress-row">
+            <div class="industrial-loader-track" role="progressbar" aria-valuemin="0" aria-valuemax="4" aria-valuenow="1" aria-valuetext="Restoring session"><span></span></div>
+            <button type="button" class="industrial-loader-retry" onclick="window.location.reload()" aria-label="Retry startup">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5M4 18v-5h5M6.1 9a7 7 0 0 1 11.6-2.6L20 11M4 13l2.3 4.6A7 7 0 0 0 18 15"></path></svg>
+              Retry
+            </button>
+          </div>
+          <ol class="industrial-loader-steps" aria-label="Startup progress">
+            <li class="is-active"><span aria-hidden="true"></span><strong>Restoring session</strong></li>
+            <li class="is-pending"><span aria-hidden="true"></span><strong>Connecting securely</strong></li>
+            <li class="is-pending"><span aria-hidden="true"></span><strong>Loading workspace</strong></li>
+            <li class="is-pending"><span aria-hidden="true"></span><strong>Ready</strong></li>
+          </ol>
+          <div class="industrial-loader-workspace" aria-hidden="true">
+            <aside><span><i></i><b></b></span><span><i></i><b></b></span><span><i></i><b></b></span><span><i></i><b></b></span><span><i></i><b></b></span></aside>
+            <div class="industrial-loader-skeleton-grid">
+              <span class="is-card"><i></i><b></b><b></b></span><span class="is-card"><i></i><b></b><b></b></span><span class="is-card"><i></i><b></b><b></b></span>
+              <span class="is-card is-tall"><i></i><b></b><b></b><b></b></span><span class="is-card is-wide"><i></i><b></b><b></b><b></b></span>
+            </div>
+          </div>
+          <span class="industrial-loader-status">Restoring session</span>
+        </div>
       </main>
     </div>
     <script type="module" src="/src/main.tsx"></script>

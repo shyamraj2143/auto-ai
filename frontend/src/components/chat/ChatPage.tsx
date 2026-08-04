@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion } from "../../motion/staticMotion";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowDown, Brain, Languages, Library, Menu, MessageSquarePlus, MoreHorizontal, Search, Settings, Sparkles, Square, Trash2, Pencil, Eraser } from "lucide-react";
 import { ApiClientError, api, streamGenerationActivity } from "../../api/client";
@@ -12,7 +12,7 @@ import { dateSeparatorFlags, formatMessageDate, formatMessageDateLabel } from ".
 import { Composer, type ComposerOptions, type UploadTask } from "./Composer";
 import { LiveModelActivity } from "./LiveModelActivity";
 import { ContextPanel } from "./ContextPanel";
-import { MessageBubble } from "./MessageBubble";
+import { latestServiceTaskMessageIds, MessageBubble } from "./MessageBubble";
 import { DismissibleMenu } from "./DismissibleMenu";
 import { useAppSettings } from "../../contexts/AppSettingsContext";
 import { useShell } from "../../contexts/ShellContext";
@@ -23,6 +23,11 @@ import { CrystalAiOrb, CrystalErrorBoundary } from "../crystal/Crystal";
 import type { CrystalOrbState } from "../../crystal/tokens";
 import { usePublishedUiText } from "../../hooks/useCmsContent";
 import { AppNotice } from "../common/AppNotice";
+import { ActionAssistantPanel } from "../../features/assistant/ActionAssistantPanel";
+import type { AssistantActionItem, AssistantResponse } from "../../features/assistant/types";
+import { useAlarms } from "../../features/alarms/AlarmContext";
+import { alarmNative } from "../../features/alarms/alarmNative";
+import { isMobileAppRuntime } from "../../utils/runtime";
 import { LibraryModal } from "./LibraryModal";
 import {
   appendOptimisticMessages,
@@ -134,7 +139,8 @@ export function ChatPage() {
   const location = useLocation();
   const { chatId } = useParams();
   const { token } = useAuth();
-  const { settings, setResponseLanguage } = useAppSettings();
+  const { settings, setResponseLanguage, setVoiceEnabled, setMemoryEnabled, setAssistantSpokenResponses, setAssistantPersonalization, setAssistantActionConfirmations } = useAppSettings();
+  const { refresh: refreshAlarms } = useAlarms();
   const { activeChat, createChat, deleteChat, openChat, refreshChats, setActiveChat, updateChat } = useChat();
   const { openSidebar, setActiveAiConversation } = useShell();
   const openSettings = useSettingsNavigation();
@@ -155,6 +161,9 @@ export function ChatPage() {
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [liveModeOpen, setLiveModeOpen] = useState(false);
+  const [assistantCommand, setAssistantCommand] = useState("");
+  const [assistantResponse, setAssistantResponse] = useState<AssistantResponse | null>(null);
+  const [assistantProcessing, setAssistantProcessing] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -349,6 +358,7 @@ export function ChatPage() {
     () => dateSeparatorFlags(visibleMessages.map((message) => message.created_at)),
     [visibleMessages]
   );
+  const latestServiceCards = useMemo(() => latestServiceTaskMessageIds(visibleMessages), [visibleMessages]);
   const activeVisibleChatId = activeChat?.id ?? activeRequestRef.current?.chatId ?? chatId ?? null;
   const visibleGeneration = activeGeneration?.chat_id === activeVisibleChatId ? activeGeneration : null;
   const visibleGenerationRunning = Boolean(visibleGeneration && isRunningGenerationStatus(visibleGeneration.status));
@@ -861,6 +871,69 @@ export function ChatPage() {
   async function handleSend(text: string, options: ComposerOptions, imageFiles: File[] = []) {
     const trimmedText = text.trim();
     if (!token || visibleChatBusy || (!trimmedText && !imageFiles.length && !selectedLibraryAttachments.length)) return false;
+    if (trimmedText) {
+      try {
+        const service = await api.interpretServiceRequest(token, {
+          message: trimmedText,
+          chat_id: activeChat?.id,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+          locale: settings.responseLanguage || "en-IN",
+          client_request_id: crypto.randomUUID()
+        });
+        if (service.handled && service.task && service.chat_id) {
+          if (!activeChat?.id || activeChat.id !== service.chat_id) {
+            navigate(`/chat/${encodeURIComponent(service.chat_id)}`, { replace: true });
+            await openChat(service.chat_id);
+          } else {
+            const createdAt = nowIso();
+            const serviceMessages: Message[] = [
+              { id: `local-service-user-${service.task.id}`, role: "user", content: trimmedText, message_metadata: { service_task_id: service.task.id }, created_at: createdAt },
+              { id: `local-service-assistant-${service.task.id}`, role: "assistant", content: "I found a supported service. Review this plan before AutoAI collects any information.", message_metadata: { service_task: service.task }, created_at: createdAt }
+            ];
+            const next = appendOptimisticMessages(messagesRef.current, serviceMessages);
+            messagesRef.current = next;
+            setMessages(next);
+            syncActiveChatMessages(activeChat.id, next);
+          }
+          void refreshChats().catch(() => undefined);
+          window.requestAnimationFrame(scrollToBottom);
+          return true;
+        }
+      } catch (error) {
+        if (error instanceof ApiClientError && error.kind === "authentication_failed") {
+          showChatNotice(error.message);
+          return false;
+        }
+      }
+      try {
+        const interpreted=await api.interpretIntent(token,{message:trimmedText,chat_id:activeChat?.id,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||"UTC",locale:settings.responseLanguage||"en",platform:isMobileAppRuntime()?"android":"web",device_capabilities:["dynamic_ui","document_upload","notifications"],granted_permissions:[],client_request_id:crypto.randomUUID()});
+        if(!["TEXT_RESPONSE","TOOL_EXECUTION_REQUEST"].includes(interpreted.decision.outcome)) {
+          const createdAt=nowIso();
+          const sensitive=interpreted.decision.outcome==="HUMAN_AUTHENTICATION_REQUIRED";
+          const intentMessages:Message[]=[
+            {id:`local-intent-user-${interpreted.event_id}`,role:"user",content:sensitive?"[Sensitive authentication value withheld from chat]":trimmedText,created_at:createdAt},
+            {id:`local-intent-assistant-${interpreted.event_id}`,role:"assistant",content:interpreted.decision.user_message,message_metadata:{intent:interpreted.intent,intent_event_id:interpreted.event_id,intent_interaction:interpreted.decision.interaction},created_at:createdAt}
+          ];
+          const next=appendOptimisticMessages(messagesRef.current,intentMessages);
+          messagesRef.current=next;setMessages(next);if(activeChat?.id)syncActiveChatMessages(activeChat.id,next);window.requestAnimationFrame(scrollToBottom);return true;
+        }
+      } catch(error) {
+        showChatNotice(error instanceof Error?error.message:"Intent analysis failed safely. No action was executed.");
+        return false;
+      }
+    }
+    const actionLike = /\b(alarm|alarms|setting|settings|open|खोल|अलार्म|जगा|बजे|vibration|snooze|delete|disable|enable|हटा|बंद|चालू)\b/i.test(trimmedText);
+    if (settings.assistantEnabled && actionLike && !imageFiles.length && !selectedLibraryAttachments.length) {
+      setAssistantCommand(trimmedText); setAssistantResponse(null); setAssistantProcessing(true);
+      try {
+        const response = await api.runAssistantCommand(token, { message: trimmedText, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC", request_id: crypto.randomUUID(), context: settings.assistantPersonalization ? messagesRef.current.slice(-8).map((item) => ({ role: item.role, content: coerceTextContent(item.content).slice(0, 1000) })) : [], platform: isMobileAppRuntime() ? "android" : "web" });
+        setAssistantResponse(response); await applyAssistantResults(response.actions);
+        if (settings.assistantSpokenResponses && "speechSynthesis" in window) speechSynthesis.speak(new SpeechSynthesisUtterance(response.assistant_reply));
+      } catch (error) {
+        setAssistantResponse({ normalized_user_text: trimmedText, mode: "error", intent: "error", assistant_reply: error instanceof Error ? error.message : "AI Assistant अभी Internet से connect नहीं हो पा रहा है। Existing alarms और manual controls काम करते रहेंगे।", emotion: {}, needs_clarification: false, actions: [], model: "groq" });
+      } finally { setAssistantProcessing(false); }
+      return true;
+    }
     const documentIds = settings.memoryEnabled ? [...selectedDocumentIds] : [];
     const attachments = [
       ...imageFiles.map(createImageAttachment),
@@ -910,6 +983,40 @@ export function ChatPage() {
     await startGenerationForLocalAssistant(request, assistantId);
     setSelectedLibraryAttachments([]);
     return true;
+  }
+
+  async function applyAssistantResults(actions: AssistantActionItem[]) {
+    for (const action of actions) {
+      const alarm = action.result.alarm as import("../../features/alarms/types").UserAlarm | undefined;
+      if (action.status === "completed" && alarm) {
+        const armed = await alarmNative.schedule(alarm);
+        if (alarmNative.isAndroid() && (!armed.scheduled || !armed.exact)) throw new Error(armed.reason || "Android exact scheduling failed.");
+      }
+    }
+    if (actions.some((item) => item.status === "completed" && item.tool_name.startsWith("alarm."))) await refreshAlarms();
+    for (const action of actions) {
+      if (action.status !== "completed") continue;
+      const clientAction = action.result.client_action as { type?: string; screen?: string; key?: string; value?: boolean } | undefined;
+      if (!clientAction) continue;
+      if (clientAction.type === "navigate" && clientAction.screen) navigate({ alarms: "/alarms", settings: "/settings", chat: "/chat", calls: "/calls", messages: "/messages", library: "/library" }[clientAction.screen] || "/");
+      if (clientAction.type === "settings.update" && typeof clientAction.value === "boolean") {
+        if (clientAction.key === "voice_input") setVoiceEnabled(clientAction.value);
+        if (clientAction.key === "conversation_memory") setMemoryEnabled(clientAction.value);
+        if (clientAction.key === "spoken_responses") setAssistantSpokenResponses(clientAction.value);
+        if (clientAction.key === "personalization") setAssistantPersonalization(clientAction.value);
+        if (clientAction.key === "action_confirmations") setAssistantActionConfirmations(true);
+      }
+    }
+  }
+
+  async function updateAssistantAction(action: AssistantActionItem, decision: "confirm" | "cancel") {
+    if (!token) return;
+    setAssistantProcessing(true);
+    try {
+      const updated = decision === "confirm" ? await api.confirmAssistantAction(token, action.id) : await api.cancelAssistantAction(token, action.id);
+      setAssistantResponse((current) => current ? { ...current, assistant_reply: updated.message, actions: current.actions.map((item) => item.id === updated.id ? updated : item) } : current);
+      await applyAssistantResults([updated]);
+    } finally { setAssistantProcessing(false); }
   }
 
   async function handleShare(messageId: string) {
@@ -1153,6 +1260,7 @@ export function ChatPage() {
                       isStreaming={message.id === visibleStreamingMessageId}
                       isSearchingWeb={message.id === searchingMessageId}
                       generation={message.id === visibleStreamingMessageId ? visibleGeneration : null}
+                      isLatestServiceTask={latestServiceCards.has(message.id) || !message.message_metadata?.service_task}
                       fallbackModel={message.role === "assistant" ? fallbackResponseModel : null}
                       onRegenerate={handleRegenerate}
                       onShare={handleShare}
@@ -1216,6 +1324,7 @@ export function ChatPage() {
           />
         )}
 
+        <ActionAssistantPanel command={assistantCommand} response={assistantResponse} processing={assistantProcessing} onConfirm={(action) => void updateAssistantAction(action, "confirm")} onCancel={(action) => void updateAssistantAction(action, "cancel")} onRetry={() => void handleSend(assistantCommand, lastOptionsRef.current, [])} />
         <Composer
           focusKey={composerFocusKey}
           initialDraft={hubPrompt}

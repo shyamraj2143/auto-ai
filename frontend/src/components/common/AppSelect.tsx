@@ -66,10 +66,18 @@ export function AppSelect({ value, options, onChange, label, disabled, placehold
     void App.addListener("backButton", () => close()).then((handle) => {
       removeBack = () => handle.remove();
     });
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && !menuRef.current?.contains(target) && !triggerRef.current?.contains(target)) {
+        close(false);
+      }
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
 
     return () => {
       document.body.style.overflow = previousOverflow;
       document.body.style.overscrollBehavior = previousOverscroll;
+      document.removeEventListener("pointerdown", handlePointerDown);
       void removeBack?.();
     };
   }, [open, selectedIndex]);

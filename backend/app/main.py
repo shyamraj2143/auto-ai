@@ -1,13 +1,15 @@
 import asyncio
 import logging
 from pathlib import Path
+import re
+import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import admin, ai, alarms, auth, calls, chat_sessions, chats, cms, demo_chat, device_monitoring, documents, download, health, human, library, live, live_websocket, memory, notifications, payments, screen_share, search, social, user_messages, users, voice
+from app.api.routes import admin, ai, alarms, assistant_actions, auth, calls, chat_sessions, chats, cms, demo_chat, device_monitoring, documents, download, form_services, health, human, intent_engine, library, live, live_websocket, memory, notifications, payments, relationship_followups, screen_share, search, social, trust_hub, user_messages, users, voice
 from app.core.config import settings
 from app.core.rate_limit import InMemoryRateLimitMiddleware
 from app.db.session import SessionLocal, init_db
@@ -16,6 +18,9 @@ from app.services.apk_service import apk_service
 from app.services.call_service import call_timeout_worker
 from app.services.cms_service import ensure_cms_defaults
 from app.services.presence_service import RealtimeUnavailable, presence_service
+from app.services.relationship_followup_scheduler import relationship_followup_worker
+from app.services.form_service_registry import ensure_service_registry
+from app.services.form_service_service import cleanup_expired_form_service_data
 from app.services.orchestration.model_registry import model_registry
 from app.websockets import call_signaling, screen_share as screen_share_signaling, user_chat
 
@@ -42,6 +47,66 @@ class NormalizeRequestPathMiddleware:
         await self.app(scope, receive, send)
 
 
+class RequestIdMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        headers = {key.lower(): value for key, value in scope.get("headers", [])}
+        candidate = headers.get(b"x-request-id", b"").decode("ascii", errors="ignore")
+        request_id = candidate if re.fullmatch(r"[A-Za-z0-9._-]{8,80}", candidate) else str(uuid.uuid4())
+        scope.setdefault("state", {})["request_id"] = request_id
+
+        async def send_with_request_id(message):
+            if message.get("type") == "http.response.start":
+                response_headers = list(message.get("headers", []))
+                response_headers.append((b"x-request-id", request_id.encode("ascii")))
+                message = {**message, "headers": response_headers}
+            await send(message)
+
+        await self.app(scope, receive, send_with_request_id)
+
+
+class RelationshipPayloadLimitMiddleware:
+    MAX_BYTES = 32 * 1024
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        path = str(scope.get("path", ""))
+        method = str(scope.get("method", "GET")).upper()
+        if scope.get("type") != "http" or "/relationship-followups" not in path or method not in {"POST", "PUT", "PATCH"}:
+            await self.app(scope, receive, send)
+            return
+        messages = []
+        total = 0
+        while True:
+            message = await receive()
+            messages.append(message)
+            total += len(message.get("body", b""))
+            if total > self.MAX_BYTES:
+                request_id = scope.get("state", {}).get("request_id", str(uuid.uuid4()))
+                response = JSONResponse(
+                    status_code=413,
+                    content={"detail": "Relationship follow-up request is too large.", "request_id": request_id},
+                )
+                await response(scope, receive, send)
+                return
+            if not message.get("more_body", False):
+                break
+
+        async def replay_body():
+            if messages:
+                return messages.pop(0)
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        await self.app(scope, replay_body, send)
+
+
 def get_cors_origins() -> list[str]:
     default_origins = {
         "https://autoai.site.je",
@@ -63,8 +128,12 @@ def create_app() -> FastAPI:
     )
 
     app.add_middleware(NormalizeRequestPathMiddleware)
+    app.add_middleware(RelationshipPayloadLimitMiddleware)
+    app.add_middleware(RequestIdMiddleware)
 
-    # CORS
+    # Keep CORS outside the rate limiter so 429 and error responses remain readable
+    # to the configured browser clients instead of surfacing as opaque failures.
+    app.add_middleware(InMemoryRateLimitMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=get_cors_origins(),
@@ -74,8 +143,6 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
         expose_headers=["x-request-id", "x-railway-request-id", "content-disposition"],
     )
-
-    app.add_middleware(InMemoryRateLimitMiddleware)
 
     @app.exception_handler(RealtimeUnavailable)
     async def realtime_unavailable_handler(request: Request, exc: RealtimeUnavailable) -> JSONResponse:
@@ -101,8 +168,11 @@ def create_app() -> FastAPI:
         Path(settings.UPLOAD_DIR, "profile").mkdir(parents=True, exist_ok=True)
         Path(settings.LIBRARY_STORAGE_DIR).mkdir(parents=True, exist_ok=True)
         Path(settings.APK_STORAGE_DIR).mkdir(parents=True, exist_ok=True)
+        Path(settings.FORM_SERVICE_STORAGE_DIR).mkdir(parents=True, exist_ok=True)
         init_db()
         with SessionLocal() as db:
+            ensure_service_registry(db)
+            cleanup_expired_form_service_data(db)
             create_admin_from_env(db)
             apk_service.sync_filesystem_release(db)
             ensure_cms_defaults(db)
@@ -135,6 +205,10 @@ def create_app() -> FastAPI:
                     continue
 
         app.state.registry_task = asyncio.create_task(registry_worker())
+        if settings.RELATIONSHIP_FOLLOWUP_WORKER_ENABLED:
+            relationship_stop_event = asyncio.Event()
+            app.state.relationship_stop_event = relationship_stop_event
+            app.state.relationship_worker_task = asyncio.create_task(relationship_followup_worker(relationship_stop_event))
 
     @app.on_event("shutdown")
     async def stop_call_workers() -> None:
@@ -142,6 +216,8 @@ def create_app() -> FastAPI:
         task = getattr(app.state, "call_timeout_task", None)
         registry_stop_event = getattr(app.state, "registry_stop_event", None)
         registry_task = getattr(app.state, "registry_task", None)
+        relationship_stop_event = getattr(app.state, "relationship_stop_event", None)
+        relationship_worker_task = getattr(app.state, "relationship_worker_task", None)
         if stop_event:
             stop_event.set()
         if task:
@@ -150,6 +226,10 @@ def create_app() -> FastAPI:
             registry_stop_event.set()
         if registry_task:
             await asyncio.gather(registry_task, return_exceptions=True)
+        if relationship_stop_event:
+            relationship_stop_event.set()
+        if relationship_worker_task:
+            await asyncio.gather(relationship_worker_task, return_exceptions=True)
         await presence_service.close()
 
 
@@ -161,6 +241,10 @@ def create_app() -> FastAPI:
     app.include_router(chats.router, prefix=settings.API_V1_STR)
     app.include_router(ai.router, prefix=settings.API_V1_STR)
     app.include_router(alarms.router, prefix=settings.API_V1_STR)
+    app.include_router(assistant_actions.router, prefix=settings.API_V1_STR)
+    app.include_router(intent_engine.router, prefix=settings.API_V1_STR)
+    app.include_router(form_services.router, prefix=settings.API_V1_STR)
+    app.include_router(trust_hub.router, prefix=settings.API_V1_STR)
     app.include_router(demo_chat.router, prefix=settings.API_V1_STR)
     app.include_router(documents.router, prefix=settings.API_V1_STR)
     app.include_router(library.router, prefix=settings.API_V1_STR)
@@ -171,6 +255,7 @@ def create_app() -> FastAPI:
     app.include_router(human.router, prefix=settings.API_V1_STR)
     app.include_router(search.router, prefix=settings.API_V1_STR)
     app.include_router(notifications.router, prefix=settings.API_V1_STR)
+    app.include_router(relationship_followups.router, prefix=settings.API_V1_STR)
     app.include_router(calls.router, prefix=settings.API_V1_STR)
     app.include_router(screen_share.router, prefix=settings.API_V1_STR)
     app.include_router(social.router, prefix=settings.API_V1_STR)

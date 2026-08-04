@@ -8,6 +8,7 @@ describe("notification destination contract", () => {
     ["MISSED_CALL", "call/1", null, "/call-hub/calls?callId=call%2F1&filter=missed"],
     ["CALL_HISTORY", "call/1", null, "/call-hub/calls?callId=call%2F1"],
     ["FOLLOW_REQUEST", "request/1", null, "/call-hub/requests?requestId=request%2F1&tab=incoming"],
+    ["RELATIONSHIP_FOLLOWUP", "contact/1", null, "/relationships?contact=contact%2F1"],
     ["FOLLOW_ACCEPTED", "user/1", "thread/1", "/messages/thread%2F1"],
     ["SOCIAL_ALERT", "alert/1", null, "/call-hub/alerts?notificationId=alert%2F1"],
     ["SCREEN_SHARE_SESSION", "session/1", null, "/screen-share/session%2F1"],

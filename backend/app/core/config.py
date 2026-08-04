@@ -15,6 +15,7 @@ DEFAULT_BACKEND_URL = "http://localhost:8000"
 DEFAULT_RAZORPAY_CHECKOUT_CONFIG_ID = "config_T9uIbVgLBfz7ko"
 DEFAULT_UPLOAD_DIR = str(PROJECT_ROOT / "backend" / "uploads")
 DEFAULT_LIBRARY_STORAGE_DIR = str(PROJECT_ROOT / "backend" / "library_uploads")
+DEFAULT_FORM_SERVICE_STORAGE_DIR = str(PROJECT_ROOT / "backend" / "private" / "form-service")
 
 
 class Settings(BaseSettings):
@@ -30,6 +31,8 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     FRONTEND_URL: str = DEFAULT_FRONTEND_URL
     RAILWAY_PUBLIC_DOMAIN: str | None = None
+    RAILWAY_GIT_COMMIT_SHA: str | None = None
+    RAILWAY_DEPLOYMENT_ID: str | None = None
     BACKEND_URL: str | None = Field(default=None, validate_default=True)
     RAZORPAY_CALLBACK_URL: str | None = None
     RAZORPAY_FAILURE_URL: str | None = None
@@ -89,6 +92,9 @@ class Settings(BaseSettings):
     CALL_ICE_MAX_PER_CALL: int = 256
     CALL_WS_TICKET_TTL_SECONDS: int = 60
     CALL_PRESENCE_TTL_SECONDS: int = 55
+    RELATIONSHIP_FOLLOWUP_WORKER_ENABLED: bool = True
+    RELATIONSHIP_FOLLOWUP_POLL_SECONDS: int = Field(default=30, ge=5, le=3600)
+    RELATIONSHIP_FOLLOWUP_BATCH_SIZE: int = Field(default=50, ge=1, le=100)
     SCREEN_SHARE_GUEST_TOKEN_TTL_SECONDS: int = 7200
     SCREEN_SHARE_JOIN_MAX_PER_MINUTE: int = 10
     BACKEND_CORS_ORIGINS: list[AnyHttpUrl | str] = [
@@ -116,6 +122,12 @@ class Settings(BaseSettings):
     ALARM_GROQ_VISION_MODEL: str = "qwen/qwen3.6-27b"
     BEDROCK_VISION_MODEL: str = "qwen.qwen3-vl-235b-a22b-instruct"
     GROQ_AUDIO_MODEL: str = "whisper-large-v3-turbo"
+    GROQ_ALARM_MODEL: str | None = None
+    GROQ_ALARM_TRANSCRIPTION_MODEL: str | None = None
+    GROQ_ALARM_TIMEOUT_SECONDS: float = 12.0
+    GROQ_ASSISTANT_MODEL: str | None = None
+    GROQ_TRANSCRIPTION_MODEL: str | None = None
+    GROQ_REQUEST_TIMEOUT_SECONDS: float = 30.0
 
     OPENAI_API_KEY: str | None = Field(
         default=None,
@@ -214,6 +226,9 @@ class Settings(BaseSettings):
 
     UPLOAD_DIR: str = DEFAULT_UPLOAD_DIR
     LIBRARY_STORAGE_DIR: str = DEFAULT_LIBRARY_STORAGE_DIR
+    FORM_SERVICE_STORAGE_DIR: str = DEFAULT_FORM_SERVICE_STORAGE_DIR
+    FORM_SERVICE_MAX_UPLOAD_MB: int = 10
+    FORM_SERVICE_MAX_PDF_PAGES: int = 50
     LIBRARY_MAX_UPLOAD_MB: int = 20
     LIBRARY_STORAGE_BACKEND: str = "local"
     LIBRARY_S3_BUCKET: str | None = None
@@ -334,6 +349,12 @@ class Settings(BaseSettings):
             and self.SQLITE_PATH.strip().replace("\\", "/") == "/data/auto_ai.db"
         ):
             self.UPLOAD_DIR = "/data/uploads"
+        if (
+            self.is_production
+            and self.FORM_SERVICE_STORAGE_DIR == DEFAULT_FORM_SERVICE_STORAGE_DIR
+            and self.SQLITE_PATH.strip().replace("\\", "/") == "/data/auto_ai.db"
+        ):
+            self.FORM_SERVICE_STORAGE_DIR = "/data/private/form-service"
         if self.is_production:
             for name, value in (
                 ("FRONTEND_URL", self.frontend_url),

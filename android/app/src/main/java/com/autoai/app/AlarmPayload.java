@@ -3,6 +3,11 @@ package com.autoai.app;
 import org.json.JSONObject;
 
 import java.util.Map;
+import java.util.Calendar;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.TimeZone;
+import java.util.Locale;
 
 final class AlarmPayload {
     final String alarmId;
@@ -13,10 +18,16 @@ final class AlarmPayload {
     final String language;
     final String voiceStyle;
     final String ringtone;
+    final String repeat;
+    final int snoozeMinutes;
+    final boolean vibration;
     final String assistantMessage;
     final boolean enabled;
     final String status;
     final int revision;
+    String recurrenceType = "ONCE";
+    String endDate = "";
+    boolean snoozeEnabled = true;
 
     AlarmPayload(
         String alarmId,
@@ -27,6 +38,9 @@ final class AlarmPayload {
         String language,
         String voiceStyle,
         String ringtone,
+        String repeat,
+        int snoozeMinutes,
+        boolean vibration,
         String assistantMessage,
         boolean enabled,
         String status,
@@ -40,6 +54,9 @@ final class AlarmPayload {
         this.language = allowed(language, new String[] { "hi-IN", "hinglish-IN", "en-IN" }, "hinglish-IN");
         this.voiceStyle = allowed(voiceStyle, new String[] { "warm", "gentle", "energetic" }, "warm");
         this.ringtone = allowed(ringtone, new String[] { "system", "gentle", "energetic" }, "system");
+        this.repeat = clean(repeat, "");
+        this.snoozeMinutes = Math.max(1, Math.min(120, snoozeMinutes));
+        this.vibration = vibration;
         this.assistantMessage = clean(assistantMessage, this.title);
         this.enabled = enabled;
         this.status = clean(status, enabled ? "scheduled" : "paused");
@@ -51,13 +68,38 @@ final class AlarmPayload {
     }
 
     AlarmPayload snoozed(long nextEpochMs) {
-        return new AlarmPayload(alarmId, title, note, nextEpochMs, timezone, language, voiceStyle,
-            ringtone, assistantMessage, true, "scheduled", revision + 1);
+        return inherited(new AlarmPayload(alarmId, title, note, nextEpochMs, timezone, language, voiceStyle,
+            ringtone, repeat, snoozeMinutes, vibration, assistantMessage, true, "scheduled", revision + 1));
     }
 
     AlarmPayload withState(boolean nextEnabled, String nextStatus) {
-        return new AlarmPayload(alarmId, title, note, scheduledAtEpochMs, timezone, language, voiceStyle,
-            ringtone, assistantMessage, nextEnabled, nextStatus, revision + 1);
+        return inherited(new AlarmPayload(alarmId, title, note, scheduledAtEpochMs, timezone, language, voiceStyle,
+            ringtone, repeat, snoozeMinutes, vibration, assistantMessage, nextEnabled, nextStatus, revision + 1));
+    }
+
+    AlarmPayload nextRepeat(long nowEpochMs) {
+        Set<Integer> days = new HashSet<>();
+        for (String item : repeat.split(",")) try { int day = Integer.parseInt(item.trim()); if (day >= 0 && day <= 6) days.add(day); } catch (Exception ignored) {}
+        if (days.isEmpty()) return null;
+        TimeZone zone = TimeZone.getTimeZone(timezone);
+        Calendar original = Calendar.getInstance(zone); original.setTimeInMillis(scheduledAtEpochMs);
+        Calendar candidate = Calendar.getInstance(zone); candidate.setTimeInMillis(nowEpochMs);
+        int hour = original.get(Calendar.HOUR_OF_DAY), minute = original.get(Calendar.MINUTE), second = original.get(Calendar.SECOND);
+        for (int offset = 1; offset <= 7; offset++) {
+            candidate.add(Calendar.DAY_OF_YEAR, 1); candidate.set(Calendar.HOUR_OF_DAY, hour); candidate.set(Calendar.MINUTE, minute); candidate.set(Calendar.SECOND, second); candidate.set(Calendar.MILLISECOND, 0);
+            String localDate = String.format(Locale.US, "%04d-%02d-%02d", candidate.get(Calendar.YEAR), candidate.get(Calendar.MONTH) + 1, candidate.get(Calendar.DAY_OF_MONTH));
+            if (!endDate.isEmpty() && localDate.compareTo(endDate) > 0) return null;
+            int mondayBased = (candidate.get(Calendar.DAY_OF_WEEK) + 5) % 7;
+            if (days.contains(mondayBased)) return inherited(new AlarmPayload(alarmId, title, note, candidate.getTimeInMillis(), timezone, language, voiceStyle, ringtone, repeat, snoozeMinutes, vibration, assistantMessage, true, "scheduled", revision + 1));
+        }
+        return null;
+    }
+
+    AlarmPayload inherited(AlarmPayload next) {
+        next.recurrenceType = recurrenceType;
+        next.endDate = endDate;
+        next.snoozeEnabled = snoozeEnabled;
+        return next;
     }
 
     JSONObject toJson() {
@@ -71,10 +113,16 @@ final class AlarmPayload {
             out.put("language", language);
             out.put("voiceStyle", voiceStyle);
             out.put("ringtone", ringtone);
+            out.put("repeat", repeat);
+            out.put("snoozeMinutes", snoozeMinutes);
+            out.put("vibration", vibration);
             out.put("assistantMessage", assistantMessage);
             out.put("enabled", enabled);
             out.put("status", status);
             out.put("revision", revision);
+            out.put("recurrenceType", recurrenceType);
+            out.put("endDate", endDate);
+            out.put("snoozeEnabled", snoozeEnabled);
         } catch (Exception ignored) {}
         return out;
     }
@@ -90,11 +138,17 @@ final class AlarmPayload {
             value.optString("language", "hinglish-IN"),
             value.optString("voiceStyle", value.optString("voice_style", "warm")),
             value.optString("ringtone", "system"),
+            repeatValue(value),
+            value.optInt("snoozeMinutes", value.optInt("snooze_minutes", 10)),
+            value.optBoolean("vibration", true),
             value.optString("assistantMessage", value.optString("assistant_message", "")),
             value.optBoolean("enabled", true),
             value.optString("status", "scheduled"),
             value.optInt("revision", 1)
         );
+        payload.recurrenceType = value.optString("recurrenceType", value.optString("recurrence_type", payload.repeat.isEmpty() ? "ONCE" : "CUSTOM"));
+        payload.endDate = value.optString("endDate", value.optString("end_date", ""));
+        payload.snoozeEnabled = value.optBoolean("snoozeEnabled", value.optBoolean("snooze_enabled", true));
         return payload.valid() ? payload : null;
     }
 
@@ -110,6 +164,12 @@ final class AlarmPayload {
                 .put("language", data.get("language"))
                 .put("voice_style", data.get("voice_style"))
                 .put("ringtone", data.get("ringtone"))
+                .put("repeat", data.get("repeat"))
+                .put("recurrence_type", data.get("recurrence_type"))
+                .put("end_date", data.get("end_date"))
+                .put("snooze_enabled", Boolean.parseBoolean(data.get("snooze_enabled")))
+                .put("snooze_minutes", parseInt(data.get("snooze_minutes")))
+                .put("vibration", Boolean.parseBoolean(data.get("vibration")))
                 .put("assistant_message", data.get("assistant_message"))
                 .put("enabled", Boolean.parseBoolean(data.get("enabled")))
                 .put("status", data.get("status"))
@@ -121,6 +181,16 @@ final class AlarmPayload {
 
     static int requestCode(String alarmId) {
         return 24_000 + Math.abs(clean(alarmId, "alarm").hashCode() % 500_000);
+    }
+
+    private static String repeatValue(JSONObject value) {
+        Object raw = value.opt("repeat");
+        if (raw instanceof org.json.JSONArray) {
+            org.json.JSONArray array = (org.json.JSONArray) raw; StringBuilder out = new StringBuilder();
+            for (int i = 0; i < array.length(); i++) { if (i > 0) out.append(','); out.append(array.optInt(i, -1)); }
+            return out.toString();
+        }
+        return value.optString("repeat", "");
     }
 
     private static String clean(String value, String fallback) {

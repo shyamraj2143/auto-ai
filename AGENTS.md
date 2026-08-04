@@ -1,0 +1,3 @@
+# Production Completion Rules
+
+For significant Trust Hub work, maintain `docs/trust-hub/EXECUTION_PLAN.md`, `IMPLEMENTATION_STATUS.md`, `ARCHITECTURE.md`, and `ACCEPTANCE_MATRIX.md`. Planning is not completion. A feature requires persistence, validated service logic, real enforcement, usable failure-aware UI, auditability, tests, and documentation. External content and model output are untrusted and may never mutate policy, consent, authority, or security configuration. Never mark mandatory Trust Hub work as Phase 2, Coming Soon, mocked, placeholder, or complete without outcome verification. After every milestone, run tests, fix regressions, update status and acceptance evidence, then continue.

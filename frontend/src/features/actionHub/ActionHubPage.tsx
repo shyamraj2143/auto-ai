@@ -1,4 +1,4 @@
-import { Activity, AlarmClock, CheckCircle2, MessageCircle, MonitorUp, Phone, Zap } from "lucide-react";
+import { Activity, AlarmClock, CheckCircle2, HeartHandshake, MessageCircle, MonitorUp, Phone, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
@@ -15,6 +15,8 @@ import { callSearchRoute, isActiveScreenShareState } from "./actionHubNavigation
 import "./actionHub.css";
 import { useAlarms } from "../alarms/AlarmContext";
 import { countdownLabel, formatAlarmDate, formatAlarmTime24 } from "../alarms/alarmTime";
+import { relationshipFollowupsApi } from "../relationshipFollowups/relationshipFollowupsApi";
+import type { FollowupSummary } from "../relationshipFollowups/types";
 
 function greeting() {
   const hour = new Date().getHours();
@@ -40,7 +42,8 @@ export function ActionHubPage() {
   const screenShare = useScreenShare();
   const { nextAlarm } = useAlarms();
   const [calls, setCalls] = useState<CallRecord[]>([]);
-  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [socialUnreadNotifications, setSocialUnreadNotifications] = useState(0);
+  const [relationshipSummary, setRelationshipSummary] = useState<FollowupSummary | null>(null);
   const [activityLoading, setActivityLoading] = useState(true);
   const [activityError, setActivityError] = useState("");
   const [quickOpen, setQuickOpen] = useState(false);
@@ -52,12 +55,13 @@ export function ActionHubPage() {
     let active = true;
     setActivityLoading(true);
     setActivityError("");
-    void Promise.allSettled([callApi.history(token, 1, 6), socialApi.notifications(token, 1, 1)])
-      .then(([historyResult, notificationResult]) => {
+    void Promise.allSettled([callApi.history(token, 1, 6), socialApi.notifications(token, 1, 1), relationshipFollowupsApi.summary(token)])
+      .then(([historyResult, notificationResult, relationshipResult]) => {
         if (!active) return;
         if (historyResult.status === "fulfilled") setCalls(historyResult.value.items);
         else setActivityError("Call activity is temporarily unavailable.");
-        if (notificationResult.status === "fulfilled") setUnreadNotifications(notificationResult.value.unread_count);
+        if (notificationResult.status === "fulfilled") setSocialUnreadNotifications(notificationResult.value.unread_count);
+        if (relationshipResult.status === "fulfilled") setRelationshipSummary(relationshipResult.value);
       })
       .finally(() => { if (active) setActivityLoading(false); });
     return () => { active = false; };
@@ -111,8 +115,16 @@ export function ActionHubPage() {
       meta: `${call.status} · ${timeLabel(call.created_at)}`,
       onOpen: () => navigate("/calls?view=calls"),
     }));
+    if (relationshipSummary && relationshipSummary.unread_due > 0) items.push({
+      id: "relationship-followups-due",
+      tone: "relationship",
+      label: "Relationship follow-ups",
+      title: `${relationshipSummary.unread_due} ${relationshipSummary.unread_due === 1 ? "reminder" : "reminders"} due`,
+      meta: relationshipSummary.overdue ? `${relationshipSummary.overdue} overdue` : "Due today",
+      onOpen: () => navigate("/relationships"),
+    });
     return activityOnly ? items.slice(0, 10) : items.slice(0, 3);
-  }, [activityOnly, calls, chats, navigate, screenShare.role, screenShare.session, screenShare.startedAt, screenShare.uiState]);
+  }, [activityOnly, calls, chats, navigate, relationshipSummary, screenShare.role, screenShare.session, screenShare.startedAt, screenShare.uiState]);
 
   if (!user) return null;
   const firstName = user.name.trim().split(/\s+/)[0] || "there";
@@ -121,7 +133,8 @@ export function ActionHubPage() {
     <div className="action-hub-page">
       <HubHeader
         user={user}
-        unreadNotifications={unreadNotifications}
+        unreadNotifications={socialUnreadNotifications + (relationshipSummary?.unread_due ?? 0)}
+        notificationHref={socialUnreadNotifications > 0 ? "/call-hub/alerts" : relationshipSummary?.unread_due ? "/relationships" : "/call-hub/alerts"}
         onOpenQuickConnect={() => openQuick("ai")}
         onLogout={logout}
       />
@@ -151,6 +164,9 @@ export function ActionHubPage() {
               </div>
               <div className="hub-card-position hub-card-alarm">
                 <FeatureCard tone="alarm" icon={AlarmClock} title="AI Alarm" description="Wake up with a personal reminder in your language." details={nextAlarm ? `${countdownLabel(nextAlarm.scheduled_at)} · ${nextAlarm.title}` : "Calendar · AI voice · Native ringtone"} primaryAction={{ label: "Set Alarm", onClick: () => navigate("/alarms") }} secondaryAction={nextAlarm ? { label: "Manage", onClick: () => navigate("/alarms") } : undefined} />
+              </div>
+              <div className="hub-card-position hub-card-relationship">
+                <FeatureCard tone="relationship" icon={HeartHandshake} title="Relationship Follow-up" description="Stay connected with people who matter." details={`${relationshipSummary?.unread_due ?? 0} due · Manual entry · Private notes`} primaryAction={{ label: "Open", onClick: () => navigate("/relationships") }} secondaryAction={{ label: "Add person", onClick: () => navigate("/relationships", { state: { addPerson: true } }) }} />
               </div>
             </section>
 

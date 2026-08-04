@@ -180,6 +180,35 @@ class FirebaseNotificationService:
         }
         return self._send(message)
 
+    def send_relationship_followup(
+        self,
+        target: str,
+        data: dict[str, str],
+        title: str,
+        body: str,
+        *,
+        target_kind: str = "token",
+    ) -> FcmSendResult:
+        contact_id = data.get("contact_id", "unknown")
+        return self._send({"message": {
+            **self._target(target, target_kind),
+            "notification": {"title": title[:120], "body": body[:180]},
+            "data": data,
+            "android": {
+                "priority": "HIGH",
+                "ttl": "86400s",
+                "collapse_key": f"relationship_{contact_id}",
+                "notification": {
+                    "channel_id": "auto_ai_relationship_followups",
+                    "default_sound": True,
+                    "notification_priority": "PRIORITY_HIGH",
+                    "visibility": "PRIVATE",
+                    "tag": f"relationship_{contact_id}",
+                },
+                "fcm_options": {"analytics_label": "relationship_followup"},
+            },
+        }})
+
     def _send(self, message: dict[str, Any]) -> FcmSendResult:
         try:
             service_account = self._service_account()

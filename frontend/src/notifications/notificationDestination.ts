@@ -11,6 +11,7 @@ export const NOTIFICATION_DESTINATIONS = [
   "APP_UPDATE",
   "SETTINGS_SECTION",
   "PAYMENT_RESULT",
+  "RELATIONSHIP_FOLLOWUP",
 ] as const;
 
 export type NotificationDestination = (typeof NOTIFICATION_DESTINATIONS)[number];
@@ -64,6 +65,7 @@ export function routeForNotificationDestination(event: NotificationDestinationEv
     case "SCREEN_SHARE_SESSION": return id ? `/screen-share/${id}` : null;
     case "SETTINGS_SECTION": return id ? `/settings?section=${id}` : "/settings";
     case "PAYMENT_RESULT": return event.secondaryId === "failed" ? "/payment/failed" : event.secondaryId === "success" ? "/payment/success" : null;
+    case "RELATIONSHIP_FOLLOWUP": return id ? `/relationships?contact=${id}` : "/relationships";
     case "INCOMING_CALL":
     case "APP_UPDATE":
       return null;

@@ -129,6 +129,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(AutoAiCallsPlugin.class);
         registerPlugin(AutoAiUpdatePlugin.class);
         registerPlugin(AutoAiAlarmPlugin.class);
+        registerPlugin(AutoAiServiceCapabilitiesPlugin.class);
         super.onCreate(savedInstanceState);
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         getWindow().setStatusBarColor(Color.TRANSPARENT);
@@ -169,6 +170,7 @@ public class MainActivity extends BridgeActivity {
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
 
         CallNotificationManager.createChannels(this);
+        AutoAiFirebaseMessagingService.createRelationshipNotificationChannel(this);
         registerFirebaseMessagingToken();
         UpdateCheckScheduler.cancelLegacy(this);
         AppUpdateCoordinator.get(this).addListener(directUpdateListener);

@@ -74,6 +74,21 @@ def test_admin_metadata_publish_queues_update_notification(tmp_path, monkeypatch
     assert len(background_tasks.tasks) == 1
 
 
+def test_admin_metadata_retry_does_not_queue_duplicate_notification(tmp_path, monkeypatch) -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(settings, "APK_STORAGE_DIR", str(tmp_path))
+    monkeypatch.setattr(type(admin.firebase_notification_service), "configured", property(lambda _self: True))
+    payload = ApkVersionUpsert(version_code=101492, version_name="1.0.101492", apk_url="/api/download/apk/github/latest?version=1.0.101492", file_name="auto-ai.apk", file_size=123, sha256="c" * 64, changelog="Retry-safe")
+    with Session(engine) as db:
+        first = BackgroundTasks()
+        admin.upsert_apk_version(payload, first, object(), db)
+        retry = BackgroundTasks()
+        admin.upsert_apk_version(payload, retry, object(), db)
+    assert len(first.tasks) == 1
+    assert retry.tasks == []
+
+
 def test_legacy_unauthenticated_push_token_registration_is_rejected() -> None:
     with pytest.raises(HTTPException) as error:
         notifications.register_device_token(DeviceTokenRegisterRequest(token="x" * 32), object())

@@ -20,6 +20,10 @@ export type AppSettings = {
   crystalSurfaces: boolean;
   crystalButtonMotion: boolean;
   crystalVoiceVisualizer: boolean;
+  assistantEnabled: boolean;
+  assistantSpokenResponses: boolean;
+  assistantPersonalization: boolean;
+  assistantActionConfirmations: boolean;
 };
 
 type AppSettingsContextValue = {
@@ -39,6 +43,10 @@ type AppSettingsContextValue = {
   setCrystalButtonMotion: (enabled: boolean) => void;
   setCrystalVoiceVisualizer: (enabled: boolean) => void;
   resetVisualEffects: () => void;
+  setAssistantEnabled: (enabled: boolean) => void;
+  setAssistantSpokenResponses: (enabled: boolean) => void;
+  setAssistantPersonalization: (enabled: boolean) => void;
+  setAssistantActionConfirmations: (enabled: boolean) => void;
 };
 
 const STORAGE_KEY = "auto-ai-app-settings";
@@ -93,6 +101,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   crystalSurfaces: true,
   crystalButtonMotion: true,
   crystalVoiceVisualizer: true
+  ,assistantEnabled: true
+  ,assistantSpokenResponses: false
+  ,assistantPersonalization: true
+  ,assistantActionConfirmations: true
 };
 
 const LANGUAGE_VALUES = new Set<AppLanguage>(["system", "en", "hi", "hinglish"]);
@@ -125,7 +137,11 @@ function normalizeSettings(payload: unknown): AppSettings {
     crystalOrb: typeof raw.crystalOrb === "boolean" ? raw.crystalOrb : DEFAULT_SETTINGS.crystalOrb,
     crystalSurfaces: typeof raw.crystalSurfaces === "boolean" ? raw.crystalSurfaces : DEFAULT_SETTINGS.crystalSurfaces,
     crystalButtonMotion: typeof raw.crystalButtonMotion === "boolean" ? raw.crystalButtonMotion : DEFAULT_SETTINGS.crystalButtonMotion,
-    crystalVoiceVisualizer: typeof raw.crystalVoiceVisualizer === "boolean" ? raw.crystalVoiceVisualizer : DEFAULT_SETTINGS.crystalVoiceVisualizer
+    crystalVoiceVisualizer: typeof raw.crystalVoiceVisualizer === "boolean" ? raw.crystalVoiceVisualizer : DEFAULT_SETTINGS.crystalVoiceVisualizer,
+    assistantEnabled: typeof raw.assistantEnabled === "boolean" ? raw.assistantEnabled : DEFAULT_SETTINGS.assistantEnabled,
+    assistantSpokenResponses: typeof raw.assistantSpokenResponses === "boolean" ? raw.assistantSpokenResponses : DEFAULT_SETTINGS.assistantSpokenResponses,
+    assistantPersonalization: typeof raw.assistantPersonalization === "boolean" ? raw.assistantPersonalization : DEFAULT_SETTINGS.assistantPersonalization,
+    assistantActionConfirmations: typeof raw.assistantActionConfirmations === "boolean" ? raw.assistantActionConfirmations : DEFAULT_SETTINGS.assistantActionConfirmations
   };
 }
 
@@ -256,6 +272,10 @@ export function AppSettingsProvider({ children }: { children: React.ReactNode })
       setCrystalVoiceVisualizer: (enabled) => {
         updateSettings((current) => ({ ...current, crystalVoiceVisualizer: enabled }));
       },
+      setAssistantEnabled: (enabled) => updateSettings((current) => ({ ...current, assistantEnabled: enabled })),
+      setAssistantSpokenResponses: (enabled) => updateSettings((current) => ({ ...current, assistantSpokenResponses: enabled })),
+      setAssistantPersonalization: (enabled) => updateSettings((current) => ({ ...current, assistantPersonalization: enabled })),
+      setAssistantActionConfirmations: (enabled) => updateSettings((current) => ({ ...current, assistantActionConfirmations: enabled })),
       resetVisualEffects: () => {
         updateSettings((current) => ({
           ...current,

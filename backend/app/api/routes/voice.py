@@ -34,5 +34,18 @@ async def transcribe_voice(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail=f"Audio exceeds {settings.MAX_UPLOAD_MB} MB.",
         )
-    text = groq_service.transcribe_audio(data, file.filename or "voice.webm")
-    return {"text": text, "model": settings.GROQ_AUDIO_MODEL}
+    filename = file.filename or "voice.webm"
+    model = (settings.GROQ_TRANSCRIPTION_MODEL or settings.GROQ_ALARM_TRANSCRIPTION_MODEL or settings.GROQ_AUDIO_MODEL) if filename.lower().startswith("alarm.") else settings.GROQ_AUDIO_MODEL
+    is_alarm = filename.lower().startswith("alarm.")
+    text = groq_service.transcribe_audio(
+        data,
+        filename,
+        model=model,
+        language="hi" if is_alarm else None,
+        prompt=(
+            "यह Hindi या Hinglish में बोला गया alarm command है। तारीख, सुबह, भोर, दोपहर, शाम, रात, "
+            "साढ़े, पौने, सवा, office, medicine, exam, daily, snooze और alarm जैसे शब्द ठीक लिखें। अर्थ न बदलें।"
+            if is_alarm else None
+        ),
+    )
+    return {"text": text, "model": model}

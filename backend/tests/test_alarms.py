@@ -7,11 +7,11 @@ from fastapi import BackgroundTasks, HTTPException, UploadFile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.api.routes.alarms import alarm_action, create_alarm, delete_alarm, list_alarms, update_alarm, verify_alarm_awake
+from app.api.routes.alarms import alarm_action, assistant_command, create_alarm, delete_alarm, list_alarms, update_alarm, verify_alarm_awake
 from app.db.base import Base
 from app.models.alarm import UserAlarm
 from app.models.user import User
-from app.schemas.alarm import AlarmAction, AlarmCreate, AlarmUpdate
+from app.schemas.alarm import AlarmAction, AlarmAssistantCommand, AlarmCreate, AlarmUpdate
 from app.services.alarm_ai_service import AlarmMessage, alarm_ai_service
 from app.services.alarm_awake_service import AwakeDecision, AlarmAwakeService, alarm_awake_service
 
@@ -216,6 +216,68 @@ def test_alarm_rejects_blank_normalized_title() -> None:
             title="   ",
             scheduled_at=datetime.now(UTC) + timedelta(hours=1),
         )
+
+
+def test_assistant_clarifies_ambiguous_time_without_creating_alarm(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    current = user(db)
+    result = assistant_command(
+        AlarmAssistantCommand(transcript="कल 8 बजे alarm लगाओ", timezone="Asia/Kolkata", client_request_id="request-ambiguous-1"),
+        BackgroundTasks(), db, current,
+    )
+    assert result.action == "clarify"
+    assert result.needs_clarification is True
+    assert result.alarm is None
+    assert list_alarms(False, db, current).items == []
+
+
+def test_alarm_interpreter_handles_common_hinglish_without_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.services.alarm_ai_service.groq_service.complete", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("network should not be used")))
+    result = alarm_ai_service.interpret(transcript="कल सुबह 8 बजे ऑफिस का alarm लगाओ", timezone="Asia/Kolkata", language="hinglish-IN")
+    assert result["action"] == "create"
+    assert result["label"] == "Office"
+    assert result["scheduled_at"].hour == 8
+    incomplete = alarm_ai_service.interpret(transcript="कल सुबह का alarm लगा दो", timezone="Asia/Kolkata", language="hinglish-IN")
+    assert incomplete["action"] == "clarify"
+    dated = alarm_ai_service.interpret(transcript="दस तारीख को सुबह चार बजे का अलार्म सेट करें", timezone="Asia/Kolkata", language="hi-IN")
+    assert dated["action"] == "create"
+    assert dated["scheduled_at"].day == 10
+    assert dated["scheduled_at"].hour == 4
+    relative = alarm_ai_service.interpret(transcript="दो घंटे बाद alarm लगाओ", timezone="Asia/Kolkata", language="hi-IN")
+    assert relative["action"] == "create"
+
+
+def test_assistant_provider_failure_returns_safe_clarification(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    current = user(db)
+    monkeypatch.setattr(alarm_ai_service, "interpret", lambda **_: (_ for _ in ()).throw(RuntimeError("provider unavailable")))
+    result = assistant_command(
+        AlarmAssistantCommand(transcript="set an alarm for my work", timezone="Asia/Kolkata", client_request_id="request-provider-failure"),
+        BackgroundTasks(), db, current,
+    )
+    assert result.action == "clarify"
+    assert result.needs_clarification is True
+    assert result.alarm is None
+
+
+def test_assistant_creation_is_idempotent_and_repeat_reschedules(db: Session, monkeypatch: pytest.MonkeyPatch) -> None:
+    current = user(db)
+    scheduled = datetime.now(UTC) + timedelta(days=1)
+    monkeypatch.setattr(alarm_ai_service, "interpret", lambda **_: {
+        "action": "create", "scheduled_at": scheduled, "timezone": "Asia/Kolkata", "label": "Office",
+        "repeat": [0, 1, 2, 3, 4], "snooze_minutes": 5, "needs_clarification": False,
+        "clarification_question": None, "assistant_reply": "Office alarm set ho chuka hai.", "confidence": .98,
+    })
+    monkeypatch.setattr(alarm_ai_service, "compose", lambda **_: AlarmMessage("Wake up for office.", "groq-test", True))
+    payload = AlarmAssistantCommand(transcript="कल सुबह 8 बजे ऑफिस का alarm लगाओ", timezone="Asia/Kolkata", client_request_id="request-idempotent-1")
+    first = assistant_command(payload, BackgroundTasks(), db, current)
+    second = assistant_command(payload, BackgroundTasks(), db, current)
+    assert first.alarm is not None and second.alarm is not None
+    assert first.alarm.id == second.alarm.id
+    assert len(list_alarms(False, db, current).items) == 1
+    assert first.alarm.repeat == [0, 1, 2, 3, 4]
+    dismissed = alarm_action(first.alarm.id, AlarmAction(action="dismiss"), BackgroundTasks(), db, current)
+    assert dismissed.enabled is True
+    assert dismissed.status == "scheduled"
+    assert dismissed.scheduled_at > datetime.now(UTC)
 
 
 def test_ai_failure_uses_human_local_fallback(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -16,8 +16,6 @@
     "@capacitor/core": "^8.4.2",
     "@mediapipe/tasks-vision": "1.0.1",
     "clsx": "^2.1.1",
-    "framer-motion": "^12.40.0",
-    "gsap": "^3.15.0",
     "highlight.js": "^11.10.0",
     "lucide-react": "^0.468.0",
     "qrcode.react": "^4.2.0",
@@ -29,9 +27,9 @@
     "remark-gfm": "^4.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.0",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^26.1.2",
-    "@playwright/test": "^1.62.0",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",

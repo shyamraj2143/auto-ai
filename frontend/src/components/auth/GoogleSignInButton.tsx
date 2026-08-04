@@ -82,6 +82,9 @@ export function GoogleSignInButton({ disabled = false, intent = "signin", onCred
   const mobileApp = isMobileAppRuntime();
   const googleButtonText = intent === "signup" ? "signup_with" : "signin_with";
   const nativeButtonText = intent === "signup" ? "Sign up with Google" : "Sign in with Google";
+  const localDevelopmentBrowser = import.meta.env.DEV
+    && !mobileApp
+    && ["localhost", "127.0.0.1"].includes(window.location.hostname);
 
   useEffect(() => {
     let active = true;
@@ -91,6 +94,11 @@ export function GoogleSignInButton({ disabled = false, intent = "signin", onCred
           setClientId(ENV_GOOGLE_CLIENT_ID);
           setLoading(false);
         }
+        return;
+      }
+      if (localDevelopmentBrowser) {
+        setClientId(null);
+        setLoading(false);
         return;
       }
       if (!mobileApp && isLocalPageWithRemoteApi(API_BASE_URL)) {
@@ -110,7 +118,7 @@ export function GoogleSignInButton({ disabled = false, intent = "signin", onCred
     return () => {
       active = false;
     };
-  }, [mobileApp]);
+  }, [localDevelopmentBrowser, mobileApp]);
 
   useEffect(() => {
     if (!clientId || nativeAuth || !buttonRef.current) return;

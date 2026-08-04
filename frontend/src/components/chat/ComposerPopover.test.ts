@@ -58,7 +58,7 @@ describe("composer popover contracts", () => {
   it("preserves camera, photo, and document picker contracts", () => {
     expect(composer).toContain('accept="image/*" capture="environment"');
     expect(composer).toContain('accept="image/png,image/jpeg,image/webp,image/gif"');
-    expect(composer).toContain('accept=".pdf,.docx,.txt"');
+    expect(composer).toContain('accept=".pdf,.docx,.txt,.py,.ts,.tsx,.js,.jsx,.java,.kt,.go,.rs,.css,.html,.json,.md,.yaml,.yml,.sql"');
     expect(composer).toContain("openCameraPicker");
     expect(composer).toContain("openImagePicker");
     expect(composer).toContain("openDocumentPicker");

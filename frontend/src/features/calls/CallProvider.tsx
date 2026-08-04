@@ -94,6 +94,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const ringtoneContextRef = useRef<AudioContext | null>(null);
   const browserNotificationRef = useRef<Notification | null>(null);
   const eventHandlerRef = useRef<(event: SignalEnvelope) => void>(() => undefined);
+  const processNativeCallActionRef = useRef<(callId: string, action?: NativeIncomingAction | null) => Promise<void>>(async () => undefined);
   const cleanupRef = useRef<(terminalState?: CallSessionState, detail?: string) => Promise<void>>(async () => undefined);
   const deviceIdRef = useRef<string | null>(null);
   const startPendingRef = useRef(false);
@@ -940,6 +941,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       await rejectCallRef.current();
     }
   }, [navigate, receiveIncomingCall, resumeAcceptedCall, token]);
+  processNativeCallActionRef.current = processNativeCallAction;
 
   const handleSignalEvent = useCallback((event: SignalEnvelope) => {
     if (event.type === "presence.user_updated" || event.type === "presence.snapshot") {
@@ -1030,7 +1032,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
     let active = true;
     void (async () => {
       const nativeCall: { callId?: string | null; action?: NativeIncomingAction | null } = await callNative.consumeIncomingCall().catch(() => ({}));
-      if (nativeCall.callId) await processNativeCallAction(nativeCall.callId, nativeCall.action);
+      if (nativeCall.callId) await processNativeCallActionRef.current(nativeCall.callId, nativeCall.action);
       const registration = await callNative.registration();
       deviceIdRef.current = registration.device_id;
       for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -1073,7 +1075,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       }
       if (!detail?.callId) return;
       void (async () => {
-        await processNativeCallAction(detail.callId!, detail.action);
+        await processNativeCallActionRef.current(detail.callId!, detail.action);
       })();
     };
     document.addEventListener("visibilitychange", visibility);
@@ -1088,7 +1090,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
         state: sessionStateRef.current,
       });
     };
-  }, [cleanup, processNativeCallAction, receiveIncomingCall, signaling, token, user]);
+  }, [signaling, token, user]);
 
   useEffect(() => {
     const unload = () => {

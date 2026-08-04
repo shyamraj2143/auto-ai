@@ -1,6 +1,6 @@
 import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from "react";
 import { Camera, Check, ChevronDown, Code2, FileImage, FileText, Plus, SendHorizonal, Sparkles, Square, Trash2, X } from "lucide-react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion } from "../../motion/staticMotion";
 import clsx from "clsx";
 import { api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";

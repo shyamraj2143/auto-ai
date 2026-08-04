@@ -51,13 +51,9 @@ import { usePublishedFaqs, usePublishedGlobals, usePublishedPage } from "../../h
 import { PublishedContentBlocks } from "../common/PublishedContentBlocks";
 import { useScreenShare } from "../../features/screenShare/useScreenShare";
 import type { CmsPage } from "../admin/cms/types";
-import { useKineticReveal } from "../../hooks/useKineticReveal";
-import { useLuxuryCinematic } from "../../hooks/useLuxuryCinematic";
 import { alternatingDiagonal, alternatingFlight, LANDING_KINETIC_MAP } from "../../motion/kineticRevealConfig";
 import { KineticSplitText } from "../motion/KineticSplitText";
 import { LuxuryLoader } from "../motion/LuxuryLoader";
-import "../../styles/kineticReveal.css";
-import "../../styles/luxuryCinematic.css";
 
 const LazyQRCode = lazy(async () => {
   const module = await import("qrcode.react");
@@ -286,8 +282,6 @@ export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
   const demoMessagesRef = useRef<HTMLDivElement>(null);
   const kineticRevealRootRef = useRef<HTMLDivElement>(null);
   const editorIsInteractive = Boolean(editor?.editMode && !editor.previewMode);
-  useKineticReveal(kineticRevealRootRef, { disabled: editorIsInteractive });
-  useLuxuryCinematic(kineticRevealRootRef, { disabled: editorIsInteractive });
   const qrUrl = resolveApkDownloadUrl();
   const cmsBlocks = cmsPage?.blocks ?? [];
   const featureHeadingBlock = cmsBlocks.find((block) => block.block_type === "heading");

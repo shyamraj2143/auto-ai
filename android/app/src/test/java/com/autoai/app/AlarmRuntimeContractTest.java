@@ -22,6 +22,8 @@ public class AlarmRuntimeContractTest {
         assertTrue(store.contains("SharedPreferences"));
         assertTrue(store.contains("replaceAll"));
         assertTrue(receiver.contains("ACTION_BOOT_COMPLETED"));
+        assertTrue(receiver.contains("ACTION_TIME_CHANGED"));
+        assertTrue(receiver.contains("ACTION_TIMEZONE_CHANGED"));
         assertTrue(receiver.contains("AlarmScheduler.rescheduleAll"));
     }
 
@@ -47,7 +49,7 @@ public class AlarmRuntimeContractTest {
         String service = source("AlarmRingingService.java");
         assertTrue(activity.contains("setShowWhenLocked(true)"));
         assertTrue(activity.contains("setTurnScreenOn(true)"));
-        assertTrue(activity.contains("Snooze 10 min"));
+        assertTrue(activity.contains("alarm.snoozeMinutes"));
         assertTrue(activity.contains("Stop alarm"));
         assertTrue(activity.contains("HH:mm:ss"));
         assertTrue(activity.contains("24-HOUR FORMAT"));

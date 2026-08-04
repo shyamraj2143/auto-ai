@@ -990,7 +990,15 @@ class GroqService:
             detail="Image text recognition is temporarily unavailable.",
         ) from last_error
 
-    def transcribe_audio(self, audio_bytes: bytes, filename: str) -> str:
+    def transcribe_audio(
+        self,
+        audio_bytes: bytes,
+        filename: str,
+        model: str | None = None,
+        *,
+        language: str | None = None,
+        prompt: str | None = None,
+    ) -> str:
         suffix = Path(filename).suffix or ".webm"
         temp_path = None
         try:
@@ -1000,10 +1008,17 @@ class GroqService:
 
             with open(temp_path, "rb") as audio_file:
                 try:
+                    request: dict[str, object] = {
+                        "file": audio_file,
+                        "model": model or settings.GROQ_AUDIO_MODEL,
+                        "response_format": "json",
+                    }
+                    if language:
+                        request["language"] = language
+                    if prompt:
+                        request["prompt"] = prompt[:800]
                     transcription = self._client().audio.transcriptions.create(
-                        file=audio_file,
-                        model=settings.GROQ_AUDIO_MODEL,
-                        response_format="json",
+                        **request,
                     )
                 except GroqError as exc:
                     self._handle_groq_error(exc)

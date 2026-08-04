@@ -42,6 +42,45 @@ export function combineLocalDateTime(date: string, time: string) {
   return Number.isNaN(value.getTime()) ? null : value;
 }
 
+export const ALARM_WEEKDAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"] as const;
+
+export function nextLocalAlarmTime(options: {
+  time: string;
+  date?: string;
+  recurrenceType: "ONCE" | "DAILY" | "WEEKDAYS" | "WEEKENDS" | "CUSTOM" | "SPECIFIC_DATE";
+  selectedWeekdays?: readonly string[];
+  startDate?: string;
+  endDate?: string;
+  now?: Date;
+}) {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(options.time)) return null;
+  const now = options.now ? new Date(options.now) : new Date();
+  const [hours, minutes] = options.time.split(":").map(Number);
+  const make = (day: Date) => new Date(day.getFullYear(), day.getMonth(), day.getDate(), hours, minutes, 0, 0);
+  if (options.recurrenceType === "ONCE" || options.recurrenceType === "SPECIFIC_DATE") {
+    const base = options.date ? new Date(`${options.date}T00:00:00`) : now;
+    if (Number.isNaN(base.getTime())) return null;
+    const candidate = make(base);
+    if (!options.date && candidate <= now) candidate.setDate(candidate.getDate() + 1);
+    return candidate > now ? candidate : null;
+  }
+  const selected = options.recurrenceType === "DAILY" ? [...ALARM_WEEKDAYS]
+    : options.recurrenceType === "WEEKDAYS" ? [...ALARM_WEEKDAYS.slice(0, 5)]
+    : options.recurrenceType === "WEEKENDS" ? [...ALARM_WEEKDAYS.slice(5)]
+    : [...(options.selectedWeekdays || [])];
+  const start = options.startDate ? new Date(`${options.startDate}T00:00:00`) : now;
+  const end = options.endDate ? new Date(`${options.endDate}T23:59:59`) : null;
+  const cursor = start > now ? start : now;
+  for (let offset = 0; offset < 366 * 6; offset += 1) {
+    const day = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + offset);
+    if (end && day > end) return null;
+    const mondayIndex = (day.getDay() + 6) % 7;
+    const candidate = make(day);
+    if (selected.includes(ALARM_WEEKDAYS[mondayIndex]) && candidate > now) return candidate;
+  }
+  return null;
+}
+
 export function formatAlarmDate(value: string | number | Date) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Invalid date";

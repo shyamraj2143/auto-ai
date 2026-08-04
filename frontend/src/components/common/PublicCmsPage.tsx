@@ -1,7 +1,6 @@
 import { useRef } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { usePublishedPage } from "../../hooks/useCmsContent";
-import { useKineticReveal } from "../../hooks/useKineticReveal";
 import { LANDING_KINETIC_MAP } from "../../motion/kineticRevealConfig";
 import { CmsPageRenderer } from "./CmsPageRenderer";
 
@@ -20,7 +19,6 @@ export function PublicCmsPage() {
   const page = usePublishedPage(slug);
   const fallback = fallbackBySlug[slug];
   const revealRootRef = useRef<HTMLDivElement>(null);
-  useKineticReveal(revealRootRef);
 
   return (
     <div className="public-kinetic-reveal-scope" ref={revealRootRef}>

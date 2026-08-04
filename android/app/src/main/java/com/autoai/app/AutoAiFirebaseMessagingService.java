@@ -27,6 +27,7 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
     private static final String CHAT_NOTIFICATION_CHANNEL_ID = "auto_ai_messages";
     private static final String MISSED_CALL_CHANNEL_ID = "auto_ai_missed_calls";
     private static final String SOCIAL_CHANNEL_ID = "auto_ai_social";
+    private static final String RELATIONSHIP_CHANNEL_ID = "auto_ai_relationship_followups";
     private static final String UPDATE_PREFERENCES = "auto_ai_update_preferences";
     private static final String LAST_NOTIFIED_UPDATE_VERSION_CODE = "last_notified_update_version_code";
 
@@ -137,6 +138,10 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         }
         if ("follow_request".equals(messageType) || "follow_accept".equals(messageType)) {
             showSocialNotification(data, message.getNotification());
+            return;
+        }
+        if ("relationship_followup".equals(messageType)) {
+            showRelationshipNotification(data, message.getNotification());
             return;
         }
         if ("apk_update".equals(messageType)) {
@@ -367,6 +372,56 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
             NotificationManager.IMPORTANCE_HIGH
         );
         channel.setDescription("Auto-AI message alerts");
+        manager.createNotificationChannel(channel);
+    }
+
+    private void showRelationshipNotification(Map<String, String> data, RemoteMessage.Notification notification) {
+        if (!canPostNotifications()) return;
+        createRelationshipNotificationChannel(this);
+        String contactId = data.get("contact_id");
+        if (contactId == null || contactId.trim().isEmpty()) return;
+        String title = notification == null ? null : notification.getTitle();
+        String body = notification == null ? null : notification.getBody();
+        if (title == null || title.trim().isEmpty()) title = "Relationship follow-up";
+        if (body == null || body.trim().isEmpty()) body = "You have a relationship follow-up reminder.";
+        PendingIntent open = NotificationDeepLink.pendingActivity(
+            this,
+            NotificationDeepLink.Destination.RELATIONSHIP_FOLLOWUP,
+            contactId,
+            null,
+            data.get("event_id"),
+            "open",
+            0L
+        );
+        Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            ? new Notification.Builder(this, RELATIONSHIP_CHANNEL_ID)
+            : new Notification.Builder(this);
+        builder.setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(new Notification.BigTextStyle().bigText(body))
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .setCategory(Notification.CATEGORY_REMINDER)
+            .setVisibility(Notification.VISIBILITY_PRIVATE)
+            .setShowWhen(true)
+            .setWhen(System.currentTimeMillis());
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) builder.setPriority(Notification.PRIORITY_HIGH);
+        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager != null) manager.notify(NotificationDeepLink.requestCode("relationship_followup", contactId, "notification"), builder.build());
+    }
+
+    public static void createRelationshipNotificationChannel(Context context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager == null) return;
+        NotificationChannel channel = new NotificationChannel(
+            RELATIONSHIP_CHANNEL_ID,
+            "Relationship reminders",
+            NotificationManager.IMPORTANCE_HIGH
+        );
+        channel.setDescription("Reminders to follow up with important people");
+        channel.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
         manager.createNotificationChannel(channel);
     }
 

@@ -13,11 +13,13 @@ function userAvatar(user: User) {
 export function HubHeader({
   user,
   unreadNotifications,
+  notificationHref = "/call-hub/alerts",
   onOpenQuickConnect,
   onLogout,
 }: {
   user: User;
   unreadNotifications: number;
+  notificationHref?: string;
   onOpenQuickConnect: () => void;
   onLogout: () => Promise<void>;
 }) {
@@ -86,7 +88,7 @@ export function HubHeader({
       </button>
 
       <div className="hub-header-actions">
-        <Link className="hub-header-icon" to="/call-hub/alerts" aria-label="Open notifications">
+        <Link className="hub-header-icon" to={notificationHref} aria-label="Open notifications">
           <Bell size={19} />
           {unreadNotifications > 0 && <span>{unreadNotifications > 9 ? "9+" : unreadNotifications}</span>}
         </Link>

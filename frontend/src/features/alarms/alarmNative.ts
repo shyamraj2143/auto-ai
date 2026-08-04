@@ -10,6 +10,12 @@ export type NativeAlarmPayload = {
   language: string;
   voiceStyle: string;
   ringtone: string;
+  repeat: number[];
+  recurrenceType: string;
+  endDate: string;
+  snoozeMinutes: number;
+  snoozeEnabled: boolean;
+  vibration: boolean;
   assistantMessage: string;
   enabled: boolean;
   status: string;
@@ -42,6 +48,12 @@ export function toNativeAlarm(alarm: UserAlarm): NativeAlarmPayload {
     language: alarm.language,
     voiceStyle: alarm.voice_style,
     ringtone: alarm.ringtone,
+    repeat: alarm.repeat,
+    recurrenceType: alarm.recurrence_type,
+    endDate: alarm.end_date || "",
+    snoozeMinutes: alarm.snooze_minutes,
+    snoozeEnabled: alarm.snooze_enabled,
+    vibration: alarm.vibration,
     assistantMessage: alarm.assistant_message,
     enabled: alarm.enabled,
     status: alarm.status,

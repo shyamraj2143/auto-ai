@@ -30,6 +30,7 @@ import {
   RotateCcw,
   Info,
   X,
+  HeartHandshake,
   type LucideIcon
 } from "lucide-react";
 import { api } from "../../api/client";
@@ -233,6 +234,10 @@ export function SettingsPage() {
     setCrystalSurfaces,
     setCrystalButtonMotion,
     setCrystalVoiceVisualizer,
+    setAssistantEnabled,
+    setAssistantSpokenResponses,
+    setAssistantPersonalization,
+    setAssistantActionConfirmations,
     resetVisualEffects
   } = useAppSettings();
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("unsupported");
@@ -630,6 +635,7 @@ export function SettingsPage() {
               disabled={notificationPermission === "unsupported"}
             />
           </SettingsRow>
+          <SettingsRow icon={HeartHandshake} accent="violet" title="Relationship reminders" description="Push preview, permission status and private fallback settings" onClick={() => navigate("/relationships?settings=notifications")} />
           <SettingsRow icon={Globe2} title="Language" description="Sets app language metadata">
             <Select value={settings.language} options={LANGUAGE_OPTIONS} onChange={(value) => setLanguage(value as AppLanguage)} label="Language" />
           </SettingsRow>
@@ -641,6 +647,16 @@ export function SettingsPage() {
   function renderAiSettings() {
     return (
       <div className="grid gap-3">
+        <SettingsGroup title="Assistant Controls">
+          <SettingsCard>
+            <SettingsRow icon={Bot} title="Action Assistant" description="Allow Groq to understand commands and use registered app actions"><Toggle checked={settings.assistantEnabled} onChange={setAssistantEnabled} /></SettingsRow>
+            <SettingsRow icon={Mic} accent="violet" title="Voice input" description="Microphone listens only after you press it"><Toggle checked={settings.voiceEnabled} onChange={setVoiceEnabled} /></SettingsRow>
+            <SettingsRow icon={AudioLines} title="Spoken responses" description="Read completed assistant responses aloud"><Toggle checked={settings.assistantSpokenResponses} onChange={setAssistantSpokenResponses} /></SettingsRow>
+            <SettingsRow icon={BrainCircuit} title="Assistant personalization" description="Use recent conversation context for references"><Toggle checked={settings.assistantPersonalization} onChange={setAssistantPersonalization} /></SettingsRow>
+            <SettingsRow icon={Shield} title="Action confirmations" description="Destructive and account-changing actions always require confirmation"><Toggle checked={settings.assistantActionConfirmations} onChange={setAssistantActionConfirmations} disabled /></SettingsRow>
+            <SettingsRow icon={Trash2} accent="red" title="Clear assistant activity" description="Delete your account's action audit history"><button type="button" className="btn-secondary min-h-8 px-2.5 py-1 text-[11px]" onClick={() => token && window.confirm("Clear assistant activity history?") && void api.clearAssistantHistory(token)}>Clear</button></SettingsRow>
+          </SettingsCard>
+        </SettingsGroup>
         <SettingsCard>
           <SettingsRow icon={Shield} title="Personalization memory" description="Pause new long-term memories while keeping existing preferences available to manage">
             <Toggle checked={settings.memoryEnabled} onChange={(checked) => void updatePersonalizationSetting("memory_enabled", checked)} />

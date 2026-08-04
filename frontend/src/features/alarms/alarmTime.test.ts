@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { combineLocalDateTime, countdownLabel, defaultAlarmDate, formatAlarmDate, formatAlarmTime24, localDateInput, localTimeInput, quickAlarmDate } from "./alarmTime";
+import { combineLocalDateTime, countdownLabel, defaultAlarmDate, formatAlarmDate, formatAlarmTime24, localDateInput, localTimeInput, nextLocalAlarmTime, quickAlarmDate } from "./alarmTime";
 
 describe("alarm time helpers", () => {
   it("defaults to tomorrow at seven in the user's local time", () => {
@@ -32,5 +32,19 @@ describe("alarm time helpers", () => {
     expect(localTimeInput(quickAlarmDate("next-hour", now))).toBe("11:00");
     expect(countdownLabel(now.getTime() + 95 * 60_000, now.getTime())).toBe("In 1h 35m");
     expect(countdownLabel(now.getTime() - 1, now.getTime())).toBe("Due now");
+  });
+
+  it("schedules an undated once alarm at the next future local time", () => {
+    const now = new Date(2026, 7, 4, 8, 0);
+    expect(nextLocalAlarmTime({ time: "09:00", recurrenceType: "ONCE", now })?.getDate()).toBe(4);
+    expect(nextLocalAlarmTime({ time: "07:00", recurrenceType: "ONCE", now })?.getDate()).toBe(5);
+  });
+
+  it("supports daily, weekday, weekend, and multi-day custom recurrence", () => {
+    const monday = new Date(2026, 7, 3, 10, 0);
+    expect(nextLocalAlarmTime({ time: "09:00", recurrenceType: "DAILY", now: monday })?.getDay()).toBe(2);
+    expect(nextLocalAlarmTime({ time: "09:00", recurrenceType: "WEEKDAYS", now: new Date(2026, 7, 7, 10) })?.getDay()).toBe(1);
+    expect(nextLocalAlarmTime({ time: "09:00", recurrenceType: "WEEKENDS", now: monday })?.getDay()).toBe(6);
+    expect(nextLocalAlarmTime({ time: "09:00", recurrenceType: "CUSTOM", selectedWeekdays: ["WEDNESDAY", "FRIDAY"], now: monday })?.getDay()).toBe(3);
   });
 });

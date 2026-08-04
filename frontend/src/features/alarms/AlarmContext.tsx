@@ -20,6 +20,7 @@ type AlarmContextValue = {
   dismissAlarm: (alarmId: string) => Promise<void>;
   verifyAwake: (alarmId: string, photo: Blob) => Promise<AlarmAwakeVerification>;
   snoozeAlarm: (alarmId: string, minutes?: number) => Promise<void>;
+  skipAlarm: (alarmId: string) => Promise<void>;
   previewAlarm: (alarm: UserAlarm) => Promise<void>;
   requestAlarmAccess: () => Promise<void>;
 };
@@ -281,6 +282,18 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const skipAlarm = useCallback(async (alarmId: string) => {
+    if (!token) return;
+    setSaving(true);
+    try {
+      const updated = upsert(await alarmsApi.action(token, alarmId, "skip"));
+      await alarmNative.schedule(updated);
+    } catch (requestError) {
+      setError(readableError(requestError));
+      throw requestError;
+    } finally { setSaving(false); }
+  }, [token, upsert]);
+
   const requestAlarmAccess = useCallback(async () => {
     setError("");
     try {
@@ -307,9 +320,10 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
     dismissAlarm,
     verifyAwake,
     snoozeAlarm,
+    skipAlarm,
     previewAlarm,
     requestAlarmAccess,
-  }), [activeAlarm, alarms, createAlarm, deleteAlarm, dismissAlarm, error, loading, nativeStatus, nextAlarm, previewAlarm, refresh, requestAlarmAccess, saving, snoozeAlarm, updateAlarm, verifyAwake]);
+  }), [activeAlarm, alarms, createAlarm, deleteAlarm, dismissAlarm, error, loading, nativeStatus, nextAlarm, previewAlarm, refresh, requestAlarmAccess, saving, skipAlarm, snoozeAlarm, updateAlarm, verifyAwake]);
 
   return <AlarmContext.Provider value={value}>{children}</AlarmContext.Provider>;
 }

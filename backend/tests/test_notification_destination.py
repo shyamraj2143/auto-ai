@@ -8,7 +8,7 @@ from app.services.notification_destination import NOTIFICATION_DESTINATION_BY_TY
 
 EXPECTED_PUSH_TYPES = {
     "apk_update", "call_accepted", "call_cancelled", "call_ended", "call_failed", "call_missed", "call_rejected",
-    "chat_message", "follow_accept", "follow_request", "incoming_call", "incoming_call_fallback",
+    "chat_message", "follow_accept", "follow_request", "incoming_call", "incoming_call_fallback", "relationship_followup",
 }
 
 
@@ -28,6 +28,7 @@ def test_every_production_push_type_has_an_explicit_destination() -> None:
     ("chat_message", "thread_id"), ("incoming_call", "call_id"), ("call_accepted", "call_id"),
     ("call_missed", "call_id"),
     ("follow_request", "target_id"), ("follow_accept", "actor_id"),
+    ("relationship_followup", "contact_id"),
 ])
 def test_destination_payload_requires_entity(notification_type: str, entity_field: str) -> None:
     with pytest.raises(ValueError, match=entity_field):

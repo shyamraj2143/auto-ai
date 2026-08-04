@@ -232,6 +232,41 @@ def ensure_runtime_schema() -> None:
         if "failure_code" not in call_columns:
             add_column("calls", "failure_code", "VARCHAR(32)")
 
+    if "user_alarms" in table_names:
+        alarm_columns = {column["name"] for column in inspector.get_columns("user_alarms")}
+        alarm_indexes = {index["name"] for index in inspector.get_indexes("user_alarms")}
+        alarm_fields = {
+            "local_time": "VARCHAR(5) NOT NULL DEFAULT '07:00'",
+            "alarm_date": "VARCHAR(10)",
+            "recurrence_type": "VARCHAR(24) NOT NULL DEFAULT 'ONCE'",
+            "start_date": "VARCHAR(10)",
+            "end_date": "VARCHAR(10)",
+            "repeat_rule": "VARCHAR(80) NOT NULL DEFAULT ''",
+            "snooze_minutes": "INTEGER NOT NULL DEFAULT 10",
+            "snooze_enabled": "BOOLEAN NOT NULL DEFAULT TRUE",
+            "max_snooze_count": "INTEGER NOT NULL DEFAULT 3",
+            "gradual_volume_enabled": "BOOLEAN NOT NULL DEFAULT FALSE",
+            "vibration": "BOOLEAN NOT NULL DEFAULT TRUE",
+            "client_request_id": "VARCHAR(80)",
+        }
+        for column_name, definition in alarm_fields.items():
+            if column_name not in alarm_columns:
+                add_column("user_alarms", column_name, definition)
+        if "uq_user_alarms_user_request" not in alarm_indexes:
+            statements.append(f"CREATE UNIQUE INDEX {quote('uq_user_alarms_user_request')} ON {quote('user_alarms')} ({quote('user_id')}, {quote('client_request_id')})")
+
+    if "hub_policy_rules" in table_names:
+        hub_policy_columns = {column["name"] for column in inspector.get_columns("hub_policy_rules")}
+        if "description" not in hub_policy_columns:
+            add_column("hub_policy_rules", "description", "TEXT NOT NULL DEFAULT ''")
+
+    if "hub_commitments" in table_names:
+        hub_commitment_columns = {column["name"] for column in inspector.get_columns("hub_commitments")}
+        hub_commitment_fields = {"estimated_minutes": "INTEGER NOT NULL DEFAULT 60", "conflict_ids": "json", "evidence": "json", "recovery_note": "TEXT NOT NULL DEFAULT ''", "updated_at": "datetime"}
+        for column_name, definition in hub_commitment_fields.items():
+            if column_name not in hub_commitment_columns:
+                add_column("hub_commitments", column_name, definition)
+
     if "call_deliveries" in table_names:
         delivery_columns = {column["name"] for column in inspector.get_columns("call_deliveries")}
         delivery_diagnostics = {

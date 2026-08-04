@@ -7,6 +7,7 @@ services:
       - .env
     environment:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      RELATIONSHIP_FOLLOWUP_WORKER_ENABLED: "false"
     ports:
       - "8000:8000"
     volumes:
@@ -27,6 +28,21 @@ services:
     ports:
       - "5173:80"
     restart: unless-stopped
+
+  relationship-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - .env
+    environment:
+      RELATIONSHIP_FOLLOWUP_WORKER_ENABLED: "false"
+    command: ["python", "-m", "app.workers.relationship_followups"]
+    volumes:
+      - ./database:/app/database
+    restart: unless-stopped
+    depends_on:
+      - redis
 
   redis:
     image: redis:7.4-alpine

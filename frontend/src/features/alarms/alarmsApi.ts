@@ -1,7 +1,10 @@
 import { apiFetch } from "../../api/client";
-import type { AlarmAwakeVerification, AlarmDraft, AlarmListResponse, UserAlarm } from "./types";
+import type { AlarmAssistantResult, AlarmAwakeVerification, AlarmDraft, AlarmLanguage, AlarmListResponse, UserAlarm } from "./types";
 
 export const alarmsApi = {
+  assistantCommand: (token: string, payload: { transcript: string; timezone: string; client_request_id: string; language: AlarmLanguage }) => apiFetch<AlarmAssistantResult>("/alarms/assistant/command", {
+    method: "POST", token, body: JSON.stringify(payload), operation: "alarms.assistantCommand", timeoutMs: 12_000,
+  }),
   list: (token: string, includeCompleted = false) => apiFetch<AlarmListResponse>(
     `/alarms?include_completed=${includeCompleted}`,
     { token, operation: "alarms.list", timeoutMs: 10_000 },
@@ -26,7 +29,7 @@ export const alarmsApi = {
   action: (
     token: string,
     alarmId: string,
-    action: "ringing" | "dismiss" | "snooze",
+    action: "ringing" | "dismiss" | "snooze" | "skip",
     snoozeMinutes = 10,
     options: { scheduledAt?: string; clientRevision?: number } = {},
   ) => apiFetch<UserAlarm>(

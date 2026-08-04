@@ -17,6 +17,7 @@ import { isAdminPanelRole } from "./utils/roles";
 import { ApiClientError } from "./api/client";
 import { ScreenShareProvider } from "./features/screenShare/ScreenShareProvider";
 import { ScreenShareOverlay } from "./features/screenShare/ScreenShareOverlay";
+import { IndustrialLoader } from "./components/common/IndustrialLoader";
 import "./features/screenShare/screenShare.css";
 
 const AppShell = lazy(() => import("./components/layout/AppShell").then((module) => ({ default: module.AppShell })));
@@ -44,13 +45,15 @@ const UserMessagesPage = lazy(() => import("./features/userMessages/UserMessages
 const ScreenShareJoinPage = lazy(() => import("./features/screenShare/ScreenShareJoinPage").then((module) => ({ default: module.ScreenShareJoinPage })));
 const ScreenShareWorkspacePage = lazy(() => import("./features/screenShare/ScreenShareWorkspacePage").then((module) => ({ default: module.ScreenShareWorkspacePage })));
 const ActionHubPage = lazy(() => import("./features/actionHub/ActionHubPage").then((module) => ({ default: module.ActionHubPage })));
+const TrustHubPage = lazy(() => import("./features/trustHub/TrustHubPage").then((module) => ({ default: module.TrustHubPage })));
 const AlarmPage = lazy(() => import("./features/alarms/AlarmPage").then((module) => ({ default: module.AlarmPage })));
+const RelationshipFollowupsPage = lazy(() => import("./features/relationshipFollowups/RelationshipFollowupsPage").then((module) => ({ default: module.RelationshipFollowupsPage })));
 
 /** Shows LandingPage for guests, redirects logged-in users to the Action Hub. */
 function RootRedirect() {
   const { user, loading } = useAuth();
   if (loading) {
-    return <div className="app-loading">Loading Auto-AI...</div>;
+    return <IndustrialLoader status="Restoring session" />;
   }
   if (isMobileAppRuntime()) {
     return <Navigate to={user ? "/hub" : "/login"} replace />;
@@ -65,7 +68,7 @@ function MobileBlockedRoute({ children }: { children: ReactNode }) {
 function ProtectedRoute() {
   const { user, loading } = useAuth();
   if (loading) {
-    return <div className="app-loading">Loading Auto-AI...</div>;
+    return <IndustrialLoader status="Restoring session" />;
   }
   return user ? <Outlet /> : <Navigate to="/login" replace />;
 }
@@ -116,7 +119,7 @@ function AdminRoute() {
   }, [loading, refreshProfile, token]);
 
   if (loading || verification === "idle" || verification === "checking") {
-    return <div className="app-loading">Verifying admin access...</div>;
+    return <IndustrialLoader status="Connecting securely" />;
   }
   if (verification === "error") {
     return (
@@ -138,7 +141,7 @@ function AppRoutes() {
   const location = useLocation();
   return (
     <AppErrorBoundary resetKey={`${location.pathname}${location.search}`}>
-      <Suspense fallback={<div className="app-loading">Loading Auto-AI...</div>}>
+      <Suspense fallback={<IndustrialLoader status="Preparing workspace" />}>
         <Routes>
           <Route index element={<RootRedirect />} />
           <Route path="/home" element={<Navigate to="/" replace />} />
@@ -161,8 +164,10 @@ function AppRoutes() {
           <Route element={<ProtectedRoute />}>
             <Route element={<AppShell />}>
               <Route path="/hub" element={<ActionHubPage />} />
+              <Route path="/trust-hub" element={<TrustHubPage />} />
               <Route path="/activity" element={<ActionHubPage />} />
               <Route path="/alarms" element={<AlarmPage />} />
+              <Route path="/relationships" element={<RelationshipFollowupsPage />} />
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/chat/:chatId" element={<ChatPage />} />
               <Route path="/messages" element={<UserMessagesPage />} />

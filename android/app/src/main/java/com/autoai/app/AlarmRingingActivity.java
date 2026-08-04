@@ -108,7 +108,10 @@ public final class AlarmRingingActivity extends Activity {
         TextView icon = text("⏰", 54, Color.WHITE, Typeface.NORMAL);
         icon.setGravity(Gravity.CENTER);
         icon.setBackground(circle(Color.rgb(221, 92, 34), Color.rgb(255, 181, 91), 1));
-        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(112), dp(112));
+        icon.setText("ALARM");
+        icon.setTextSize(11);
+        icon.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        LinearLayout.LayoutParams iconParams = new LinearLayout.LayoutParams(dp(52), dp(40));
         iconParams.gravity = Gravity.CENTER_HORIZONTAL;
         iconParams.topMargin = dp(22);
         root.addView(icon, iconParams);
@@ -137,13 +140,13 @@ public final class AlarmRingingActivity extends Activity {
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setGravity(Gravity.CENTER);
-        Button snooze = actionButton("Snooze 10 min", Color.rgb(27, 43, 68), Color.rgb(128, 157, 202));
+        Button snooze = actionButton("Snooze " + alarm.snoozeMinutes + " min", Color.rgb(27, 43, 68), Color.rgb(128, 157, 202));
         Button dismiss = actionButton("Stop alarm", Color.rgb(222, 91, 35), Color.rgb(255, 184, 102));
         snooze.setOnClickListener(view -> act(AlarmActionReceiver.ACTION_SNOOZE));
         dismiss.setOnClickListener(view -> openAwakeVerification());
         LinearLayout.LayoutParams button = new LinearLayout.LayoutParams(0, dp(54), 1f);
         button.setMargins(dp(4), 0, dp(4), 0);
-        actions.addView(snooze, button);
+        if (alarm.snoozeEnabled) actions.addView(snooze, button);
         actions.addView(dismiss, button);
         root.addView(actions, matchWrap(dp(25)));
 

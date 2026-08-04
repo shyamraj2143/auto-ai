@@ -1,6 +1,5 @@
-import { AnimatePresence, motion } from "framer-motion";
-import type { CSSProperties } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion } from "../../motion/staticMotion";
+import { useMemo } from "react";
 import { NeuralCore } from "../../motion/NeuralCore";
 import type { ChatGeneration, OrchestrationActivityEvent } from "../../types";
 import { modelActivityCards } from "./LiveModelActivity";
@@ -27,32 +26,15 @@ export function ThinkingIndicator({
   subtitle?: string;
   generation?: ChatGeneration | null;
 } = {}) {
-  const particles = useMemo(() => Array.from({ length: 14 }, (_, particleIndex) => particleIndex), []);
   const displayLabel = label || "Thinking";
   const activity = useMemo(
     () => thinkingActivitySnapshot(generation?.activity ?? []),
     [generation?.activity]
   );
-  const [visibleTaskIndex, setVisibleTaskIndex] = useState(0);
-  const visibleTask = activity.visibleTasks[visibleTaskIndex % Math.max(activity.visibleTasks.length, 1)];
-
-  useEffect(() => {
-    setVisibleTaskIndex(0);
-    if (activity.visibleTasks.length < 2) return;
-    const timer = window.setInterval(
-      () => setVisibleTaskIndex((current) => (current + 1) % activity.visibleTasks.length),
-      2200
-    );
-    return () => window.clearInterval(timer);
-  }, [activity.visibleTasks.length]);
+  const visibleTask = activity.visibleTasks[0];
 
   return (
     <div className="thinking-panel" aria-live="polite">
-      <div className="thinking-particles" aria-hidden="true">
-        {particles.map((particle) => (
-          <span key={particle} style={{ "--i": particle } as CSSProperties} />
-        ))}
-      </div>
       <div className="neural-field" aria-hidden="true">
         <span />
         <span />

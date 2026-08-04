@@ -23,6 +23,7 @@ import type {
   HumanState,
   InteractionProfile,
   IntelligenceConfig,
+  IntentEngineResponse,
   LibraryAsset,
   LibraryAssetPage,
   LibraryAttachment,
@@ -48,6 +49,8 @@ import type {
   SearchHistoryItem,
   SearchMode,
   SearchResultBundle,
+  ServiceIntentResponse,
+  ServiceTaskView,
   StreamEvent,
   TurnAnalysis,
   User,
@@ -57,6 +60,7 @@ import type {
   UserMemory
 } from "../types";
 import { coerceTextContent } from "../utils/text";
+import type { AssistantActionItem, AssistantResponse } from "../features/assistant/types";
 
 declare global {
   interface Window {
@@ -237,6 +241,32 @@ function configuredApiUrl() {
   return runtimeUrl || normalizeApiUrl(import.meta.env.VITE_API_URL);
 }
 
+export function resolveUnconfiguredApiBaseUrl(
+  page: Pick<Location, "hostname" | "protocol">,
+  mobileApp: boolean
+) {
+  if (!mobileApp && page.protocol === "http:" && ["localhost", "127.0.0.1"].includes(page.hostname)) {
+    return `http://${page.hostname}:8000${API_V1_PREFIX}`;
+  }
+  return PUBLIC_API_BASE_URL;
+}
+
+export function resolveLocalPreviewApiBaseUrl(
+  page: Pick<Location, "hostname" | "protocol">,
+  mobileApp: boolean,
+  hasConfiguredOverride: boolean
+) {
+  if (
+    !mobileApp
+    && !hasConfiguredOverride
+    && page.protocol === "http:"
+    && ["localhost", "127.0.0.1"].includes(page.hostname)
+  ) {
+    return `http://${page.hostname}:8000${API_V1_PREFIX}`;
+  }
+  return "";
+}
+
 function resolveApiBaseUrl() {
   const rawRuntimeUrl = isBrowser() ? window.__AUTO_AI_API_URL__?.trim() || "" : "";
   const rawBuildUrl = import.meta.env.VITE_API_URL?.trim() || "";
@@ -246,15 +276,12 @@ function resolveApiBaseUrl() {
   if (!isBrowser()) return configured || PUBLIC_API_BASE_URL;
 
   const pageUrl = window.location;
-  const localPage = pageUrl.hostname === "localhost" || pageUrl.hostname === "127.0.0.1";
   const capacitorPlatform = (window as Window & { Capacitor?: { getPlatform?: () => string } }).Capacitor?.getPlatform?.();
   const mobileApp = capacitorPlatform === "android" || capacitorPlatform === "ios" || (pageUrl.protocol === "https:" && pageUrl.hostname === "localhost");
-  if (mobileApp && (!configured || !/^https:\/\//i.test(rawConfigured))) return PUBLIC_API_BASE_URL;
-  if (!configured && import.meta.env.PROD) return PUBLIC_API_BASE_URL;
-  if (!configured && import.meta.env.DEV && localPage && pageUrl.protocol === "http:") {
-    return "http://localhost:8000/api/v1";
-  }
-  if (!configured) return PUBLIC_API_BASE_URL;
+  const localPreviewUrl = resolveLocalPreviewApiBaseUrl(pageUrl, mobileApp, Boolean(configured));
+  if (localPreviewUrl) return localPreviewUrl;
+  if (!configured) return resolveUnconfiguredApiBaseUrl(pageUrl, mobileApp);
+  if (mobileApp && !/^https:\/\//i.test(rawConfigured)) return PUBLIC_API_BASE_URL;
 
   try {
     const configuredUrl = new URL(configured, pageUrl.origin);
@@ -931,6 +958,14 @@ export const api = {
       timeoutMs: 120000
     });
   },
+  runAssistantCommand: (token: string, payload: { message: string; timezone: string; request_id: string; context: Array<{ role: string; content: string }>; platform: "web" | "android" | "ios" }) =>
+    apiFetch<AssistantResponse>("/assistant/command", { method: "POST", token, operation: "assistant.command", body: JSON.stringify(payload), timeoutMs: 45000 }),
+  confirmAssistantAction: (token: string, actionId: string) =>
+    apiFetch<AssistantActionItem>(`/assistant/actions/${actionId}/confirm`, { method: "POST", token, operation: "assistant.action.confirm" }),
+  cancelAssistantAction: (token: string, actionId: string) =>
+    apiFetch<AssistantActionItem>(`/assistant/actions/${actionId}/cancel`, { method: "POST", token, operation: "assistant.action.cancel" }),
+  clearAssistantHistory: (token: string) =>
+    apiFetch<void>("/assistant/history", { method: "DELETE", token, operation: "assistant.history.clear" }),
 
   startLiveSession: (token: string) =>
     apiFetch<LiveSessionStart>("/live/start", {
@@ -1369,7 +1404,87 @@ export const api = {
       token,
       operation: "admin.promos.archive",
       body: JSON.stringify({ archived })
-    })
+    }),
+  interpretServiceRequest: (token: string, payload: { message: string; chat_id?: string | null; timezone: string; locale: string; client_request_id: string }) =>
+    apiFetch<ServiceIntentResponse>("/form-services/interpret", { method: "POST", token, operation: "formService.interpret", body: JSON.stringify(payload) }),
+  getServiceTask: (token: string, taskId: string) =>
+    apiFetch<ServiceTaskView>(`/form-services/tasks/${encodeURIComponent(taskId)}`, { token, operation: "formService.task.get" }),
+  startServiceTask: (token: string, taskId: string, version: number) =>
+    apiFetch<ServiceTaskView>(`/form-services/tasks/${encodeURIComponent(taskId)}/start`, { method: "POST", token, operation: "formService.task.start", body: JSON.stringify({ version, request_id: crypto.randomUUID(), reason: "User started the application" }) }),
+  saveServiceFields: (token: string, taskId: string, version: number, dataRequestId: string, values: Record<string, unknown>) =>
+    apiFetch<ServiceTaskView>(`/form-services/tasks/${encodeURIComponent(taskId)}/fields`, { method: "POST", token, operation: "formService.fields.save", body: JSON.stringify({ version, request_id: crypto.randomUUID(), data_request_id: dataRequestId, values }) }),
+  prepareServiceTask: (token: string, taskId: string, version: number) =>
+    apiFetch<ServiceTaskView>(`/form-services/tasks/${encodeURIComponent(taskId)}/prepare`, { method: "POST", token, operation: "formService.task.prepare", body: JSON.stringify({ version, request_id: crypto.randomUUID(), reason: "User requested draft preparation" }) }),
+  approveServiceReview: (token: string, taskId: string, version: number) =>
+    apiFetch<ServiceTaskView>(`/form-services/tasks/${encodeURIComponent(taskId)}/approve-review`, { method: "POST", token, operation: "formService.review.approve", body: JSON.stringify({ version, request_id: crypto.randomUUID(), reason: "User approved reviewed information" }) }),
+  confirmServiceSubmission: (token: string, taskId: string, version: number, deviceConfirmation: "not_required" | "confirmed" | "unavailable" = "not_required") =>
+    apiFetch<ServiceTaskView>(`/form-services/tasks/${encodeURIComponent(taskId)}/confirmation`, { method: "POST", token, operation: "formService.submission.confirm", body: JSON.stringify({ version, request_id: crypto.randomUUID(), declaration_accepted: true, device_confirmation: deviceConfirmation }) }),
+  submitServiceTask: (token: string, taskId: string, version: number, confirmationId: string, idempotencyKey: string) =>
+    apiFetch<ServiceTaskView>(`/form-services/tasks/${encodeURIComponent(taskId)}/submit`, { method: "POST", token, operation: "formService.submission.execute", body: JSON.stringify({ version, request_id: crypto.randomUUID(), confirmation_id: confirmationId, idempotency_key: idempotencyKey }) }),
+  serviceTaskAction: (token: string, taskId: string, action: "pause" | "resume" | "cancel" | "retry" | "review-again" | "edit" | "edit-documents", version: number) =>
+    apiFetch<ServiceTaskView>(`/form-services/tasks/${encodeURIComponent(taskId)}/${action}`, { method: "POST", token, operation: `formService.task.${action}`, body: JSON.stringify({ version, request_id: crypto.randomUUID(), reason: `User requested ${action}` }) }),
+  createServicePortalSession: (token: string, taskId: string, version: number) =>
+    apiFetch<ServiceTaskView>(`/form-services/tasks/${encodeURIComponent(taskId)}/portal-session`, { method: "POST", token, operation: "formService.portal.open", body: JSON.stringify({ version, request_id: crypto.randomUUID(), take_control: true }) }),
+  completeServiceHumanAction: (token: string, taskId: string, version: number, action: "otp" | "password" | "captcha" | "biometric" | "digital_signature" | "payment" | "consent_declaration" | "physical_verification") =>
+    apiFetch<ServiceTaskView>(`/form-services/tasks/${encodeURIComponent(taskId)}/human-action`, { method: "POST", token, operation: "formService.humanAction", body: JSON.stringify({ version, request_id: crypto.randomUUID(), action, completed: true }) }),
+  reportServicePortalOutcome: (token: string, taskId: string, version: number, outcome: "submitted" | "rejected" | "not_submitted" | "unknown", applicationId?: string, transactionId?: string) =>
+    apiFetch<ServiceTaskView>(`/form-services/tasks/${encodeURIComponent(taskId)}/portal-outcome`, { method: "POST", token, operation: "formService.portal.outcome", body: JSON.stringify({ version, request_id: crypto.randomUUID(), user_reported_status: outcome, application_id: applicationId || null, transaction_id: transactionId || null, idempotency_key: crypto.randomUUID() }) }),
+  requestServiceHandoff: (token: string, taskId: string, version: number, approvedFieldKeys: string[], approvedDocumentIds: string[], purpose: string) =>
+    apiFetch<Record<string, unknown>>(`/form-services/tasks/${encodeURIComponent(taskId)}/handoff`, { method: "POST", token, operation: "formService.handoff", body: JSON.stringify({ version, request_id: crypto.randomUUID(), approved_field_keys: approvedFieldKeys, approved_document_ids: approvedDocumentIds, purpose }) }),
+  revokeServiceHandoff: (token: string, taskId: string, handoffId: string, version: number) =>
+    apiFetch<ServiceTaskView>(`/form-services/tasks/${encodeURIComponent(taskId)}/handoff/${encodeURIComponent(handoffId)}/revoke`, { method: "POST", token, operation: "formService.handoff.revoke", body: JSON.stringify({ version, request_id: crypto.randomUUID(), reason: "User revoked the human assistance handoff" }) }),
+  requestServicePermission: (token: string, taskId: string, version: number, capability: "camera" | "document_picker") =>
+    apiFetch<ServiceTaskView>(`/form-services/tasks/${encodeURIComponent(taskId)}/permissions`, { method: "POST", token, operation: "formService.permission.request", body: JSON.stringify({ version, request_id: crypto.randomUUID(), capability }) }),
+  resolveServicePermission: (token: string, taskId: string, permissionId: string, version: number, nativeStatus: "GRANTED" | "DENIED" | "PERMANENTLY_DENIED" | "UNAVAILABLE" | "NOT_REQUIRED") =>
+    apiFetch<ServiceTaskView>(`/form-services/tasks/${encodeURIComponent(taskId)}/permissions/${encodeURIComponent(permissionId)}/resolve`, { method: "POST", token, operation: "formService.permission.resolve", body: JSON.stringify({ version, request_id: crypto.randomUUID(), native_status: nativeStatus }) }),
+  createServiceSecureChallenge: (token: string, taskId: string, version: number, kind: "otp" | "password" | "recovery_code" | "authentication_token") =>
+    apiFetch<ServiceTaskView>(`/form-services/tasks/${encodeURIComponent(taskId)}/secure-challenges`, { method: "POST", token, operation: "formService.secure.create", body: JSON.stringify({ version, request_id: crypto.randomUUID(), kind }) }),
+  submitServiceSecureResponse: (token: string, taskId: string, challengeId: string, secret: string) =>
+    apiFetch<ServiceTaskView>(`/form-services/tasks/${encodeURIComponent(taskId)}/secure-challenges/${encodeURIComponent(challengeId)}/response`, { method: "POST", token, operation: "formService.secure.submit", body: JSON.stringify({ request_id: crypto.randomUUID(), secret }) }),
+  trackServiceTask: (token: string, taskId: string) =>
+    apiFetch<Record<string, unknown>>(`/form-services/tasks/${encodeURIComponent(taskId)}/track?request_id=${encodeURIComponent(crypto.randomUUID())}`, { method: "POST", token, operation: "formService.track" }),
+  uploadServiceDocument: (token: string, taskId: string, version: number, requirementId: string, file: File, saveToVault: boolean, onProgress: (value: number) => void) =>
+    new Promise<ServiceTaskView>((resolve, reject) => {
+      const path = `/form-services/tasks/${encodeURIComponent(taskId)}/documents`;
+      const url = joinApiUrl(API_BASE_URL, path);
+      const form = new FormData();
+      form.append("requirement_id", requirementId);
+      form.append("version", String(version));
+      form.append("request_id", crypto.randomUUID());
+      form.append("save_to_vault", String(saveToVault));
+      form.append("file", file);
+      const request = new XMLHttpRequest();
+      request.open("POST", url);
+      request.timeout = 5 * 60 * 1000;
+      request.setRequestHeader("Authorization", `Bearer ${token}`);
+      request.upload.onprogress = (event) => event.lengthComputable && onProgress(Math.round(event.loaded / event.total * 100));
+      request.onload = () => {
+        let payload: unknown = undefined;
+        try { payload = request.responseText ? JSON.parse(request.responseText) : undefined; } catch { payload = { detail: request.statusText }; }
+        if (request.status >= 200 && request.status < 300) resolve(payload as ServiceTaskView);
+        else reject(new ApiClientError(getErrorMessage(payload, `Upload failed (${request.status})`), { kind: request.status === 401 ? "authentication_failed" : "http_error", status: request.status, url, details: payload }));
+      };
+      request.onerror = () => reject(new ApiClientError("Document upload could not reach AutoAI.", { kind: "network_unavailable", url }));
+      request.ontimeout = () => reject(new ApiClientError("Document upload timed out. Retry is safe.", { kind: "server_unreachable", url }));
+      request.send(form);
+    }),
+  attachServiceVaultDocument: (token: string, taskId: string, version: number, requirementId: string, libraryAssetId: string) =>
+    apiFetch<ServiceTaskView>(`/form-services/tasks/${encodeURIComponent(taskId)}/documents/from-vault`, { method: "POST", token, operation: "formService.document.vault", body: JSON.stringify({ version, request_id: crypto.randomUUID(), requirement_id: requirementId, library_asset_id: libraryAssetId }) }),
+  decideServiceDocumentAnalysis: (token: string, taskId: string, version: number, assetId: string, accepted: boolean, acceptedFields: string[]) =>
+    apiFetch<ServiceTaskView>(`/form-services/tasks/${encodeURIComponent(taskId)}/documents/${encodeURIComponent(assetId)}/analysis`, { method: "POST", token, operation: "formService.document.analysis", body: JSON.stringify({ version, request_id: crypto.randomUUID(), accepted, accepted_fields: acceptedFields }) }),
+  runServiceDocumentOcr: (token: string, taskId: string, version: number, assetId: string) =>
+    apiFetch<ServiceTaskView>(`/form-services/tasks/${encodeURIComponent(taskId)}/documents/${encodeURIComponent(assetId)}/ocr`, { method: "POST", token, operation: "formService.document.ocr", body: JSON.stringify({ version, request_id: crypto.randomUUID(), cloud_processing_accepted: true }) }),
+  previewServiceDocument: (token: string, signedPath: string) => apiFetchBlob(signedPath, token),
+  removeServiceDocument: (token: string, taskId: string, assetId: string, version: number) =>
+    apiFetch<ServiceTaskView>(`/form-services/tasks/${encodeURIComponent(taskId)}/documents/${encodeURIComponent(assetId)}?version=${version}&request_id=${encodeURIComponent(crypto.randomUUID())}`, { method: "DELETE", token, operation: "formService.document.remove" }),
+  interpretIntent: (token: string, payload: { message: string; chat_id?: string | null; timezone: string; locale: string; platform: "web" | "android" | "ios"; device_capabilities: string[]; granted_permissions: string[]; client_request_id: string }) =>
+    apiFetch<IntentEngineResponse>("/intent-engine/interpret", { method: "POST", token, operation: "intent.interpret", body: JSON.stringify(payload) }),
+  submitIntentInteraction: (token: string, workflowId: string, payload: { values: Record<string, unknown>; decision: "submit" | "confirm" | "cancel" | "retry" | "pause" }) =>
+    apiFetch<{ workflow_id: string; state: string }>(`/intent-engine/workflows/${encodeURIComponent(workflowId)}/interaction`, { method: "POST", token, operation: "intent.interaction", body: JSON.stringify(payload) }),
+  createSecureChallenge: (token: string, workflowId: string, kind: "otp" | "password" | "oauth" | "passkey") =>
+    apiFetch<{ id: string; status: string }>("/intent-engine/secure-challenges", { method: "POST", token, operation: "intent.secure.create", body: JSON.stringify({ workflow_id: workflowId, kind, destination: workflowId, expires_in_seconds: 300 }) }),
+  submitSecureChallenge: (token: string, challengeId: string, secret: string) =>
+    apiFetch<{ id: string; status: string; workflow_id: string }>(`/intent-engine/secure-challenges/${encodeURIComponent(challengeId)}/submit`, { method: "POST", token, operation: "intent.secure.submit", body: JSON.stringify({ secret }) })
 };
 
 export async function streamChat(

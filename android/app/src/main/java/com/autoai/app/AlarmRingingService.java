@@ -20,6 +20,8 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.speech.tts.Voice;
@@ -52,6 +54,7 @@ public final class AlarmRingingService extends Service {
     private PowerManager.WakeLock wakeLock;
     private AudioManager audioManager;
     private AudioFocusRequest audioFocusRequest;
+    private Vibrator vibrator;
     private float ringtoneVolume = .82f;
     private boolean speaking;
     private boolean completingVerifiedDismissal;
@@ -151,6 +154,14 @@ public final class AlarmRingingService extends Service {
         acquireWakeLock();
         requestAudioFocus();
         startRingtone(payload);
+        if (payload.vibration) {
+            vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+            if (vibrator != null) {
+                long[] pattern = new long[] { 0L, 450L, 250L, 450L };
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) vibrator.vibrate(VibrationEffect.createWaveform(pattern, 0));
+                else vibrator.vibrate(pattern, 0);
+            }
+        }
         startSpeech(payload);
         Log.i("AutoAiAlarm", "ALARM_RINGING_STARTED alarmId=" + payload.alarmId);
         return START_STICKY;
@@ -401,6 +412,8 @@ public final class AlarmRingingService extends Service {
             else audioManager.abandonAudioFocus(null);
         }
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        if (vibrator != null) vibrator.cancel();
+        vibrator = null;
         wakeLock = null;
         speaking = false;
         completingVerifiedDismissal = false;

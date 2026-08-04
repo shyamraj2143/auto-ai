@@ -1,0 +1,240 @@
+.service-secure form,
+.service-outcome-form,
+.service-handoff {
+  display: grid;
+  gap: 10px;
+}
+
+.service-secure form label,
+.service-outcome-form label,
+.service-handoff > label {
+  display: grid;
+  gap: 6px;
+  color: #dbeafe;
+  font-size: .78rem;
+  font-weight: 600;
+}
+
+.service-outcome-form,
+.service-handoff {
+  margin: 0 18px 14px;
+  padding: 14px;
+  border: 1px solid rgba(125, 211, 252, .2);
+  border-radius: 12px;
+  background: rgba(7, 21, 43, .76);
+}
+
+.service-outcome-form p,
+.service-handoff p,
+.service-requirements-detail p {
+  margin: 0;
+  color: #aebfd3;
+  font-size: .75rem;
+  line-height: 1.5;
+}
+
+.service-outcome-form input,
+.service-handoff input[type="text"],
+.service-handoff > label input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid rgba(125, 211, 252, .2);
+  border-radius: 9px;
+  background: #07152b;
+  color: #eff8ff;
+  padding: 8px 10px;
+}
+
+.service-outcome-form > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.service-handoff h4,
+.service-requirements-detail > strong {
+  margin: 0;
+  color: #eff8ff;
+  font-size: .82rem;
+}
+
+.service-handoff fieldset {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  border: 1px solid rgba(148, 163, 184, .14);
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.service-handoff legend {
+  padding: 0 5px;
+  color: #8fa4bd;
+  font-size: .7rem;
+}
+
+.service-handoff fieldset label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #dbeafe;
+  font-size: .76rem;
+}
+
+.service-handoff fieldset input {
+  width: 18px;
+  height: 18px;
+  accent-color: #22d3ee;
+}
+
+.service-file-summary-actions {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 5px;
+}
+
+.service-file-summary-actions button {
+  color: #a5f3fc;
+  font-size: .7rem;
+  text-decoration: underline;
+}
+
+.service-requirements-detail {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, .14);
+  border-radius: 11px;
+  background: rgba(15, 23, 42, .36);
+}
+
+.service-document-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  color: #fde68a;
+  font-size: .72rem;
+}
+
+.service-analysis-review,
+.service-vault-picker,
+.service-ocr-consent {
+  display: grid;
+  gap: 9px;
+  padding: 11px;
+  border: 1px solid rgba(34, 211, 238, .18);
+  border-radius: 10px;
+  background: rgba(6, 78, 99, .1);
+}
+
+.service-ocr-consent p {
+  margin: 0;
+  color: #aebfd3;
+  font-size: .72rem;
+  line-height: 1.5;
+}
+
+.service-ocr-consent label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #dbeafe;
+  font-size: .74rem;
+}
+
+.service-ocr-consent input {
+  width: 18px;
+  height: 18px;
+  accent-color: #22d3ee;
+}
+
+.service-ocr-consent button {
+  justify-self: start;
+}
+
+.service-analysis-review > strong {
+  color: #cffafe;
+  font-size: .78rem;
+}
+
+.service-analysis-review > label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #dbeafe;
+  font-size: .75rem;
+}
+
+.service-analysis-review input {
+  width: 18px;
+  height: 18px;
+  accent-color: #22d3ee;
+}
+
+.service-analysis-review small,
+.service-vault-picker small {
+  display: block;
+  color: #8fa4bd;
+  font-size: .68rem;
+}
+
+.service-analysis-review > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.service-vault-picker > button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  border: 1px solid rgba(125, 211, 252, .16);
+  border-radius: 9px;
+  padding: 8px 10px;
+  color: #e0f2fe;
+  background: rgba(30, 64, 175, .12);
+  text-align: left;
+}
+
+.service-vault-picker > button span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.service-handoff-active-list,
+.service-handoff-active {
+  display: grid;
+  gap: 8px;
+}
+
+.service-handoff-active {
+  border: 1px solid rgba(251, 113, 133, .24);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(127, 29, 29, .1);
+}
+
+.service-handoff-active small {
+  color: #a9bad0;
+}
+
+.service-handoff-active button {
+  justify-self: start;
+}
+
+@media (max-width: 640px) {
+  .service-outcome-form,
+  .service-handoff {
+    margin-right: 13px;
+    margin-left: 13px;
+  }
+
+  .service-outcome-form > div > * {
+    flex: 1 1 100%;
+  }
+}

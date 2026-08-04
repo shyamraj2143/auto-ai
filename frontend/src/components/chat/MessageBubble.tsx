@@ -8,9 +8,9 @@ import {
   Search,
   User
 } from "lucide-react";
-import { motion } from "framer-motion";
+import { motion } from "../../motion/staticMotion";
 import clsx from "clsx";
-import type { ChatAttachment, ChatGeneration, Message, ResponseModelInfo } from "../../types";
+import type { ChatAttachment, ChatGeneration, Message, ResponseModelInfo, ServiceTaskView } from "../../types";
 import { coerceTextContent } from "../../utils/text";
 import { MarkdownMessage } from "./MarkdownMessage";
 import { SourceCards } from "./SourceCards";
@@ -21,6 +21,9 @@ import { StreamingPulse } from "../../motion/primitives";
 import { formatMessageDateTimeTitle, formatMessageTime, normalizedApiTimestamp } from "../../utils/dateTime";
 import { MessageActionBar } from "./MessageActionBar";
 import type { MessageFeedback } from "../../types";
+import type { IntentInteraction } from "../../types";
+import { DynamicInteractionCard } from "./DynamicInteractionCard";
+import { ServiceTaskCard } from "../../features/formService/ServiceTaskCard";
 
 const THINK_BLOCK_PATTERN = /<think\b[^>]*>[\s\S]*?<\/think>\s*/gi;
 const OPEN_THINK_BLOCK_PATTERN = /<think\b[^>]*>[\s\S]*$/i;
@@ -112,6 +115,14 @@ export function formatMessageTimestamp(value: string, now = new Date()) {
   return formatMessageTime(value);
 }
 
+export function latestServiceTaskMessageIds(messages: Message[]) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const task = messages[index].message_metadata?.service_task as ServiceTaskView | undefined;
+    if (task?.id) return new Set([messages[index].id]);
+  }
+  return new Set<string>();
+}
+
 function AttachmentList({ attachments }: { attachments: ChatAttachment[] }) {
   if (!attachments.length) return null;
   return (
@@ -150,6 +161,7 @@ function MessageBubbleComponent({
   isStreaming,
   isSearchingWeb,
   generation,
+  isLatestServiceTask = true,
   onRegenerate,
   onShare,
   onFeedbackChange,
@@ -161,6 +173,7 @@ function MessageBubbleComponent({
   isStreaming?: boolean;
   isSearchingWeb?: boolean;
   generation?: ChatGeneration | null;
+  isLatestServiceTask?: boolean;
   fallbackModel?: ResponseModelInfo | null;
   onRegenerate: (messageId: string) => void;
   onShare: (messageId: string) => void;
@@ -183,6 +196,8 @@ function MessageBubbleComponent({
   const search = message.message_metadata?.search;
   const orchestrationAudit =
     message.message_metadata?.orchestration ?? message.message_metadata?.deep_research;
+  const intentInteraction = message.message_metadata?.intent_interaction as IntentInteraction | undefined;
+  const serviceTask = message.message_metadata?.service_task as ServiceTaskView | undefined;
   const normalizedTimestamp = normalizedApiTimestamp(message.created_at);
   void fallbackModel;
 
@@ -231,6 +246,8 @@ function MessageBubbleComponent({
                 {isAssistant && isStreaming && <span className="typing-cursor" aria-hidden="true" />}
               </div>
             )}
+            {isAssistant && intentInteraction && <DynamicInteractionCard interaction={intentInteraction} token={token} />}
+            {isAssistant && serviceTask && (isLatestServiceTask ? <ServiceTaskCard task={serviceTask} token={token} /> : <div className="not-prose mt-2 rounded-lg border border-white/10 bg-white/[.03] px-3 py-2 text-xs text-slate-400">Earlier service update: {serviceTask.active_card.title}. Use the latest card below to continue.</div>)}
           </>
         )}
         {isAssistant && <SourceCards search={search} />}
@@ -266,6 +283,7 @@ export const MessageBubble = memo(MessageBubbleComponent, (previous, next) => {
     previous.isSearchingWeb === next.isSearchingWeb &&
     previous.generation === next.generation &&
     previous.fallbackModel === next.fallbackModel
+    && previous.isLatestServiceTask === next.isLatestServiceTask
     && previous.chatId === next.chatId
     && previous.token === next.token
   );

@@ -24,4 +24,11 @@ describe("call reliability hotfix", () => {
     expect(provider).toContain("native_media_signal_ignored_by_webview");
     expect(provider).toContain("Android's foreground service is the sole signaling/media owner");
   });
+
+  it("does not restart call bootstrap when signaling callbacks change", () => {
+    const provider = source("src/features/calls/CallProvider.tsx");
+    expect(provider).toContain("processNativeCallActionRef.current");
+    expect(provider).toContain("}, [signaling, token, user]);");
+    expect(provider).not.toContain("[cleanup, processNativeCallAction, receiveIncomingCall, signaling, token, user]");
+  });
 });

@@ -1,4 +1,4 @@
-import { AlarmClock, BellRing, Bot, Camera, Check, MoonStar, ScanFace } from "lucide-react";
+import { AlarmClock, BellRing, Bot, Camera, Check, Mic2, MoonStar, ScanFace, Square } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { alarmNative, speakInBrowser } from "./alarmNative";
 import { awakeFailureSpeech, awakeSuccessSpeech } from "./alarmSpeech";
@@ -47,6 +47,9 @@ export function AlarmOverlay() {
   const [now, setNow] = useState(() => new Date());
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const listeningRef = useRef<{ stop: () => void } | null>(null);
+  const [conversation, setConversation] = useState<"ready" | "listening" | "speaking" | "offline" | "error">("ready");
+  const [conversationReply, setConversationReply] = useState("");
 
   const stopCamera = () => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
@@ -82,6 +85,40 @@ export function AlarmOverlay() {
       setCameraOpen(false);
       setVerificationError("Camera or the on-device face checker is unavailable. The alarm will continue until your live face is verified.");
     }
+  };
+
+  const speakTurn = (message: string) => {
+    listeningRef.current?.stop();
+    listeningRef.current = null;
+    setConversation("speaking");
+    speakInBrowser(message, activeAlarm?.language || "hinglish-IN", activeAlarm?.voice_style || "warm");
+    setConversationReply(message);
+    window.setTimeout(() => setConversation("ready"), Math.min(7000, Math.max(1800, message.length * 45)));
+  };
+
+  const handleConversation = (text: string) => {
+    if (!activeAlarm) return;
+    if (/\b(5|five|पांच|पाँच)\s*(minute|मिनट)/i.test(text)) {
+      speakTurn("ठीक है, पाँच मिनट बाद फिर जगाऊँगा।");
+      window.setTimeout(() => void snoozeAlarm(activeAlarm.id, 5), 700);
+    } else if (/(उठ गया|उठ गई|i am awake|i'm awake|wake)/i.test(text)) {
+      speakTurn("अच्छा। Alarm बंद करने के लिए अब live awake verification पूरा कीजिए।");
+      window.setTimeout(() => void openCamera(), 800);
+    } else {
+      speakTurn("मैं सुन रहा हूँ। आप snooze कह सकते हैं, या awake verification शुरू कर सकते हैं।");
+    }
+  };
+
+  const startConversation = () => {
+    const Recognition = (window as unknown as { SpeechRecognition?: new () => any; webkitSpeechRecognition?: new () => any }).SpeechRecognition
+      || (window as unknown as { webkitSpeechRecognition?: new () => any }).webkitSpeechRecognition;
+    if (!Recognition) { setConversation("offline"); setConversationReply("AI conversation उपलब्ध नहीं है; alarm controls अभी भी काम कर रहे हैं।"); return; }
+    window.speechSynthesis?.cancel();
+    const recognition = new Recognition(); recognition.lang = activeAlarm?.language === "en-IN" ? "en-IN" : "hi-IN"; recognition.continuous = false;
+    recognition.onresult = (event: any) => handleConversation(String(event.results?.[0]?.[0]?.transcript || ""));
+    recognition.onerror = () => { setConversation("error"); setConversationReply("Microphone उपलब्ध नहीं है; manual controls काम कर रहे हैं।"); };
+    recognition.onend = () => { listeningRef.current = null; setConversation((state) => state === "listening" ? "ready" : state); };
+    listeningRef.current = recognition; setConversation("listening"); recognition.start();
   };
 
   const captureAndVerify = async () => {
@@ -177,6 +214,8 @@ export function AlarmOverlay() {
     setVerifiedMessage("");
     setChecking(false);
     stopCamera();
+    listeningRef.current?.stop();
+    listeningRef.current = null;
     return stopCamera;
   }, [activeAlarm?.id]);
 
@@ -213,6 +252,7 @@ export function AlarmOverlay() {
         ) : (
           <>
             <blockquote>{activeAlarm.assistant_message}</blockquote>
+            <section className="alarm-ring-conversation"><button type="button" onClick={() => conversation === "listening" ? listeningRef.current?.stop() : startConversation()} disabled={conversation === "speaking"}>{conversation === "listening" ? <Square /> : <Mic2 />} {conversation === "listening" ? "Stop listening" : "Talk to Alarm Assistant"}</button><small>{conversation === "listening" ? "Listening… ringtone continues quietly" : conversationReply || "Mic runs only while this ringing screen is visible."}</small></section>
             {verificationError && <p className="alarm-verification-error" role="alert">{verificationError}</p>}
             <div>
               <button type="button" className="alarm-snooze-button" onClick={() => void snoozeAlarm(activeAlarm.id, 10)}><MoonStar /> Snooze 10 min</button>
