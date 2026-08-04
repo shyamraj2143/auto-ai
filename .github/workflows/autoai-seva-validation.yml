@@ -21,7 +21,7 @@ on:
       - ".github/workflows/autoai-seva-validation.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: autoai-seva-validation-${{ github.ref }}
@@ -94,3 +94,54 @@ jobs:
         run: npm run build
       - name: Run form-service component tests
         run: npm test -- ServiceTaskCard
+
+  record-validation:
+    name: Record validation result
+    if: always()
+    needs: [backend-seva-tests, frontend-production-build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Write validation status
+        env:
+          BACKEND_RESULT: ${{ needs.backend-seva-tests.result }}
+          FRONTEND_RESULT: ${{ needs.frontend-production-build.result }}
+          SOURCE_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          backend = os.environ["BACKEND_RESULT"]
+          frontend = os.environ["FRONTEND_RESULT"]
+          status = "success" if backend == "success" and frontend == "success" else "failure"
+          payload = {
+              "status": status,
+              "backend": backend,
+              "frontend": frontend,
+              "source_commit": os.environ["SOURCE_SHA"],
+              "run_id": os.environ["RUN_ID"],
+              "run_attempt": os.environ["RUN_ATTEMPT"],
+              "updated_at": datetime.now(timezone.utc).isoformat(),
+          }
+          path = Path(".release-status/seva-validation.json")
+          path.parent.mkdir(parents=True, exist_ok=True)
+          path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+          PY
+      - name: Commit validation status
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .release-status/seva-validation.json
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "chore: record AutoAI Seva validation [skip ci]"
+          git pull --rebase origin main
+          git push origin HEAD:main
