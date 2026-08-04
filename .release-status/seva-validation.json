@@ -1,0 +1,9 @@
+{
+  "status": "failure",
+  "backend": "failure",
+  "frontend": "success",
+  "source_commit": "61e9e4232bb896eca1d76bf77549cb9298d2a182",
+  "run_id": "30949939560",
+  "run_attempt": "1",
+  "updated_at": "2026-08-04T20:54:45.446316+00:00"
+}
