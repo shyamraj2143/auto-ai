@@ -259,9 +259,9 @@ def invalidate_review_binding(db: Session, task_id: str, user_id: str) -> None:
 
 
 def _response_changed(row: UserFieldResponse) -> bool:
-    if row in sa_inspect(row).session.new:
-        return True
     state = sa_inspect(row)
+    if state.pending:
+        return True
     return any(
         state.attrs[name].history.has_changes()
         for name in ("value_json", "encrypted_value", "source", "verified", "version")
