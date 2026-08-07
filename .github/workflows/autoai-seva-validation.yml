@@ -7,6 +7,7 @@ on:
     paths:
       - "backend/app/api/routes/service_applications.py"
       - "backend/app/api/routes/seva_operations.py"
+      - "backend/app/api/routes/seva_scope.py"
       - "backend/app/api/routes/__init__.py"
       - "backend/app/main.py"
       - "backend/app/models/autoai_seva.py"
@@ -68,6 +69,7 @@ jobs:
           python -m py_compile \
             app/api/routes/service_applications.py \
             app/api/routes/seva_operations.py \
+            app/api/routes/seva_scope.py \
             app/models/autoai_seva.py \
             app/services/autoai_seva_conflicts.py \
             app/services/autoai_seva_review.py \
