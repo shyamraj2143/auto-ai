@@ -1,6 +1,7 @@
 import {
   BarChart3,
   AlarmClock,
+  BriefcaseBusiness,
   FileCheck2,
   LayoutDashboard,
   LogOut,
@@ -14,6 +15,7 @@ import {
 import { NavLink } from "react-router-dom";
 import { resolveApiAssetUrl } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
+import { isAdminPanelRole } from "../../utils/roles";
 import { LogoIcon } from "../brand/LogoIcon";
 import "./workspaceNavigation.css";
 
@@ -30,6 +32,8 @@ const primaryItems = [
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
+const sevaOperationsItem = { to: "/admin/seva-operations", label: "Seva Operations", icon: BriefcaseBusiness } as const;
+
 function initials(name: string) {
   return name
     .trim()
@@ -44,6 +48,9 @@ export function WorkspaceNavigation() {
   const { user, logout } = useAuth();
   if (!user) return null;
   const avatar = resolveApiAssetUrl(user.avatar || user.picture);
+  const items = isAdminPanelRole(user.role) && user.is_admin
+    ? [...primaryItems.slice(0, 3), sevaOperationsItem, ...primaryItems.slice(3)]
+    : primaryItems;
 
   return (
     <aside className="autoai-workspace-nav" aria-label="AutoAI workspace">
@@ -52,7 +59,7 @@ export function WorkspaceNavigation() {
         <strong>AutoAI</strong>
       </NavLink>
       <nav>
-        {primaryItems.map(({ to, label, icon: Icon }) => (
+        {items.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
@@ -80,12 +87,18 @@ export function WorkspaceNavigation() {
 }
 
 export function WorkspaceMobileNavigation() {
+  const { user } = useAuth();
+  const isAdmin = Boolean(user?.is_admin && isAdminPanelRole(user.role));
+  const mobileItems = isAdmin
+    ? [primaryItems[0], primaryItems[2], sevaOperationsItem, primaryItems[4], primaryItems[5]]
+    : primaryItems.slice(0, 5);
+
   return (
     <nav className="autoai-mobile-nav" aria-label="Primary navigation">
-      {primaryItems.slice(0, 5).map(({ to, label, icon: Icon }) => (
+      {mobileItems.map(({ to, label, icon: Icon }) => (
         <NavLink key={to} to={to} className={({ isActive }) => isActive ? "active" : undefined}>
           <Icon size={21} />
-          <span>{label === "Screen Sharing" ? "Share" : label === "AutoAI Seva" ? "Seva" : label}</span>
+          <span>{label === "Screen Sharing" ? "Share" : label === "AutoAI Seva" ? "Seva" : label === "Seva Operations" ? "Work" : label}</span>
         </NavLink>
       ))}
       <NavLink to="/settings" className={({ isActive }) => isActive ? "active autoai-mobile-more" : "autoai-mobile-more"}>
