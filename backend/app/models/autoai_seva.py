@@ -103,7 +103,7 @@ class SevaRequirementRequest(Base):
     __tablename__ = "seva_requirement_requests"
     __table_args__ = (
         Index("ix_seva_requirement_work_status", "work_order_id", "status"),
-        Index("ix_seva_requirement_task_created", "task_id", "created_at"),
+        Index("ix_seva_requirement_task_requested", "task_id", "requested_at"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_id)
