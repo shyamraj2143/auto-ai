@@ -6,6 +6,8 @@ on:
     branches: [main]
     paths:
       - "backend/app/api/routes/service_applications.py"
+      - "backend/app/api/routes/seva_operations.py"
+      - "backend/app/api/routes/__init__.py"
       - "backend/app/main.py"
       - "backend/app/models/autoai_seva.py"
       - "backend/app/models/form_service.py"
@@ -13,10 +15,15 @@ on:
       - "backend/app/services/autoai_seva_*.py"
       - "backend/app/services/form_service_*.py"
       - "backend/tests/test_autoai_seva*.py"
+      - "backend/tests/test_seva_operations.py"
       - "backend/tests/test_form_service*.py"
       - "frontend/src/features/autoaiSeva/**"
       - "frontend/src/features/actionHub/**"
       - "frontend/src/components/layout/WorkspaceNavigation.tsx"
+      - "frontend/src/components/auth/LoginPage.tsx"
+      - "frontend/src/components/auth/rememberLogin.css"
+      - "frontend/src/auth/sessionStorage.ts"
+      - "frontend/src/contexts/AuthContext.tsx"
       - "frontend/src/App.tsx"
       - ".github/workflows/autoai-seva-validation.yml"
 
@@ -60,6 +67,7 @@ jobs:
         run: |
           python -m py_compile \
             app/api/routes/service_applications.py \
+            app/api/routes/seva_operations.py \
             app/models/autoai_seva.py \
             app/services/autoai_seva_conflicts.py \
             app/services/autoai_seva_review.py \
@@ -72,6 +80,7 @@ jobs:
           pytest -q \
             tests/test_autoai_seva.py \
             tests/test_autoai_seva_security.py \
+            tests/test_seva_operations.py \
             tests/test_form_services.py \
             tests/test_form_service_intent_matching.py
 
