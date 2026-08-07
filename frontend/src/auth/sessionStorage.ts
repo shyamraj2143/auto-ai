@@ -3,6 +3,8 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 const ACCESS_TOKEN_KEY = "auto-ai-access-token";
 const REFRESH_TOKEN_KEY = "auto-ai-refresh-token";
 const LEGACY_TOKEN_KEY = "auto-ai-token";
+const TEMP_ACCESS_TOKEN_KEY = "auto-ai-session-access-token";
+const TEMP_REFRESH_TOKEN_KEY = "auto-ai-session-refresh-token";
 
 type NativeSecureStorage = {
   get: (options: { key: string }) => Promise<{ value?: string | null }>;
@@ -30,6 +32,7 @@ declare global {
 export type StoredAuthSession = {
   accessToken: string | null;
   refreshToken: string | null;
+  persistent: boolean;
 };
 
 function isAndroidNativeRuntime() {
@@ -70,11 +73,58 @@ function removeLocalStorage(key: string) {
   }
 }
 
+function readSessionStorage(key: string) {
+  try {
+    return sessionStorage.getItem(key);
+  } catch (error) {
+    console.warn("[Auto-AI Auth] Unable to read temporary browser session.", error);
+    return null;
+  }
+}
+
+function writeSessionStorage(key: string, value: string) {
+  try {
+    sessionStorage.setItem(key, value);
+  } catch (error) {
+    console.warn("[Auto-AI Auth] Unable to save temporary browser session.", error);
+  }
+}
+
+function removeSessionStorage(key: string) {
+  try {
+    sessionStorage.removeItem(key);
+  } catch (error) {
+    console.warn("[Auto-AI Auth] Unable to remove temporary browser session.", error);
+  }
+}
+
+function temporarySession(): StoredAuthSession {
+  return {
+    accessToken: readSessionStorage(TEMP_ACCESS_TOKEN_KEY),
+    refreshToken: readSessionStorage(TEMP_REFRESH_TOKEN_KEY),
+    persistent: false,
+  };
+}
+
 function localSession(): StoredAuthSession {
   return {
     accessToken: readLocalStorage(ACCESS_TOKEN_KEY) || readLocalStorage(LEGACY_TOKEN_KEY),
-    refreshToken: readLocalStorage(REFRESH_TOKEN_KEY)
+    refreshToken: readLocalStorage(REFRESH_TOKEN_KEY),
+    persistent: true,
   };
+}
+
+async function clearNativePersistentSession() {
+  const secureStorage = nativeSecureStorage();
+  if (!secureStorage) return;
+  try {
+    await Promise.all([
+      secureStorage.remove({ key: ACCESS_TOKEN_KEY }),
+      secureStorage.remove({ key: REFRESH_TOKEN_KEY }),
+    ]);
+  } catch (error) {
+    console.warn("[Auto-AI Auth] Unable to clear the native persistent session.", error);
+  }
 }
 
 export async function syncNativeAccessToken(accessToken: string) {
@@ -88,6 +138,9 @@ export async function syncNativeAccessToken(accessToken: string) {
 }
 
 export async function readStoredSession(): Promise<StoredAuthSession> {
+  const temporary = temporarySession();
+  if (temporary.accessToken || temporary.refreshToken) return temporary;
+
   const fallback = localSession();
   const secureStorage = nativeSecureStorage();
   if (!secureStorage) return fallback;
@@ -107,14 +160,29 @@ export async function readStoredSession(): Promise<StoredAuthSession> {
     if (!refresh.value && refreshToken) migrations.push(secureStorage.set({ key: REFRESH_TOKEN_KEY, value: refreshToken }));
     if (migrations.length) await Promise.all(migrations);
 
-    return { accessToken: accessToken ?? null, refreshToken: refreshToken ?? null };
+    return { accessToken: accessToken ?? null, refreshToken: refreshToken ?? null, persistent: true };
   } catch (error) {
     console.warn("[Auto-AI Auth] Native secure session read failed; using the WebView session mirror.", error);
     return fallback;
   }
 }
 
-export async function writeStoredSession(accessToken: string, refreshToken?: string | null) {
+export async function writeStoredSession(accessToken: string, refreshToken?: string | null, persistent = true) {
+  removeSessionStorage(TEMP_ACCESS_TOKEN_KEY);
+  removeSessionStorage(TEMP_REFRESH_TOKEN_KEY);
+
+  if (!persistent) {
+    // A temporary login survives route changes but is cleared when the browser/app
+    // session closes. The raw password is never written anywhere.
+    writeSessionStorage(TEMP_ACCESS_TOKEN_KEY, accessToken);
+    if (refreshToken) writeSessionStorage(TEMP_REFRESH_TOKEN_KEY, refreshToken);
+    removeLocalStorage(ACCESS_TOKEN_KEY);
+    removeLocalStorage(REFRESH_TOKEN_KEY);
+    removeLocalStorage(LEGACY_TOKEN_KEY);
+    await clearNativePersistentSession();
+    return;
+  }
+
   // Keep a WebView mirror for startup recovery while native encrypted storage
   // remains the source used by Android foreground calling services.
   writeLocalStorage(ACCESS_TOKEN_KEY, accessToken);
@@ -140,18 +208,10 @@ export async function writeStoredSession(accessToken: string, refreshToken?: str
 }
 
 export async function removeStoredSession() {
-  const secureStorage = nativeSecureStorage();
-  if (secureStorage) {
-    try {
-      await Promise.all([
-        secureStorage.remove({ key: ACCESS_TOKEN_KEY }),
-        secureStorage.remove({ key: REFRESH_TOKEN_KEY })
-      ]);
-    } catch (error) {
-      console.warn("[Auto-AI Auth] Unable to clear the native secure session.", error);
-    }
-  }
+  await clearNativePersistentSession();
   removeLocalStorage(ACCESS_TOKEN_KEY);
   removeLocalStorage(REFRESH_TOKEN_KEY);
   removeLocalStorage(LEGACY_TOKEN_KEY);
+  removeSessionStorage(TEMP_ACCESS_TOKEN_KEY);
+  removeSessionStorage(TEMP_REFRESH_TOKEN_KEY);
 }
