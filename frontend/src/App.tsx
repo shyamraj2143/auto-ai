@@ -51,6 +51,7 @@ const RelationshipFollowupsPage = lazy(() => import("./features/relationshipFoll
 const AutoAISevaPage = lazy(() => import("./features/autoaiSeva/AutoAISevaPages").then((module) => ({ default: module.AutoAISevaPage })));
 const SevaApplicationsPage = lazy(() => import("./features/autoaiSeva/AutoAISevaPages").then((module) => ({ default: module.SevaApplicationsPage })));
 const SevaApplicationPage = lazy(() => import("./features/autoaiSeva/AutoAISevaPages").then((module) => ({ default: module.SevaApplicationPage })));
+const SevaOperationsPage = lazy(() => import("./features/autoaiSeva/SevaOperationsPage").then((module) => ({ default: module.SevaOperationsPage })));
 
 /** Shows LandingPage for guests, redirects logged-in users to the Action Hub. */
 function RootRedirect() {
@@ -188,6 +189,7 @@ function AppRoutes() {
           <Route element={<AdminRoute />}>
             <Route element={<AppShell />}>
               <Route path="/admin" element={<AdminDashboard />} />
+              <Route path="/admin/seva-operations" element={<SevaOperationsPage />} />
               <Route path="/admin/*" element={<AdminDashboard />} />
             </Route>
           </Route>
