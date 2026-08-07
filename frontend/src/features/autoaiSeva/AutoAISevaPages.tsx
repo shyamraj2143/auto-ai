@@ -22,8 +22,12 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import type { ServiceTaskView } from "../../types";
 import { ServiceTaskCard } from "../formService/ServiceTaskCard";
+import { SevaAssistancePanel } from "./SevaAssistancePanel";
+import { SevaSearchPanel } from "./SevaSearchPanel";
 import { sevaApi } from "./sevaApi";
 import "./autoaiSeva.css";
+import "./sevaAdvanced.css";
+import "./autoaiSevaScrollFix.css";
 
 const TERMINAL = new Set(["COMPLETED_VERIFIED", "FAILED_FINAL", "CANCELLED", "EXPIRED"]);
 
@@ -108,11 +112,18 @@ export function AutoAISevaPage() {
     <div className="seva-page">
       <SevaHeader title="AI Application Agent" />
       <main className="seva-home">
+        {token ? (
+          <SevaSearchPanel
+            token={token}
+            onStarted={(task) => navigate(`/seva/applications/${encodeURIComponent(task.id)}`)}
+          />
+        ) : null}
+
         <section className="seva-hero">
           <div className="seva-hero-copy">
             <span className="seva-eyebrow"><Sparkles size={16} /> Secure assisted applications</span>
-            <h1>Income Certificate application—prepared step by step.</h1>
-            <p>AutoAI collects information, checks documents, prepares the final review and guides you through the verified Bihar portal.</p>
+            <h1>Search, fill and track applications from one workspace.</h1>
+            <p>AutoAI opens the correct form, collects required details, checks documents and shows live thinking. If automatic completion is unavailable, a verified employee continues from the saved application after your approval.</p>
             <div className="seva-hero-actions">
               <button type="button" className="seva-primary" disabled={Boolean(starting)} onClick={() => void begin("real")}>
                 {starting === "real" ? <LoaderCircle className="spin" size={18} /> : <FileText size={18} />}
@@ -134,12 +145,12 @@ export function AutoAISevaPage() {
             <span className="seva-orbit seva-orbit-one" />
             <span className="seva-orbit seva-orbit-two" />
             <div className="seva-visual-card">
-              <header><BadgeCheck size={20} /><span><strong>Bihar Income Certificate</strong><small>Block level · Assisted mode</small></span></header>
+              <header><BadgeCheck size={20} /><span><strong>AutoAI Seva Workflow</strong><small>AI first · Employee fallback</small></span></header>
               <div className="seva-progress"><span style={{ width: "68%" }} /></div>
               <ul>
-                <li className="done"><CheckCircle2 size={16} /> Information collected</li>
-                <li className="done"><CheckCircle2 size={16} /> Documents checked</li>
-                <li className="active"><Clock3 size={16} /> Final portal step</li>
+                <li className="done"><CheckCircle2 size={16} /> Service identified</li>
+                <li className="done"><CheckCircle2 size={16} /> Form and documents saved</li>
+                <li className="active"><Clock3 size={16} /> Submission or employee assistance</li>
               </ul>
             </div>
           </div>
@@ -147,19 +158,19 @@ export function AutoAISevaPage() {
 
         <section className="seva-trust-strip">
           <article><ShieldCheck /><span><strong>Verified destination</strong><small>Only approved HTTPS portal origins</small></span></article>
-          <article><LockKeyhole /><span><strong>Private by design</strong><small>OTP and CAPTCHA are never stored</small></span></article>
+          <article><LockKeyhole /><span><strong>Protected secrets</strong><small>OTP, CAPTCHA and passwords are never shared with employees</small></span></article>
           <article><Languages /><span><strong>Hindi friendly</strong><small>Hindi, Hinglish and English requests</small></span></article>
         </section>
 
         <section className="seva-flow-section">
-          <div className="seva-section-heading"><span>How it works</span><h2>AI handles preparation. You control protected actions.</h2></div>
+          <div className="seva-section-heading"><span>How it works</span><h2>AI handles preparation. You remain active and in control.</h2></div>
           <div className="seva-flow-grid">
             {[
-              ["01", "Tell AutoAI", "Say or tap that you need a Bihar Income Certificate."],
-              ["02", "Provide details", "Complete the dynamic form and upload only requested documents."],
-              ["03", "Review safely", "Check extracted values, resolve warnings and approve the final preview."],
-              ["04", "Complete portal step", "Enter OTP/CAPTCHA yourself and confirm final submission on the official portal."],
-              ["05", "Track result", "Save the reference, receipt and current application status."],
+              ["01", "Search the service", "Describe what you need. AutoAI matches a verified service or opens an assisted request."],
+              ["02", "Fill the exact form", "Complete dynamic fields and upload only the documents required for that application."],
+              ["03", "Watch live progress", "Thinking stages, validation, OCR review and saved progress remain visible."],
+              ["04", "AI or employee continues", "Automatic adapters proceed safely; otherwise a verified employee receives scoped access."],
+              ["05", "Receive proof", "Download the final application PDF or receipt and track the status."],
             ].map(([number, title, description]) => (
               <article key={number}><span>{number}</span><h3>{title}</h3><p>{description}</p></article>
             ))}
@@ -218,7 +229,7 @@ export function SevaApplicationsPage() {
         </section>
         {loading ? <div className="seva-empty"><LoaderCircle className="spin" /><p>Loading applications…</p></div> : null}
         {!loading && error ? <div className="seva-empty error"><p>{error}</p><button type="button" onClick={() => void load()}>Retry</button></div> : null}
-        {!loading && !error && !items.length ? <div className="seva-empty"><FileCheck2 /><h2>No applications yet</h2><p>Start with the Bihar Income Certificate workflow.</p><button type="button" onClick={() => navigate("/seva")}>Start application</button></div> : null}
+        {!loading && !error && !items.length ? <div className="seva-empty"><FileCheck2 /><h2>No applications yet</h2><p>Search for the service you want to apply for.</p><button type="button" onClick={() => navigate("/seva")}>Start application</button></div> : null}
         <div className="seva-application-list">
           {items.map((item) => (
             <button type="button" key={item.id} className="seva-application-row" onClick={() => navigate(`/seva/applications/${encodeURIComponent(item.id)}`)}>
@@ -285,11 +296,12 @@ export function SevaApplicationPage() {
             </section>
             <aside className="seva-official-note">
               <ShieldCheck size={19} />
-              <span><strong>Protected actions remain yours.</strong><small>AutoAI never stores your OTP or CAPTCHA. Review every field before final confirmation.</small></span>
+              <span><strong>Protected actions remain yours.</strong><small>AutoAI and employees never store your OTP, CAPTCHA or password. Review every field before final confirmation.</small></span>
             </aside>
             <section className="seva-task-shell">
               <ServiceTaskCard key={`${task.id}-${task.version}-${task.updated_at}`} task={task} token={token} />
             </section>
+            {token ? <SevaAssistancePanel token={token} taskId={task.id} /> : null}
           </>
         ) : null}
       </main>
