@@ -1,6 +1,6 @@
-import { FormEvent, useCallback, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
-import { ArrowRight, KeyRound, Lock } from "lucide-react";
+import { ArrowRight, KeyRound, Lock, ShieldCheck } from "lucide-react";
 import { api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { authErrorMessage, loginErrorMessage } from "../../utils/apiErrors";
@@ -10,12 +10,33 @@ import { GoogleSignInButton } from "./GoogleSignInButton";
 import { NeuralCore } from "../../motion/NeuralCore";
 import { AnimatedPage } from "../../motion/primitives";
 import { usePublishedUiText } from "../../hooks/useCmsContent";
+import "./rememberLogin.css";
+
+const SAVED_LOGIN_EMAIL_KEY = "auto-ai-saved-login-email";
+
+function readSavedEmail() {
+  try {
+    return localStorage.getItem(SAVED_LOGIN_EMAIL_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+function saveLoginEmail(value: string | null) {
+  try {
+    if (value) localStorage.setItem(SAVED_LOGIN_EMAIL_KEY, value);
+    else localStorage.removeItem(SAVED_LOGIN_EMAIL_KEY);
+  } catch (error) {
+    console.warn("[Auto-AI Auth] Saved email preference could not be updated.", error);
+  }
+}
 
 export function LoginPage() {
   const { googleLogin, login, user } = useAuth();
   const uiText = usePublishedUiText();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberDevice, setRememberDevice] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [forgotOpen, setForgotOpen] = useState(false);
@@ -24,12 +45,20 @@ export function LoginPage() {
   const [resetMessage, setResetMessage] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
 
+  useEffect(() => {
+    const saved = readSavedEmail();
+    if (saved) setEmail(saved);
+  }, []);
+
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     setError("");
     setLoading(true);
     try {
-      await login(email, password);
+      const normalizedEmail = email.trim().toLowerCase();
+      await login(normalizedEmail, password, rememberDevice);
+      saveLoginEmail(rememberDevice ? normalizedEmail : null);
+      setPassword("");
     } catch (err) {
       setError(loginErrorMessage(err));
     } finally {
@@ -114,12 +143,20 @@ export function LoginPage() {
           <span className="mb-1 block text-sm font-medium text-slate-200">{uiText?.["auth.login.password"] || "Password"}</span>
           <input className="input-dark" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />
         </label>
-        <div className="auth-inline-row">
+        <div className="auth-remember-row">
+          <label className="auth-remember-option">
+            <input type="checkbox" checked={rememberDevice} onChange={(event) => setRememberDevice(event.target.checked)} />
+            <span>
+              <strong>Keep me signed in securely</strong>
+              <small>Next time, open AutoAI and continue without entering the password again.</small>
+            </span>
+          </label>
           <button className="auth-link-button" type="button" onClick={toggleForgotPassword}>
             <KeyRound size={14} />
             Forgot password?
           </button>
         </div>
+        <p className="auth-session-note"><ShieldCheck size={15} />Your password is never saved. AutoAI stores only a revocable session token; Android uses encrypted secure storage.</p>
         {forgotOpen && (
           <div className="auth-reset-panel">
             <label className="mb-3 block">
