@@ -1,7 +1,8 @@
-import { CheckCircle2, FileCheck2, FileText, LoaderCircle, RefreshCw, Send, ShieldCheck, Upload, UserCheck, UsersRound } from "lucide-react";
+import { CheckCircle2, Download, FileCheck2, FileText, LoaderCircle, RefreshCw, Send, ShieldCheck, Upload, UserCheck, UsersRound } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { sevaApi, type SevaWorkOrder } from "./sevaApi";
+import { sevaScopeApi, type SevaApprovedScope } from "./sevaScopeApi";
 import "./autoaiSeva.css";
 import "./sevaAdvanced.css";
 import "./autoaiSevaScrollFix.css";
@@ -12,11 +13,18 @@ function readable(value: string) {
   return value.toLowerCase().replace(/_/g, " ");
 }
 
+function printableValue(value: unknown) {
+  if (value === null || value === undefined || value === "") return "Not provided";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
 export function SevaOperationsPage() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [items, setItems] = useState<SevaWorkOrder[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [selected, setSelected] = useState<SevaWorkOrder | null>(null);
+  const [scope, setScope] = useState<SevaApprovedScope | null>(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState("");
   const [error, setError] = useState("");
@@ -46,14 +54,21 @@ export function SevaOperationsPage() {
   const loadSelected = useCallback(async () => {
     if (!token || !selectedId) {
       setSelected(null);
+      setScope(null);
       return;
     }
     try {
-      setSelected(await sevaApi.getWorkOrder(token, selectedId));
+      const next = await sevaApi.getWorkOrder(token, selectedId);
+      setSelected(next);
+      if (next.assigned_employee?.id === user?.id && next.status !== "CANCELLED") {
+        setScope(await sevaScopeApi.get(token, next.id));
+      } else {
+        setScope(null);
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Work order could not be opened.");
     }
-  }, [selectedId, token]);
+  }, [selectedId, token, user?.id]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadSelected(); }, [loadSelected]);
@@ -75,6 +90,9 @@ export function SevaOperationsPage() {
       const next = await action();
       setSelected(next);
       setItems((current) => current.map((item) => item.id === next.id ? next : item));
+      if (token && next.assigned_employee?.id === user?.id && next.status !== "CANCELLED") {
+        setScope(await sevaScopeApi.get(token, next.id));
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The operation failed.");
     } finally {
@@ -101,6 +119,25 @@ export function SevaOperationsPage() {
     await run("deliverable", () => sevaApi.uploadDeliverable(token, selected.id, deliverableFile, deliverableLabel, deliverableNote, true));
     setDeliverableFile(null);
     setDeliverableNote("");
+  }
+
+  async function downloadApprovedDocument(assetId: string, filename: string) {
+    if (!token || !selected || working) return;
+    setWorking(`scope-${assetId}`);
+    setError("");
+    try {
+      const blob = await sevaScopeApi.downloadDocument(token, selected.id, assetId);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Approved document could not be downloaded.");
+    } finally {
+      setWorking("");
+    }
   }
 
   return (
@@ -139,6 +176,22 @@ export function SevaOperationsPage() {
                 </div>
                 <textarea value={statusNote} onChange={(event) => setStatusNote(event.target.value)} placeholder="Status note visible to the user" rows={2} />
 
+                {scope ? (
+                  <section className="seva-approved-scope">
+                    <header><span><ShieldCheck size={18} /><strong>User-approved application data</strong></span><small>Authentication secrets shared: no</small></header>
+                    <div className="seva-approved-fields">
+                      {scope.fields.length ? scope.fields.map((field) => (
+                        <article key={field.key}><small>{field.label}</small><strong>{printableValue(field.value)}</strong><span>{field.source}{field.verified ? " · verified" : ""}</span></article>
+                      )) : <p>No completed field values were approved yet.</p>}
+                    </div>
+                    <div className="seva-approved-documents">
+                      {scope.documents.map((document) => (
+                        <article key={document.asset_id}><span><FileText size={17} /><span><strong>{document.filename}</strong><small>{document.content_type} · {document.validation_status.toLowerCase()}</small></span></span><button type="button" disabled={working === `scope-${document.asset_id}`} onClick={() => void downloadApprovedDocument(document.asset_id, document.filename)}>{working === `scope-${document.asset_id}` ? <LoaderCircle className="spin" size={16} /> : <Download size={16} />} Download</button></article>
+                      ))}
+                    </div>
+                  </section>
+                ) : selected.assigned_employee?.id === user?.id ? <div className="seva-assistance-loading"><LoaderCircle className="spin" /> Loading user-approved scope…</div> : null}
+
                 <form className="seva-requirement-builder" onSubmit={createRequirement}>
                   <h3>Ask the user for a requirement</h3>
                   <select value={kind} onChange={(event) => setKind(event.target.value as typeof kind)}>
@@ -148,7 +201,7 @@ export function SevaOperationsPage() {
                   </select>
                   <input value={label} onChange={(event) => setLabel(event.target.value)} placeholder={kind === "PROTECTED_ACTION" ? "Complete OTP on the official portal" : "Requirement title"} maxLength={180} required />
                   <textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="Clear instructions for the user" rows={3} maxLength={1000} />
-                  <button type="submit" className="seva-primary" disabled={working === "requirement"}>{working === "requirement" ? <LoaderCircle className="spin" size={16} /> : <Send size={16} />} Send requirement</button>
+                  <button type="submit" className="seva-primary" disabled={working === "requirement" || selected.assigned_employee?.id !== user?.id}>{working === "requirement" ? <LoaderCircle className="spin" size={16} /> : <Send size={16} />} Send requirement</button>
                 </form>
 
                 <div className="seva-requirements-list">
@@ -169,7 +222,7 @@ export function SevaOperationsPage() {
                   <input value={deliverableLabel} onChange={(event) => setDeliverableLabel(event.target.value)} maxLength={180} />
                   <textarea value={deliverableNote} onChange={(event) => setDeliverableNote(event.target.value)} placeholder="Application number, submission note or next step" rows={3} />
                   <label className="seva-employee-upload"><Upload size={17} />{deliverableFile?.name || "Select final PDF/image"}<input type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => setDeliverableFile(event.target.files?.[0] || null)} /></label>
-                  <button type="submit" className="seva-primary" disabled={!deliverableFile || working === "deliverable"}>{working === "deliverable" ? <LoaderCircle className="spin" size={16} /> : <FileCheck2 size={16} />} Upload and complete</button>
+                  <button type="submit" className="seva-primary" disabled={!deliverableFile || working === "deliverable" || selected.assigned_employee?.id !== user?.id}>{working === "deliverable" ? <LoaderCircle className="spin" size={16} /> : <FileCheck2 size={16} />} Upload and complete</button>
                 </form>
               </>
             )}
