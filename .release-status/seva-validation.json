@@ -2,8 +2,8 @@
   "status": "failure",
   "backend": "cancelled",
   "frontend": "cancelled",
-  "source_commit": "5f3faef56d9d4e98f80aa92c43ed14ad53ecf73a",
-  "run_id": "31147778847",
+  "source_commit": "b69de8cb7c70a2146dbccfd08d69a887a12a72ae",
+  "run_id": "31147821342",
   "run_attempt": "1",
-  "updated_at": "2026-08-07T04:34:29.108017+00:00"
+  "updated_at": "2026-08-07T04:35:07.312337+00:00"
 }
