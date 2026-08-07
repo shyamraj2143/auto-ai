@@ -10,7 +10,7 @@ type AuthContextValue = {
   user: User | null;
   token: string | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, rememberDevice?: boolean) => Promise<void>;
   googleLogin: (idToken: string) => Promise<void>;
   adminLogin: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
@@ -27,8 +27,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const persistSession = useCallback(async (session: AuthSession) => {
-    await writeStoredSession(session.access_token, session.refresh_token);
+  const persistSession = useCallback(async (session: AuthSession, persistent = true) => {
+    await writeStoredSession(session.access_token, session.refresh_token, persistent);
     setToken(session.access_token);
     setRefreshToken(session.refresh_token ?? null);
     setUser(session.user);
@@ -63,7 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (stored.refreshToken) {
           const refreshed = await api.refreshSession(stored.refreshToken);
-          if (active) await persistSession(refreshed);
+          if (active) await persistSession(refreshed, stored.persistent);
         }
       } catch (error) {
         await removeStoredSession();
@@ -96,13 +96,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       token,
       loading,
-      login: async (email, password) => {
+      login: async (email, password, rememberDevice = true) => {
         const session = await api.login({ email: email.trim().toLowerCase(), password });
-        await persistSession(session);
+        await persistSession(session, rememberDevice);
       },
       googleLogin: async (idToken) => {
         const session = await api.googleLogin({ id_token: idToken });
-        await persistSession(session);
+        await persistSession(session, true);
       },
       adminLogin: async (email, password) => {
         const credentials = { email: email.trim().toLowerCase(), password };
@@ -110,11 +110,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!isAdminPanelRole(session.user.role)) {
           throw new Error("Only admin accounts can access the admin dashboard.");
         }
-        await persistSession(session);
+        await persistSession(session, true);
       },
       register: async (name, email, password) => {
         const session = await api.register({ name: name.trim(), email: email.trim().toLowerCase(), password });
-        await persistSession(session);
+        await persistSession(session, true);
       },
       updateUser: (nextUser) => setUser(nextUser),
       refreshProfile,
