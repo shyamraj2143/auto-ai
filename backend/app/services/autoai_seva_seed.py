@@ -9,8 +9,24 @@ from app.models.form_service import PortalAdapterRecord, ServiceDefinition
 
 
 DEMO_SERVICE_ID = "autoai.demo-bihar-income-certificate"
+ASSISTED_REQUEST_SERVICE_ID = "autoai.seva-assisted-request"
 BIHAR_INCOME_SERVICE_ID = "bihar.income-certificate"
-CATALOGUE_VERSION = "2026-08-05"
+CATALOGUE_VERSION = "2026-08-07"
+
+
+def _upsert_adapter(db: Session, service_id: str, adapter_key: str, values: dict) -> None:
+    adapter = db.scalar(
+        select(PortalAdapterRecord).where(
+            PortalAdapterRecord.service_id == service_id,
+            PortalAdapterRecord.adapter_key == adapter_key,
+        )
+    )
+    if adapter is None:
+        adapter = PortalAdapterRecord(service_id=service_id, adapter_key=adapter_key, **values)
+        db.add(adapter)
+    else:
+        for key, value in values.items():
+            setattr(adapter, key, value)
 
 
 def _upsert_demo_service(db: Session) -> None:
@@ -63,42 +79,94 @@ def _upsert_demo_service(db: Session) -> None:
         for key, value in values.items():
             setattr(service, key, value)
 
-    adapter = db.scalar(
-        select(PortalAdapterRecord).where(
-            PortalAdapterRecord.service_id == DEMO_SERVICE_ID,
-            PortalAdapterRecord.adapter_key == "autoai_seva_demo_local_verified",
-        )
-    )
-    adapter_values = {
-        "adapter_type": "local_verified",
-        "enabled": True,
-        "capabilities": ["prepare", "validate", "submit", "verify", "track", "ephemeral_auth"],
-        "configuration": {
-            "simulation": True,
-            "service_label": "Demo Bihar Income Certificate",
-            "submission_outcome": "verified",
-            "demo_scenario": "success",
-            "adapter_version": "autoai-seva-demo-v1",
-            "kill_switch_active": False,
-            "government_submission": False,
+    _upsert_adapter(
+        db,
+        DEMO_SERVICE_ID,
+        "autoai_seva_demo_local_verified",
+        {
+            "adapter_type": "local_verified",
+            "enabled": True,
+            "capabilities": ["prepare", "validate", "submit", "verify", "track", "ephemeral_auth"],
+            "configuration": {
+                "simulation": True,
+                "service_label": "Demo Bihar Income Certificate",
+                "submission_outcome": "verified",
+                "demo_scenario": "success",
+                "adapter_version": "autoai-seva-demo-v1",
+                "kill_switch_active": False,
+                "government_submission": False,
+            },
+            "timeout_seconds": 30,
+            "retry_policy": {"max_attempts": 1, "retry_unknown_outcome": False},
         },
-        "timeout_seconds": 30,
-        "retry_policy": {"max_attempts": 1, "retry_unknown_outcome": False},
+    )
+
+
+def _upsert_assisted_request_service(db: Session) -> None:
+    """Fallback for services not yet represented by a verified portal adapter."""
+    service = db.get(ServiceDefinition, ASSISTED_REQUEST_SERVICE_ID)
+    values = {
+        "name": "AutoAI Seva Assisted Application Request",
+        "provider": "AutoAI Seva Operations",
+        "country": "IN",
+        "region": None,
+        "category": "assisted-service",
+        "verified": True,
+        "execution_modes": ["EXPLAIN", "PREPARE", "ASSIST"],
+        "requirements": [
+            {"key": "requested_service", "label": "What do you want to apply for? / क्या अप्लाई करना है?", "type": "textarea", "required": True, "min_length": 3, "max_length": 500, "explanation": "Describe the certificate, scholarship, admission, licence or other service."},
+            {"key": "applicant_name", "label": "Applicant name / आवेदक का नाम", "type": "text", "required": True, "min_length": 2, "max_length": 120},
+            {"key": "mobile", "label": "Mobile number / मोबाइल नंबर", "type": "phone", "required": True, "pattern": "^[0-9]{10}$"},
+            {"key": "state", "label": "State / राज्य", "type": "text", "required": True, "min_length": 2, "max_length": 100},
+            {"key": "district", "label": "District / जिला", "type": "text", "required": False, "max_length": 100},
+            {"key": "preferred_language", "label": "Preferred language / भाषा", "type": "select", "required": True, "options": ["Hindi", "English", "Hinglish"]},
+            {"key": "request_notes", "label": "Additional details / अतिरिक्त जानकारी", "type": "textarea", "required": False, "max_length": 1000},
+        ],
+        "required_documents": [],
+        "eligibility_rules": [{"description": "An AutoAI employee confirms the official requirements before any external action."}],
+        "fee": {"amount": None, "currency": "INR", "label": "Confirmed before submission"},
+        "processing_information": "The request enters the AutoAI Seva employee queue after the user approves the handoff scope.",
+        "authentication_type": "user_controlled",
+        "tracking_method": "employee_work_order",
+        "support_contact": {
+            "label": "AutoAI Seva Operations",
+            "service_code": "AUTOAI_SEVA_ASSISTED_REQUEST",
+            "catalogue_version": CATALOGUE_VERSION,
+            "protected_actions": ["otp", "captcha", "password", "payment", "final_submit"],
+            "secret_policy": "Employees may request completion of a protected action but cannot receive or store the raw secret.",
+        },
+        "active": True,
+        "last_verified_at": datetime.utcnow(),
     }
-    if adapter is None:
-        adapter = PortalAdapterRecord(
-            service_id=DEMO_SERVICE_ID,
-            adapter_key="autoai_seva_demo_local_verified",
-            **adapter_values,
-        )
-        db.add(adapter)
+    if service is None:
+        service = ServiceDefinition(id=ASSISTED_REQUEST_SERVICE_ID, **values)
+        db.add(service)
     else:
-        for key, value in adapter_values.items():
-            setattr(adapter, key, value)
+        for key, value in values.items():
+            setattr(service, key, value)
+
+    _upsert_adapter(
+        db,
+        ASSISTED_REQUEST_SERVICE_ID,
+        "autoai_seva_human_assistance",
+        {
+            "adapter_type": "human_handoff",
+            "enabled": True,
+            "capabilities": ["prepare", "human_handoff", "requirements", "deliverable", "track"],
+            "configuration": {
+                "employee_queue": True,
+                "auto_submit": False,
+                "government_submission": False,
+                "raw_secret_sharing": False,
+                "adapter_version": "autoai-seva-handoff-v1",
+            },
+            "timeout_seconds": 30,
+            "retry_policy": {"max_attempts": 0, "retry_unknown_outcome": False},
+        },
+    )
 
 
 def _harden_bihar_income_service(db: Session) -> None:
-    """Apply verified catalogue metadata without inventing document requirements."""
     service = db.get(ServiceDefinition, BIHAR_INCOME_SERVICE_ID)
     if not service:
         return
@@ -115,8 +183,6 @@ def _harden_bihar_income_service(db: Session) -> None:
         "label": "Confirm on the official portal before submission",
         "source_verified_at": CATALOGUE_VERSION,
     }
-    # The public portal can change evidence requirements by service level and applicant
-    # context. These suggestions therefore remain optional until the official form asks.
     service.required_documents = [
         {"key": "identity", "label": "Identity proof, if requested by the official form", "accepted": ["application/pdf", "image/jpeg", "image/png"], "max_bytes": 2097152, "required": False, "verification_status": "CONFIRM_ON_OFFICIAL_PORTAL"},
         {"key": "residence", "label": "Residence proof, if requested by the official form", "accepted": ["application/pdf", "image/jpeg", "image/png"], "max_bytes": 2097152, "required": False, "verification_status": "CONFIRM_ON_OFFICIAL_PORTAL"},
@@ -159,12 +225,13 @@ def _harden_bihar_income_service(db: Session) -> None:
         )
         adapter.configuration = configuration
         adapter.enabled = True
-        adapter.capabilities = ["prepare", "guided_open", "track", "user_reported_outcome"]
+        adapter.capabilities = ["prepare", "guided_open", "track", "user_reported_outcome", "human_handoff"]
         adapter.retry_policy = {"max_attempts": 0, "retry_unknown_outcome": False}
 
 
 def ensure_autoai_seva_demo(db: Session) -> None:
-    """Create the safe simulator and harden the real Bihar assisted catalogue entry."""
+    """Create safe demo, generic assisted fallback and hardened Bihar catalogue entry."""
     _upsert_demo_service(db)
+    _upsert_assisted_request_service(db)
     _harden_bihar_income_service(db)
     db.commit()
