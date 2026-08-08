@@ -30,3 +30,9 @@ Each milestone requires production code, ownership tests, stable errors, persist
 - Android: 76 unit tests passed and signed release APK assembly passed after Capacitor sync.
 - Browser: authenticated service plan, data collection, draft, review, separate confirmation, verified receipt, reload persistence, clean console/network and 390px responsive checks passed.
 - Source scan: no unfinished or deceptive implementation markers remain in the feature paths.
+
+## Agent operations milestone recorded 2026-08-09
+
+- Admin-managed Seva agent identities, separate agent login, capacity-aware least-loaded assignment, FIFO queue recovery, private notifications, and agent-only workspaces are implemented.
+- Agent access remains limited to the assigned work order and the user's explicit handoff scope; authentication secrets stay in protected user actions.
+- Web and Capacitor Android use the same responsive workflow and API contracts.

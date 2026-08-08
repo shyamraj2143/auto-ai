@@ -7,9 +7,9 @@ from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_admin
+from app.api.deps import get_current_user
 from app.db.session import get_db
-from app.models.autoai_seva import SevaWorkOrder
+from app.models.autoai_seva import SevaAgentProfile, SevaWorkOrder
 from app.models.document import Document
 from app.models.form_service import ServiceDefinition, ServiceDocumentAsset, ServiceTask, UserFieldResponse
 from app.models.user import User
@@ -19,6 +19,17 @@ from app.services.sensitive_data import decrypt_sensitive_text
 router = APIRouter(prefix="/seva-operations/admin/work-orders", tags=["autoai-seva-scope"])
 
 SECRET_WORDS = ("password", "passcode", "otp", "pin", "captcha", "cvv", "secret", "token", "recovery_code")
+
+
+def _seva_employee(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> User:
+    if user.is_admin and user.role in {"admin", "super_admin", "administrator"}:
+        return user
+    profile = db.scalar(select(SevaAgentProfile).where(
+        SevaAgentProfile.user_id == user.id, SevaAgentProfile.is_active.is_(True)
+    ))
+    if not profile or user.role != "seva_agent":
+        raise HTTPException(status_code=403, detail="Active Seva agent access required")
+    return user
 
 
 def _assigned_work_order(db: Session, work_order_id: str, employee: User) -> SevaWorkOrder:
@@ -46,7 +57,7 @@ def _approved_scope(work_order: SevaWorkOrder) -> tuple[set[str], set[str]]:
 @router.get("/{work_order_id}/scope")
 def get_approved_scope(
     work_order_id: str,
-    employee: User = Depends(get_current_admin),
+    employee: User = Depends(_seva_employee),
     db: Session = Depends(get_db),
 ):
     work_order = _assigned_work_order(db, work_order_id, employee)
@@ -121,7 +132,7 @@ def get_approved_scope(
 def download_approved_document(
     work_order_id: str,
     asset_id: str,
-    employee: User = Depends(get_current_admin),
+    employee: User = Depends(_seva_employee),
     db: Session = Depends(get_db),
 ):
     work_order = _assigned_work_order(db, work_order_id, employee)

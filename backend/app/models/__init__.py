@@ -2,7 +2,7 @@ from app.models.api_usage import APIUsage
 from app.models.admin_control import AuditLog, FeatureFlag, PaymentRecord, PaymentWebhookEvent, PlanLimit, UsageLog, UserSubscription
 from app.models.alarm import UserAlarm
 from app.models.assistant_action import AssistantActionLog
-from app.models.autoai_seva import ServiceFieldConflict, SevaDeliverable, SevaRequirementRequest, SevaWorkOrder
+from app.models.autoai_seva import ServiceFieldConflict, SevaAgentProfile, SevaDeliverable, SevaNotification, SevaRequirementRequest, SevaWorkOrder
 from app.models.intent_engine import ActionReceipt, IntentEvent, IntentFeedbackEvent, PreferenceSuggestion, RequirementRecord, SecureChallenge, WorkflowDefinition, WorkflowRun
 from app.models.trust_hub import HubActionReceipt, HubAuthoritySetting, HubCommitment, HubConsentLease, HubConstraint, HubEmergencyPause, HubGraphEdge, HubGraphNode, HubPolicyEvaluation, HubPolicyRule, TrustActionRequest, TrustAuditEvent
 from app.models.apk import ApkDownload, ApkRelease
@@ -63,6 +63,8 @@ __all__ = [
     "AssistantActionLog",
     "ServiceFieldConflict",
     "SevaWorkOrder",
+    "SevaAgentProfile",
+    "SevaNotification",
     "SevaRequirementRequest",
     "SevaDeliverable",
     "HubActionReceipt", "HubAuthoritySetting", "HubCommitment", "HubConsentLease", "HubConstraint", "HubPolicyRule", "TrustActionRequest", "TrustAuditEvent",

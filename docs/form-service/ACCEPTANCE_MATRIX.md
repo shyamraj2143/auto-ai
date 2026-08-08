@@ -30,3 +30,14 @@
 ## Explicit non-acceptance
 
 “Any website can always be autonomously submitted” is not an acceptable completion claim. Real autonomous submission requires an official API or a tested, permitted adapter for that portal. Otherwise AutoAI must use guided completion and label the result truthfully.
+# Seva agent workflow — 2026-08-09
+
+| Requirement | Evidence | Result |
+|---|---|---|
+| Admin creates agent ID/password and capacity | Agent management API/UI; password hash only | Pass |
+| Separate agent login and assigned-work isolation | `/agent/login`, `/agent/work`, backend role/profile checks | Pass |
+| Automatic fair assignment and queue | Least-loaded capacity service; FIFO queue position/recovery test | Pass |
+| User/agent requirement updates | Durable private notifications and 10–12 second live refresh | Pass |
+| Documents and final receipt | Scoped PDF/image request/upload/download and deliverable completion | Pass |
+| OTP/password/CAPTCHA safety | Protected action confirmation only; raw value rejected/excluded | Pass |
+| Website and Android | Shared responsive React/Capacitor implementation; production build passes | Pass |

@@ -1,6 +1,6 @@
 # Form Service Implementation Status
 
-Last updated: 2026-08-04
+Last updated: 2026-08-09
 
 | Area | Status | Evidence |
 |---|---|---|
@@ -15,6 +15,9 @@ Last updated: 2026-08-04
 | Native capabilities | Complete for scoped supported actions | Camera permission, document picker surface, verified Custom Tabs, device confirmation, app settings and Android print preview |
 | Printable application output | Complete | Receipt cards expose Print application and Download printable summary; OTP/password/PIN values are excluded and identity numbers are masked |
 | Deployment | Latest main deployed | Railway reports the latest main commit as healthy after the workflow-card and print changes |
+| Seva agent accounts | Complete | Admin create/enable/disable, hashed credentials, dedicated agent login and isolated workspace |
+| Automatic assignment | Complete | Capacity-aware least-loaded selection, FIFO queue position and automatic reassignment when a slot opens |
+| Agent/user updates | Complete | Persisted private notifications, exact work-order status/current note, requirements and deliverable updates |
 
 ## Production boundary
 

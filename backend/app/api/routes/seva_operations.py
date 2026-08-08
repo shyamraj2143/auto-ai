@@ -4,15 +4,18 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin, get_current_user
+from app.api.routes.auth import ensure_user_can_authenticate, issue_session
+from app.core.security import get_password_hash, verify_password
 from app.db.session import get_db
-from app.models.autoai_seva import SevaDeliverable, SevaRequirementRequest, SevaWorkOrder
+from app.models.autoai_seva import SevaAgentProfile, SevaDeliverable, SevaNotification, SevaRequirementRequest, SevaWorkOrder
 from app.models.document import Document
 from app.models.form_service import (
     HumanHandoff,
@@ -36,11 +39,16 @@ from app.services.form_service_service import (
     start_task,
 )
 from app.services.form_service_state import append_audit_event
+from app.services.seva_assignment import ACTIVE_STATES, assign_best_available_agent, assign_waiting_work, notify, queue_position
 
 
 router = APIRouter(prefix="/seva-operations", tags=["autoai-seva-operations"])
 
-SECRET_WORDS = ("password", "passcode", "otp", "pin", "captcha", "cvv", "secret", "token", "recovery code")
+SECRET_WORDS = (
+    "password", "passcode", "otp", "pin", "captcha", "cvv", "secret", "token",
+    "recovery code", "credential", "authentication code", "verification code", "one-time code",
+    "पासवर्ड", "ओटीपी", "पिन", "कैप्चा", "सीवीवी",
+)
 TERMINAL_WORK_ORDER_STATES = {"COMPLETED", "CANCELLED"}
 
 
@@ -99,6 +107,57 @@ class RequirementReviewRequest(BaseModel):
     note: str | None = Field(default=None, max_length=500)
 
 
+class AgentLoginRequest(BaseModel):
+    agent_id: str = Field(min_length=3, max_length=48, pattern=r"^[A-Za-z0-9._-]+$")
+    password: str = Field(min_length=1, max_length=128)
+
+
+class AgentCreateRequest(BaseModel):
+    agent_id: str = Field(min_length=3, max_length=48, pattern=r"^[A-Za-z0-9._-]+$")
+    display_name: str = Field(min_length=2, max_length=120)
+    password: str = Field(min_length=8, max_length=128)
+    capacity: int = Field(default=5, ge=1, le=50)
+
+
+class AgentUpdateRequest(BaseModel):
+    display_name: str | None = Field(default=None, min_length=2, max_length=120)
+    password: str | None = Field(default=None, min_length=8, max_length=128)
+    capacity: int | None = Field(default=None, ge=1, le=50)
+    is_active: bool | None = None
+
+
+def _agent_profile(db: Session, user: User) -> SevaAgentProfile | None:
+    return db.scalar(select(SevaAgentProfile).where(SevaAgentProfile.user_id == user.id))
+
+
+def get_current_seva_employee(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> User:
+    if user.is_admin and user.role in {"admin", "super_admin", "administrator"}:
+        return user
+    profile = _agent_profile(db, user)
+    if not profile or not profile.is_active or user.role != "seva_agent":
+        raise HTTPException(status_code=403, detail="Active Seva agent access required")
+    return user
+
+
+def _agent_view(db: Session, profile: SevaAgentProfile) -> dict:
+    active_load = int(db.scalar(select(func.count()).select_from(SevaWorkOrder).where(
+        SevaWorkOrder.assigned_employee_id == profile.user_id,
+        SevaWorkOrder.status.in_(ACTIVE_STATES),
+    )) or 0)
+    return {
+        "id": profile.id,
+        "user_id": profile.user_id,
+        "agent_id": profile.agent_code,
+        "display_name": profile.display_name,
+        "capacity": profile.capacity,
+        "active_load": active_load,
+        "available_slots": max(0, profile.capacity - active_load) if profile.is_active else 0,
+        "is_active": profile.is_active,
+        "last_assigned_at": profile.last_assigned_at,
+        "created_at": profile.created_at,
+    }
+
+
 def _safe_document(document: Document | None) -> dict | None:
     if not document:
         return None
@@ -115,6 +174,7 @@ def _work_order_view(db: Session, work_order: SevaWorkOrder, *, include_owner: b
     service = db.get(ServiceDefinition, task.service_id) if task else None
     employee = db.get(User, work_order.assigned_employee_id) if work_order.assigned_employee_id else None
     owner = db.get(User, work_order.user_id) if include_owner else None
+    owner_email_approved = any("email" in str(key).casefold() for key in (work_order.user_consent_scope or {}).get("field_keys", []))
     requirements = list(
         db.scalars(
             select(SevaRequirementRequest)
@@ -129,6 +189,11 @@ def _work_order_view(db: Session, work_order: SevaWorkOrder, *, include_owner: b
             .order_by(SevaDeliverable.created_at.desc())
         )
     )
+    fulfilled = sum(item.status in {"FULFILLED", "ACCEPTED"} for item in requirements)
+    progress_by_status = {"QUEUED": 5, "IN_PROGRESS": 35, "WAITING_USER": 50, "SUBMITTED": 90, "COMPLETED": 100, "CANCELLED": 0}
+    work_progress = progress_by_status.get(work_order.status, 10)
+    if work_order.status == "IN_PROGRESS" and requirements:
+        work_progress = min(85, 35 + round(fulfilled / len(requirements) * 45))
     return {
         "id": work_order.id,
         "task_id": work_order.task_id,
@@ -138,10 +203,13 @@ def _work_order_view(db: Session, work_order: SevaWorkOrder, *, include_owner: b
         "request_summary": work_order.request_summary,
         "employee_note": work_order.employee_note,
         "assigned_employee": ({"id": employee.id, "name": employee.name} if employee else None),
-        "owner": ({"id": owner.id, "name": owner.name, "email": owner.email} if owner else None),
+        "owner": ({"id": owner.id, "name": owner.name, "email": owner.email if owner_email_approved else None} if owner else None),
         "service": ({"id": service.id, "name": service.name, "provider": service.provider} if service else None),
         "task_state": task.state if task else None,
         "task_progress": task.progress_percent if task else 0,
+        "work_progress": work_progress,
+        "current_activity": work_order.employee_note or work_order.status.replace("_", " ").title(),
+        "queue_position": queue_position(db, work_order),
         "consent_scope": work_order.user_consent_scope,
         "requirements": [
             {
@@ -179,6 +247,121 @@ def _work_order_view(db: Session, work_order: SevaWorkOrder, *, include_owner: b
         "created_at": work_order.created_at,
         "updated_at": work_order.updated_at,
     }
+
+
+@router.post("/agent/login")
+def login_seva_agent(payload: AgentLoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
+    code = payload.agent_id.strip().lower()
+    profile = db.scalar(select(SevaAgentProfile).where(SevaAgentProfile.agent_code == code))
+    user = db.get(User, profile.user_id) if profile else None
+    if not profile or not profile.is_active or not user or not verify_password(payload.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Agent ID or password is incorrect")
+    ensure_user_can_authenticate(user)
+    return issue_session(db, user, request, response)
+
+
+@router.get("/admin/agents")
+def list_seva_agents(admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    del admin
+    profiles = list(db.scalars(select(SevaAgentProfile).order_by(SevaAgentProfile.created_at.desc())))
+    return {"items": [_agent_view(db, item) for item in profiles], "total": len(profiles)}
+
+
+@router.post("/admin/agents", status_code=status.HTTP_201_CREATED)
+def create_seva_agent(payload: AgentCreateRequest, admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    code = payload.agent_id.strip().lower()
+    user = User(
+        email=f"{code}@agents.autoai.site.je",
+        username=code,
+        name=payload.display_name.strip(),
+        hashed_password=get_password_hash(payload.password),
+        provider="seva_agent",
+        is_active=True,
+        is_admin=False,
+        role="seva_agent",
+        subscription_status="active",
+    )
+    db.add(user)
+    try:
+        db.flush()
+        profile = SevaAgentProfile(
+            user_id=user.id,
+            agent_code=code,
+            display_name=payload.display_name.strip(),
+            capacity=payload.capacity,
+            created_by_admin_id=admin.id,
+        )
+        db.add(profile)
+        db.flush()
+        assign_waiting_work(db)
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="This agent ID is already in use") from exc
+    db.refresh(profile)
+    return _agent_view(db, profile)
+
+
+@router.patch("/admin/agents/{profile_id}")
+def update_seva_agent(profile_id: str, payload: AgentUpdateRequest, admin: User = Depends(get_current_admin), db: Session = Depends(get_db)):
+    del admin
+    profile = db.get(SevaAgentProfile, profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Seva agent not found")
+    user = db.get(User, profile.user_id)
+    if payload.display_name is not None:
+        profile.display_name = payload.display_name.strip()
+        if user:
+            user.name = profile.display_name
+    if payload.capacity is not None:
+        profile.capacity = payload.capacity
+    if payload.is_active is not None:
+        profile.is_active = payload.is_active
+        if user:
+            user.is_active = payload.is_active
+        if not payload.is_active:
+            assigned = list(db.scalars(select(SevaWorkOrder).where(
+                SevaWorkOrder.assigned_employee_id == profile.user_id,
+                SevaWorkOrder.status.in_(ACTIVE_STATES),
+            )))
+            for work_order in assigned:
+                work_order.assigned_employee_id = None
+                work_order.status = "QUEUED"
+                work_order.claimed_at = None
+                handoff = db.get(HumanHandoff, work_order.handoff_id)
+                if handoff:
+                    handoff.status = "APPROVED"
+                    handoff.agent_identity = {"status": "UNASSIGNED", "verified": False}
+                notify(db, work_order, work_order.user_id, "AGENT_REASSIGNING", "Assigning another Seva agent", "Your application remains safe in the assignment queue.")
+    if payload.password is not None and user:
+        user.hashed_password = get_password_hash(payload.password)
+    assign_waiting_work(db)
+    db.commit()
+    db.refresh(profile)
+    return _agent_view(db, profile)
+
+
+@router.get("/notifications")
+def list_seva_notifications(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    items = list(db.scalars(select(SevaNotification).where(
+        SevaNotification.recipient_user_id == user.id,
+    ).order_by(SevaNotification.created_at.desc()).limit(50)))
+    return {"items": [{
+        "id": item.id, "work_order_id": item.work_order_id, "event_type": item.event_type,
+        "title": item.title, "message": item.message, "read_at": item.read_at, "created_at": item.created_at,
+    } for item in items], "unread": sum(item.read_at is None for item in items)}
+
+
+@router.post("/notifications/{notification_id}/read")
+def read_seva_notification(notification_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    item = db.scalar(select(SevaNotification).where(
+        SevaNotification.id == notification_id, SevaNotification.recipient_user_id == user.id,
+    ))
+    if not item:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    item.read_at = item.read_at or datetime.utcnow()
+    db.commit()
+    return {"ok": True}
 
 
 def _owned_work_order(db: Session, user_id: str, task_id: str) -> SevaWorkOrder:
@@ -333,11 +516,12 @@ def request_employee_assistance(
     )
     db.add(work_order)
     db.flush()
+    assigned = assign_best_available_agent(db, work_order)
     append_audit_event(
         db,
         task,
         "SEVA_WORK_ORDER_CREATED",
-        {"work_order_id": work_order.id, "employee_assigned": False, "authentication_shared": False},
+        {"work_order_id": work_order.id, "employee_assigned": bool(assigned), "authentication_shared": False},
         f"seva-work-order-{work_order.id}",
     )
     db.commit()
@@ -375,10 +559,12 @@ def respond_with_text(
     if requirement.kind != "TEXT" or requirement.protected_action:
         raise HTTPException(status_code=422, detail="This requirement cannot accept text")
     requirement.response_text = payload.value
-    requirement.user_note = payload.note
+    requirement.user_note = "Completed by the user on the official portal"
     requirement.status = "FULFILLED"
     requirement.responded_at = datetime.utcnow()
     work_order.status = "IN_PROGRESS"
+    if work_order.assigned_employee_id:
+        notify(db, work_order, work_order.assigned_employee_id, "REQUIREMENT_READY", "User response received", f"{requirement.label} is ready for review.")
     db.commit()
     return _work_order_view(db, work_order)
 
@@ -427,6 +613,8 @@ async def respond_with_document(
     requirement.status = "FULFILLED"
     requirement.responded_at = datetime.utcnow()
     work_order.status = "IN_PROGRESS"
+    if work_order.assigned_employee_id:
+        notify(db, work_order, work_order.assigned_employee_id, "DOCUMENT_READY", "Document uploaded", f"{requirement.label} is ready for review.")
     db.commit()
     return _work_order_view(db, work_order)
 
@@ -450,6 +638,8 @@ def complete_protected_action(
     requirement.user_note = payload.note
     requirement.responded_at = datetime.utcnow()
     work_order.status = "IN_PROGRESS"
+    if work_order.assigned_employee_id:
+        notify(db, work_order, work_order.assigned_employee_id, "PROTECTED_ACTION_READY", "Protected step completed", f"The user completed: {requirement.label}.")
     db.commit()
     return _work_order_view(db, work_order)
 
@@ -470,6 +660,7 @@ def cancel_employee_assistance(
     if handoff:
         handoff.status = "REVOKED"
         handoff.revoked_at = datetime.utcnow()
+    assign_waiting_work(db)
     append_audit_event(
         db,
         task,
@@ -502,11 +693,12 @@ def download_deliverable(
 @router.get("/admin/work-orders")
 def list_employee_work_orders(
     state: str | None = Query(default=None, max_length=32),
-    employee: User = Depends(get_current_admin),
+    employee: User = Depends(get_current_seva_employee),
     db: Session = Depends(get_db),
 ):
-    del employee
     query = select(SevaWorkOrder)
+    if not employee.is_admin:
+        query = query.where(SevaWorkOrder.assigned_employee_id == employee.id)
     if state:
         query = query.where(SevaWorkOrder.status == state.upper())
     items = list(db.scalars(query.order_by(SevaWorkOrder.updated_at.desc()).limit(200)))
@@ -516,17 +708,18 @@ def list_employee_work_orders(
 @router.get("/admin/work-orders/{work_order_id}")
 def get_employee_work_order(
     work_order_id: str,
-    employee: User = Depends(get_current_admin),
+    employee: User = Depends(get_current_seva_employee),
     db: Session = Depends(get_db),
 ):
-    del employee
-    return _work_order_view(db, _admin_work_order(db, work_order_id), include_owner=True)
+    work_order = _admin_work_order(db, work_order_id)
+    _require_assigned_employee(work_order, employee)
+    return _work_order_view(db, work_order, include_owner=True)
 
 
 @router.post("/admin/work-orders/{work_order_id}/claim")
 def claim_employee_work_order(
     work_order_id: str,
-    employee: User = Depends(get_current_admin),
+    employee: User = Depends(get_current_seva_employee),
     db: Session = Depends(get_db),
 ):
     work_order = _admin_work_order(db, work_order_id)
@@ -554,7 +747,7 @@ def claim_employee_work_order(
 def create_employee_requirement(
     work_order_id: str,
     payload: RequirementCreateRequest,
-    employee: User = Depends(get_current_admin),
+    employee: User = Depends(get_current_seva_employee),
     db: Session = Depends(get_db),
 ):
     work_order = _admin_work_order(db, work_order_id)
@@ -588,6 +781,7 @@ def create_employee_requirement(
     )
     db.add(requirement)
     work_order.status = "WAITING_USER"
+    notify(db, work_order, work_order.user_id, "REQUIREMENT_REQUESTED", "Action needed for your application", payload.label)
     db.commit()
     return _work_order_view(db, work_order, include_owner=True)
 
@@ -597,7 +791,7 @@ def review_employee_requirement(
     work_order_id: str,
     requirement_id: str,
     payload: RequirementReviewRequest,
-    employee: User = Depends(get_current_admin),
+    employee: User = Depends(get_current_seva_employee),
     db: Session = Depends(get_db),
 ):
     work_order = _admin_work_order(db, work_order_id)
@@ -612,11 +806,32 @@ def review_employee_requirement(
     return _work_order_view(db, work_order, include_owner=True)
 
 
+@router.get("/admin/work-orders/{work_order_id}/requirements/{requirement_id}/document/content")
+def download_requirement_document(
+    work_order_id: str,
+    requirement_id: str,
+    employee: User = Depends(get_current_seva_employee),
+    db: Session = Depends(get_db),
+):
+    work_order = _admin_work_order(db, work_order_id)
+    _require_assigned_employee(work_order, employee)
+    requirement = _response_requirement(db, work_order, requirement_id)
+    if requirement.kind != "DOCUMENT" or not requirement.response_document_id:
+        raise HTTPException(status_code=404, detail="Requirement document not found")
+    document = db.get(Document, requirement.response_document_id)
+    if not document or document.user_id != work_order.user_id:
+        raise HTTPException(status_code=404, detail="Requirement document not found")
+    path = Path(document.file_path)
+    if not path.is_file():
+        raise HTTPException(status_code=410, detail="Requirement document is no longer available")
+    return FileResponse(path, media_type=document.content_type, filename=document.filename)
+
+
 @router.post("/admin/work-orders/{work_order_id}/status")
 def update_employee_work_order_status(
     work_order_id: str,
     payload: WorkOrderStatusRequest,
-    employee: User = Depends(get_current_admin),
+    employee: User = Depends(get_current_seva_employee),
     db: Session = Depends(get_db),
 ):
     work_order = _admin_work_order(db, work_order_id)
@@ -630,6 +845,9 @@ def update_employee_work_order_status(
         work_order.completed_at = datetime.utcnow()
     if payload.status == "CANCELLED":
         work_order.cancelled_at = datetime.utcnow()
+    notify(db, work_order, work_order.user_id, "STATUS_UPDATED", "Application status updated", f"Status: {payload.status.replace('_', ' ').title()}. {payload.note or ''}".strip())
+    if payload.status in TERMINAL_WORK_ORDER_STATES:
+        assign_waiting_work(db)
     db.commit()
     return _work_order_view(db, work_order, include_owner=True)
 
@@ -641,7 +859,7 @@ async def upload_employee_deliverable(
     note: str = Form(default=""),
     mark_completed: bool = Form(default=True),
     file: UploadFile = File(...),
-    employee: User = Depends(get_current_admin),
+    employee: User = Depends(get_current_seva_employee),
     db: Session = Depends(get_db),
 ):
     work_order = _admin_work_order(db, work_order_id)
@@ -693,5 +911,8 @@ async def upload_employee_deliverable(
         work_order.completed_at = datetime.utcnow()
     else:
         work_order.status = "SUBMITTED"
+    notify(db, work_order, work_order.user_id, "DELIVERABLE_READY", "Application receipt ready", deliverable.label)
+    if mark_completed:
+        assign_waiting_work(db)
     db.commit()
     return _work_order_view(db, work_order, include_owner=True)

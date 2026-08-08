@@ -48,7 +48,7 @@ export function WorkspaceNavigation() {
   const { user, logout } = useAuth();
   if (!user) return null;
   const avatar = resolveApiAssetUrl(user.avatar || user.picture);
-  const items = isAdminPanelRole(user.role) && user.is_admin
+  const items = user.role === "seva_agent" ? [sevaOperationsItem] : isAdminPanelRole(user.role) && user.is_admin
     ? [...primaryItems.slice(0, 3), sevaOperationsItem, ...primaryItems.slice(3)]
     : primaryItems;
 
@@ -76,7 +76,7 @@ export function WorkspaceNavigation() {
         </span>
         <span>
           <strong>{user.name || "AutoAI User"}</strong>
-          <small>{user.email}</small>
+          <small>{user.role === "seva_agent" ? `Agent ID: ${user.username}` : user.email}</small>
         </span>
         <button type="button" onClick={logout} aria-label="Sign out" title="Sign out">
           <LogOut size={16} />
@@ -89,7 +89,7 @@ export function WorkspaceNavigation() {
 export function WorkspaceMobileNavigation() {
   const { user } = useAuth();
   const isAdmin = Boolean(user?.is_admin && isAdminPanelRole(user.role));
-  const mobileItems = isAdmin
+  const mobileItems = user?.role === "seva_agent" ? [sevaOperationsItem] : isAdmin
     ? [primaryItems[0], primaryItems[2], sevaOperationsItem, primaryItems[4], primaryItems[5]]
     : primaryItems.slice(0, 5);
 

@@ -14,7 +14,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { sevaApi, type SevaRequirement, type SevaWorkOrder } from "./sevaApi";
+import { sevaApi, type SevaNotification, type SevaRequirement, type SevaWorkOrder } from "./sevaApi";
 
 const CLOSED = new Set(["COMPLETED", "CANCELLED"]);
 
@@ -37,12 +37,15 @@ export function SevaAssistancePanel({ token, taskId }: { token: string; taskId: 
   const [purpose, setPurpose] = useState("Help me complete this application safely and provide the final receipt PDF.");
   const [responses, setResponses] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [notifications, setNotifications] = useState<SevaNotification[]>([]);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
       const result = await sevaApi.getAssistance(token, taskId);
       setWorkOrder(result.work_order);
+      const alerts = await sevaApi.listNotifications(token);
+      setNotifications(alerts.items.filter((item) => !item.read_at && (!result.work_order || item.work_order_id === result.work_order.id)));
       setError("");
     } catch (reason) {
       if (!silent) setError(reason instanceof Error ? reason.message : "Employee assistance could not be loaded.");
@@ -174,10 +177,11 @@ export function SevaAssistancePanel({ token, taskId }: { token: string; taskId: 
       {workOrder ? (
         <div className="seva-assistance-body">
           <div className="seva-assistance-overview">
-            <article><Clock3 size={17} /><span><small>Current stage</small><strong>{readableStatus(workOrder.status)}</strong></span></article>
-            <article><UserCheck size={17} /><span><small>Assigned employee</small><strong>{workOrder.assigned_employee?.name || "Waiting for assignment"}</strong></span></article>
+            <article><Clock3 size={17} /><span><small>Current work · {workOrder.work_progress}%</small><strong>{workOrder.current_activity}</strong></span></article>
+            <article><UserCheck size={17} /><span><small>Assigned employee</small><strong>{workOrder.assigned_employee?.name || (workOrder.queue_position ? `Queue #${workOrder.queue_position}` : "Waiting for assignment")}</strong></span></article>
             <article><AlertTriangle size={17} /><span><small>User actions pending</small><strong>{pendingCount}</strong></span></article>
           </div>
+          {notifications.length ? <div className="seva-requirements-list" aria-live="polite"><h3>New updates</h3>{notifications.map((item) => <article key={item.id} className="seva-employee-requirement"><header><strong>{item.title}</strong><button type="button" onClick={() => void sevaApi.markNotificationRead(token, item.id).then(() => setNotifications((current) => current.filter((notice) => notice.id !== item.id)))}>Mark read</button></header><p>{item.message}</p></article>)}</div> : null}
 
           {workOrder.employee_note ? <p className="seva-employee-note"><UsersRound size={16} />{workOrder.employee_note}</p> : null}
 

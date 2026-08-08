@@ -152,6 +152,25 @@ def test_employee_workflow_blocks_raw_otp_and_delivers_scoped_receipt(db: Sessio
     assert stored and stored.response_text is None
 
     current["user"] = employee
+    requested_document = client.post(
+        f"/api/v1/form-services/seva-operations/admin/work-orders/{work_order_id}/requirements",
+        json={"kind": "DOCUMENT", "label": "Upload supporting document", "instructions": "PDF or image", "required": True},
+    )
+    document_requirement = requested_document.json()["requirements"][-1]
+    current["user"] = applicant
+    requirement_png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8 + (8).to_bytes(4, "big") + (8).to_bytes(4, "big") + b"\x00" * 32
+    uploaded = client.post(
+        f"/api/v1/form-services/seva-operations/tasks/{task_id}/assistance/requirements/{document_requirement['id']}/document",
+        files={"file": ("support.png", BytesIO(requirement_png), "image/png")},
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    current["user"] = employee
+    downloaded = client.get(
+        f"/api/v1/form-services/seva-operations/admin/work-orders/{work_order_id}/requirements/{document_requirement['id']}/document/content"
+    )
+    assert downloaded.status_code == 200
+    assert downloaded.content == requirement_png
+
     png = (
         b"\x89PNG\r\n\x1a\n"
         + b"\x00" * 8
@@ -179,3 +198,49 @@ def test_employee_workflow_blocks_raw_otp_and_delivers_scoped_receipt(db: Sessio
     assert work_order and work_order.assigned_employee_id == employee.id
     assert deliverable and deliverable.verified_by_employee is True
     assert document and document.user_id == applicant.id
+
+
+def test_admin_created_agent_receives_least_loaded_assignment_and_private_notification(db: Session) -> None:
+    applicant = add_user(db, "seva-auto-user")
+    admin = add_user(db, "seva-auto-admin", admin=True)
+    current = {"user": admin}
+    client = client_for(db, current)
+
+    created_agent = client.post(
+        "/api/v1/form-services/seva-operations/admin/agents",
+        json={"agent_id": "agent-101", "display_name": "Agent One", "password": "SecurePass123!", "capacity": 2},
+    )
+    assert created_agent.status_code == 201, created_agent.text
+    agent = created_agent.json()
+    assert agent["available_slots"] == 2
+    logged_in = client.post(
+        "/api/v1/form-services/seva-operations/agent/login",
+        json={"agent_id": "agent-101", "password": "SecurePass123!"},
+    )
+    assert logged_in.status_code == 200, logged_in.text
+    assert logged_in.json()["user"]["role"] == "seva_agent"
+
+    current["user"] = applicant
+    started = client.post(
+        "/api/v1/form-services/seva-operations/start",
+        json={
+            "query": "Apply for a verified employee assisted local form",
+            "timezone": "Asia/Kolkata",
+            "locale": "en-IN",
+            "client_request_id": "seva-auto-assignment-001",
+        },
+    )
+    task_id = started.json()["task"]["id"]
+    assistance = client.post(
+        f"/api/v1/form-services/seva-operations/tasks/{task_id}/assistance",
+        json={"purpose": "Complete and submit this application", "consent_accepted": True},
+    )
+    assert assistance.status_code == 201, assistance.text
+    assert assistance.json()["status"] == "IN_PROGRESS"
+    assert assistance.json()["assigned_employee"]["id"] == agent["user_id"]
+    assert assistance.json()["queue_position"] is None
+
+    notifications = client.get("/api/v1/form-services/seva-operations/notifications")
+    assert notifications.status_code == 200
+    assert notifications.json()["unread"] == 1
+    assert notifications.json()["items"][0]["event_type"] == "AGENT_ASSIGNED"

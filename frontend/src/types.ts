@@ -30,7 +30,7 @@ export type UsernameAvailability = {
   message: string;
 };
 
-export type UserRole = "user" | "admin" | "super_admin" | "administrator" | "content_admin" | "content_editor" | "content_viewer";
+export type UserRole = "user" | "admin" | "super_admin" | "administrator" | "content_admin" | "content_editor" | "content_viewer" | "seva_agent";
 
 export type SearchMode = "off" | "auto" | "web" | "news" | "research" | "deep";
 export type IntelligenceMode = "instant" | "medium" | "high" | "deep_research" | "coding";

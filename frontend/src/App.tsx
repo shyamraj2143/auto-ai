@@ -32,6 +32,7 @@ const AdminDashboard = lazy(() =>
     })
 );
 const AdminLoginPage = lazy(() => import("./components/auth/AdminLoginPage").then((module) => ({ default: module.AdminLoginPage })));
+const AgentLoginPage = lazy(() => import("./components/auth/AgentLoginPage").then((module) => ({ default: module.AgentLoginPage })));
 const LoginPage = lazy(() => import("./components/auth/LoginPage").then((module) => ({ default: module.LoginPage })));
 const PaymentCheckoutPage = lazy(() => import("./components/payments/PaymentCheckoutPage").then((module) => ({ default: module.PaymentCheckoutPage })));
 const PaymentStatusPage = lazy(() => import("./components/payments/PaymentStatusPage").then((module) => ({ default: module.PaymentStatusPage })));
@@ -141,6 +142,12 @@ function AdminRoute() {
     : <Navigate to={token ? "/hub" : "/admin/login"} replace />;
 }
 
+function AgentRoute() {
+  const { user, loading } = useAuth();
+  if (loading) return <IndustrialLoader status="Restoring agent session" />;
+  return user?.role === "seva_agent" ? <Outlet /> : <Navigate to="/agent/login" replace />;
+}
+
 function AppRoutes() {
   const location = useLocation();
   return (
@@ -153,6 +160,7 @@ function AppRoutes() {
           <Route path="/pricing" element={<MobileBlockedRoute><PricingPage /></MobileBlockedRoute>} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/admin/login" element={<AdminLoginPage />} />
+          <Route path="/agent/login" element={<AgentLoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/payment/checkout" element={<PaymentCheckoutPage />} />
@@ -191,6 +199,11 @@ function AppRoutes() {
               <Route path="/admin" element={<AdminDashboard />} />
               <Route path="/admin/seva-operations" element={<SevaOperationsPage />} />
               <Route path="/admin/*" element={<AdminDashboard />} />
+            </Route>
+          </Route>
+          <Route element={<AgentRoute />}>
+            <Route element={<AppShell />}>
+              <Route path="/agent/work" element={<SevaOperationsPage />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

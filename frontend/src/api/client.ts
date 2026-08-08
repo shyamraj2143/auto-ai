@@ -766,6 +766,13 @@ export const api = {
       timeoutMs: 20000,
       body: JSON.stringify(payload)
     }),
+  agentLogin: (payload: { agent_id: string; password: string }) =>
+    apiFetch<AuthSession>("/form-services/seva-operations/agent/login", {
+      method: "POST",
+      operation: "seva.agent.login",
+      timeoutMs: 20000,
+      body: JSON.stringify(payload)
+    }),
   requestPasswordReset: (payload: { email: string }) =>
     apiFetch<PasswordResetResult>("/auth/password/forgot", {
       method: "POST",

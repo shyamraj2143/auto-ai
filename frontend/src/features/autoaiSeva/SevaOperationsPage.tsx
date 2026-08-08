@@ -1,7 +1,7 @@
-import { CheckCircle2, Download, FileCheck2, FileText, LoaderCircle, RefreshCw, Send, ShieldCheck, Upload, UserCheck, UsersRound } from "lucide-react";
+import { CheckCircle2, Download, FileCheck2, FileText, LoaderCircle, RefreshCw, Send, ShieldCheck, Upload, UserCheck, UserPlus, UsersRound } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
-import { sevaApi, type SevaWorkOrder } from "./sevaApi";
+import { sevaApi, type SevaAgent, type SevaWorkOrder } from "./sevaApi";
 import { sevaScopeApi, type SevaApprovedScope } from "./sevaScopeApi";
 import "./autoaiSeva.css";
 import "./sevaAdvanced.css";
@@ -35,6 +35,8 @@ export function SevaOperationsPage() {
   const [deliverableLabel, setDeliverableLabel] = useState("Application receipt PDF");
   const [deliverableNote, setDeliverableNote] = useState("");
   const [deliverableFile, setDeliverableFile] = useState<File | null>(null);
+  const [agents, setAgents] = useState<SevaAgent[]>([]);
+  const [agentForm, setAgentForm] = useState({ agent_id: "", display_name: "", password: "", capacity: 5 });
 
   const load = useCallback(async (silent = false) => {
     if (!token) return;
@@ -42,6 +44,7 @@ export function SevaOperationsPage() {
     try {
       const result = await sevaApi.listWorkOrders(token);
       setItems(result.items);
+      if (user?.is_admin) setAgents((await sevaApi.listAgents(token)).items);
       setSelectedId((current) => current || result.items[0]?.id || "");
       setError("");
     } catch (reason) {
@@ -49,7 +52,7 @@ export function SevaOperationsPage() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [token]);
+  }, [token, user?.is_admin]);
 
   const loadSelected = useCallback(async () => {
     if (!token || !selectedId) {
@@ -121,6 +124,30 @@ export function SevaOperationsPage() {
     setDeliverableNote("");
   }
 
+  async function createAgent(event: FormEvent) {
+    event.preventDefault();
+    if (!token || working) return;
+    setWorking("create-agent"); setError("");
+    try {
+      const created = await sevaApi.createAgent(token, agentForm);
+      setAgents((current) => [created, ...current]);
+      setAgentForm({ agent_id: "", display_name: "", password: "", capacity: 5 });
+      await load(true);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Agent could not be created."); }
+    finally { setWorking(""); }
+  }
+
+  async function toggleAgent(agent: SevaAgent) {
+    if (!token || working) return;
+    setWorking(`agent-${agent.id}`); setError("");
+    try {
+      const updated = await sevaApi.updateAgent(token, agent.id, { is_active: !agent.is_active });
+      setAgents((current) => current.map((item) => item.id === updated.id ? updated : item));
+      await load(true);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Agent could not be updated."); }
+    finally { setWorking(""); }
+  }
+
   async function downloadApprovedDocument(assetId: string, filename: string) {
     if (!token || !selected || working) return;
     setWorking(`scope-${assetId}`);
@@ -140,6 +167,18 @@ export function SevaOperationsPage() {
     }
   }
 
+  async function downloadRequirementDocument(requirementId: string, filename: string) {
+    if (!token || !selected || working) return;
+    setWorking(`requirement-file-${requirementId}`); setError("");
+    try {
+      const blob = await sevaApi.downloadRequirementDocument(token, selected.id, requirementId);
+      const url = URL.createObjectURL(blob); const anchor = document.createElement("a");
+      anchor.href = url; anchor.download = filename; anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Requirement document could not be downloaded."); }
+    finally { setWorking(""); }
+  }
+
   return (
     <div className="seva-page">
       <header className="seva-topbar">
@@ -149,6 +188,17 @@ export function SevaOperationsPage() {
       <main className="seva-employee-page">
         <section className="seva-list-heading"><div><span>Operations workspace</span><h1>Claim requests, ask requirements and deliver final PDFs.</h1></div></section>
         {error ? <p className="seva-error" role="alert">{error}</p> : null}
+        {user?.is_admin ? <section className="seva-agent-admin">
+          <header><div><span>Agent access</span><h2>Team capacity and automatic assignment</h2></div><strong>{agents.reduce((sum, agent) => sum + agent.available_slots, 0)} slots available</strong></header>
+          <form onSubmit={createAgent}>
+            <input value={agentForm.agent_id} onChange={(event) => setAgentForm({ ...agentForm, agent_id: event.target.value })} placeholder="Agent ID" pattern="[A-Za-z0-9._-]+" minLength={3} required />
+            <input value={agentForm.display_name} onChange={(event) => setAgentForm({ ...agentForm, display_name: event.target.value })} placeholder="Agent name" minLength={2} required />
+            <input type="password" value={agentForm.password} onChange={(event) => setAgentForm({ ...agentForm, password: event.target.value })} placeholder="Temporary password" minLength={8} autoComplete="new-password" required />
+            <input type="number" value={agentForm.capacity} onChange={(event) => setAgentForm({ ...agentForm, capacity: Number(event.target.value) })} min={1} max={50} aria-label="Agent capacity" required />
+            <button className="seva-primary" disabled={working === "create-agent"}><UserPlus size={16} /> Create agent</button>
+          </form>
+          <div className="seva-agent-list">{agents.map((agent) => <article key={agent.id}><span><strong>{agent.display_name}</strong><small>{agent.agent_id} · {agent.active_load}/{agent.capacity} active</small></span><b>{agent.is_active ? `${agent.available_slots} open` : "Disabled"}</b><button type="button" onClick={() => void toggleAgent(agent)} disabled={Boolean(working)}>{agent.is_active ? "Disable" : "Enable"}</button></article>)}</div>
+        </section> : null}
         <div className="seva-employee-layout">
           <aside className="seva-work-order-list">
             {loading ? <div className="seva-assistance-loading"><LoaderCircle className="spin" /> Loading queue…</div> : null}
@@ -157,6 +207,7 @@ export function SevaOperationsPage() {
               <button key={item.id} type="button" className={selectedId === item.id ? "active" : ""} onClick={() => setSelectedId(item.id)}>
                 <strong>{item.service?.name || "AutoAI Seva request"}</strong>
                 <small>{item.owner?.name || "User"} · {readable(item.status)}</small>
+                {item.queue_position ? <small>Queue position {item.queue_position}</small> : null}
                 <span>{item.request_summary}</span>
               </button>
             ))}
@@ -166,8 +217,8 @@ export function SevaOperationsPage() {
             {!selected ? <div className="seva-empty"><UsersRound /><p>Select a work order.</p></div> : (
               <>
                 <header className="seva-workspace-summary">
-                  <div><span>{selected.owner?.name} · {selected.owner?.email}</span><h1>{selected.service?.name || "Assisted request"}</h1><p>{readable(selected.status)} · task {selected.task_progress}%</p></div>
-                  <div className="seva-workspace-progress"><span style={{ width: `${selected.task_progress}%` }} /></div>
+                  <div><span>{selected.owner?.name}{selected.owner?.email ? ` · ${selected.owner.email}` : ""}</span><h1>{selected.service?.name || "Assisted request"}</h1><p>{selected.current_activity} · work {selected.work_progress}%</p></div>
+                  <div className="seva-workspace-progress"><span style={{ width: `${selected.work_progress}%` }} /></div>
                 </header>
                 <p className="seva-employee-note"><ShieldCheck size={16} />Only user-approved fields and documents are available. Never request a raw OTP, CAPTCHA, password or payment secret.</p>
                 <div className="seva-employee-toolbar">
@@ -211,7 +262,7 @@ export function SevaOperationsPage() {
                       <header><span><FileText size={17} /><strong>{requirement.label}</strong></span><b>{readable(requirement.status)}</b></header>
                       <p>{requirement.instructions}</p>
                       {requirement.response_text ? <p><CheckCircle2 size={15} /> {requirement.response_text}</p> : null}
-                      {requirement.response_document ? <p><FileText size={15} /> {requirement.response_document.filename}</p> : null}
+                      {requirement.response_document ? <p><FileText size={15} /> {requirement.response_document.filename} <button type="button" onClick={() => void downloadRequirementDocument(requirement.id, requirement.response_document!.filename)}><Download size={14} /> Download</button></p> : null}
                       {requirement.status === "FULFILLED" ? <div className="seva-employee-toolbar"><button type="button" onClick={() => token && void run(`accept-${requirement.id}`, () => sevaApi.reviewRequirement(token, selected.id, requirement.id, true))}>Accept</button><button type="button" onClick={() => token && void run(`reject-${requirement.id}`, () => sevaApi.reviewRequirement(token, selected.id, requirement.id, false, "Please provide a clearer or valid response."))}>Request again</button></div> : null}
                     </article>
                   ))}

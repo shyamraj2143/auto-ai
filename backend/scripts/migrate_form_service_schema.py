@@ -16,6 +16,8 @@ REQUIRED_TABLES = {
     "service_action_receipts",
     "service_document_assets",
     "service_human_handoffs",
+    "seva_agent_profiles",
+    "seva_notifications",
 }
 
 

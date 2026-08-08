@@ -56,10 +56,13 @@ export type SevaWorkOrder = {
   request_summary: string;
   employee_note?: string | null;
   assigned_employee?: { id: string; name: string } | null;
-  owner?: { id: string; name: string; email: string } | null;
+  owner?: { id: string; name: string; email?: string | null } | null;
   service?: { id: string; name: string; provider: string } | null;
   task_state?: string | null;
   task_progress: number;
+  work_progress: number;
+  current_activity: string;
+  queue_position?: number | null;
   consent_scope: { field_keys?: string[]; document_ids?: string[]; authentication_secrets_shared?: boolean };
   requirements: SevaRequirement[];
   deliverables: SevaDeliverable[];
@@ -67,6 +70,17 @@ export type SevaWorkOrder = {
   completed_at?: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type SevaAgent = {
+  id: string; user_id: string; agent_id: string; display_name: string; capacity: number;
+  active_load: number; available_slots: number; is_active: boolean;
+  last_assigned_at?: string | null; created_at: string;
+};
+
+export type SevaNotification = {
+  id: string; work_order_id: string; event_type: string; title: string; message: string;
+  read_at?: string | null; created_at: string;
 };
 
 export type SevaStartResult = {
@@ -237,6 +251,26 @@ export const sevaApi = {
     return requestBlob(token, `${operationsBase}/deliverables/${encodeURIComponent(deliverableId)}/content`);
   },
 
+  listNotifications(token: string) {
+    return request<{ items: SevaNotification[]; unread: number }>(token, `${operationsBase}/notifications`);
+  },
+
+  markNotificationRead(token: string, notificationId: string) {
+    return request<{ ok: boolean }>(token, `${operationsBase}/notifications/${encodeURIComponent(notificationId)}/read`, { method: "POST" });
+  },
+
+  listAgents(token: string) {
+    return request<{ items: SevaAgent[]; total: number }>(token, `${operationsBase}/admin/agents`);
+  },
+
+  createAgent(token: string, payload: { agent_id: string; display_name: string; password: string; capacity: number }) {
+    return request<SevaAgent>(token, `${operationsBase}/admin/agents`, { method: "POST", body: JSON.stringify(payload) });
+  },
+
+  updateAgent(token: string, profileId: string, payload: { display_name?: string; password?: string; capacity?: number; is_active?: boolean }) {
+    return request<SevaAgent>(token, `${operationsBase}/admin/agents/${encodeURIComponent(profileId)}`, { method: "PATCH", body: JSON.stringify(payload) });
+  },
+
   listWorkOrders(token: string, state?: string) {
     const params = new URLSearchParams();
     if (state) params.set("state", state);
@@ -264,6 +298,10 @@ export const sevaApi = {
       method: "POST",
       body: JSON.stringify({ accepted, note: note || null }),
     });
+  },
+
+  downloadRequirementDocument(token: string, workOrderId: string, requirementId: string) {
+    return requestBlob(token, `${operationsBase}/admin/work-orders/${encodeURIComponent(workOrderId)}/requirements/${encodeURIComponent(requirementId)}/document/content`);
   },
 
   updateWorkOrderStatus(token: string, workOrderId: string, status: SevaWorkOrder["status"], note = "") {

@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -95,6 +95,52 @@ class SevaWorkOrder(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+
+
+class SevaAgentProfile(Base):
+    """Admin-managed employee identity and workload policy."""
+
+    __tablename__ = "seva_agent_profiles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_id)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    agent_code: Mapped[str] = mapped_column(String(48), unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(120))
+    capacity: Mapped[int] = mapped_column(Integer, default=5)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_by_admin_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), index=True
+    )
+    last_assigned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
+class SevaNotification(Base):
+    """Private in-app notification for an application owner or assigned agent."""
+
+    __tablename__ = "seva_notifications"
+    __table_args__ = (
+        Index("ix_seva_notification_recipient_read", "recipient_user_id", "read_at"),
+        Index("ix_seva_notification_work_created", "work_order_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_id)
+    work_order_id: Mapped[str] = mapped_column(
+        ForeignKey("seva_work_orders.id", ondelete="CASCADE"), index=True
+    )
+    recipient_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    event_type: Mapped[str] = mapped_column(String(48), index=True)
+    title: Mapped[str] = mapped_column(String(180))
+    message: Mapped[str] = mapped_column(Text)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class SevaRequirementRequest(Base):

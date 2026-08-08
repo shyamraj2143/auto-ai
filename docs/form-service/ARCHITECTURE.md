@@ -48,3 +48,8 @@ Printing an application summary does not itself prove submission. The printed do
 ## Persistence and concurrency
 
 All task resources include `user_id`; API queries always include it. Editable records carry a version and use optimistic concurrency. Consequential operations have unique per-user idempotency keys. Audit and transition rows are append-only. Non-secret drafts may resume after refresh or restart; secrets are never restored from ordinary storage.
+# Seva agent operations extension
+
+`SevaAgentProfile` binds an admin-created login identity to capacity and availability. A new work order is assigned to the active agent with the lowest active load; ties use the least-recently-assigned agent. Full capacity leaves the order in a FIFO queue, which is drained after completion, cancellation, agent activation, or capacity change.
+
+Agent authorization is checked independently from normal admin access. Assigned agents can read only the work order's consent-approved fields/documents. `SevaNotification` provides owner/agent-specific durable updates. Secret-bearing steps use `PROTECTED_ACTION`; raw OTP, password, CAPTCHA, PIN, CVV and tokens never enter requirements, chat, notifications, or agent-visible storage.
