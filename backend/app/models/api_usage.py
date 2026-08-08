@@ -20,6 +20,9 @@ class APIUsage(Base):
     prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
     completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
     total_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0)
+    cache_status: Mapped[str] = mapped_column(String(16), default="not_applicable", index=True)
+    error_code: Mapped[str] = mapped_column(String(64), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
     user = relationship("User", back_populates="api_usages")

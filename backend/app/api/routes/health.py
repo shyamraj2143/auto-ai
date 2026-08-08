@@ -1,6 +1,9 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.db.session import get_db
 
 
 router = APIRouter(tags=["health"])
@@ -28,6 +31,16 @@ def health():
         "groq_configured": bool(settings.groq_api_key),
         "openai_configured": bool(settings.OPENAI_API_KEY),
         "bedrock_configured": bedrock_configured,
+        "gemini_configured": bool(settings.GEMINI_API_KEY),
         "commit_sha": settings.RAILWAY_GIT_COMMIT_SHA,
         "deployment_id": settings.RAILWAY_DEPLOYMENT_ID,
     }
+
+
+@router.get("/ready")
+def readiness(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database is not ready.") from exc
+    return {"status": "ready", "database": "reachable", "environment": settings.ENVIRONMENT}

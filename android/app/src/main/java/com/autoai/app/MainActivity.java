@@ -128,6 +128,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(ScreenCapturePlugin.class);
         registerPlugin(AutoAiCallsPlugin.class);
         registerPlugin(AutoAiUpdatePlugin.class);
+        registerPlugin(AutoAiNotificationsPlugin.class);
         registerPlugin(AutoAiAlarmPlugin.class);
         registerPlugin(AutoAiServiceCapabilitiesPlugin.class);
         super.onCreate(savedInstanceState);

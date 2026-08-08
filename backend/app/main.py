@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from pathlib import Path
+from urllib.parse import urlparse
 import re
 import uuid
 
@@ -8,8 +9,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from app.api.routes import admin, ai, alarms, assistant_actions, auth, calls, chat_sessions, chats, cms, demo_chat, device_monitoring, documents, download, form_services, health, human, intent_engine, library, live, live_websocket, memory, notifications, payments, relationship_followups, screen_share, search, service_applications, social, trust_hub, user_messages, users, voice
+from app.api.routes import admin, ai, alarms, assistant_actions, auth, calls, chat_sessions, chats, cms, demo_chat, device_monitoring, documents, download, form_services, health, human, intent_engine, library, live, live_websocket, memory, notifications, payments, relationship_followups, screen_share, search, service_applications, social, trust_hub, user_data, user_messages, users, voice
 from app.core.config import settings
 from app.core.rate_limit import InMemoryRateLimitMiddleware
 from app.db.session import SessionLocal, init_db
@@ -72,6 +74,55 @@ class RequestIdMiddleware:
         await self.app(scope, receive, send_with_request_id)
 
 
+class SecurityHeadersMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_security_headers(message):
+            if message.get("type") == "http.response.start":
+                headers = list(message.get("headers", []))
+                names = {name.lower() for name, _ in headers}
+                additions = {
+                    b"x-content-type-options": b"nosniff",
+                    b"referrer-policy": b"strict-origin-when-cross-origin",
+                    b"x-frame-options": b"DENY",
+                    b"permissions-policy": b"camera=(), geolocation=(), microphone=()",
+                    b"content-security-policy": b"default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+                }
+                forwarded_proto = dict(scope.get("headers", [])).get(b"x-forwarded-proto", b"").lower()
+                if scope.get("scheme") == "https" or forwarded_proto == b"https":
+                    additions[b"strict-transport-security"] = b"max-age=31536000; includeSubDomains"
+                headers.extend((name, value) for name, value in additions.items() if name not in names)
+                message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, send_with_security_headers)
+
+
+class RequestBodyLimitMiddleware:
+    def __init__(self, app):
+        self.app = app
+        self.max_bytes = settings.MAX_REQUEST_BODY_MB * 1024 * 1024
+
+    async def __call__(self, scope, receive, send):
+        if scope.get("type") == "http" and scope.get("method", "GET").upper() in {"POST", "PUT", "PATCH"}:
+            headers = dict(scope.get("headers", []))
+            try:
+                content_length = int(headers.get(b"content-length", b"0"))
+            except ValueError:
+                content_length = 0
+            if content_length > self.max_bytes:
+                response = JSONResponse(status_code=413, content={"detail": "Request body is too large."})
+                await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
+
 class RelationshipPayloadLimitMiddleware:
     MAX_BYTES = 32 * 1024
 
@@ -113,13 +164,21 @@ def get_cors_origins() -> list[str]:
     default_origins = {
         "https://autoai.site.je",
         "https://www.autoai.site.je",
-        "http://autoai.site.je",
         "https://localhost",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     }
     configured_origins = {str(origin).rstrip("/") for origin in settings.BACKEND_CORS_ORIGINS}
     return sorted(default_origins | configured_origins)
+
+
+def get_trusted_hosts() -> list[str]:
+    hosts = {host.strip().lower() for host in settings.TRUSTED_HOSTS if host.strip() and host.strip() != "*"}
+    for configured_url in (settings.frontend_url, settings.backend_url):
+        hostname = urlparse(configured_url).hostname
+        if hostname:
+            hosts.add(hostname.lower())
+    return sorted(hosts)
 
 
 def create_app() -> FastAPI:
@@ -130,6 +189,7 @@ def create_app() -> FastAPI:
     )
 
     app.add_middleware(NormalizeRequestPathMiddleware)
+    app.add_middleware(RequestBodyLimitMiddleware)
     app.add_middleware(RelationshipPayloadLimitMiddleware)
     app.add_middleware(RequestIdMiddleware)
 
@@ -145,6 +205,9 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
         expose_headers=["x-request-id", "x-railway-request-id", "content-disposition"],
     )
+    if settings.is_production:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=get_trusted_hosts())
+    app.add_middleware(SecurityHeadersMiddleware)
 
     @app.exception_handler(RealtimeUnavailable)
     async def realtime_unavailable_handler(request: Request, exc: RealtimeUnavailable) -> JSONResponse:
@@ -265,6 +328,7 @@ def create_app() -> FastAPI:
     app.include_router(call_signaling.router, prefix=settings.API_V1_STR)
     app.include_router(screen_share_signaling.router, prefix=settings.API_V1_STR)
     app.include_router(user_messages.router, prefix=settings.API_V1_STR)
+    app.include_router(user_data.router, prefix=settings.API_V1_STR)
     app.include_router(user_chat.router, prefix=settings.API_V1_STR)
     app.include_router(download.router, prefix="/api")
     app.include_router(download.router, prefix=settings.API_V1_STR)

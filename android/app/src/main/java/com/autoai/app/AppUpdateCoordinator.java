@@ -75,11 +75,7 @@ public final class AppUpdateCoordinator {
         observeDownload();
         clearCompletedUpdate();
         if (hasPendingUpdate(snapshot.metadata)) {
-            // Every published AutoAI Android version is required. Re-apply the policy
-            // when restoring state so an update discovered by an older build cannot
-            // become dismissible after the process is recreated mid-download.
-            snapshot.metadata.mandatory = true;
-            snapshot.metadata.forceUpdate = true;
+            snapshot.metadata.mandatory = requiresMandatoryUpdate(BuildConfig.VERSION_CODE, snapshot.metadata);
             if (snapshot.state == State.IDLE) {
                 snapshot = new Snapshot(State.AVAILABLE, snapshot.metadata, 0, snapshot.metadata.fileSize, "Ready to download", "");
             }
@@ -106,7 +102,7 @@ public final class AppUpdateCoordinator {
                     set(new Snapshot(State.UP_TO_DATE, metadata, 0, 0, "AutoAI is up to date.", ""));
                     return;
                 }
-                boolean mandatory = requiresMandatoryUpdate(BuildConfig.VERSION_CODE, metadata.versionCode);
+                boolean mandatory = requiresMandatoryUpdate(BuildConfig.VERSION_CODE, metadata);
                 if (!mandatory && optionalDismissedThisLaunch) {
                     set(new Snapshot(State.IDLE, metadata, 0, metadata.fileSize, "", ""));
                     return;
@@ -202,13 +198,12 @@ public final class AppUpdateCoordinator {
     }
 
     public static boolean hasPendingUpdate(@Nullable Metadata metadata) {
-        return metadata != null && metadata.valid()
-            && requiresMandatoryUpdate(BuildConfig.VERSION_CODE, metadata.versionCode);
+        return metadata != null && metadata.valid() && metadata.versionCode > BuildConfig.VERSION_CODE;
     }
 
-    /** AutoAI publishes a new APK for every production main push, so every higher version is mandatory. */
-    static boolean requiresMandatoryUpdate(int installedVersionCode, int latestVersionCode) {
-        return latestVersionCode > installedVersionCode;
+    static boolean requiresMandatoryUpdate(int installedVersionCode, Metadata metadata) {
+        return metadata != null && metadata.versionCode > installedVersionCode
+            && (metadata.forceUpdate || installedVersionCode < metadata.minimumSupportedVersionCode);
     }
 
     static boolean downloadedVersionMatches(int activeDownloadVersion, int latestVersionCode) {

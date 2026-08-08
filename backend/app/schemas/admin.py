@@ -3,6 +3,24 @@ from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
+class AdminAuditLogRead(BaseModel):
+    id: str
+    actor_user_id: str | None
+    target_user_id: str | None
+    action: str
+    reason: str
+    metadata_payload: dict = Field(serialization_alias="metadata")
+    created_at: datetime
+
+
+class AdminAuditLogPage(BaseModel):
+    items: list[AdminAuditLogRead]
+    page: int
+    page_size: int
+    total: int
+    total_pages: int
+
+
 class AdminSubscriptionSummary(BaseModel):
     plan: str
     is_active: bool

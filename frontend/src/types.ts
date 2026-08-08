@@ -553,6 +553,7 @@ export type PaymentConfig = {
   razorpay_ready?: boolean;
   razorpay_mode?: "test" | "live" | string | null;
   razorpay_config_id?: string | null;
+  stripe_ready?: boolean;
   frontend_url?: string | null;
   backend_url?: string | null;
   upi_id?: string | null;
@@ -578,6 +579,47 @@ export type PaymentSession = {
   status: string;
   user_email?: string | null;
   user_name?: string | null;
+};
+
+export type AdminAuditLog = {
+  id: string;
+  actor_user_id?: string | null;
+  target_user_id?: string | null;
+  action: string;
+  reason: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+export type AdminAuditLogPage = {
+  items: AdminAuditLog[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+};
+
+export type AdminSystemStatus = {
+  environment: string;
+  canonical_frontend_url: string;
+  canonical_backend_url: string;
+  https_configured: boolean;
+  database: { backend: string; reachable: boolean; persistent: boolean };
+  cache: { backend: string; ttl_seconds: number };
+  fcm: { configured: boolean };
+  payments: { razorpay: boolean; stripe: boolean };
+  providers: Record<string, { configured: boolean; healthy_models: number; known_models: number }>;
+  commit_sha?: string | null;
+  deployment_id?: string | null;
+};
+
+export type StripeCheckoutSession = {
+  session_id: string;
+  checkout_url: string;
+  amount: number;
+  currency: string;
+  plan_id: PaidPricingPlanName;
+  status: string;
 };
 
 export type RazorpayVerifyResponse = {

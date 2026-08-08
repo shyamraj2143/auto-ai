@@ -102,6 +102,8 @@ class Settings(BaseSettings):
         "https://www.autoai.site.je",
         "http://autoai.site.je",
     ]
+    TRUSTED_HOSTS: list[str] = ["autoai.site.je", "www.autoai.site.je", "localhost", "127.0.0.1", "testserver"]
+    MAX_REQUEST_BODY_MB: int = 110
 
 
 
@@ -223,6 +225,10 @@ class Settings(BaseSettings):
     SEARCH_DEEP_MAX_RESULTS: int = 10
     SEARCH_COUNTRY: str = "us"
     SEARCH_LANGUAGE: str = "en"
+    RESPONSE_CACHE_ENABLED: bool = True
+    RESPONSE_CACHE_TTL_SECONDS: int = 300
+    RESPONSE_CACHE_MAX_ENTRIES: int = 500
+    RESPONSE_CACHE_MAX_ITEM_CHARS: int = 100_000
 
     UPLOAD_DIR: str = DEFAULT_UPLOAD_DIR
     LIBRARY_STORAGE_DIR: str = DEFAULT_LIBRARY_STORAGE_DIR
@@ -248,6 +254,14 @@ class Settings(BaseSettings):
     ALLOWED_AUDIO_EXTENSIONS: set[str] = {".flac", ".mp3", ".m4a", ".mpeg", ".mpga", ".ogg", ".wav", ".webm"}
 
     RATE_LIMIT_PER_MINUTE: int = 90
+    RATE_LIMIT_LOGIN_PER_MINUTE: int = 8
+    RATE_LIMIT_REGISTER_PER_MINUTE: int = 5
+    RATE_LIMIT_PASSWORD_RESET_PER_MINUTE: int = 5
+    RATE_LIMIT_AI_PER_MINUTE: int = 30
+    RATE_LIMIT_PAYMENT_PER_MINUTE: int = 12
+    RATE_LIMIT_ADMIN_PER_MINUTE: int = 30
+    RATE_LIMIT_RESTORE_PER_MINUTE: int = 3
+    RATE_LIMIT_UPLOAD_PER_MINUTE: int = 12
     FEEDBACK_AGGREGATE_ANALYTICS_ENABLED: bool = True
     FEEDBACK_ANALYTICS_MIN_GROUP_SIZE: int = 10
     PUBLIC_DEMO_CHAT_ENABLED: bool = True
@@ -265,6 +279,11 @@ class Settings(BaseSettings):
     RAZORPAY_CHECKOUT_CONFIG_ID: str | None = DEFAULT_RAZORPAY_CHECKOUT_CONFIG_ID
     RAZORPAY_PAYMENT_CONFIG_ID: str | None = None
     RAZORPAY_CONFIG_ID: str | None = None
+    STRIPE_SECRET_KEY: SecretStr | None = None
+    STRIPE_WEBHOOK_SECRET: SecretStr | None = None
+    STRIPE_PRICE_PRO: str | None = None
+    STRIPE_PRICE_PREMIUM: str | None = None
+    STRIPE_PRICE_ULTRA: str | None = None
     UPI_ID: str | None = None
     PAYMENT_UPI_ID: str | None = None
     MERCHANT_UPI_ID: str | None = None

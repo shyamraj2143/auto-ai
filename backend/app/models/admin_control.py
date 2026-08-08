@@ -140,3 +140,15 @@ class AuditLog(Base):
     reason: Mapped[str] = mapped_column(Text, default="", nullable=False)
     audit_metadata: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class PaymentWebhookEvent(Base):
+    __tablename__ = "payment_webhook_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    provider: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    event_id: Mapped[str] = mapped_column(String(160), unique=True, index=True, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(120), index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="received", nullable=False)
+    processed_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

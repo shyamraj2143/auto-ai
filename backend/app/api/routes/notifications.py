@@ -7,15 +7,19 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.api.deps import get_current_user
 from app.core.security import decode_access_token
 from app.db.session import SessionLocal, get_db
 from app.models.call import UserDevice
+from app.models.push import UserNotificationPreference
 from app.models.user import User
 from app.schemas.notifications import (
     ApkUpdateNotificationRequest,
     ApkUpdateNotificationResponse,
     DeviceTokenRegisterRequest,
     DeviceTokenRegisterResponse,
+    NotificationPreferenceRead,
+    NotificationPreferenceUpdate,
 )
 from app.services.device_token_security import decrypt_token
 from app.services.firebase_notifications import firebase_notification_service
@@ -24,6 +28,33 @@ from app.services.firebase_notifications import firebase_notification_service
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 logger = logging.getLogger(__name__)
 ADMIN_ROLES = {"admin", "super_admin", "administrator"}
+
+
+def notification_preferences(db: Session, user_id: str) -> UserNotificationPreference:
+    record = db.scalar(select(UserNotificationPreference).where(UserNotificationPreference.user_id == user_id))
+    if not record:
+        record = UserNotificationPreference(user_id=user_id)
+        db.add(record)
+        db.flush()
+    return record
+
+
+@router.get("/preferences", response_model=NotificationPreferenceRead)
+def get_notification_preferences(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    record = notification_preferences(db, current_user.id)
+    db.commit()
+    return record
+
+
+@router.patch("/preferences", response_model=NotificationPreferenceRead)
+def update_notification_preferences(payload: NotificationPreferenceUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    record = notification_preferences(db, current_user.id)
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(record, key, value)
+    record.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(record)
+    return record
 
 
 def notify_secret_value() -> str:
@@ -124,13 +155,14 @@ def dispatch_apk_update_notifications(
     inactive = 0
     with SessionLocal() as db:
         devices = db.scalars(
-            select(UserDevice).where(
+            select(UserDevice).outerjoin(UserNotificationPreference, UserNotificationPreference.user_id == UserDevice.user_id).where(
                 UserDevice.is_active == True,  # noqa: E712
                 UserDevice.platform == "android",
                 (
                     UserDevice.fcm_token_ciphertext.is_not(None)
                     | UserDevice.fcm_token.is_not(None)
                 ),
+                ((UserNotificationPreference.id.is_(None)) | ((UserNotificationPreference.enabled == True) & (UserNotificationPreference.apk_updates == True))),  # noqa: E712
             )
         ).all()
         for device in devices:

@@ -55,12 +55,19 @@ from app.services.orchestration.preset_policy import coding_configuration_status
 from app.services.orchestration.schemas import IntelligenceMode
 from app.services.preset_detection import CODING_SYSTEM_INSTRUCTION, resolve_preset
 from app.services.library_storage import library_storage
+from app.services.response_cache import response_cache
 from app.services.web_search import SearchAgent, web_search_service
 
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 generation_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="chat-generation")
 logger = logging.getLogger("auto_ai.chat_generation")
+
+
+def public_ai_error(exc: Exception) -> str:
+    if isinstance(exc, HTTPException) and exc.status_code < 500:
+        return str(exc.detail)
+    return "The AI provider is temporarily unavailable. Please retry."
 
 
 DEFAULT_CHAT_SYSTEM_PROMPT = (
@@ -393,6 +400,10 @@ def record_usage(
     endpoint: str,
     model: str,
     usage: dict[str, int],
+    *,
+    latency_ms: int = 0,
+    cache_status: str = "not_applicable",
+    error_code: str | None = None,
 ) -> None:
     provider = infer_provider_from_model(model)
     charged_usage = billable_usage()
@@ -410,6 +421,9 @@ def record_usage(
             prompt_tokens=input_tokens,
             completion_tokens=output_tokens,
             total_tokens=total_tokens,
+            latency_ms=max(0, latency_ms),
+            cache_status=cache_status,
+            error_code=error_code,
         )
     )
     normalized_usage = {
@@ -1030,8 +1044,8 @@ def run_chat_generation(generation_id: str) -> None:
             )
             db.commit()
         except Exception as exc:
-            detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
-            logger.exception("Chat generation %s failed: %s", generation_id, detail)
+            detail = public_ai_error(exc)
+            logger.exception("Chat generation %s failed error_type=%s", generation_id, type(exc).__name__)
             update_generation_message(
                 db,
                 generation=generation,
@@ -1513,13 +1527,32 @@ def chat(
         db.refresh(assistant_message)
         return ChatResponse(chat=ChatRead.model_validate(chat_row), assistant_message=assistant_message)
 
-    content, usage, selected_model = groq_service.complete(
-        messages,
-        model=selected_model,
+    cache_key = response_cache.key(
+        user_id=current_user.id,
         provider=selected_provider,
-        web_search=False,
-        allow_bedrock_fallback=True,
+        model=selected_model,
+        messages=messages,
+        settings_payload={"mode": payload.mode, "reasoning": payload.reasoning, "search": False},
     )
+    cached = response_cache.get(cache_key) if search_bundle is None and payload.mode == "normal" else None
+    started_at = time.monotonic()
+    if cached:
+        content = str(cached["content"])
+        usage = dict(cached.get("usage") or {})
+        selected_model = str(cached.get("model") or selected_model)
+        cache_status = "hit"
+    else:
+        content, usage, selected_model = groq_service.complete(
+            messages,
+            model=selected_model,
+            provider=selected_provider,
+            web_search=False,
+            allow_bedrock_fallback=True,
+        )
+        cache_status = "miss" if search_bundle is None and payload.mode == "normal" else "bypass"
+        if cache_status == "miss":
+            response_cache.set(cache_key, {"content": content, "usage": usage, "model": selected_model})
+    latency_ms = int((time.monotonic() - started_at) * 1000)
     content = clean_model_output(content)
     content = web_search_service.ensure_citations(content, search_bundle)
     assistant_message = Message(
@@ -1552,7 +1585,7 @@ def chat(
         user_message_id=user_message.id,
         assistant_message_id=assistant_message.id,
     )
-    record_usage(db, current_user.id, "chat", selected_model, usage_with_estimate(usage, messages=messages, output=content))
+    record_usage(db, current_user.id, "chat", selected_model, usage_with_estimate(usage, messages=messages, output=content), latency_ms=latency_ms, cache_status=cache_status)
     db.commit()
     db.refresh(chat_row)
     db.refresh(assistant_message)
@@ -1760,9 +1793,9 @@ def stream_chat(
                     stream_db.refresh(message)
                     yield f"data: {json.dumps({'type': 'done', 'message_id': message.id})}\n\n"
             except Exception as exc:
-                detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
-                logger.exception("Deep research stream failed: %s", detail)
-                yield f"data: {json.dumps({'type': 'error', 'detail': detail})}\n\n"
+                detail = public_ai_error(exc)
+                logger.exception("Deep research stream failed request_id=%s error_type=%s", user_message_id, type(exc).__name__)
+                yield f"data: {json.dumps({'type': 'error', 'detail': detail, 'request_id': user_message_id})}\n\n"
 
         return StreamingResponse(deep_event_generator(), media_type="text/event-stream")
 
@@ -1776,6 +1809,8 @@ def stream_chat(
         usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         yield f"data: {json.dumps({'type': 'meta', 'chat_id': chat_id, 'model': selected_model_payload['model']})}\n\n"
 
+        started_at = time.monotonic()
+        cache_status = "bypass"
         try:
             search_bundle: SearchResultBundle | None = None
             should_search, _ = SearchAgent.should_search(payload.message, search_mode)
@@ -1801,29 +1836,38 @@ def stream_chat(
                     ]
                 yield f"data: {json.dumps({'type': 'sources', 'search': search_bundle.model_dump(mode='json')})}\n\n"
 
-            stream = groq_service.stream(
-                model_messages,
-                model=selected_model,
-                provider=selected_provider,
-                web_search=False,
-                allow_bedrock_fallback=True,
-            )
-            for chunk in stream:
-                delta = groq_service.extract_stream_delta(chunk)
-                chunk_usage = groq_service.extract_usage(chunk)
-                if chunk_usage["total_tokens"]:
-                    usage = chunk_usage
-                if delta:
-                    raw_content += delta
-                    next_visible = clean_model_output(raw_content)
-                    visible_delta = (
-                        next_visible[len(visible_content) :]
-                        if next_visible.startswith(visible_content)
-                        else next_visible
-                    )
-                    visible_content = next_visible
-                    if visible_delta:
-                        yield f"data: {json.dumps({'type': 'delta', 'delta': visible_delta})}\n\n"
+            cache_key = response_cache.key(user_id=user_id, provider=selected_provider, model=selected_model, messages=model_messages, settings_payload={"mode": payload.mode, "reasoning": payload.reasoning, "search": False})
+            can_cache = not should_search and payload.mode == "normal"
+            cached = response_cache.get(cache_key) if can_cache else None
+            if cached:
+                cache_status = "hit"
+                raw_content = str(cached["content"])
+                visible_content = clean_model_output(raw_content)
+                usage = dict(cached.get("usage") or usage)
+                yield f"data: {json.dumps({'type': 'delta', 'delta': visible_content})}\n\n"
+            else:
+                cache_status = "miss" if can_cache else "bypass"
+                stream = groq_service.stream(
+                    model_messages,
+                    model=selected_model,
+                    provider=selected_provider,
+                    web_search=False,
+                    allow_bedrock_fallback=True,
+                )
+                for chunk in stream:
+                    delta = groq_service.extract_stream_delta(chunk)
+                    chunk_usage = groq_service.extract_usage(chunk)
+                    if chunk_usage["total_tokens"]:
+                        usage = chunk_usage
+                    if delta:
+                        raw_content += delta
+                        next_visible = clean_model_output(raw_content)
+                        visible_delta = next_visible[len(visible_content) :] if next_visible.startswith(visible_content) else next_visible
+                        visible_content = next_visible
+                        if visible_delta:
+                            yield f"data: {json.dumps({'type': 'delta', 'delta': visible_delta})}\n\n"
+                if cache_status == "miss":
+                    response_cache.set(cache_key, {"content": visible_content, "usage": usage, "model": selected_model})
 
             final_content = web_search_service.ensure_citations(clean_model_output(raw_content), search_bundle)
             existing_content = visible_content
@@ -1870,14 +1914,16 @@ def stream_chat(
                     "chat_stream",
                     selected_model,
                     usage_with_estimate(usage, messages=model_messages, output=visible_content),
+                    latency_ms=int((time.monotonic() - started_at) * 1000),
+                    cache_status=cache_status,
                 )
                 stream_db.commit()
                 stream_db.refresh(message)
                 yield f"data: {json.dumps({'type': 'done', 'message_id': message.id})}\n\n"
         except Exception as exc:
-            detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
-            logger.exception("Chat stream failed: %s", detail)
-            yield f"data: {json.dumps({'type': 'error', 'detail': detail})}\n\n"
+            detail = public_ai_error(exc)
+            logger.exception("Chat stream failed request_id=%s error_type=%s", user_message_id, type(exc).__name__)
+            yield f"data: {json.dumps({'type': 'error', 'detail': detail, 'request_id': user_message_id})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

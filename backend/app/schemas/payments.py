@@ -19,6 +19,7 @@ class PaymentConfigRead(BaseModel):
     razorpay_ready: bool = False
     razorpay_mode: str | None = None
     razorpay_config_id: str | None = None
+    stripe_ready: bool = False
     frontend_url: str | None = None
     backend_url: str | None = None
     upi_id: str | None = None
@@ -62,6 +63,15 @@ class PaymentSessionResponse(BaseModel):
     status: str = "created"
     user_email: str | None = None
     user_name: str | None = None
+
+
+class StripeCheckoutResponse(BaseModel):
+    session_id: str
+    checkout_url: str
+    amount: int
+    currency: str
+    plan_id: PaidPlan
+    status: str = "pending"
 
 
 class CreateOrderRequest(BaseModel):

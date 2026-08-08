@@ -30,6 +30,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { ContentManager } from "./cms/ContentManager";
 import type {
   AdminAnalytics,
+  AdminAuditLogPage,
   AdminFeaturesResponse,
   AdminPaymentRecord,
   AdminPaymentPage,
@@ -37,6 +38,7 @@ import type {
   AdminPlanName,
   AdminQuota,
   AdminStats,
+  AdminSystemStatus,
   AdminSubscription,
   AdminUsageResponse,
   AdminUser,
@@ -47,7 +49,7 @@ import type {
 import { AdminPromoCodes } from "./AdminPromoCodes";
 import { downloadAuthenticatedReceipt } from "../../utils/receipt";
 
-type AdminSection = "dashboard" | "users" | "tokens" | "subscriptions" | "usage" | "features" | "mobile" | "payments" | "promo-codes" | "website-builder" | "live-pages" | "content" | "settings";
+type AdminSection = "dashboard" | "users" | "tokens" | "subscriptions" | "usage" | "features" | "mobile" | "payments" | "promo-codes" | "website-builder" | "live-pages" | "content" | "system" | "settings";
 
 const sections: Array<{ id: AdminSection; label: string; icon: ReactNode }> = [
   { id: "dashboard", label: "Dashboard", icon: <BarChart3 size={15} /> },
@@ -61,6 +63,7 @@ const sections: Array<{ id: AdminSection; label: string; icon: ReactNode }> = [
   { id: "promo-codes", label: "Promo Codes", icon: <Tag size={15} /> },
   { id: "website-builder", label: "Website Builder", icon: <BookOpen size={15} /> },
   { id: "live-pages", label: "Edit Live Website", icon: <BookOpen size={15} /> },
+  { id: "system", label: "System & Audit", icon: <Database size={15} /> },
   { id: "settings", label: "Settings", icon: <Settings size={15} /> }
 ];
 
@@ -228,6 +231,8 @@ export function AdminDashboard() {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState<AdminSection>("dashboard");
   const [stats, setStats] = useState<AdminStats | null>(null);
+  const [systemStatus, setSystemStatus] = useState<AdminSystemStatus | null>(null);
+  const [auditLogs, setAuditLogs] = useState<AdminAuditLogPage>({ items: [], page: 1, page_size: 50, total: 0, total_pages: 1 });
   const [analytics, setAnalytics] = useState<AdminAnalytics | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [subscriptions, setSubscriptions] = useState<AdminSubscription[]>([]);
@@ -282,7 +287,7 @@ export function AdminDashboard() {
     setSuccess("");
     setLoading(true);
     try {
-      const [nextStats, nextUsers, nextSubscriptions, nextUsage, nextFeatures, nextAnalytics, nextPayments, nextApkVersions, nextApkStats] =
+      const [nextStats, nextUsers, nextSubscriptions, nextUsage, nextFeatures, nextAnalytics, nextPayments, nextApkVersions, nextApkStats, nextSystemStatus, nextAuditLogs] =
         await Promise.all([
           api.adminStats(token),
           api.adminUsers(token),
@@ -292,7 +297,9 @@ export function AdminDashboard() {
           api.adminAnalytics(token),
           api.adminPayments(token),
           api.apkVersions(),
-          api.apkStats()
+          api.apkStats(),
+          api.adminSystemStatus(token),
+          api.adminAuditLogs(token)
         ]);
       setStats(nextStats);
       setUsers(nextUsers);
@@ -304,6 +311,8 @@ export function AdminDashboard() {
       setPaymentPage(nextPayments);
       setApkVersions(nextApkVersions);
       setApkStats(nextApkStats);
+      setSystemStatus(nextSystemStatus);
+      setAuditLogs(nextAuditLogs);
       setSelectedUser((current) => nextUsers.find((item) => item.id === current?.id) ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load admin panel");
@@ -1704,6 +1713,45 @@ export function AdminDashboard() {
             <section className="border-t border-white/10 pt-4">
               <ContentManager />
             </section>
+          )}
+
+          {activeSection === "system" && (
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+              <section className="rounded-lg border border-white/10 bg-white/[0.045] p-4">
+                <SectionTitle title="Deployment status" subtitle="Safe configuration and service readiness; no secrets are displayed" />
+                <dl className="grid gap-3 text-sm sm:grid-cols-2">
+                  <div><dt className="text-slate-400">Environment</dt><dd className="break-words text-white">{systemStatus?.environment ?? "Unavailable"}</dd></div>
+                  <div><dt className="text-slate-400">HTTPS endpoints</dt><dd><StatusPill active={Boolean(systemStatus?.https_configured)} label={systemStatus?.https_configured ? "Configured" : "Needs attention"} /></dd></div>
+                  <div><dt className="text-slate-400">Database</dt><dd><StatusPill active={Boolean(systemStatus?.database.reachable)} label={`${systemStatus?.database.backend ?? "Unknown"} · ${systemStatus?.database.persistent ? "persistent" : "non-persistent"}`} /></dd></div>
+                  <div><dt className="text-slate-400">Response cache</dt><dd className="text-white">{systemStatus?.cache.backend ?? "Unavailable"} · {systemStatus?.cache.ttl_seconds ?? 0}s TTL</dd></div>
+                  <div><dt className="text-slate-400">FCM</dt><dd><StatusPill active={Boolean(systemStatus?.fcm.configured)} label={systemStatus?.fcm.configured ? "Configured" : "Not configured"} /></dd></div>
+                  <div><dt className="text-slate-400">Payments</dt><dd className="text-white">Razorpay {systemStatus?.payments.razorpay ? "ready" : "off"} · Stripe {systemStatus?.payments.stripe ? "ready" : "off"}</dd></div>
+                  <div className="sm:col-span-2"><dt className="text-slate-400">Frontend</dt><dd className="break-all text-white">{systemStatus?.canonical_frontend_url ?? "Unavailable"}</dd></div>
+                  <div className="sm:col-span-2"><dt className="text-slate-400">Backend</dt><dd className="break-all text-white">{systemStatus?.canonical_backend_url ?? "Unavailable"}</dd></div>
+                </dl>
+                <h3 className="mt-5 text-sm font-semibold text-white">AI providers</h3>
+                <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {Object.entries(systemStatus?.providers ?? {}).map(([provider, state]) => (
+                    <li className="rounded-md border border-white/10 p-3 text-xs" key={provider}>
+                      <strong className="capitalize text-white">{provider}</strong>
+                      <p className="mt-1 text-slate-400">{state.healthy_models}/{state.known_models} healthy · {state.configured ? "configured" : "unconfigured"}</p>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+              <section className="min-w-0 rounded-lg border border-white/10 bg-white/[0.045] p-4">
+                <SectionTitle title="Administrative audit log" subtitle={`${auditLogs.total.toLocaleString()} immutable mutation records`} />
+                <div className="max-h-[640px] overflow-auto rounded-md border border-white/10" tabIndex={0} aria-label="Administrative audit records">
+                  <table className="w-full min-w-[680px] text-left text-xs">
+                    <thead className="sticky top-0 bg-slate-950 text-slate-400"><tr><th className="p-3">Time</th><th>Action</th><th>Reason</th><th>Actor</th><th>Target</th></tr></thead>
+                    <tbody className="divide-y divide-white/10">
+                      {auditLogs.items.map((entry) => <tr key={entry.id}><td className="whitespace-nowrap p-3">{formatDateTime(entry.created_at)}</td><td className="font-semibold text-white">{entry.action}</td><td>{entry.reason}</td><td>{entry.actor_user_id ?? "System"}</td><td>{entry.target_user_id ?? "—"}</td></tr>)}
+                      {!auditLogs.items.length && <tr><td className="p-6 text-center text-slate-400" colSpan={5}>No administrative mutations recorded.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
           )}
 
           {activeSection === "settings" && (

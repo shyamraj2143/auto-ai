@@ -11,6 +11,7 @@ import httpx
 from app.core.config import settings
 from app.services.groq_service import groq_service
 from app.services.orchestration.schemas import IntelligenceMode, ModelRecord
+from app.services.orchestration.preset_policy import PRESET_POLICIES
 
 
 logger = logging.getLogger("auto_ai.model_registry")
@@ -24,6 +25,8 @@ DISPLAY_NAMES = {
     "amazon.nova-pro-v1:0": "Amazon Nova Pro",
     "amazon.nova-lite-v1:0": "Amazon Nova Lite",
     "anthropic.claude-3-haiku-20240307-v1:0": "Claude 3 Haiku",
+    "gpt-4.1-mini": "GPT-4.1 Mini",
+    "gemini-2.5-flash": "Gemini 2.5 Flash",
 }
 INCOMPATIBLE_TEXT_MODEL_MARKERS = (
     "whisper",
@@ -71,6 +74,8 @@ class ModelRegistry:
             discovered = {
                 "groq": self._discover_groq(),
                 "bedrock": self._discover_bedrock(),
+                "openai": self._discover_openai_compatible("openai"),
+                "gemini": self._discover_openai_compatible("gemini"),
             }
             now = datetime.now(timezone.utc)
             records: dict[tuple[str, str], ModelRecord] = {}
@@ -83,6 +88,8 @@ class ModelRegistry:
                     "bedrock",
                     [*settings.ORCHESTRATION_BEDROCK_MODELS, settings.ORCHESTRATION_BEDROCK_CODING_MODEL],
                 ),
+                ("openai", [settings.OPENAI_MODEL, *settings.OPENAI_RESEARCH_MODELS]),
+                ("gemini", [settings.GEMINI_MODEL, *settings.GEMINI_RESEARCH_MODELS]),
             ):
                 available = discovered[provider]
                 configured = (
@@ -100,7 +107,7 @@ class ModelRegistry:
                         IntelligenceMode.MEDIUM,
                         IntelligenceMode.HIGH,
                         IntelligenceMode.DEEP_RESEARCH,
-                    } if provider == "groq" else {
+                    } if provider in {"groq", "openai", "gemini"} else {
                         IntelligenceMode.HIGH,
                         IntelligenceMode.DEEP_RESEARCH,
                     }
@@ -115,7 +122,7 @@ class ModelRegistry:
                         enabled=is_available,
                         supported_modes=frozenset(modes),
                         capabilities=capabilities,
-                        supports_streaming=provider == "groq",
+                        supports_streaming=provider in {"groq", "openai", "gemini"},
                         supports_vision="vision" in capabilities,
                         priority=index,
                         latency_weight=0.6 if "instant" in model_id or "20b" in model_id or "lite" in model_id else 1.0,
@@ -136,6 +143,7 @@ class ModelRegistry:
 
     def eligible(self, mode: IntelligenceMode, *, provider: str | None = None) -> list[ModelRecord]:
         records = self.refresh()
+        allowed_providers = {provider} if provider else set(PRESET_POLICIES[mode].providers)
         return sorted(
             (
                 record
@@ -144,7 +152,7 @@ class ModelRegistry:
                 and record.health_status == "healthy"
                 and {"text", "chat"}.issubset(record.capabilities)
                 and mode in record.supported_modes
-                and (provider is None or record.provider == provider)
+                and record.provider in allowed_providers
             ),
             key=lambda item: (item.priority, item.latency_weight - item.quality_weight),
         )
@@ -174,9 +182,6 @@ class ModelRegistry:
         if not (settings.bedrock_api_key or (settings.aws_access_key_id and settings.aws_secret_access_key)):
             return set()
         if settings.bedrock_endpoint_mode.lower() != "mantle":
-            # IAM deployments do not expose the same lightweight discovery API.
-            # Treat explicitly configured models as candidates and let real runtime
-            # calls plus circuit-breaker health tracking determine degradation.
             return {
                 model_id
                 for model_id in (
@@ -203,6 +208,30 @@ class ModelRegistry:
         except Exception as exc:
             logger.warning("model_registry_discovery provider=bedrock success=false error_type=%s", type(exc).__name__)
             return set()
+
+    @staticmethod
+    def _discover_openai_compatible(provider: str) -> set[str]:
+        if provider == "openai":
+            key = settings.OPENAI_API_KEY
+            base_url = settings.OPENAI_BASE_URL
+            headers = groq_service._openai_headers() if key else {}
+            configured = {settings.OPENAI_MODEL, *settings.OPENAI_RESEARCH_MODELS}
+        else:
+            key = settings.GEMINI_API_KEY
+            base_url = settings.GEMINI_BASE_URL
+            headers = groq_service._gemini_headers() if key else {}
+            configured = {settings.GEMINI_MODEL, *settings.GEMINI_RESEARCH_MODELS}
+        if not key:
+            return set()
+        try:
+            response = httpx.get(f"{base_url.rstrip('/')}/models", headers=headers, timeout=8)
+            response.raise_for_status()
+            body = response.json()
+            discovered = {str(item.get("id")) for item in body.get("data", []) if isinstance(item, dict) and item.get("id")}
+            return discovered or {item for item in configured if item}
+        except Exception as exc:
+            logger.warning("model_registry_discovery provider=%s success=false error_type=%s", provider, type(exc).__name__)
+            return {item for item in configured if item}
 
 
 model_registry = ModelRegistry()

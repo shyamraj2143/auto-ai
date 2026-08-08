@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class DeviceTokenRegisterRequest(BaseModel):
@@ -29,3 +29,21 @@ class ApkUpdateNotificationResponse(BaseModel):
     inactive: int = 0
     skipped: bool = False
     detail: str = ""
+
+
+class NotificationPreferenceRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    enabled: bool = True
+    apk_updates: bool = True
+    seva_updates: bool = True
+    payment_updates: bool = True
+    social_updates: bool = True
+
+
+class NotificationPreferenceUpdate(BaseModel):
+    enabled: bool | None = None
+    apk_updates: bool | None = None
+    seva_updates: bool | None = None
+    payment_updates: bool | None = None
+    social_updates: bool | None = None

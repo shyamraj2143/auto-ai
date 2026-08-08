@@ -1,5 +1,5 @@
 from app.models.api_usage import APIUsage
-from app.models.admin_control import AuditLog, FeatureFlag, PaymentRecord, PlanLimit, UsageLog, UserSubscription
+from app.models.admin_control import AuditLog, FeatureFlag, PaymentRecord, PaymentWebhookEvent, PlanLimit, UsageLog, UserSubscription
 from app.models.alarm import UserAlarm
 from app.models.assistant_action import AssistantActionLog
 from app.models.autoai_seva import ServiceFieldConflict, SevaDeliverable, SevaRequirementRequest, SevaWorkOrder
@@ -48,7 +48,7 @@ from app.models.live import FaceMemory, LiveMessage, LiveSession, VisionFrame
 from app.models.library_asset import LibraryAsset
 from app.models.message import Message
 from app.models.message_feedback import MessageFeedback
-from app.models.push import PushDeviceToken
+from app.models.push import PushDeviceToken, UserNotificationPreference
 from app.models.relationship_followup import RelationshipAuditEvent, RelationshipContact, RelationshipDeliveryAttempt, RelationshipFollowupEvent, RelationshipInteraction, RelationshipNotificationPreference
 from app.models.promo import PromoCode, PromoRedemption
 from app.models.search import SearchCache, SearchRun

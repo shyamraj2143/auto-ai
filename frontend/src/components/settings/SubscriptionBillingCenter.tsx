@@ -61,6 +61,7 @@ export function SubscriptionBillingCenter() {
   const [paymentConfig, setPaymentConfig] = useState<PaymentConfig | null>(null);
   const razorpayKeyId = paymentConfig?.key_id || "";
   const razorpayReady = paymentConfig?.razorpay_ready ?? false;
+  const stripeReady = paymentConfig?.stripe_ready ?? false;
   const upiId = normalizeUpiId(paymentConfig?.upi_id || import.meta.env.VITE_UPI_ID || "");
   const upiPayeeName = paymentConfig?.upi_payee_name || import.meta.env.VITE_UPI_PAYEE_NAME || "Auto-AI";
 
@@ -144,12 +145,8 @@ export function SubscriptionBillingCenter() {
 
   async function upgrade(plan: BillingPlan) {
     if (!token || !user || !paidPlans.has(plan.id)) return;
-    if (!razorpayKeyId) {
-      setError("Razorpay public key is missing. Set RAZORPAY_KEY_ID in backend environment.");
-      return;
-    }
-    if (!razorpayReady) {
-      setError("Razorpay payment is not fully configured on the backend.");
+    if (!razorpayReady && !stripeReady) {
+      setError("Online payments are not configured. Contact support or use an available payment option.");
       return;
     }
     const paidPlan = plan.id as PaidPricingPlanName;
@@ -157,6 +154,12 @@ export function SubscriptionBillingCenter() {
     setError("");
     setSuccess("");
     try {
+      if (!razorpayReady && stripeReady) {
+        const stripeSession = await api.createStripeCheckoutSession(token, { plan_id: paidPlan, currency: "INR", receipt: `auto-ai-${paidPlan}-${Date.now()}`.slice(0, 40), promo_code: promo?.plan === paidPlan ? promo.code : null });
+        window.location.assign(stripeSession.checkout_url);
+        return;
+      }
+      if (!razorpayKeyId) throw new Error("Razorpay public key is missing from the backend configuration.");
       const session = await api.createPaymentSession(token, {
         plan_id: paidPlan,
         currency: "INR",

@@ -5,11 +5,13 @@ import hmac
 import json
 import logging
 import re
+import time
 from datetime import datetime
 from typing import Any
 from urllib.parse import urlencode
 
 import razorpay
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse, Response
 from razorpay.errors import BadRequestError, GatewayError, ServerError
@@ -19,7 +21,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.core.config import settings
 from app.db.session import get_db
-from app.models.admin_control import PaymentRecord
+from app.models.admin_control import PaymentRecord, PaymentWebhookEvent
 from app.models.admin_control import AuditLog
 from app.models.user import User
 from app.schemas.payments import (
@@ -38,6 +40,7 @@ from app.schemas.payments import (
     PromoCodeRequest,
     PromoCodeResponse,
     RestorePurchaseResponse,
+    StripeCheckoutResponse,
     VerifyPaymentRequest,
     VerifyPaymentResponse,
 )
@@ -454,6 +457,7 @@ def payment_config() -> PaymentConfigRead:
         razorpay_ready=bool(key_id and razorpay_secret_value()),
         razorpay_mode=razorpay_key_mode(key_id),
         razorpay_config_id=settings.razorpay_checkout_config_id,
+        stripe_ready=bool(settings.STRIPE_SECRET_KEY and settings.STRIPE_WEBHOOK_SECRET),
         frontend_url=settings.frontend_url,
         backend_url=settings.backend_url,
         upi_id=upi_id,
@@ -464,6 +468,163 @@ def payment_config() -> PaymentConfigRead:
             ultra=settings.RAZORPAY_ULTRA_LINK or None,
         ),
     )
+
+
+def stripe_secret_value() -> str:
+    if not settings.STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Stripe is not configured.")
+    return settings.STRIPE_SECRET_KEY.get_secret_value().strip()
+
+
+def stripe_price_id(plan: str) -> str | None:
+    return {"pro": settings.STRIPE_PRICE_PRO, "premium": settings.STRIPE_PRICE_PREMIUM, "ultra": settings.STRIPE_PRICE_ULTRA}.get(plan)
+
+
+def verify_stripe_webhook(payload: bytes, signature_header: str) -> None:
+    if not settings.STRIPE_WEBHOOK_SECRET:
+        raise HTTPException(status_code=503, detail="Stripe webhook is not configured.")
+    parts: dict[str, list[str]] = {}
+    for item in signature_header.split(","):
+        name, separator, value = item.strip().partition("=")
+        if separator:
+            parts.setdefault(name, []).append(value)
+    try:
+        timestamp = int(parts.get("t", [""])[0])
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid Stripe signature timestamp.") from exc
+    if abs(int(time.time()) - timestamp) > 300:
+        raise HTTPException(status_code=400, detail="Expired Stripe webhook signature.")
+    signed = str(timestamp).encode("ascii") + b"." + payload
+    expected = hmac.new(settings.STRIPE_WEBHOOK_SECRET.get_secret_value().encode("utf-8"), signed, hashlib.sha256).hexdigest()
+    if not any(hmac.compare_digest(expected, candidate) for candidate in parts.get("v1", [])):
+        raise HTTPException(status_code=400, detail="Stripe signature mismatch.")
+
+
+def apply_paid_stripe_payment(db: Session, payment: PaymentRecord, stripe_session: dict[str, Any]) -> None:
+    if not payment.user_id:
+        raise HTTPException(status_code=400, detail="Stripe payment is not linked to a user.")
+    user = db.get(User, payment.user_id)
+    if not user:
+        raise HTTPException(status_code=400, detail="Stripe payment user no longer exists.")
+    expected_amount = payment_amount(payment)
+    paid_amount = int(stripe_session.get("amount_total") or 0)
+    paid_currency = str(stripe_session.get("currency") or "").upper()
+    if paid_amount != expected_amount or paid_currency != payment.currency.upper():
+        raise HTTPException(status_code=400, detail="Stripe payment amount or currency mismatch.")
+    now = datetime.utcnow()
+    already_paid = payment.status in SUCCESS_PAYMENT_STATUSES and payment.verified_at is not None
+    payment.status = "paid"
+    payment.payment_id = str(stripe_session.get("payment_intent") or stripe_session.get("id") or "")
+    payment.customer_id = str(stripe_session.get("customer") or "") or None
+    payment.paid_at = payment.paid_at or now
+    payment.verified_at = payment.verified_at or now
+    payment.receipt_number = payment.receipt_number or f"AA-{now:%Y%m%d}-{payment.id.replace('-', '')[:12].upper()}"
+    payment.updated_at = now
+    subscription = ensure_user_subscription(db, user)
+    if not already_paid:
+        activate_subscription_plan(db, subscription, payment_plan(payment), payment_status="active")
+        subscription.started_at = now
+        recalculate_token_balance(subscription)
+    subscription.stripe_customer_id = payment.customer_id
+    subscription.stripe_payment_id = payment.payment_id
+    subscription.updated_at = now
+    user.subscription_status = "active"
+    user.updated_at = now
+    finalize_promo_redemption(db, payment, succeeded=True)
+
+
+@router.post("/payments/stripe/create-session", response_model=StripeCheckoutResponse)
+def create_stripe_checkout_session(
+    payload: CreatePaymentSessionRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> StripeCheckoutResponse:
+    secret = stripe_secret_value()
+    selected_plan = request_plan(payload.plan_id, None)
+    original_amount = plan_price_paise(db, selected_plan)
+    quote = quote_promo(db, current_user, payload.promo_code, selected_plan, payload.currency, lock=True) if payload.promo_code else None
+    amount = quote.final_amount_paise if quote else original_amount
+    payment = PaymentRecord(user_id=current_user.id, user_email=current_user.email, provider="stripe", plan=selected_plan, plan_id=selected_plan, amount=amount, amount_cents=amount, currency=payload.currency, status="pending", original_amount_paise=original_amount, discount_amount_paise=quote.discount_amount_paise if quote else 0, promo_code_id=quote.promo_id if quote else None, promo_code_snapshot=quote.code if quote else None, plan_name_snapshot=str(PLAN_CATALOG[selected_plan]["label"]), billing_period_snapshot="Monthly", raw_metadata={"user_id": current_user.id, "plan_id": selected_plan})
+    db.add(payment)
+    db.flush()
+    form: list[tuple[str, str]] = [
+        ("mode", "payment"),
+        ("success_url", f"{settings.frontend_url}/payment/success?stripe_session_id={{CHECKOUT_SESSION_ID}}"),
+        ("cancel_url", f"{settings.frontend_url}/settings?section=subscription&payment=cancelled"),
+        ("client_reference_id", payment.id),
+        ("customer_email", current_user.email),
+        ("metadata[user_id]", current_user.id),
+        ("metadata[payment_record_id]", payment.id),
+        ("metadata[plan_id]", selected_plan),
+        ("line_items[0][quantity]", "1"),
+    ]
+    configured_price = stripe_price_id(selected_plan) if not quote else None
+    if configured_price:
+        form.append(("line_items[0][price]", configured_price))
+    else:
+        form.extend([
+            ("line_items[0][price_data][currency]", payload.currency.lower()),
+            ("line_items[0][price_data][unit_amount]", str(amount)),
+            ("line_items[0][price_data][product_data][name]", f"AutoAI {PLAN_CATALOG[selected_plan]['label']} plan"),
+        ])
+    try:
+        response = httpx.post("https://api.stripe.com/v1/checkout/sessions", auth=(secret, ""), data=form, timeout=20)
+        if response.status_code >= 400:
+            logger.warning("stripe_session_create_failed status=%s", response.status_code)
+            raise HTTPException(status_code=502, detail="Stripe could not create a checkout session.")
+        session = response.json()
+        payment.subscription_id = str(session["id"])
+        payment.raw_metadata = {**(payment.raw_metadata or {}), "stripe_session_id": payment.subscription_id}
+        if quote:
+            reserve_promo(db, payment, current_user, quote.code)
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        logger.warning("stripe_session_create_failed error_type=%s", type(exc).__name__)
+        raise HTTPException(status_code=502, detail="Stripe checkout is temporarily unavailable.") from exc
+    return StripeCheckoutResponse(session_id=payment.subscription_id, checkout_url=str(session["url"]), amount=amount, currency=payload.currency, plan_id=selected_plan)
+
+
+@router.post("/billing/stripe/webhook")
+async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
+    raw = await request.body()
+    verify_stripe_webhook(raw, request.headers.get("stripe-signature", ""))
+    try:
+        event = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid Stripe webhook JSON.") from exc
+    event_id = str(event.get("id") or "")
+    event_type = str(event.get("type") or "")
+    if not event_id or not event_type:
+        raise HTTPException(status_code=400, detail="Invalid Stripe webhook event.")
+    if db.scalar(select(PaymentWebhookEvent).where(PaymentWebhookEvent.event_id == event_id)):
+        return {"received": True, "duplicate": True}
+    webhook = PaymentWebhookEvent(provider="stripe", event_id=event_id, event_type=event_type)
+    db.add(webhook)
+    obj = event.get("data", {}).get("object", {})
+    if not isinstance(obj, dict):
+        raise HTTPException(status_code=400, detail="Invalid Stripe webhook object.")
+    session_id = str(obj.get("id") or "")
+    payment = db.scalar(select(PaymentRecord).where(PaymentRecord.provider == "stripe", PaymentRecord.subscription_id == session_id))
+    if payment:
+        if event_type in {"checkout.session.completed", "checkout.session.async_payment_succeeded"} and obj.get("payment_status") == "paid":
+            apply_paid_stripe_payment(db, payment, obj)
+            webhook.status = "processed"
+        elif event_type in {"checkout.session.expired", "checkout.session.async_payment_failed"}:
+            payment.status = "expired" if event_type.endswith("expired") else "failed"
+            payment.updated_at = datetime.utcnow()
+            finalize_promo_redemption(db, payment, succeeded=False)
+            webhook.status = "processed"
+        else:
+            webhook.status = "ignored"
+    else:
+        webhook.status = "unmatched"
+    webhook.processed_at = datetime.utcnow()
+    db.commit()
+    return {"received": True, "duplicate": False}
 
 
 def plan_read(plan_id: str) -> BillingPlanRead:

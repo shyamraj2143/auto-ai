@@ -33,9 +33,9 @@ describe("API URL normalization", () => {
 
   it("keeps Capacitor and non-local production pages on the public API", () => {
     expect(resolveUnconfiguredApiBaseUrl({ hostname: "localhost", protocol: "https:" }, true))
-      .toBe("https://auto-ai-production-a6ef.up.railway.app/api/v1");
+      .toBe("https://autoai.site.je/api/v1");
     expect(resolveUnconfiguredApiBaseUrl({ hostname: "autoai.example", protocol: "https:" }, false))
-      .toBe("https://auto-ai-production-a6ef.up.railway.app/api/v1");
+      .toBe("https://autoai.site.je/api/v1");
   });
 });
 

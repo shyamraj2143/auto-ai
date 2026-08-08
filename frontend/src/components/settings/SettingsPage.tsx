@@ -46,6 +46,7 @@ import { CallSettings } from "../../features/calls/CallSettings";
 import { useScreenShare } from "../../features/screenShare/useScreenShare";
 import type { ScreenShareQualityMode } from "../../features/screenShare/types";
 import { ProfileAccountCard } from "./ProfileAccountCard";
+import { AiUsagePanel, ChatBackupPanel } from "./DailyLifeDataCenter";
 import { userMessagesApi } from "../../features/userMessages/userMessagesApi";
 import type { ChatSettings } from "../../features/userMessages/types";
 import { useMotionMode } from "../../motion/MotionProvider";
@@ -53,6 +54,7 @@ import type { MotionPreference } from "../../motion/tokens";
 import { CrystalButton, CrystalCard } from "../crystal/Crystal";
 import { crystalUiEnabled, type CrystalEffectsLevel } from "../../crystal/tokens";
 import { isMobileAppRuntime } from "../../utils/runtime";
+import { NativeNotifications } from "../../notifications/nativeNotifications";
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION || "1.0.3";
 
@@ -254,8 +256,17 @@ export function SettingsPage() {
   const sectionTitle = section === "general" ? "General" : section === "ai" ? "AI Chat" : section === "screen-share" ? "Screen Share" : section === "visual" ? "Visual Effects" : section === "subscription" ? "Subscription" : section === "privacy" ? "Privacy & Security" : section === "calls" ? "Calls" : section === "chat" ? "Messages" : "Settings";
 
   useEffect(() => {
-    setNotificationPermission("Notification" in window ? Notification.permission : "unsupported");
+    if (isMobileAppRuntime()) {
+      void NativeNotifications.getState().then((state) => setNotificationPermission(state.granted ? "granted" : state.prompted ? "denied" : "default")).catch(() => setNotificationPermission("unsupported"));
+    } else {
+      setNotificationPermission("Notification" in window ? Notification.permission : "unsupported");
+    }
   }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    void api.notificationPreferences(token).then((preference) => setNotificationsEnabled(preference.enabled)).catch(() => undefined);
+  }, [setNotificationsEnabled, token]);
 
   useEffect(() => {
     if (typeof user?.memory_enabled === "boolean" && settings.memoryEnabled !== user.memory_enabled) {
@@ -391,6 +402,15 @@ export function SettingsPage() {
   async function updateNotifications(enabled: boolean) {
     if (!enabled) {
       setNotificationsEnabled(false);
+      if (token) await api.updateNotificationPreferences(token, { enabled: false }).catch(() => undefined);
+      return;
+    }
+    if (isMobileAppRuntime()) {
+      const state = await NativeNotifications.requestPermission();
+      setNotificationPermission(state.granted ? "granted" : "denied");
+      setNotificationsEnabled(state.granted);
+      if (token) await api.updateNotificationPreferences(token, { enabled: state.granted }).catch(() => undefined);
+      if (!state.granted && state.settingsRequired && window.confirm("Notifications are blocked. Open Android settings to enable them?")) await NativeNotifications.openSettings();
       return;
     }
     if (!("Notification" in window)) {
@@ -405,6 +425,7 @@ export function SettingsPage() {
     setNotificationPermission(permission);
     if (permission === "granted") {
       setNotificationsEnabled(true);
+      if (token) await api.updateNotificationPreferences(token, { enabled: true }).catch(() => undefined);
       return;
     }
     console.warn("[Auto-AI Notifications] Notification permission was not granted.");
@@ -681,6 +702,7 @@ export function SettingsPage() {
             {memoryNotice && <p className="mt-1 text-cyan-200" role="status">{memoryNotice}</p>}
           </div>
         </SettingsCard>
+        <AiUsagePanel />
       </div>
     );
   }
@@ -703,7 +725,7 @@ export function SettingsPage() {
 
   function renderPrivacySettings() {
     return (
-      <SettingsCard>
+      <div className="grid gap-3"><ChatBackupPanel /><SettingsCard>
         <SettingsRow icon={LockKeyhole} accent="green" title="Privacy & Security" description="Memory and local chat controls" />
         <SettingsRow icon={Trash2} accent="red" title="Clear Chats" description={`${chats.length} saved chat${chats.length === 1 ? "" : "s"}`}>
           <button
@@ -716,7 +738,7 @@ export function SettingsPage() {
             {isClearingChats ? "Clearing" : "Clear"}
           </button>
         </SettingsRow>
-      </SettingsCard>
+      </SettingsCard></div>
     );
   }
 

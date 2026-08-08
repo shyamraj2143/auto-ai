@@ -22,10 +22,17 @@ public class AppUpdateCoordinatorTest {
         assertFalse("com.autoai.app".equals(metadata.packageName));
     }
 
-    @Test public void everyHigherPublishedVersionIsMandatory() {
-        assertTrue(AppUpdateCoordinator.requiresMandatoryUpdate(102341, 102351));
-        assertFalse(AppUpdateCoordinator.requiresMandatoryUpdate(102351, 102351));
-        assertFalse(AppUpdateCoordinator.requiresMandatoryUpdate(102351, 102341));
+    @Test public void mandatoryDecisionUsesReleasePolicyAndMinimumSupportedVersion() {
+        AppUpdateCoordinator.Metadata optional = new AppUpdateCoordinator.Metadata();
+        optional.versionCode = 102351;
+        optional.minimumSupportedVersionCode = 102300;
+        assertFalse(AppUpdateCoordinator.requiresMandatoryUpdate(102341, optional));
+        optional.forceUpdate = true;
+        assertTrue(AppUpdateCoordinator.requiresMandatoryUpdate(102341, optional));
+        optional.forceUpdate = false;
+        optional.minimumSupportedVersionCode = 102350;
+        assertTrue(AppUpdateCoordinator.requiresMandatoryUpdate(102341, optional));
+        assertFalse(AppUpdateCoordinator.requiresMandatoryUpdate(102351, optional));
     }
 
     @Test public void verifiedApkCanOnlyBeReusedForItsExactVersionCode() {

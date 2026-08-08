@@ -356,6 +356,12 @@ def ensure_runtime_schema() -> None:
             add_column("api_usage", "input_tokens", "INTEGER NOT NULL DEFAULT 0")
         if "output_tokens" not in usage_columns:
             add_column("api_usage", "output_tokens", "INTEGER NOT NULL DEFAULT 0")
+        if "latency_ms" not in usage_columns:
+            add_column("api_usage", "latency_ms", "INTEGER NOT NULL DEFAULT 0")
+        if "cache_status" not in usage_columns:
+            add_column("api_usage", "cache_status", "VARCHAR(16) NOT NULL DEFAULT 'not_applicable'")
+        if "error_code" not in usage_columns:
+            add_column("api_usage", "error_code", "VARCHAR(64)")
 
     if "chats" in table_names:
         chat_columns = {column["name"] for column in inspector.get_columns("chats")}

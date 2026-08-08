@@ -1,5 +1,6 @@
 import type {
   AdminAnalytics,
+  AdminAuditLogPage,
   AdminFeaturesResponse,
   AdminFeatureFlag,
   AdminPaymentPage,
@@ -8,6 +9,7 @@ import type {
   AdminPlanName,
   AdminQuota,
   AdminStats,
+  AdminSystemStatus,
   AdminSubscription,
   AdminUsageResponse,
   AdminUser,
@@ -52,6 +54,7 @@ import type {
   ServiceIntentResponse,
   ServiceTaskView,
   StreamEvent,
+  StripeCheckoutSession,
   TurnAnalysis,
   User,
   UsernameAvailability,
@@ -68,7 +71,7 @@ declare global {
   }
 }
 
-const PUBLIC_API_BASE_URL = "https://auto-ai-production-a6ef.up.railway.app/api/v1";
+const PUBLIC_API_BASE_URL = "https://autoai.site.je/api/v1";
 const API_V1_PREFIX = "/api/v1";
 const DEFAULT_API_TIMEOUT_MS = 8000;
 const API_DIAGNOSTIC_TIMEOUT_MS = 2500;
@@ -126,6 +129,38 @@ export type DemoChatConfig = {
 export type ApiHealth = {
   status: "ok";
   service: string;
+};
+
+export type ChatBackup = {
+  schema: "autoai.chat-backup";
+  schema_version: 1;
+  exported_at: string;
+  chats: Array<{
+    id: string;
+    title: string;
+    model: string;
+    mode: string;
+    created_at: string;
+    updated_at: string;
+    messages: Array<{ id: string; role: "user" | "assistant" | "system"; content: string; model?: string | null; token_count: number; created_at: string }>;
+  }>;
+};
+
+export type BackupPreview = { valid: boolean; schema_version: number; backup_date: string; chat_count: number; message_count: number };
+export type RestoreResult = { mode: "merge" | "replace"; chats_imported: number; chats_skipped: number; messages_imported: number };
+export type UserUsage = {
+  start_at: string;
+  end_at: string;
+  requests: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  average_latency_ms: number;
+  cache_hits: number;
+  cache_misses: number;
+  errors: number;
+  buckets: Array<{ period: string; requests: number; input_tokens: number; output_tokens: number; total_tokens: number }>;
+  dimensions: Array<{ provider: string; model: string; requests: number; input_tokens: number; output_tokens: number; total_tokens: number; average_latency_ms: number; cache_hits: number; cache_misses: number; errors: number }>;
 };
 
 type RequestMeta = {
@@ -685,13 +720,13 @@ export async function apiFetch<T>(path: string, options: FetchOptions = {}): Pro
   return response.json() as Promise<T>;
 }
 
-async function apiFetchBlob(path: string, token: string): Promise<Blob> {
+async function apiFetchBlob(path: string, token: string, operation = "library.preview"): Promise<Blob> {
   const requestPath = normalizeApiPath(path);
   const url = joinApiUrl(API_BASE_URL, requestPath);
   const response = await fetchWithNetworkMessage(
     url,
     { credentials: "include", headers: { Authorization: `Bearer ${token}` } },
-    { path: requestPath, method: "GET", operation: "library.preview" },
+    { path: requestPath, method: "GET", operation },
     DEFAULT_API_TIMEOUT_MS
   );
   if (!response.ok) {
@@ -806,6 +841,19 @@ export const api = {
   }) =>
     apiFetch<Chat>(`/chat/sessions/${id}`, { method: "PATCH", token, operation: "chat.sessions.update", body: JSON.stringify(payload) }),
   deleteChat: (token: string, id: string) => apiFetch<void>(`/chat/sessions/${id}`, { method: "DELETE", token, operation: "chat.sessions.delete" }),
+  exportChatBackup: (token: string) => apiFetchBlob("/user-data/backup", token, "userData.backup.export"),
+  previewChatRestore: (token: string, backup: ChatBackup) => apiFetch<BackupPreview>("/user-data/restore/preview", { method: "POST", token, operation: "userData.backup.preview", body: JSON.stringify(backup), timeoutMs: 30000 }),
+  restoreChatBackup: (token: string, backup: ChatBackup, mode: "merge" | "replace", confirmReplace: boolean) => apiFetch<RestoreResult>("/user-data/restore", { method: "POST", token, operation: "userData.backup.restore", body: JSON.stringify({ backup, mode, confirm_replace: confirmReplace }), timeoutMs: 120000 }),
+  userUsage: (token: string, days: number, range?: { start: string; end: string }) => {
+    const params = new URLSearchParams({ days: String(days) });
+    if (range) {
+      params.set("start", `${range.start}T00:00:00Z`);
+      params.set("end", `${range.end}T23:59:59.999Z`);
+    }
+    return apiFetch<UserUsage>(`/user-data/usage?${params}`, { token, operation: "userData.usage" });
+  },
+  notificationPreferences: (token: string) => apiFetch<{ enabled: boolean; apk_updates: boolean; seva_updates: boolean; payment_updates: boolean; social_updates: boolean }>("/notifications/preferences", { token, operation: "notifications.preferences" }),
+  updateNotificationPreferences: (token: string, payload: { enabled?: boolean; apk_updates?: boolean; seva_updates?: boolean; payment_updates?: boolean; social_updates?: boolean }) => apiFetch<{ enabled: boolean }>("/notifications/preferences", { method: "PATCH", token, operation: "notifications.preferences.update", body: JSON.stringify(payload) }),
 
   listDocuments: (token: string) => apiFetch<DocumentItem[]>("/documents", { token, operation: "documents.list" }),
   listLibraryAssets: (token: string, options: { query?: string; fileType?: string; sort?: string; page?: number } = {}) => {
@@ -1225,11 +1273,21 @@ export const api = {
     }),
 
   adminStats: (token: string) => apiFetch<AdminStats>("/admin/stats", { token, operation: "admin.stats" }),
-  adminUsers: (token: string, params: { search?: string; role?: string; status?: string } = {}) => {
+  adminSystemStatus: (token: string) => apiFetch<AdminSystemStatus>("/admin/system-status", { token, operation: "admin.system_status" }),
+  adminAuditLogs: (token: string, page = 1, search = "") => {
+    const params = new URLSearchParams({ page: String(page), page_size: "50" });
+    if (search.trim()) params.set("search", search.trim());
+    return apiFetch<AdminAuditLogPage>(`/admin/audit-logs?${params}`, { token, operation: "admin.audit_logs" });
+  },
+  adminUsers: (token: string, params: { search?: string; role?: string; status?: string; page?: number; pageSize?: number; sortBy?: "created_at" | "name" | "email" | "role"; sortOrder?: "asc" | "desc" } = {}) => {
     const search = new URLSearchParams();
     if (params.search) search.set("search", params.search);
     if (params.role) search.set("role", params.role);
     if (params.status) search.set("status", params.status);
+    if (params.page) search.set("page", String(params.page));
+    if (params.pageSize) search.set("page_size", String(params.pageSize));
+    if (params.sortBy) search.set("sort_by", params.sortBy);
+    if (params.sortOrder) search.set("sort_order", params.sortOrder);
     const suffix = search.toString() ? `?${search.toString()}` : "";
     return apiFetch<AdminUser[]>(`/admin/users${suffix}`, { token, operation: "admin.users.list" });
   },
@@ -1297,8 +1355,16 @@ export const api = {
     }),
   deleteAdminUser: (token: string, id: string) =>
     apiFetch<void>(`/admin/users/${id}`, { method: "DELETE", token, operation: "admin.users.delete" }),
-  adminSubscriptions: (token: string) =>
-    apiFetch<AdminSubscription[]>("/admin/subscriptions", { token, operation: "admin.subscriptions.list" }),
+  adminSubscriptions: (token: string, options: { search?: string; plan?: string; status?: string; page?: number; pageSize?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (options.search) params.set("search", options.search);
+    if (options.plan) params.set("plan", options.plan);
+    if (options.status) params.set("status", options.status);
+    if (options.page) params.set("page", String(options.page));
+    if (options.pageSize) params.set("page_size", String(options.pageSize));
+    const suffix = params.size ? `?${params}` : "";
+    return apiFetch<AdminSubscription[]>(`/admin/subscriptions${suffix}`, { token, operation: "admin.subscriptions.list" });
+  },
   updateAdminSubscription: (
     token: string,
     userId: string,
@@ -1405,6 +1471,8 @@ export const api = {
       operation: "admin.promos.archive",
       body: JSON.stringify({ archived })
     }),
+  createStripeCheckoutSession: (token: string, payload: { plan_id: PaidPricingPlanName; currency?: string; receipt?: string; promo_code?: string | null }) =>
+    apiFetch<StripeCheckoutSession>("/payments/stripe/create-session", { method: "POST", token, operation: "payments.stripe.createSession", body: JSON.stringify(payload), timeoutMs: 30000 }),
   interpretServiceRequest: (token: string, payload: { message: string; chat_id?: string | null; timezone: string; locale: string; client_request_id: string }) =>
     apiFetch<ServiceIntentResponse>("/form-services/interpret", { method: "POST", token, operation: "formService.interpret", body: JSON.stringify(payload) }),
   getServiceTask: (token: string, taskId: string) =>

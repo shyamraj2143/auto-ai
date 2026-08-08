@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import platform
 import shutil
 
@@ -25,6 +25,8 @@ from app.models.promo import PromoCode, PromoRedemption
 from app.models.user import User
 from app.schemas.admin import (
     AdminAnalyticsResponse,
+    AdminAuditLogPage,
+    AdminAuditLogRead,
     AdminCreateUser,
     AdminFeatureFlagRead,
     AdminFeatureFlagUpdate,
@@ -80,11 +82,33 @@ from app.services.admin_control import (
 )
 from app.services.apk_service import apk_service
 from app.services.firebase_notifications import firebase_notification_service
+from app.services.orchestration.model_registry import model_registry
+from app.services.response_cache import response_cache
 from app.api.routes.notifications import dispatch_apk_update_notifications
 from app.services.promo_service import SUCCESS_PAYMENT_STATUSES, promo_status
 
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+@router.get("/audit-logs", response_model=AdminAuditLogPage)
+def audit_logs(
+    search: str | None = Query(default=None, max_length=120),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    _: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> AdminAuditLogPage:
+    query = select(AuditLog)
+    count_query = select(func.count(AuditLog.id))
+    if search:
+        term = f"%{search.strip().lower()}%"
+        condition = or_(func.lower(AuditLog.action).like(term), func.lower(AuditLog.reason).like(term), AuditLog.actor_user_id.like(term), AuditLog.target_user_id.like(term))
+        query = query.where(condition)
+        count_query = count_query.where(condition)
+    total = int(db.scalar(count_query) or 0)
+    rows = db.scalars(query.order_by(AuditLog.created_at.desc()).offset((page - 1) * page_size).limit(page_size)).all()
+    return AdminAuditLogPage(items=[AdminAuditLogRead(id=item.id, actor_user_id=item.actor_user_id, target_user_id=item.target_user_id, action=item.action, reason=item.reason, metadata_payload=item.audit_metadata or {}, created_at=item.created_at) for item in rows], page=page, page_size=page_size, total=total, total_pages=max(1, (total + page_size - 1) // page_size))
 
 
 def usage_for_user(db: Session, user_id: str) -> AdminUserUsageSummary:
@@ -686,6 +710,10 @@ def list_users(
     search: str | None = Query(default=None),
     role: str | None = Query(default=None, pattern="^(user|admin|super_admin|content_admin|content_editor|content_viewer)$"),
     status_filter: str | None = Query(default=None, alias="status", pattern="^(active|blocked)$"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=1, le=200),
+    sort_by: str = Query(default="created_at", pattern="^(created_at|name|email|role)$"),
+    sort_order: str = Query(default="desc", pattern="^(asc|desc)$"),
     current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> list[AdminUserRead]:
@@ -699,7 +727,9 @@ def list_users(
         query = query.where(User.is_active.is_(True))
     if status_filter == "blocked":
         query = query.where(User.is_active.is_(False))
-    users = db.scalars(query.order_by(User.created_at.desc())).all()
+    sort_column = {"created_at": User.created_at, "name": User.name, "email": User.email, "role": User.role}[sort_by]
+    ordering = sort_column.asc() if sort_order == "asc" else sort_column.desc()
+    users = db.scalars(query.order_by(ordering).offset((page - 1) * page_size).limit(page_size)).all()
     result = [to_admin_user(db, user) for user in users]
     db.commit()
     return result
@@ -878,8 +908,10 @@ def update_user_status(
     user = get_user_or_404(db, user_id)
     if user.id == current_admin.id and not payload.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot block your own admin account")
+    before = user.is_active
     user.is_active = payload.is_active
     user.updated_at = datetime.utcnow()
+    db.add(AuditLog(actor_user_id=current_admin.id, target_user_id=user.id, action="admin.user.status", reason="Administrator changed account state", audit_metadata={"before": before, "after": payload.is_active, "target_email": user.email}))
     db.commit()
     db.refresh(user)
     return to_admin_user(db, user)
@@ -899,6 +931,7 @@ def update_user_role(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot remove your own admin role")
     if (user.role == "super_admin" or payload.role == "super_admin") and current_admin.role != "super_admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only a super admin can manage super admin roles")
+    before = user.role
     user.role = payload.role
     user.is_admin = payload.role in {"admin", "super_admin", "content_admin", "content_editor", "content_viewer"}
     user.updated_at = datetime.utcnow()
@@ -914,17 +947,19 @@ def update_user_role(
         subscription.payment_status = "admin"
         mark_quota_updated(subscription, current_admin)
         recalculate_token_balance(subscription)
+    db.add(AuditLog(actor_user_id=current_admin.id, target_user_id=user.id, action="admin.user.role", reason="Administrator changed account role", audit_metadata={"before": before, "after": payload.role, "target_email": user.email}))
     db.commit()
     db.refresh(user)
     return to_admin_user(db, user)
 
 
-def reset_user_password_record(db: Session, user_id: str, payload: AdminUserPasswordReset) -> AdminUserRead:
+def reset_user_password_record(db: Session, user_id: str, payload: AdminUserPasswordReset, current_admin: User) -> AdminUserRead:
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     user.hashed_password = get_password_hash(payload.new_password)
     user.updated_at = datetime.utcnow()
+    db.add(AuditLog(actor_user_id=current_admin.id, target_user_id=user.id, action="admin.user.password_reset", reason="Administrator reset the target account password", audit_metadata={"target_email": user.email}))
     db.commit()
     db.refresh(user)
     return to_admin_user(db, user)
@@ -934,20 +969,20 @@ def reset_user_password_record(db: Session, user_id: str, payload: AdminUserPass
 def reset_user_password(
     user_id: str,
     payload: AdminUserPasswordReset,
-    _: User = Depends(get_current_admin),
+    current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> AdminUserRead:
-    return reset_user_password_record(db, user_id, payload)
+    return reset_user_password_record(db, user_id, payload, current_admin)
 
 
 @router.patch("/users/{user_id}/password", response_model=AdminUserRead)
 def reset_user_password_legacy(
     user_id: str,
     payload: AdminUserPasswordReset,
-    _: User = Depends(get_current_admin),
+    current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> AdminUserRead:
-    return reset_user_password_record(db, user_id, payload)
+    return reset_user_password_record(db, user_id, payload, current_admin)
 
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -957,6 +992,8 @@ def delete_user(user_id: str, current_admin: User = Depends(get_current_admin), 
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     if user.id == current_admin.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot delete your own admin account")
+    db.add(AuditLog(actor_user_id=current_admin.id, target_user_id=user.id, action="admin.user.delete", reason="Administrator deleted the target account", audit_metadata={"target_email": user.email, "target_role": user.role}))
+    db.flush()
     db.delete(user)
     db.commit()
 
@@ -965,19 +1002,26 @@ def delete_user(user_id: str, current_admin: User = Depends(get_current_admin), 
 def list_subscriptions(
     plan: str | None = Query(default=None, pattern="^(free|pro|premium|ultra|pro-plus|admin)$"),
     status_filter: str | None = Query(default=None, alias="status", pattern="^(active|inactive)$"),
+    search: str | None = Query(default=None, max_length=120),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=1, le=200),
     _: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ) -> list[AdminSubscriptionRead]:
-    users = db.scalars(select(User).order_by(User.created_at.desc())).all()
+    query = select(User).outerjoin(UserSubscription, UserSubscription.user_id == User.id)
+    if search:
+        term = f"%{search.strip().lower()}%"
+        query = query.where(or_(func.lower(User.name).like(term), func.lower(User.email).like(term)))
+    if plan:
+        query = query.where(UserSubscription.plan == plan)
+    if status_filter == "active":
+        query = query.where(UserSubscription.is_active.is_(True))
+    if status_filter == "inactive":
+        query = query.where(UserSubscription.is_active.is_(False))
+    users = db.scalars(query.order_by(User.created_at.desc()).offset((page - 1) * page_size).limit(page_size)).all()
     result: list[AdminSubscriptionRead] = []
     for user in users:
         subscription = ensure_user_subscription(db, user)
-        if plan and subscription.plan != plan:
-            continue
-        if status_filter == "active" and not subscription.is_active:
-            continue
-        if status_filter == "inactive" and subscription.is_active:
-            continue
         result.append(to_subscription_read(subscription, user))
     db.commit()
     return result
@@ -995,6 +1039,7 @@ def update_subscription(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     subscription = ensure_user_subscription(db, user)
     updates = payload.model_dump(exclude_unset=True)
+    before = {"plan": subscription.plan, "status": subscription.status, "is_active": subscription.is_active, "auto_renewal": subscription.auto_renewal, "is_lifetime": subscription.is_lifetime, "expires_at": subscription.expires_at.isoformat() if subscription.expires_at else None}
     if "plan" in updates and updates["plan"] is not None:
         subscription.plan = normalize_plan(updates["plan"])
         subscription.plan_id = subscription.plan
@@ -1029,6 +1074,7 @@ def update_subscription(
         subscription.suspended_by = None
     subscription.updated_at = datetime.utcnow()
     sync_user_subscription_status(user, subscription)
+    db.add(AuditLog(actor_user_id=current_admin.id, target_user_id=user.id, action="admin.subscription.update", reason="Administrator modified subscription", audit_metadata={"before": before, "changed_fields": sorted(updates), "target_email": user.email}))
     db.commit()
     db.refresh(subscription)
     return to_subscription_read(subscription, user)
@@ -1215,19 +1261,16 @@ def provider_summaries(rows: list[tuple[str, int, int, int, int]]) -> list[Admin
 
 
 def usage_time_buckets(db: Session, date_format: str, limit: int) -> list[AdminUsageTimeBucket]:
-    rows = db.execute(
-        select(
-            func.strftime(date_format, APIUsage.created_at),
-            func.count(APIUsage.id),
-            func.coalesce(func.sum(APIUsage.total_tokens), 0),
-        )
-        .group_by(func.strftime(date_format, APIUsage.created_at))
-        .order_by(func.strftime(date_format, APIUsage.created_at).desc())
-        .limit(limit)
-    ).all()
+    oldest = datetime.utcnow() - (timedelta(days=limit + 1) if date_format == "%Y-%m-%d" else timedelta(days=limit * 32))
+    aggregate: dict[str, list[int]] = {}
+    for created_at, total_tokens in db.execute(select(APIUsage.created_at, APIUsage.total_tokens).where(APIUsage.created_at >= oldest).order_by(APIUsage.created_at)):
+        period = created_at.strftime(date_format)
+        values = aggregate.setdefault(period, [0, 0])
+        values[0] += 1
+        values[1] += int(total_tokens or 0)
     return [
-        AdminUsageTimeBucket(period=str(period), requests=int(requests or 0), total_tokens=int(total_tokens or 0))
-        for period, requests, total_tokens in reversed(rows)
+        AdminUsageTimeBucket(period=period, requests=values[0], total_tokens=values[1])
+        for period, values in list(sorted(aggregate.items()))[-limit:]
     ]
 
 
@@ -1403,3 +1446,30 @@ def analytics(_: User = Depends(get_current_admin), db: Session = Depends(get_db
         payments_by_status={str(name): int(count or 0) for name, count in payment_rows},
         daily_usage=usage_time_buckets(db, "%Y-%m-%d", 31),
     )
+
+
+@router.get("/system-status")
+def deployment_system_status(_: User = Depends(get_current_admin), db: Session = Depends(get_db)) -> dict:
+    db.execute(select(func.count(User.id)))
+    records = model_registry.refresh()
+    providers = {}
+    for provider in ("groq", "bedrock", "openai", "gemini"):
+        provider_records = [record for record in records if record.provider == provider]
+        providers[provider] = {
+            "configured": any(record.enabled for record in provider_records),
+            "healthy_models": sum(record.enabled and record.health_status == "healthy" for record in provider_records),
+            "known_models": len(provider_records),
+        }
+    return {
+        "environment": settings.ENVIRONMENT,
+        "canonical_frontend_url": settings.frontend_url,
+        "canonical_backend_url": settings.backend_url,
+        "https_configured": settings.frontend_url.startswith("https://") and settings.backend_url.startswith("https://"),
+        "database": {"backend": settings.database_backend, "reachable": True, "persistent": settings.persistent_storage},
+        "cache": {"backend": response_cache.backend, "ttl_seconds": settings.RESPONSE_CACHE_TTL_SECONDS if settings.RESPONSE_CACHE_ENABLED else 0},
+        "fcm": {"configured": firebase_notification_service.configured},
+        "payments": {"razorpay": bool(settings.RAZORPAY_KEY_ID and settings.RAZORPAY_KEY_SECRET and settings.RAZORPAY_WEBHOOK_SECRET), "stripe": bool(settings.STRIPE_SECRET_KEY and settings.STRIPE_WEBHOOK_SECRET)},
+        "providers": providers,
+        "commit_sha": settings.RAILWAY_GIT_COMMIT_SHA,
+        "deployment_id": settings.RAILWAY_DEPLOYMENT_ID,
+    }
