@@ -1,5 +1,6 @@
-import { CheckCircle2, Download, FileCheck2, FileText, LoaderCircle, RefreshCw, Send, ShieldCheck, Upload, UserCheck, UserPlus, UsersRound } from "lucide-react";
+import { Bell, CheckCircle2, Download, FileCheck2, FileText, LoaderCircle, RefreshCw, Search, Send, ShieldCheck, Upload, UserCheck, UserPlus, UsersRound } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { sevaApi, type SevaAgent, type SevaWorkOrder } from "./sevaApi";
 import { sevaScopeApi, type SevaApprovedScope } from "./sevaScopeApi";
@@ -7,7 +8,7 @@ import "./autoaiSeva.css";
 import "./sevaAdvanced.css";
 import "./autoaiSevaScrollFix.css";
 
-const STATUS_OPTIONS: Array<SevaWorkOrder["status"]> = ["IN_PROGRESS", "WAITING_USER", "SUBMITTED", "COMPLETED"];
+const STATUS_OPTIONS: Array<SevaWorkOrder["status"]> = ["IN_PROGRESS", "WAITING_USER", "SUBMITTED"];
 
 function readable(value: string) {
   return value.toLowerCase().replace(/_/g, " ");
@@ -21,8 +22,9 @@ function printableValue(value: unknown) {
 
 export function SevaOperationsPage() {
   const { token, user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState<SevaWorkOrder[]>([]);
-  const [selectedId, setSelectedId] = useState("");
+  const [selectedId, setSelectedId] = useState(searchParams.get("case") || "");
   const [selected, setSelected] = useState<SevaWorkOrder | null>(null);
   const [scope, setScope] = useState<SevaApprovedScope | null>(null);
   const [loading, setLoading] = useState(true);
@@ -32,19 +34,34 @@ export function SevaOperationsPage() {
   const [label, setLabel] = useState("");
   const [instructions, setInstructions] = useState("");
   const [statusNote, setStatusNote] = useState("");
+  const [progressPercent, setProgressPercent] = useState(30);
+  const [referenceNumber, setReferenceNumber] = useState("");
   const [deliverableLabel, setDeliverableLabel] = useState("Application receipt PDF");
   const [deliverableNote, setDeliverableNote] = useState("");
   const [deliverableFile, setDeliverableFile] = useState<File | null>(null);
   const [agents, setAgents] = useState<SevaAgent[]>([]);
-  const [agentForm, setAgentForm] = useState({ agent_id: "", display_name: "", password: "", capacity: 5 });
+  const [agentSummary, setAgentSummary] = useState({ active: 0, inactive: 0, suspended: 0, at_capacity: 0 });
+  const [agentEdits, setAgentEdits] = useState<Record<string, { capacity: number; password: string; specializations: string }>>({});
+  const [agentForm, setAgentForm] = useState({ agent_id: "", display_name: "", password: "", capacity: 5, work_email: "", contact_phone: "", specializations: "", languages: "" });
+  const [dashboard, setDashboard] = useState<{ counts: Record<string, number>; active_workload: number; completed_today: number; attention_required: number; agent: SevaAgent } | null>(null);
+  const [notifications, setNotifications] = useState<Awaited<ReturnType<typeof sevaApi.listNotifications>> | null>(null);
+  const [stateFilter, setStateFilter] = useState("");
+  const [agentFilter, setAgentFilter] = useState("");
+  const [searchText, setSearchText] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [queueMeta, setQueueMeta] = useState({ total: 0, has_more: false });
 
   const load = useCallback(async (silent = false) => {
     if (!token) return;
     if (!silent) setLoading(true);
     try {
-      const result = await sevaApi.listWorkOrders(token);
+      const result = await sevaApi.listWorkOrders(token, { state: stateFilter || undefined, q: appliedSearch || undefined, agentId: agentFilter || undefined, page, pageSize: 25 });
       setItems(result.items);
-      if (user?.is_admin) setAgents((await sevaApi.listAgents(token)).items);
+      setQueueMeta({ total: result.total, has_more: result.has_more });
+      if (user?.is_admin) { const team = await sevaApi.listAgents(token); setAgents(team.items); setAgentSummary(team.summary); setAgentEdits((current) => Object.fromEntries(team.items.map((agent) => [agent.id, current[agent.id] || { capacity: agent.capacity, password: "", specializations: agent.specializations.join(", ") }]))); }
+      if (user?.role === "seva_agent") setDashboard(await sevaApi.getAgentDashboard(token));
+      setNotifications(await sevaApi.listNotifications(token));
       setSelectedId((current) => current || result.items[0]?.id || "");
       setError("");
     } catch (reason) {
@@ -52,7 +69,7 @@ export function SevaOperationsPage() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [token, user?.is_admin]);
+  }, [agentFilter, appliedSearch, page, stateFilter, token, user?.is_admin, user?.role]);
 
   const loadSelected = useCallback(async () => {
     if (!token || !selectedId) {
@@ -63,6 +80,8 @@ export function SevaOperationsPage() {
     try {
       const next = await sevaApi.getWorkOrder(token, selectedId);
       setSelected(next);
+      setProgressPercent(next.work_progress);
+      setReferenceNumber(next.reference_number || "");
       if (next.assigned_employee?.id === user?.id && next.status !== "CANCELLED") {
         setScope(await sevaScopeApi.get(token, next.id));
       } else {
@@ -75,6 +94,9 @@ export function SevaOperationsPage() {
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadSelected(); }, [loadSelected]);
+  useEffect(() => {
+    if (selectedId) setSearchParams((current) => { current.set("case", selectedId); return current; }, { replace: true });
+  }, [selectedId, setSearchParams]);
   useEffect(() => {
     const timer = window.setInterval(() => { void load(true); void loadSelected(); }, 12_000);
     return () => window.clearInterval(timer);
@@ -129,23 +151,42 @@ export function SevaOperationsPage() {
     if (!token || working) return;
     setWorking("create-agent"); setError("");
     try {
-      const created = await sevaApi.createAgent(token, agentForm);
+      const created = await sevaApi.createAgent(token, { ...agentForm, specializations: agentForm.specializations.split(",").map((item) => item.trim()).filter(Boolean), languages: agentForm.languages.split(",").map((item) => item.trim()).filter(Boolean) });
       setAgents((current) => [created, ...current]);
-      setAgentForm({ agent_id: "", display_name: "", password: "", capacity: 5 });
+      setAgentForm({ agent_id: "", display_name: "", password: "", capacity: 5, work_email: "", contact_phone: "", specializations: "", languages: "" });
       await load(true);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Agent could not be created."); }
     finally { setWorking(""); }
   }
 
-  async function toggleAgent(agent: SevaAgent) {
+  async function manageAgent(agent: SevaAgent, status?: SevaAgent["status"]) {
     if (!token || working) return;
-    setWorking(`agent-${agent.id}`); setError("");
+    const edit = agentEdits[agent.id] || { capacity: agent.capacity, password: "", specializations: agent.specializations.join(", ") };
+    setWorking(`agent-manage-${agent.id}`); setError("");
     try {
-      const updated = await sevaApi.updateAgent(token, agent.id, { is_active: !agent.is_active });
+      const updated = await sevaApi.updateAgent(token, agent.id, {
+        status, capacity: edit.capacity,
+        specializations: edit.specializations.split(",").map((item) => item.trim()).filter(Boolean),
+        password: edit.password || undefined,
+      });
       setAgents((current) => current.map((item) => item.id === updated.id ? updated : item));
+      setAgentEdits((current) => ({ ...current, [agent.id]: { ...edit, password: "" } }));
       await load(true);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Agent could not be updated."); }
     finally { setWorking(""); }
+  }
+
+  async function reassign(agentProfileId: string) {
+    if (!token || !selected || working) return;
+    await run("reassign", () => sevaApi.reassignWorkOrder(token, selected.id, agentProfileId || null, "Administrator reassigned the case from Operations"));
+    await load(true);
+  }
+
+  async function openNotification(notification: NonNullable<typeof notifications>["items"][number]) {
+    if (!token) return;
+    setSelectedId(notification.work_order_id);
+    if (!notification.read_at) await sevaApi.markNotificationRead(token, notification.id);
+    setNotifications((current) => current ? { ...current, unread: Math.max(0, current.unread - (notification.read_at ? 0 : 1)), items: current.items.map((item) => item.id === notification.id ? { ...item, read_at: new Date().toISOString() } : item) } : current);
   }
 
   async function downloadApprovedDocument(assetId: string, filename: string) {
@@ -180,7 +221,7 @@ export function SevaOperationsPage() {
   }
 
   return (
-    <div className="seva-page">
+    <div className={`seva-page ${user?.role === "seva_agent" ? "seva-agent-portal" : "seva-admin-portal"}`}>
       <header className="seva-topbar">
         <div><span className="seva-mark"><UsersRound size={21} /></span><span><strong>AutoAI Seva Operations</strong><small>Employee application queue</small></span></div>
         <button type="button" className="seva-history-button" onClick={() => void load()}><RefreshCw className={loading ? "spin" : ""} size={17} /> Refresh</button>
@@ -188,17 +229,30 @@ export function SevaOperationsPage() {
       <main className="seva-employee-page">
         <section className="seva-list-heading"><div><span>Operations workspace</span><h1>Claim requests, ask requirements and deliver final PDFs.</h1></div></section>
         {error ? <p className="seva-error" role="alert">{error}</p> : null}
+        {notifications?.items.length ? <section className="seva-notification-strip" aria-label="Case notifications"><header><Bell size={17} /><strong>Notifications</strong><span>{notifications.unread} unread</span></header><div>{notifications.items.slice(0, 4).map((notification) => <button type="button" key={notification.id} className={notification.read_at ? "" : "unread"} onClick={() => void openNotification(notification)}><strong>{notification.title}</strong><span>{notification.message}</span></button>)}</div></section> : null}
+        {dashboard ? <section className="seva-agent-overview"><header><div><span>My work</span><h2>{dashboard.agent.display_name}</h2></div><strong>{dashboard.active_workload}/{dashboard.agent.capacity} active</strong></header><div><article><small>In progress</small><b>{dashboard.counts.IN_PROGRESS || 0}</b></article><article><small>Waiting for user</small><b>{dashboard.counts.WAITING_USER || 0}</b></article><article><small>Submitted</small><b>{dashboard.counts.SUBMITTED || 0}</b></article><article><small>Completed today</small><b>{dashboard.completed_today}</b></article><article><small>Attention required</small><b>{dashboard.attention_required}</b></article></div></section> : null}
         {user?.is_admin ? <section className="seva-agent-admin">
           <header><div><span>Agent access</span><h2>Team capacity and automatic assignment</h2></div><strong>{agents.reduce((sum, agent) => sum + agent.available_slots, 0)} slots available</strong></header>
+          <div className="seva-agent-summary"><span>Total <b>{agents.length}</b></span><span>Active <b>{agentSummary.active}</b></span><span>Inactive <b>{agentSummary.inactive}</b></span><span>Suspended <b>{agentSummary.suspended}</b></span><span>At capacity <b>{agentSummary.at_capacity}</b></span></div>
           <form onSubmit={createAgent}>
             <input value={agentForm.agent_id} onChange={(event) => setAgentForm({ ...agentForm, agent_id: event.target.value })} placeholder="Agent ID" pattern="[A-Za-z0-9._-]+" minLength={3} required />
             <input value={agentForm.display_name} onChange={(event) => setAgentForm({ ...agentForm, display_name: event.target.value })} placeholder="Agent name" minLength={2} required />
             <input type="password" value={agentForm.password} onChange={(event) => setAgentForm({ ...agentForm, password: event.target.value })} placeholder="Temporary password" minLength={8} autoComplete="new-password" required />
             <input type="number" value={agentForm.capacity} onChange={(event) => setAgentForm({ ...agentForm, capacity: Number(event.target.value) })} min={1} max={50} aria-label="Agent capacity" required />
+            <input type="email" value={agentForm.work_email} onChange={(event) => setAgentForm({ ...agentForm, work_email: event.target.value })} placeholder="Work email (optional)" />
+            <input value={agentForm.contact_phone} onChange={(event) => setAgentForm({ ...agentForm, contact_phone: event.target.value })} placeholder="Contact phone (optional)" />
+            <input value={agentForm.specializations} onChange={(event) => setAgentForm({ ...agentForm, specializations: event.target.value })} placeholder="Categories, comma separated" />
+            <input value={agentForm.languages} onChange={(event) => setAgentForm({ ...agentForm, languages: event.target.value })} placeholder="Languages, comma separated" />
             <button className="seva-primary" disabled={working === "create-agent"}><UserPlus size={16} /> Create agent</button>
           </form>
-          <div className="seva-agent-list">{agents.map((agent) => <article key={agent.id}><span><strong>{agent.display_name}</strong><small>{agent.agent_id} · {agent.active_load}/{agent.capacity} active</small></span><b>{agent.is_active ? `${agent.available_slots} open` : "Disabled"}</b><button type="button" onClick={() => void toggleAgent(agent)} disabled={Boolean(working)}>{agent.is_active ? "Disable" : "Enable"}</button></article>)}</div>
+          <div className="seva-agent-list">{agents.map((agent) => { const edit = agentEdits[agent.id] || { capacity: agent.capacity, password: "", specializations: agent.specializations.join(", ") }; return <article key={agent.id}><span><strong>{agent.display_name}</strong><small>{agent.agent_id} · {agent.active_load}/{agent.capacity} active · {agent.status.toLowerCase()}</small></span><b>{agent.is_active ? `${agent.available_slots} open` : "Disabled"}</b><div className="seva-agent-editor"><input type="number" min={1} max={50} value={edit.capacity} aria-label={`${agent.display_name} capacity`} onChange={(event) => setAgentEdits((current) => ({ ...current, [agent.id]: { ...edit, capacity: Number(event.target.value) } }))} /><input value={edit.specializations} placeholder="Specializations" aria-label={`${agent.display_name} specializations`} onChange={(event) => setAgentEdits((current) => ({ ...current, [agent.id]: { ...edit, specializations: event.target.value } }))} /><input type="password" minLength={8} value={edit.password} placeholder="New temporary password" aria-label={`${agent.display_name} password reset`} onChange={(event) => setAgentEdits((current) => ({ ...current, [agent.id]: { ...edit, password: event.target.value } }))} /><select value={agent.status} aria-label={`${agent.display_name} status`} onChange={(event) => void manageAgent(agent, event.target.value as SevaAgent["status"])}><option>ACTIVE</option><option>INACTIVE</option><option>SUSPENDED</option></select><button type="button" onClick={() => void manageAgent(agent)} disabled={Boolean(working)}>Save / reset</button></div></article>; })}</div>
         </section> : null}
+        <form className="seva-queue-filters" onSubmit={(event) => { event.preventDefault(); setPage(1); setAppliedSearch(searchText.trim()); }}>
+          <label><Search size={16} /><input value={searchText} onChange={(event) => setSearchText(event.target.value)} placeholder="Case ID, user or request" /></label>
+          <select value={stateFilter} onChange={(event) => { setPage(1); setStateFilter(event.target.value); }} aria-label="Filter by status"><option value="">All statuses</option>{["QUEUED", "IN_PROGRESS", "WAITING_USER", "SUBMITTED", "COMPLETED", "CANCELLED"].map((status) => <option key={status}>{status}</option>)}</select>
+          {user?.is_admin ? <select value={agentFilter} onChange={(event) => { setPage(1); setAgentFilter(event.target.value); }} aria-label="Filter by agent"><option value="">All agents</option>{agents.map((agent) => <option key={agent.user_id} value={agent.user_id}>{agent.display_name}</option>)}</select> : null}
+          <button type="submit">Search</button><span>{queueMeta.total} cases</span>
+        </form>
         <div className="seva-employee-layout">
           <aside className="seva-work-order-list">
             {loading ? <div className="seva-assistance-loading"><LoaderCircle className="spin" /> Loading queue…</div> : null}
@@ -206,11 +260,12 @@ export function SevaOperationsPage() {
             {items.map((item) => (
               <button key={item.id} type="button" className={selectedId === item.id ? "active" : ""} onClick={() => setSelectedId(item.id)}>
                 <strong>{item.service?.name || "AutoAI Seva request"}</strong>
-                <small>{item.owner?.name || "User"} · {readable(item.status)}</small>
+                <small>{item.case_id} · {readable(item.status)}</small><small>{item.owner?.name || "User"}</small>
                 {item.queue_position ? <small>Queue position {item.queue_position}</small> : null}
                 <span>{item.request_summary}</span>
               </button>
             ))}
+            <footer className="seva-pagination"><button type="button" disabled={page === 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>Previous</button><span>Page {page}</span><button type="button" disabled={!queueMeta.has_more} onClick={() => setPage((value) => value + 1)}>Next</button></footer>
           </aside>
 
           <section className="seva-work-order-detail">
@@ -223,9 +278,11 @@ export function SevaOperationsPage() {
                 <p className="seva-employee-note"><ShieldCheck size={16} />Only user-approved fields and documents are available. Never request a raw OTP, CAPTCHA, password or payment secret.</p>
                 <div className="seva-employee-toolbar">
                   {!selected.assigned_employee ? <button type="button" disabled={Boolean(working)} onClick={() => token && void run("claim", () => sevaApi.claimWorkOrder(token, selected.id))}><UserCheck size={16} /> Claim request</button> : <span>Assigned to <strong>{selected.assigned_employee.name}</strong></span>}
-                  {STATUS_OPTIONS.map((item) => <button key={item} type="button" disabled={Boolean(working)} onClick={() => token && void run(item, () => sevaApi.updateWorkOrderStatus(token, selected.id, item, statusNote))}>{readable(item)}</button>)}
+                  {STATUS_OPTIONS.map((item) => <button key={item} type="button" disabled={Boolean(working) || (item === "SUBMITTED" && !referenceNumber.trim())} onClick={() => token && void run(item, () => sevaApi.updateWorkOrderStatus(token, selected.id, item, statusNote, progressPercent, referenceNumber))}>{readable(item)}</button>)}
+                  {user?.is_admin ? <label className="seva-reassign-control">Reassign<select value={agents.find((agent) => agent.user_id === selected.assigned_employee?.id)?.id || ""} onChange={(event) => void reassign(event.target.value)} disabled={Boolean(working)}><option value="">Automatic assignment</option>{agents.filter((agent) => (agent.is_active && agent.available_slots > 0) || agent.user_id === selected.assigned_employee?.id).map((agent) => <option key={agent.id} value={agent.id}>{agent.display_name} ({agent.available_slots} open)</option>)}</select></label> : null}
                 </div>
                 <textarea value={statusNote} onChange={(event) => setStatusNote(event.target.value)} placeholder="Status note visible to the user" rows={2} />
+                <div className="seva-progress-controls"><label>Progress %<input type="number" min={selected.work_progress} max={99} value={progressPercent} onChange={(event) => setProgressPercent(Number(event.target.value))} /></label><label>Application/reference number<input value={referenceNumber} onChange={(event) => setReferenceNumber(event.target.value)} maxLength={120} placeholder="Required when submitted" /></label></div>
 
                 {scope ? (
                   <section className="seva-approved-scope">
@@ -275,6 +332,7 @@ export function SevaOperationsPage() {
                   <label className="seva-employee-upload"><Upload size={17} />{deliverableFile?.name || "Select final PDF/image"}<input type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => setDeliverableFile(event.target.files?.[0] || null)} /></label>
                   <button type="submit" className="seva-primary" disabled={!deliverableFile || working === "deliverable" || selected.assigned_employee?.id !== user?.id}>{working === "deliverable" ? <LoaderCircle className="spin" size={16} /> : <FileCheck2 size={16} />} Upload and complete</button>
                 </form>
+                {selected.timeline.length ? <section className="seva-case-timeline"><h3>Case activity</h3>{selected.timeline.map((event) => <article key={event.id}><span /><div><strong>{event.title}</strong><small>{new Date(event.created_at).toLocaleString()}</small></div></article>)}</section> : null}
               </>
             )}
           </section>

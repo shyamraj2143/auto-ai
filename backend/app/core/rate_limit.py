@@ -38,7 +38,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     def _policy(path: str, method: str) -> tuple[str, int]:
         normalized = path.rstrip("/")
         policies = (
-            ("auth_login", settings.RATE_LIMIT_LOGIN_PER_MINUTE, normalized.endswith("/auth/login")),
+            ("auth_login", settings.RATE_LIMIT_LOGIN_PER_MINUTE, normalized.endswith("/auth/login") or normalized.endswith("/agent/login")),
             ("auth_register", settings.RATE_LIMIT_REGISTER_PER_MINUTE, normalized.endswith("/auth/register")),
             ("password_reset", settings.RATE_LIMIT_PASSWORD_RESET_PER_MINUTE, "/auth/password/" in normalized),
             ("ai_generation", settings.RATE_LIMIT_AI_PER_MINUTE, method == "POST" and ("/ai/" in normalized or normalized.endswith("/ai/chat"))),

@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import datetime
 import logging
 import re
 import uuid
@@ -53,6 +54,8 @@ def ensure_runtime_schema() -> None:
     backfill_chat_storage = {"chats", "messages", "chat_sessions", "chat_messages"}.issubset(table_names)
     backfill_social_relationships = "social_follows" in table_names
     migrate_legacy_apk_releases = "apk_versions" in table_names and "apk_releases" in table_names
+    backfill_seva_cases = "seva_work_orders" in table_names
+    seva_indexes: list[tuple[str, str, str]] = []
 
     def column_definition(kind: str) -> str:
         if kind == "json":
@@ -77,6 +80,46 @@ def ensure_runtime_schema() -> None:
             add_column("documents", "file_size", "INTEGER NOT NULL DEFAULT 0")
         if "metadata" not in document_columns:
             add_column("documents", "metadata", "json")
+
+    if "seva_work_orders" in table_names:
+        columns = {column["name"] for column in inspector.get_columns("seva_work_orders")}
+        index_names = {index["name"] for index in inspector.get_indexes("seva_work_orders")}
+        additions = {
+            "case_number": "VARCHAR(32)",
+            "current_activity": "VARCHAR(240) NOT NULL DEFAULT 'Submitted'",
+            "progress_percent": "INTEGER NOT NULL DEFAULT 0",
+            "reference_number": "VARCHAR(120)",
+            "submitted_at": "datetime",
+            "due_at": "datetime",
+        }
+        for column_name, definition in additions.items():
+            if column_name not in columns:
+                add_column("seva_work_orders", column_name, definition)
+        if "ix_seva_work_orders_case_number" not in index_names:
+            seva_indexes.append(("seva_work_orders", "ix_seva_work_orders_case_number", "case_number"))
+
+    if "seva_agent_profiles" in table_names:
+        columns = {column["name"] for column in inspector.get_columns("seva_agent_profiles")}
+        additions = {
+            "work_email": "VARCHAR(255)", "contact_phone": "VARCHAR(32)",
+            "specializations": "json", "languages": "json",
+            "status": "VARCHAR(24) NOT NULL DEFAULT 'ACTIVE'",
+            "must_change_password": "BOOLEAN NOT NULL DEFAULT TRUE",
+            "last_login_at": "datetime",
+        }
+        for column_name, definition in additions.items():
+            if column_name not in columns:
+                add_column("seva_agent_profiles", column_name, definition)
+
+    if "seva_notifications" in table_names:
+        columns = {column["name"] for column in inspector.get_columns("seva_notifications")}
+        index_names = {index["name"] for index in inspector.get_indexes("seva_notifications")}
+        if "deep_link" not in columns:
+            add_column("seva_notifications", "deep_link", "VARCHAR(500)")
+        if "dedupe_key" not in columns:
+            add_column("seva_notifications", "dedupe_key", "VARCHAR(160)")
+        if "ix_seva_notifications_dedupe_key" not in index_names:
+            seva_indexes.append(("seva_notifications", "ix_seva_notifications_dedupe_key", "dedupe_key"))
 
     if "chats" in table_names:
         chat_columns = {column["name"] for column in inspector.get_columns("chats")}
@@ -444,12 +487,27 @@ def ensure_runtime_schema() -> None:
         and not migrate_legacy_apk_releases
         and not backfill_chat_storage
         and not backfill_social_relationships
+        and not backfill_seva_cases
+        and not seva_indexes
     ):
         return
 
     with engine.begin() as connection:
         for statement in statements:
             connection.execute(text(statement))
+        for table_name, index_name, column_name in seva_indexes:
+            prefix = "IF NOT EXISTS " if dialect in {"sqlite", "postgresql"} else ""
+            connection.execute(text(
+                f"CREATE UNIQUE INDEX {prefix}{quote(index_name)} ON {quote(table_name)} ({quote(column_name)})"
+            ))
+        if backfill_seva_cases:
+            case_rows = connection.execute(text(
+                f"SELECT {quote('id')} FROM {quote('seva_work_orders')} WHERE {quote('case_number')} IS NULL"
+            ))
+            for row in case_rows:
+                connection.execute(text(
+                    f"UPDATE {quote('seva_work_orders')} SET {quote('case_number')} = :case_number WHERE {quote('id')} = :work_order_id"
+                ), {"case_number": f"SEVA-{datetime.utcnow().year}-{uuid.uuid4().hex[:8].upper()}", "work_order_id": row[0]})
         if "calls" in table_names and any("trace_id" in statement for statement in statements):
             call_rows = connection.execute(text(f"SELECT {quote('id')} FROM {quote('calls')}"))
             for row in call_rows:

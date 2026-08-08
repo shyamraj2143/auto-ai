@@ -187,7 +187,7 @@ jobs:
           test -n "$asset_url"
           python scripts/verify_release_asset.py --url "$asset_url" --size "$size" --sha256 "$sha256"
 
-      - name: Publish backend metadata when credentials exist
+      - name: Publish APK metadata to backend
         if: ${{ env.AUTO_AI_ADMIN_EMAIL != '' && env.AUTO_AI_ADMIN_PASSWORD != '' }}
         continue-on-error: true
         shell: bash
@@ -202,7 +202,7 @@ jobs:
             --metadata-only \
             --force-update
 
-      - name: Notify registered phones when configured
+      - name: Notify installed Android apps
         if: ${{ env.AUTO_AI_UPDATE_NOTIFY_SECRET != '' }}
         continue-on-error: true
         shell: bash

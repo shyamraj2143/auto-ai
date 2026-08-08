@@ -17,6 +17,7 @@ NOTIFICATION_DESTINATION_BY_TYPE: Final[dict[str, str]] = {
     "incoming_call": "INCOMING_CALL",
     "incoming_call_fallback": "INCOMING_CALL",
     "relationship_followup": "RELATIONSHIP_FOLLOWUP",
+    "seva_case_update": "SEVA_CASE",
 }
 
 ENTITY_FIELD_BY_TYPE: Final[dict[str, str | None]] = {
@@ -33,6 +34,7 @@ ENTITY_FIELD_BY_TYPE: Final[dict[str, str | None]] = {
     "incoming_call": "call_id",
     "incoming_call_fallback": "call_id",
     "relationship_followup": "contact_id",
+    "seva_case_update": "case_route_id",
 }
 
 

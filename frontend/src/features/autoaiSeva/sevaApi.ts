@@ -49,6 +49,7 @@ export type SevaDeliverable = {
 
 export type SevaWorkOrder = {
   id: string;
+  case_id: string;
   task_id: string;
   handoff_id: string;
   status: "QUEUED" | "IN_PROGRESS" | "WAITING_USER" | "SUBMITTED" | "COMPLETED" | "CANCELLED" | string;
@@ -56,16 +57,21 @@ export type SevaWorkOrder = {
   request_summary: string;
   employee_note?: string | null;
   assigned_employee?: { id: string; name: string } | null;
-  owner?: { id: string; name: string; email?: string | null } | null;
+  owner?: { id: string; name: string; email?: string | null; phone_number?: string | null } | null;
   service?: { id: string; name: string; provider: string } | null;
   task_state?: string | null;
   task_progress: number;
   work_progress: number;
   current_activity: string;
+  reference_number?: string | null;
+  submitted_at: string;
+  due_at?: string | null;
   queue_position?: number | null;
   consent_scope: { field_keys?: string[]; document_ids?: string[]; authentication_secrets_shared?: boolean };
   requirements: SevaRequirement[];
   deliverables: SevaDeliverable[];
+  timeline: Array<{ id: string; event_type: string; title: string; details: Record<string, unknown>; created_at: string }>;
+  assignment_history?: Array<{ id: string; agent_user_id: string; reason: string; assigned_at: string; ended_at?: string | null; ended_reason?: string | null }>;
   claimed_at?: string | null;
   completed_at?: string | null;
   created_at: string;
@@ -76,11 +82,14 @@ export type SevaAgent = {
   id: string; user_id: string; agent_id: string; display_name: string; capacity: number;
   active_load: number; available_slots: number; is_active: boolean;
   last_assigned_at?: string | null; created_at: string;
+  username: string; work_email?: string | null; contact_phone?: string | null;
+  specializations: string[]; languages: string[]; status: "ACTIVE" | "INACTIVE" | "SUSPENDED";
+  must_change_password: boolean; last_login_at?: string | null;
 };
 
 export type SevaNotification = {
   id: string; work_order_id: string; event_type: string; title: string; message: string;
-  read_at?: string | null; created_at: string;
+  deep_link?: string | null; read_at?: string | null; created_at: string;
 };
 
 export type SevaStartResult = {
@@ -260,22 +269,40 @@ export const sevaApi = {
   },
 
   listAgents(token: string) {
-    return request<{ items: SevaAgent[]; total: number }>(token, `${operationsBase}/admin/agents`);
+    return request<{ items: SevaAgent[]; total: number; summary: { active: number; inactive: number; suspended: number; at_capacity: number } }>(token, `${operationsBase}/admin/agents`);
   },
 
-  createAgent(token: string, payload: { agent_id: string; display_name: string; password: string; capacity: number }) {
+  getAgentProfile(token: string) {
+    return request<SevaAgent>(token, `${operationsBase}/agent/me`);
+  },
+
+  changeAgentPassword(token: string, currentPassword: string, newPassword: string) {
+    return request<{ ok: boolean }>(token, `${operationsBase}/agent/change-password`, { method: "POST", body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) });
+  },
+
+  getAgentDashboard(token: string) {
+    return request<{ agent: SevaAgent; counts: Record<string, number>; active_workload: number; completed_today: number; attention_required: number; recent_cases: SevaWorkOrder[] }>(token, `${operationsBase}/agent/dashboard`);
+  },
+
+  createAgent(token: string, payload: { agent_id: string; display_name: string; password: string; capacity: number; work_email?: string; contact_phone?: string; specializations?: string[]; languages?: string[] }) {
     return request<SevaAgent>(token, `${operationsBase}/admin/agents`, { method: "POST", body: JSON.stringify(payload) });
   },
 
-  updateAgent(token: string, profileId: string, payload: { display_name?: string; password?: string; capacity?: number; is_active?: boolean }) {
+  updateAgent(token: string, profileId: string, payload: { display_name?: string; password?: string; capacity?: number; is_active?: boolean; status?: "ACTIVE" | "INACTIVE" | "SUSPENDED"; work_email?: string; contact_phone?: string; specializations?: string[]; languages?: string[] }) {
     return request<SevaAgent>(token, `${operationsBase}/admin/agents/${encodeURIComponent(profileId)}`, { method: "PATCH", body: JSON.stringify(payload) });
   },
 
-  listWorkOrders(token: string, state?: string) {
-    const params = new URLSearchParams();
-    if (state) params.set("state", state);
+  reassignWorkOrder(token: string, workOrderId: string, agentProfileId: string | null, reason: string) {
+    return request<SevaWorkOrder>(token, `${operationsBase}/admin/work-orders/${encodeURIComponent(workOrderId)}/reassign`, { method: "POST", body: JSON.stringify({ agent_profile_id: agentProfileId, reason }) });
+  },
+
+  listWorkOrders(token: string, options: { state?: string; q?: string; agentId?: string; page?: number; pageSize?: number } = {}) {
+    const params = new URLSearchParams({ page: String(options.page ?? 1), page_size: String(options.pageSize ?? 50) });
+    if (options.state) params.set("state", options.state);
+    if (options.q) params.set("q", options.q);
+    if (options.agentId) params.set("agent_id", options.agentId);
     const suffix = params.toString() ? `?${params.toString()}` : "";
-    return request<{ items: SevaWorkOrder[]; total: number }>(token, `${operationsBase}/admin/work-orders${suffix}`);
+    return request<{ items: SevaWorkOrder[]; total: number; page: number; page_size: number; has_more: boolean }>(token, `${operationsBase}/admin/work-orders${suffix}`);
   },
 
   getWorkOrder(token: string, workOrderId: string) {
@@ -304,10 +331,10 @@ export const sevaApi = {
     return requestBlob(token, `${operationsBase}/admin/work-orders/${encodeURIComponent(workOrderId)}/requirements/${encodeURIComponent(requirementId)}/document/content`);
   },
 
-  updateWorkOrderStatus(token: string, workOrderId: string, status: SevaWorkOrder["status"], note = "") {
+  updateWorkOrderStatus(token: string, workOrderId: string, status: SevaWorkOrder["status"], note = "", progressPercent?: number, referenceNumber?: string) {
     return request<SevaWorkOrder>(token, `${operationsBase}/admin/work-orders/${encodeURIComponent(workOrderId)}/status`, {
       method: "POST",
-      body: JSON.stringify({ status, note: note || null }),
+      body: JSON.stringify({ status, note: note || null, progress_percent: progressPercent, reference_number: referenceNumber || null }),
     });
   },
 

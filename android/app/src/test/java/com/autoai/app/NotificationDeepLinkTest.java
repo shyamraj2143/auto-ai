@@ -12,6 +12,7 @@ public class NotificationDeepLinkTest {
         assertEquals("FOLLOW_ACCEPTED", NotificationDeepLink.destinationForLegacyType(null, "follow_accept"));
         assertEquals("APP_UPDATE", NotificationDeepLink.destinationForLegacyType(null, "apk_update"));
         assertEquals("RELATIONSHIP_FOLLOWUP", NotificationDeepLink.destinationForLegacyType(null, "relationship_followup"));
+        assertEquals("SEVA_CASE", NotificationDeepLink.destinationForLegacyType(null, "seva_case_update"));
         assertNull(NotificationDeepLink.destinationForLegacyType(null, "unknown"));
     }
 

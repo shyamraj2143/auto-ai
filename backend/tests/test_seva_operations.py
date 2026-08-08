@@ -13,11 +13,13 @@ from app.api.deps import get_current_user
 from app.api.routes import form_services
 from app.db.base import Base
 from app.db.session import get_db
-from app.models.autoai_seva import SevaDeliverable, SevaRequirementRequest, SevaWorkOrder
+from app.models.autoai_seva import SevaAgentProfile, SevaAssignment, SevaDeliverable, SevaNotification, SevaRequirementRequest, SevaWorkOrder
 from app.models.document import Document
 from app.models.user import User
 from app.services.autoai_seva_seed import ASSISTED_REQUEST_SERVICE_ID, ensure_autoai_seva_demo
 from app.services.form_service_registry import ensure_service_registry
+from app.services.notification_destination import with_notification_destination
+from app.services.seva_assignment import assign_best_available_agent
 
 
 @pytest.fixture()
@@ -144,12 +146,13 @@ def test_employee_workflow_blocks_raw_otp_and_delivers_scoped_receipt(db: Sessio
     current["user"] = applicant
     completed = client.post(
         f"/api/v1/form-services/seva-operations/tasks/{task_id}/assistance/requirements/{requirement['id']}/protected-action",
-        json={"completed": True, "note": "Completed on the official portal"},
+        json={"completed": True, "note": "OTP 123456 was entered on the official portal"},
     )
     assert completed.status_code == 200, completed.text
     assert completed.json()["requirements"][0]["status"] == "FULFILLED"
     stored = db.get(SevaRequirementRequest, requirement["id"])
     assert stored and stored.response_text is None
+    assert "123456" not in (stored.user_note or "")
 
     current["user"] = employee
     requested_document = client.post(
@@ -170,6 +173,8 @@ def test_employee_workflow_blocks_raw_otp_and_delivers_scoped_receipt(db: Sessio
     )
     assert downloaded.status_code == 200
     assert downloaded.content == requirement_png
+    assert client.post(f"/api/v1/form-services/seva-operations/admin/work-orders/{work_order_id}/requirements/{requirement['id']}/review", json={"accepted": True}).status_code == 200
+    assert client.post(f"/api/v1/form-services/seva-operations/admin/work-orders/{work_order_id}/requirements/{document_requirement['id']}/review", json={"accepted": True}).status_code == 200
 
     png = (
         b"\x89PNG\r\n\x1a\n"
@@ -244,3 +249,103 @@ def test_admin_created_agent_receives_least_loaded_assignment_and_private_notifi
     assert notifications.status_code == 200
     assert notifications.json()["unread"] == 1
     assert notifications.json()["items"][0]["event_type"] == "AGENT_ASSIGNED"
+
+
+def test_agent_password_lifecycle_rbac_progress_and_admin_reassignment(db: Session) -> None:
+    applicant = add_user(db, "company-user")
+    admin = add_user(db, "company-admin", admin=True)
+    current = {"user": admin}
+    client = client_for(db, current)
+    first = client.post("/api/v1/form-services/seva-operations/admin/agents", json={"agent_id": "agt-2001", "display_name": "First Agent", "password": "Temporary123!", "capacity": 2}).json()
+    second = client.post("/api/v1/form-services/seva-operations/admin/agents", json={"agent_id": "agt-2002", "display_name": "Second Agent", "password": "Temporary456!", "capacity": 2}).json()
+    assert first["must_change_password"] is True
+    duplicate = client.post("/api/v1/form-services/seva-operations/admin/agents", json={"agent_id": "agt-2001", "display_name": "Duplicate", "password": "Temporary789!", "capacity": 1})
+    assert duplicate.status_code == 409
+    invalid_login = client.post("/api/v1/form-services/seva-operations/agent/login", json={"agent_id": "agt-2001", "password": "wrong"})
+    assert invalid_login.status_code == 401
+
+    first_user = db.get(User, first["user_id"])
+    current["user"] = first_user
+    blocked_before_change = client.get("/api/v1/form-services/seva-operations/admin/work-orders")
+    assert blocked_before_change.status_code == 403
+    changed = client.post("/api/v1/form-services/seva-operations/agent/change-password", json={"current_password": "Temporary123!", "new_password": "PrivateAgent123!"})
+    assert changed.status_code == 200
+    assert db.get(SevaAgentProfile, first["id"]).must_change_password is False
+    assert "PrivateAgent123!" not in first_user.hashed_password
+    assert client.get("/api/v1/form-services/seva-operations/admin/agents").status_code == 403
+
+    current["user"] = applicant
+    started = client.post("/api/v1/form-services/seva-operations/start", json={"query": "Apply for a custom company workflow", "timezone": "Asia/Kolkata", "locale": "en-IN", "client_request_id": "company-case-start-001"})
+    task_id = started.json()["task"]["id"]
+    assistance = client.post(f"/api/v1/form-services/seva-operations/tasks/{task_id}/assistance", json={"purpose": "Process this case", "consent_accepted": True})
+    case = assistance.json()
+    assert case["case_id"].startswith("SEVA-")
+    assigned_id = case["assigned_employee"]["id"]
+    assigned_user = db.get(User, assigned_id)
+    assigned_profile = db.scalar(select(SevaAgentProfile).where(SevaAgentProfile.user_id == assigned_id))
+    current["user"] = assigned_user
+    if assigned_profile.must_change_password:
+        temporary = "Temporary456!" if assigned_id == second["user_id"] else "PrivateAgent123!"
+        if assigned_id == second["user_id"]:
+            assert client.post("/api/v1/form-services/seva-operations/agent/change-password", json={"current_password": temporary, "new_password": "PrivateAgent456!"}).status_code == 200
+    progress = client.post(f"/api/v1/form-services/seva-operations/admin/work-orders/{case['id']}/status", json={"status": "IN_PROGRESS", "note": "Documents under review", "progress_percent": 55})
+    assert progress.status_code == 200, progress.text
+    assert progress.json()["work_progress"] == 55
+    assert progress.json()["owner"]["email"] == applicant.email
+    direct_complete = client.post(f"/api/v1/form-services/seva-operations/admin/work-orders/{case['id']}/status", json={"status": "COMPLETED", "progress_percent": 100})
+    assert direct_complete.status_code == 422
+
+    current["user"] = admin
+    target = second if assigned_id != second["user_id"] else first
+    reassigned = client.post(f"/api/v1/form-services/seva-operations/admin/work-orders/{case['id']}/reassign", json={"agent_profile_id": target["id"], "reason": "Workload balancing"})
+    assert reassigned.status_code == 200, reassigned.text
+    assert reassigned.json()["assigned_employee"]["id"] == target["user_id"]
+    assert len(reassigned.json()["assignment_history"]) == 2
+    assert db.scalar(select(SevaAssignment).where(SevaAssignment.work_order_id == case["id"], SevaAssignment.ended_at.is_not(None)))
+
+    current["user"] = assigned_user
+    assert client.get(f"/api/v1/form-services/seva-operations/admin/work-orders/{case['id']}").status_code == 409
+
+
+def test_agent_capacity_queues_case_and_suspension_blocks_login(db: Session) -> None:
+    admin = add_user(db, "capacity-admin", admin=True)
+    first_user = add_user(db, "capacity-user-one")
+    second_user = add_user(db, "capacity-user-two")
+    current = {"user": admin}
+    client = client_for(db, current)
+    agent = client.post("/api/v1/form-services/seva-operations/admin/agents", json={"agent_id": "agt-cap", "display_name": "Capacity Agent", "password": "Capacity123!", "capacity": 1}).json()
+
+    def create_case(owner: User, request_id: str) -> dict:
+        current["user"] = owner
+        task = client.post("/api/v1/form-services/seva-operations/start", json={"query": "Custom assisted request", "timezone": "Asia/Kolkata", "locale": "en-IN", "client_request_id": request_id}).json()["task"]
+        return client.post(f"/api/v1/form-services/seva-operations/tasks/{task['id']}/assistance", json={"purpose": "Agent processing", "consent_accepted": True}).json()
+
+    first_case = create_case(first_user, "capacity-case-start-001")
+    second_case = create_case(second_user, "capacity-case-start-002")
+    assert first_case["assigned_employee"]["id"] == agent["user_id"]
+    assert second_case["status"] == "QUEUED" and second_case["queue_position"] == 1
+    current["user"] = admin
+    suspended = client.patch(f"/api/v1/form-services/seva-operations/admin/agents/{agent['id']}", json={"status": "SUSPENDED"})
+    assert suspended.status_code == 200 and suspended.json()["status"] == "SUSPENDED"
+    assert client.post("/api/v1/form-services/seva-operations/agent/login", json={"agent_id": "agt-cap", "password": "Capacity123!"}).status_code == 401
+
+
+def test_seva_notification_mapping_and_assignment_deduplication(db: Session) -> None:
+    applicant = add_user(db, "notify-user")
+    admin = add_user(db, "notify-admin", admin=True)
+    current = {"user": admin}
+    client = client_for(db, current)
+    agent = client.post("/api/v1/form-services/seva-operations/admin/agents", json={"agent_id": "notify-agent", "display_name": "Notification Agent", "password": "NotifyAgent123!", "capacity": 2}).json()
+    current["user"] = applicant
+    task = client.post("/api/v1/form-services/seva-operations/start", json={"query": "Notification test application", "timezone": "Asia/Kolkata", "locale": "en-IN", "client_request_id": "notify-start-001"}).json()["task"]
+    case = client.post(f"/api/v1/form-services/seva-operations/tasks/{task['id']}/assistance", json={"purpose": "Verify notification delivery", "consent_accepted": True}).json()
+    work_order = db.get(SevaWorkOrder, case["id"])
+    before = len(list(db.scalars(select(SevaNotification).where(SevaNotification.work_order_id == case["id"]))))
+    assert work_order.assigned_employee_id == agent["user_id"]
+    assert assign_best_available_agent(db, work_order) is None
+    db.commit()
+    after = len(list(db.scalars(select(SevaNotification).where(SevaNotification.work_order_id == case["id"]))))
+    assert after == before
+    mapped = with_notification_destination({"type": "seva_case_update", "event_id": "evt-1", "case_route_id": task["id"]})
+    assert mapped["destination"] == "SEVA_CASE"
+    assert mapped["entity_id"] == task["id"]

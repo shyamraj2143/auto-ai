@@ -71,6 +71,7 @@ class SevaWorkOrder(Base):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_id)
+    case_number: Mapped[str | None] = mapped_column(String(32), unique=True, index=True, nullable=True)
     task_id: Mapped[str] = mapped_column(
         ForeignKey("service_tasks.id", ondelete="CASCADE"), index=True
     )
@@ -88,6 +89,11 @@ class SevaWorkOrder(Base):
     request_summary: Mapped[str] = mapped_column(Text, default="")
     user_consent_scope: Mapped[dict] = mapped_column(JSON, default=dict)
     employee_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    current_activity: Mapped[str] = mapped_column(String(240), default="Submitted")
+    progress_percent: Mapped[int] = mapped_column(Integer, default=0)
+    reference_number: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -108,12 +114,19 @@ class SevaAgentProfile(Base):
     )
     agent_code: Mapped[str] = mapped_column(String(48), unique=True, index=True)
     display_name: Mapped[str] = mapped_column(String(120))
+    work_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    contact_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    specializations: Mapped[list] = mapped_column(JSON, default=list)
+    languages: Mapped[list] = mapped_column(JSON, default=list)
     capacity: Mapped[int] = mapped_column(Integer, default=5)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    status: Mapped[str] = mapped_column(String(24), default="ACTIVE", index=True)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by_admin_id: Mapped[str] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), index=True
     )
     last_assigned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -139,7 +152,41 @@ class SevaNotification(Base):
     event_type: Mapped[str] = mapped_column(String(48), index=True)
     title: Mapped[str] = mapped_column(String(180))
     message: Mapped[str] = mapped_column(Text)
+    deep_link: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    dedupe_key: Mapped[str | None] = mapped_column(String(160), unique=True, nullable=True)
     read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SevaAssignment(Base):
+    __tablename__ = "seva_assignments"
+    __table_args__ = (Index("ix_seva_assignment_work_assigned", "work_order_id", "assigned_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_id)
+    work_order_id: Mapped[str] = mapped_column(ForeignKey("seva_work_orders.id", ondelete="CASCADE"), index=True)
+    agent_user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
+    assigned_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reason: Mapped[str] = mapped_column(String(240), default="Automatic assignment")
+    assigned_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ended_reason: Mapped[str | None] = mapped_column(String(240), nullable=True)
+
+
+class SevaCaseEvent(Base):
+    __tablename__ = "seva_case_events"
+    __table_args__ = (
+        Index("ix_seva_case_event_work_created", "work_order_id", "created_at"),
+        UniqueConstraint("work_order_id", "dedupe_key", name="uq_seva_case_event_dedupe"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_id)
+    work_order_id: Mapped[str] = mapped_column(ForeignKey("seva_work_orders.id", ondelete="CASCADE"), index=True)
+    actor_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    visibility: Mapped[str] = mapped_column(String(16), default="USER", index=True)
+    event_type: Mapped[str] = mapped_column(String(64), index=True)
+    title: Mapped[str] = mapped_column(String(180))
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    dedupe_key: Mapped[str] = mapped_column(String(160))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

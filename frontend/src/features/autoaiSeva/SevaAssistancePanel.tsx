@@ -177,10 +177,12 @@ export function SevaAssistancePanel({ token, taskId }: { token: string; taskId: 
       {workOrder ? (
         <div className="seva-assistance-body">
           <div className="seva-assistance-overview">
+            <article><FileText size={17} /><span><small>Case ID</small><strong>{workOrder.case_id}</strong></span></article>
             <article><Clock3 size={17} /><span><small>Current work · {workOrder.work_progress}%</small><strong>{workOrder.current_activity}</strong></span></article>
             <article><UserCheck size={17} /><span><small>Assigned employee</small><strong>{workOrder.assigned_employee?.name || (workOrder.queue_position ? `Queue #${workOrder.queue_position}` : "Waiting for assignment")}</strong></span></article>
             <article><AlertTriangle size={17} /><span><small>User actions pending</small><strong>{pendingCount}</strong></span></article>
           </div>
+          {workOrder.reference_number ? <p className="seva-employee-note"><FileText size={16} />Reference: {workOrder.reference_number}</p> : null}
           {notifications.length ? <div className="seva-requirements-list" aria-live="polite"><h3>New updates</h3>{notifications.map((item) => <article key={item.id} className="seva-employee-requirement"><header><strong>{item.title}</strong><button type="button" onClick={() => void sevaApi.markNotificationRead(token, item.id).then(() => setNotifications((current) => current.filter((notice) => notice.id !== item.id)))}>Mark read</button></header><p>{item.message}</p></article>)}</div> : null}
 
           {workOrder.employee_note ? <p className="seva-employee-note"><UsersRound size={16} />{workOrder.employee_note}</p> : null}
@@ -227,6 +229,8 @@ export function SevaAssistancePanel({ token, taskId }: { token: string; taskId: 
               ))}
             </div>
           ) : null}
+
+          {workOrder.timeline.length ? <div className="seva-case-timeline"><h3>Application timeline</h3>{workOrder.timeline.map((event) => <article key={event.id}><span /><div><strong>{event.title}</strong><small>{new Date(event.created_at).toLocaleString()}</small></div></article>)}</div> : null}
 
           {!CLOSED.has(workOrder.status) ? <button type="button" className="seva-cancel-assistance" disabled={Boolean(working)} onClick={() => void cancel()}><XCircle size={16} /> Revoke employee access</button> : null}
           {workOrder.status === "CANCELLED" ? <p className="seva-revoked-note"><ShieldCheck size={16} />Employee access was revoked.</p> : null}

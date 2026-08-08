@@ -28,6 +28,7 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
     private static final String MISSED_CALL_CHANNEL_ID = "auto_ai_missed_calls";
     private static final String SOCIAL_CHANNEL_ID = "auto_ai_social";
     private static final String RELATIONSHIP_CHANNEL_ID = "auto_ai_relationship_followups";
+    private static final String SEVA_CHANNEL_ID = "auto_ai_seva_cases";
     private static final String UPDATE_PREFERENCES = "auto_ai_update_preferences";
     private static final String LAST_NOTIFIED_UPDATE_VERSION_CODE = "last_notified_update_version_code";
 
@@ -142,6 +143,10 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         }
         if ("relationship_followup".equals(messageType)) {
             showRelationshipNotification(data, message.getNotification());
+            return;
+        }
+        if ("seva_case_update".equals(messageType)) {
+            showSevaNotification(data, message.getNotification());
             return;
         }
         if ("apk_update".equals(messageType)) {
@@ -409,6 +414,47 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) builder.setPriority(Notification.PRIORITY_HIGH);
         NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (manager != null) manager.notify(NotificationDeepLink.requestCode("relationship_followup", contactId, "notification"), builder.build());
+    }
+
+    private void showSevaNotification(Map<String, String> data, RemoteMessage.Notification notification) {
+        if (!canPostNotifications()) return;
+        String caseRouteId = data.get("case_route_id");
+        if (caseRouteId == null || caseRouteId.trim().isEmpty()) return;
+        String title = notification == null ? data.get("title") : notification.getTitle();
+        String body = notification == null ? data.get("body") : notification.getBody();
+        if (title == null || title.trim().isEmpty()) title = "AutoAI Seva update";
+        if (body == null || body.trim().isEmpty()) body = "Your Seva case has been updated.";
+        createSevaNotificationChannel();
+        PendingIntent open = NotificationDeepLink.pendingActivity(
+            this, NotificationDeepLink.Destination.SEVA_CASE, caseRouteId, data.get("secondary_id"),
+            data.get("event_id"), "open", 0L
+        );
+        Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            ? new Notification.Builder(this, SEVA_CHANNEL_ID)
+            : new Notification.Builder(this);
+        builder.setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(new Notification.BigTextStyle().bigText(body))
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .setCategory(Notification.CATEGORY_STATUS)
+            .setVisibility(Notification.VISIBILITY_PRIVATE)
+            .setShowWhen(true)
+            .setWhen(System.currentTimeMillis());
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) builder.setPriority(Notification.PRIORITY_HIGH);
+        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager != null) manager.notify(NotificationDeepLink.requestCode("seva_case_update", caseRouteId, "notification"), builder.build());
+    }
+
+    private void createSevaNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager == null) return;
+        NotificationChannel channel = new NotificationChannel(SEVA_CHANNEL_ID, "Seva case updates", NotificationManager.IMPORTANCE_HIGH);
+        channel.setDescription("Assignment, requirement and status updates for AutoAI Seva cases");
+        channel.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
+        manager.createNotificationChannel(channel);
     }
 
     public static void createRelationshipNotificationChannel(Context context) {

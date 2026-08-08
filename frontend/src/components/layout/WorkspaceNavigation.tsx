@@ -33,6 +33,7 @@ const primaryItems = [
 ] as const;
 
 const sevaOperationsItem = { to: "/admin/seva-operations", label: "Seva Operations", icon: BriefcaseBusiness } as const;
+const agentOperationsItem = { to: "/agent/work", label: "Seva Operations", icon: BriefcaseBusiness } as const;
 
 function initials(name: string) {
   return name
@@ -48,7 +49,7 @@ export function WorkspaceNavigation() {
   const { user, logout } = useAuth();
   if (!user) return null;
   const avatar = resolveApiAssetUrl(user.avatar || user.picture);
-  const items = user.role === "seva_agent" ? [sevaOperationsItem] : isAdminPanelRole(user.role) && user.is_admin
+  const items = user.role === "seva_agent" ? [agentOperationsItem] : isAdminPanelRole(user.role) && user.is_admin
     ? [...primaryItems.slice(0, 3), sevaOperationsItem, ...primaryItems.slice(3)]
     : primaryItems;
 
@@ -89,7 +90,7 @@ export function WorkspaceNavigation() {
 export function WorkspaceMobileNavigation() {
   const { user } = useAuth();
   const isAdmin = Boolean(user?.is_admin && isAdminPanelRole(user.role));
-  const mobileItems = user?.role === "seva_agent" ? [sevaOperationsItem] : isAdmin
+  const mobileItems = user?.role === "seva_agent" ? [agentOperationsItem] : isAdmin
     ? [primaryItems[0], primaryItems[2], sevaOperationsItem, primaryItems[4], primaryItems[5]]
     : primaryItems.slice(0, 5);
 

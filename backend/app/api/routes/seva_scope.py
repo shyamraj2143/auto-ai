@@ -14,6 +14,7 @@ from app.models.document import Document
 from app.models.form_service import ServiceDefinition, ServiceDocumentAsset, ServiceTask, UserFieldResponse
 from app.models.user import User
 from app.services.sensitive_data import decrypt_sensitive_text
+from app.services.seva_assignment import case_event
 
 
 router = APIRouter(prefix="/seva-operations/admin/work-orders", tags=["autoai-seva-scope"])
@@ -27,7 +28,10 @@ def _seva_employee(user: User = Depends(get_current_user), db: Session = Depends
     profile = db.scalar(select(SevaAgentProfile).where(
         SevaAgentProfile.user_id == user.id, SevaAgentProfile.is_active.is_(True)
     ))
-    if not profile or user.role != "seva_agent":
+    if (
+        not profile or user.role != "seva_agent" or profile.status != "ACTIVE"
+        or profile.must_change_password
+    ):
         raise HTTPException(status_code=403, detail="Active Seva agent access required")
     return user
 
@@ -154,4 +158,6 @@ def download_approved_document(
     path = Path(document.file_path)
     if not path.is_file():
         raise HTTPException(status_code=410, detail="Document file is no longer available")
+    case_event(db, work_order, "DOCUMENT_ACCESSED", "Approved document opened by assigned agent", actor_id=employee.id, visibility="INTERNAL", details={"asset_id": asset.id})
+    db.commit()
     return FileResponse(path, media_type=document.content_type, filename=document.filename)

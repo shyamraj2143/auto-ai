@@ -15,6 +15,7 @@ import { AppSettingsProvider } from "./contexts/AppSettingsContext";
 import { AnnouncementBanner } from "./components/common/AnnouncementBanner";
 import { isAdminPanelRole } from "./utils/roles";
 import { ApiClientError } from "./api/client";
+import { sevaApi } from "./features/autoaiSeva/sevaApi";
 import { ScreenShareProvider } from "./features/screenShare/ScreenShareProvider";
 import { ScreenShareOverlay } from "./features/screenShare/ScreenShareOverlay";
 import { IndustrialLoader } from "./components/common/IndustrialLoader";
@@ -33,6 +34,7 @@ const AdminDashboard = lazy(() =>
 );
 const AdminLoginPage = lazy(() => import("./components/auth/AdminLoginPage").then((module) => ({ default: module.AdminLoginPage })));
 const AgentLoginPage = lazy(() => import("./components/auth/AgentLoginPage").then((module) => ({ default: module.AgentLoginPage })));
+const AgentChangePasswordPage = lazy(() => import("./components/auth/AgentChangePasswordPage").then((module) => ({ default: module.AgentChangePasswordPage })));
 const LoginPage = lazy(() => import("./components/auth/LoginPage").then((module) => ({ default: module.LoginPage })));
 const PaymentCheckoutPage = lazy(() => import("./components/payments/PaymentCheckoutPage").then((module) => ({ default: module.PaymentCheckoutPage })));
 const PaymentStatusPage = lazy(() => import("./components/payments/PaymentStatusPage").then((module) => ({ default: module.PaymentStatusPage })));
@@ -148,6 +150,19 @@ function AgentRoute() {
   return user?.role === "seva_agent" ? <Outlet /> : <Navigate to="/agent/login" replace />;
 }
 
+function AgentReadyRoute() {
+  const { user, token } = useAuth();
+  const [ready, setReady] = useState<"checking" | "ready" | "password">("checking");
+  useEffect(() => {
+    if (!token || user?.role !== "seva_agent") return;
+    let active = true;
+    sevaApi.getAgentProfile(token).then((profile) => active && setReady(profile.must_change_password ? "password" : "ready")).catch(() => active && setReady("password"));
+    return () => { active = false; };
+  }, [token, user?.role]);
+  if (ready === "checking") return <IndustrialLoader status="Checking agent access" />;
+  return ready === "ready" ? <Outlet /> : <Navigate to="/agent/change-password" replace />;
+}
+
 function AppRoutes() {
   const location = useLocation();
   return (
@@ -202,8 +217,11 @@ function AppRoutes() {
             </Route>
           </Route>
           <Route element={<AgentRoute />}>
+            <Route path="/agent/change-password" element={<AgentChangePasswordPage />} />
+            <Route element={<AgentReadyRoute />}>
             <Route element={<AppShell />}>
               <Route path="/agent/work" element={<SevaOperationsPage />} />
+            </Route>
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

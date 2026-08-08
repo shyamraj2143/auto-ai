@@ -13,7 +13,7 @@ type AuthContextValue = {
   login: (email: string, password: string, rememberDevice?: boolean) => Promise<void>;
   googleLogin: (idToken: string) => Promise<void>;
   adminLogin: (email: string, password: string) => Promise<void>;
-  agentLogin: (agentId: string, password: string) => Promise<void>;
+  agentLogin: (agentId: string, password: string) => Promise<boolean>;
   register: (name: string, email: string, password: string) => Promise<void>;
   updateUser: (user: User) => void;
   refreshProfile: () => Promise<User>;
@@ -117,6 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const session = await api.agentLogin({ agent_id: agentId.trim().toLowerCase(), password });
         if (session.user.role !== "seva_agent") throw new Error("Only Seva agent accounts can access this workspace.");
         await persistSession(session, true);
+        return session.agent.must_change_password;
       },
       register: async (name, email, password) => {
         const session = await api.register({ name: name.trim(), email: email.trim().toLowerCase(), password });

@@ -12,6 +12,7 @@ export const NOTIFICATION_DESTINATIONS = [
   "SETTINGS_SECTION",
   "PAYMENT_RESULT",
   "RELATIONSHIP_FOLLOWUP",
+  "SEVA_CASE",
 ] as const;
 
 export type NotificationDestination = (typeof NOTIFICATION_DESTINATIONS)[number];
@@ -66,6 +67,7 @@ export function routeForNotificationDestination(event: NotificationDestinationEv
     case "SETTINGS_SECTION": return id ? `/settings?section=${id}` : "/settings";
     case "PAYMENT_RESULT": return event.secondaryId === "failed" ? "/payment/failed" : event.secondaryId === "success" ? "/payment/success" : null;
     case "RELATIONSHIP_FOLLOWUP": return id ? `/relationships?contact=${id}` : "/relationships";
+    case "SEVA_CASE": return id ? (event.secondaryId === "agent" ? `/agent/work?case=${id}` : `/seva/applications/${id}`) : null;
     case "INCOMING_CALL":
     case "APP_UPDATE":
       return null;
