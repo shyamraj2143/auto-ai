@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 type ShellContextValue = {
   activeMode: "ai" | "userMessages";
@@ -23,7 +23,13 @@ export function ShellProvider({ children }: { children: React.ReactNode }) {
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [activeUserChatId, setActiveUserChatId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    try { return window.localStorage.getItem("autoai:chat-sidebar-collapsed") === "true"; } catch { return false; }
+  });
+
+  useEffect(() => {
+    try { window.localStorage.setItem("autoai:chat-sidebar-collapsed", String(isSidebarCollapsed)); } catch { /* Storage can be unavailable in private WebViews. */ }
+  }, [isSidebarCollapsed]);
 
   const setActiveAiConversation = useCallback((conversationId: string | null) => {
     setActiveMode("ai");

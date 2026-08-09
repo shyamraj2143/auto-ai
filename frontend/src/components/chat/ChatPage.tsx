@@ -1,8 +1,8 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "highlight.js/styles/github.css";
-import { AnimatePresence, motion } from "../../motion/staticMotion";
+import { AnimatePresence } from "../../motion/staticMotion";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowDown, Brain, Languages, Library, Menu, MessageSquarePlus, MoreHorizontal, Search, Settings, Sparkles, Square, Trash2, Pencil, Eraser } from "lucide-react";
+import { ArrowDown, Brain, Languages, Library, Menu, MessageSquarePlus, MoreHorizontal, PanelLeftClose, PanelLeftOpen, Search, Settings, Square, Trash2, Pencil, Eraser } from "lucide-react";
 import { ApiClientError, api, streamGenerationActivity } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { useChat } from "../../contexts/ChatContext";
@@ -22,7 +22,6 @@ import { LiveCallMode } from "../live/LiveCallMode";
 import { mediaResourceCoordinator } from "../../features/calls/services/mediaResourceCoordinator";
 import { CrystalAiOrb, CrystalErrorBoundary } from "../crystal/Crystal";
 import type { CrystalOrbState } from "../../crystal/tokens";
-import { usePublishedUiText } from "../../hooks/useCmsContent";
 import { AppNotice } from "../common/AppNotice";
 import { ActionAssistantPanel } from "../../features/assistant/ActionAssistantPanel";
 import type { AssistantActionItem, AssistantResponse } from "../../features/assistant/types";
@@ -30,6 +29,8 @@ import { useAlarms } from "../../features/alarms/AlarmContext";
 import { alarmNative } from "../../features/alarms/alarmNative";
 import { isMobileAppRuntime } from "../../utils/runtime";
 import { LibraryModal } from "./LibraryModal";
+import { LogoIcon } from "../brand/LogoIcon";
+import "./chatSimple.css";
 import {
   appendOptimisticMessages,
   clientMessageIdOf,
@@ -134,16 +135,26 @@ function thinkingPhase(options: ComposerOptions, attachments: ChatAttachment[], 
   return "thinking";
 }
 
+function friendlyGenerationError(error: unknown) {
+  if (error instanceof DOMException && error.name === "AbortError") return "Response stopped.";
+  if (error instanceof ApiClientError) {
+    if (error.kind === "network_unavailable" || error.kind === "server_unreachable") return "You are offline. Retry when the connection is back.";
+    if (error.kind === "authentication_failed" || error.status === 401) return "Your session expired. Sign in again, then retry this message.";
+    if (error.status === 429) return "Too many requests right now. Wait a moment, then retry.";
+    if ((error.status ?? 0) >= 500) return "The AI service is temporarily unavailable. Retry is safe.";
+  }
+  return "The response could not be completed. Retry is safe.";
+}
+
 export function ChatPage() {
-  const uiText = usePublishedUiText();
   const navigate = useNavigate();
   const location = useLocation();
   const { chatId } = useParams();
   const { token } = useAuth();
   const { settings, setResponseLanguage, setVoiceEnabled, setMemoryEnabled, setAssistantSpokenResponses, setAssistantPersonalization, setAssistantActionConfirmations } = useAppSettings();
   const { refresh: refreshAlarms } = useAlarms();
-  const { activeChat, createChat, deleteChat, openChat, refreshChats, setActiveChat, updateChat } = useChat();
-  const { openSidebar, setActiveAiConversation } = useShell();
+  const { activeChat, beginNewChat, createChat, deleteChat, openChat, refreshChats, setActiveChat, updateChat } = useChat();
+  const { openSidebar, isSidebarCollapsed, collapseSidebar, expandSidebar, setActiveAiConversation } = useShell();
   const openSettings = useSettingsNavigation();
   const [messages, setMessages] = useState<Message[]>([]);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
@@ -763,16 +774,7 @@ export function ChatPage() {
   }
 
   function markLocalGenerationFailed(chatId: string | undefined, assistantId: string, error: unknown) {
-    const aborted = error instanceof DOMException && error.name === "AbortError";
-    const detail = aborted
-      ? "Response stopped."
-      : error instanceof ApiClientError && error.kind === "network_unavailable"
-        ? "You are offline. Retry when the connection is back."
-        : error instanceof ApiClientError && error.kind === "authentication_failed"
-          ? error.message
-          : error instanceof Error
-            ? error.message
-            : "Unable to generate response.";
+    const detail = friendlyGenerationError(error);
     markLocalAssistant(chatId, assistantId, (message) => ({
       ...message,
       message_metadata: {
@@ -1121,9 +1123,11 @@ export function ChatPage() {
     await handleRegenerate(assistantId);
   }
 
-  async function handleNewChat() {
-    const chat = await createChat();
-    navigate(`/chat/${encodeURIComponent(chat.id)}`);
+  function handleNewChat() {
+    beginNewChat();
+    setActiveAiConversation(null);
+    setChatMenuOpen(false);
+    navigate("/chat");
   }
 
   async function renameCurrentChat() {
@@ -1142,9 +1146,13 @@ export function ChatPage() {
 
   async function deleteCurrentChat() {
     if (!activeChat || !window.confirm("Delete this conversation? This cannot be undone.")) return;
-    await deleteChat(activeChat.id);
-    setChatMenuOpen(false);
-    navigate("/chat");
+    try {
+      await deleteChat(activeChat.id);
+      setChatMenuOpen(false);
+      navigate("/chat");
+    } catch {
+      showChatNotice("Chat was not deleted. Please try again.");
+    }
   }
 
   function openConversationSearch() {
@@ -1188,14 +1196,14 @@ export function ChatPage() {
         </div>
 
         <div className="chat-topbar hidden md:flex">
-          <div className="min-w-0">
+          <div className="chat-topbar-title min-w-0">
+            <button className="icon-button-dark" onClick={isSidebarCollapsed ? expandSidebar : collapseSidebar} title={isSidebarCollapsed ? "Show chat history" : "Hide chat history"} aria-label={isSidebarCollapsed ? "Show chat history" : "Hide chat history"} type="button">
+              {isSidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+            </button>
             <div className="flex min-w-0 items-center gap-2">
               <CrystalErrorBoundary><CrystalAiOrb state={neuralState} size="sm" className="chat-status-core" /></CrystalErrorBoundary>
-              <h1 className="truncate text-sm font-semibold text-white">{activeTitle}</h1>
+              <span><h1 className="truncate text-sm font-semibold text-white">{activeTitle}</h1><p className="truncate text-xs text-slate-500">{(activeChat?.mode || lastOptionsRef.current.chatMode).replace(/_/g, " ")} intelligence</p></span>
             </div>
-            <p className="mt-0.5 truncate text-xs text-slate-500">
-              {(activeChat?.mode || lastOptionsRef.current.chatMode).replace(/_/g, " ")} intelligence
-            </p>
           </div>
           <div className="relative flex items-center gap-2">
             {visibleGenerationRunning && (
@@ -1204,12 +1212,7 @@ export function ChatPage() {
                 Stop
               </button>
             )}
-            <button className="chat-topbar-action" onClick={openConversationSearch} type="button" title="Search conversations" aria-label="Search conversations"><Search size={15} />Search</button>
-            <button className="chat-topbar-action" onClick={handleNewChat} type="button">
-              <MessageSquarePlus size={15} />
-              New chat
-            </button>
-            <button className="chat-topbar-action" onClick={toggleChatMenu} type="button" aria-label="Open chat actions" aria-expanded={chatMenuOpen} aria-controls="chat-actions-menu"><MoreHorizontal size={16} />More</button>
+            <button className="icon-button-dark" onClick={toggleChatMenu} title="Chat actions" type="button" aria-label="Open chat actions" aria-expanded={chatMenuOpen} aria-controls="chat-actions-menu"><MoreHorizontal size={18} /></button>
           </div>
         </div>
 
@@ -1271,34 +1274,12 @@ export function ChatPage() {
                 );
               })
             ) : (
-              <motion.div
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="empty-chat-hero grid min-h-full place-items-center px-4 py-12"
-              >
-                <div className="empty-chat-content max-w-3xl text-center">
-                  <div className="empty-chat-orb mx-auto mb-5 grid h-16 w-16 place-items-center">
-                    <CrystalErrorBoundary><CrystalAiOrb state="ready" size="md" /></CrystalErrorBoundary>
-                  </div>
-                  <p className="empty-chat-kicker mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs uppercase text-cyan-100">
-                    <Sparkles size={13} />
-                    Ultra human mode
-                  </p>
-                  <h1 className="empty-chat-title text-3xl font-semibold text-white md:text-5xl">
-                    {uiText?.["chat.welcome"] || "Ask, upload, speak, and keep the thread alive."}
-                  </h1>
-                  <p className="empty-chat-subtitle mx-auto mt-4 max-w-2xl text-sm leading-6 text-slate-300 md:text-base">
-                    Auto-AI adapts to tone, remembers useful preferences, streams answers smoothly, and can reason across your documents and images.
-                  </p>
-                  <div className="empty-chat-grid mt-6 grid gap-3 text-left md:grid-cols-3">
-                    {["Document-aware", "Emotion-aware", "Action-ready"].map((label) => (
-                      <div key={label} className="empty-chat-chip compact-card rounded-lg border border-white/10 bg-white/[0.04] p-3 text-sm text-slate-200">
-                        {label}
-                      </div>
-                    ))}
-                  </div>
+              <div className="empty-chat-hero" aria-labelledby="empty-chat-heading">
+                <div className="empty-chat-content">
+                  <span className="empty-chat-mark" aria-hidden="true"><LogoIcon /></span>
+                  <h1 id="empty-chat-heading">आज मैं आपकी कैसे मदद करूँ?</h1>
                 </div>
-              </motion.div>
+              </div>
             )}
           </AnimatePresence>
         </div>

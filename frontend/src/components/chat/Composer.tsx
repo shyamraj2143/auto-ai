@@ -190,7 +190,10 @@ export function Composer({
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const imageAttachmentsRef = useRef<ImageAttachment[]>([]);
-  const [draft, setDraft] = useState("");
+  const draftStorageKey = `autoai:chat-draft:${focusKey || "new"}`;
+  const [draft, setDraft] = useState(() => {
+    try { return window.localStorage.getItem(draftStorageKey) || ""; } catch { return ""; }
+  });
   const [chatMode, setChatMode] = useState<ChatMode>("instant");
   const [presetMode, setPresetMode] = useState<"auto" | "manual">("auto");
   const [intelligenceConfig, setIntelligenceConfig] = useState<IntelligenceConfig | null>(null);
@@ -200,6 +203,7 @@ export function Composer({
   const [imageAttachments, setImageAttachments] = useState<ImageAttachment[]>([]);
   const [error, setError] = useState("");
   const appliedInitialDraftRef = useRef("");
+  const loadedDraftKeyRef = useRef(draftStorageKey);
 
   const uploading = uploadTasks.some((task) => task.status === "uploading" || task.status === "processing");
   const canSend = Boolean(draft.trim() || imageAttachments.length || selectedLibraryAttachments.length) && !disabled && !sending && !uploading;
@@ -211,6 +215,27 @@ export function Composer({
   useEffect(() => {
     textareaRef.current?.focus({ preventScroll: true });
   }, [focusKey]);
+
+  useEffect(() => {
+    if (loadedDraftKeyRef.current === draftStorageKey) return;
+    loadedDraftKeyRef.current = draftStorageKey;
+    try { setDraft(window.localStorage.getItem(draftStorageKey) || ""); } catch { setDraft(""); }
+  }, [draftStorageKey]);
+
+  useEffect(() => {
+    if (loadedDraftKeyRef.current !== draftStorageKey) return;
+    try {
+      if (draft) window.localStorage.setItem(draftStorageKey, draft);
+      else window.localStorage.removeItem(draftStorageKey);
+    } catch { /* Draft persistence is best-effort in restricted WebViews. */ }
+  }, [draft, draftStorageKey]);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(180, Math.max(48, textarea.scrollHeight))}px`;
+  }, [draft]);
 
   useEffect(() => {
     const next = initialDraft.trim();
@@ -433,7 +458,7 @@ export function Composer({
               exit={{ opacity: 0, height: 0 }}
               className="space-y-2 overflow-hidden"
             >
-              {error && <div className="rounded-md border border-red-300/30 bg-red-500/10 px-3 py-2 text-xs text-red-100">{error}</div>}
+              {error && <div className="composer-error" role="alert">{error}</div>}
               <div className="flex flex-wrap gap-2">
                 {selectedDocuments.map((document) => (
                   <span key={document.id} className="attachment-chip">
@@ -543,11 +568,12 @@ export function Composer({
                 ? `Ask about ${selectedDocuments.length} selected document${selectedDocuments.length > 1 ? "s" : ""}`
                 : "Ask anything..."
             }
-            rows={2}
+            rows={1}
+            aria-label="Message AutoAI"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
                 submit();
               }
@@ -558,17 +584,18 @@ export function Composer({
               <VoiceButton onOpen={onOpenLiveMode} />
             )}
             {disabled && onStop ? (
-              <button className="stop-button composer-send-round" type="button" onClick={onStop} title="Stop response">
+              <button className="stop-button composer-send-round" type="button" onClick={onStop} title="Stop response" aria-label="Stop generation">
                 <Square size={16} />
               </button>
             ) : (
-              <button className="send-button composer-send-round" disabled={!canSend} type="submit" title={uiText?.["chat.send"] || "Send message"}>
+              <button className="send-button composer-send-round" disabled={!canSend} type="submit" title={uiText?.["chat.send"] || "Send message"} aria-label={uiText?.["chat.send"] || "Send message"}>
                 <SendHorizonal size={18} />
               </button>
             )}
           </div>
         </div>
       </div>
+      <p className="composer-disclaimer">AutoAI can make mistakes. Verify important information.</p>
     </form>
   );
 }

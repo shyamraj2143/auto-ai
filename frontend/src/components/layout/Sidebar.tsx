@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Bot, CalendarClock, CreditCard, Eraser, LogOut, MessageCircle, MessageSquarePlus, PanelLeftClose, Pencil, Search, Settings, Shield, Trash2, UserCircle2, X } from "lucide-react";
+import { Bot, CalendarClock, CreditCard, Eraser, LogOut, MessageCircle, MessageSquarePlus, MoreHorizontal, PanelLeftClose, Pencil, Search, Settings, Shield, Trash2, UserCircle2, X } from "lucide-react";
 import clsx from "clsx";
 import { resolveApiAssetUrl } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
@@ -24,9 +24,20 @@ function formatSubscriptionStatus(value?: string | null) {
   return `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)} plan`;
 }
 
+const HISTORY_GROUPS = ["Today", "Yesterday", "Previous 7 days", "Previous 30 days"] as const;
+
+function historyGroup(value?: string | null): typeof HISTORY_GROUPS[number] {
+  const timestamp = value ? new Date(value).getTime() : 0;
+  const days = Math.max(0, Math.floor((Date.now() - timestamp) / 86_400_000));
+  if (days < 1) return "Today";
+  if (days < 2) return "Yesterday";
+  if (days < 8) return "Previous 7 days";
+  return "Previous 30 days";
+}
+
 export function Sidebar() {
   const { user, logout } = useAuth();
-  const { chats, activeChat, createChat, deleteChat, loadingChats, openChat, updateChat } = useChat();
+  const { chats, activeChat, beginNewChat, deleteChat, loadingChats, openChat, updateChat } = useChat();
   const { activeConversationId, activeMode, isSidebarOpen, isSidebarCollapsed, closeSidebar, collapseSidebar, setActiveAiConversation, setActiveUserMessages } = useShell();
   const openSettings = useSettingsNavigation();
   const location = useLocation();
@@ -34,15 +45,21 @@ export function Sidebar() {
   const [query, setQuery] = useState("");
   const [pendingDeleteChat, setPendingDeleteChat] = useState<{ id: string; title: string } | null>(null);
   const [deletingChat, setDeletingChat] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const sidebarRef = useRef<HTMLElement | null>(null);
 
   const filteredChats = useMemo(() => {
     const term = query.trim().toLowerCase();
     if (!term) return chats;
     return chats.filter((chat) => chat.title.toLowerCase().includes(term));
   }, [chats, query]);
+  const groupedChats = useMemo(() => HISTORY_GROUPS.map((label) => ({
+    label,
+    chats: filteredChats.filter((chat) => historyGroup(chat.updated_at || chat.created_at) === label)
+  })).filter((group) => group.chats.length), [filteredChats]);
 
   const displayName = user?.name?.trim() || "Account";
   const displayEmail = user?.email?.trim() || "";
@@ -79,6 +96,32 @@ export function Sidebar() {
   }, [isSidebarOpen]);
 
   useEffect(() => {
+    if (!isSidebarOpen || !window.matchMedia("(max-width: 767px)").matches) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const drawer = sidebarRef.current;
+    const focusable = () => Array.from(drawer?.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled),summary,[tabindex]:not([tabindex="-1"])') || []).filter((item) => item.offsetParent !== null);
+    window.requestAnimationFrame(() => focusable()[0]?.focus());
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); closeSidebar(); return; }
+      if (event.key !== "Tab") return;
+      const items = focusable();
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    const handleAndroidBack = (event: Event) => { event.preventDefault(); closeSidebar(); };
+    document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("auto-ai-android-back", handleAndroidBack);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("auto-ai-android-back", handleAndroidBack);
+      window.requestAnimationFrame(() => previousFocus?.focus());
+    };
+  }, [closeSidebar, isSidebarOpen]);
+
+  useEffect(() => {
     if (!isAccountMenuOpen) return;
 
     const handlePointerDown = (event: MouseEvent | TouchEvent) => {
@@ -111,6 +154,7 @@ export function Sidebar() {
   }
 
   function removeChat(id: string, title: string) {
+    setDeleteError("");
     setPendingDeleteChat({ id, title });
   }
 
@@ -120,6 +164,8 @@ export function Sidebar() {
     try {
       await deleteChat(pendingDeleteChat.id);
       setPendingDeleteChat(null);
+    } catch {
+      setDeleteError("Chat was not deleted. Please try again.");
     } finally {
       setDeletingChat(false);
     }
@@ -132,10 +178,10 @@ export function Sidebar() {
     closeSidebar();
   }
 
-  async function createNewChat() {
-    const chat = await createChat();
-    setActiveAiConversation(chat.id);
-    navigate(`/chat/${encodeURIComponent(chat.id)}`);
+  function createNewChat() {
+    beginNewChat();
+    setActiveAiConversation(null);
+    navigate("/chat");
     closeSidebar();
   }
 
@@ -148,8 +194,9 @@ export function Sidebar() {
 
   return (
     <>
-      {isSidebarOpen && <div className="fixed inset-0 z-40 bg-slate-950/65 backdrop-blur-sm md:hidden" onClick={closeSidebar} />}
+      {isSidebarOpen && <div className="chat-sidebar-backdrop fixed inset-0 z-40 bg-slate-950/65 backdrop-blur-sm md:hidden" onClick={closeSidebar} />}
       <aside
+        ref={sidebarRef}
         data-open={isSidebarOpen ? "true" : "false"}
         className={clsx(
           "workspace-sidebar compact-panel fixed inset-y-0 left-0 z-50 flex w-[min(86vw,340px)] shrink-0 flex-col border-r border-white/10 bg-slate-950/95 text-white shadow-[18px_0_60px_rgba(0,0,0,0.35)] backdrop-blur-xl transition-transform duration-300 md:static md:z-auto md:w-80 md:translate-x-0",
@@ -218,50 +265,29 @@ export function Sidebar() {
           <span>Chat history</span>
           <span>{filteredChats.length}</span>
         </div>
-        <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2 pb-3">
+        <nav className="chat-history-list min-h-0 flex-1 overflow-y-auto px-2 pb-3" aria-label="Chat history">
           {loadingChats && <p className="px-2 py-2 text-sm text-white/50">Loading...</p>}
           {!loadingChats && filteredChats.length === 0 && (
             <p className="px-2 py-2 text-sm text-white/45">No chats found</p>
           )}
-          {filteredChats.map((chat) => (
-            <div
-              key={chat.id}
-              className={clsx(
-                "compact-sidebar-item group flex items-center rounded-lg border border-transparent transition",
-                activeMode === "ai" && (activeConversationId === chat.id || activeChat?.id === chat.id) && location.pathname.startsWith("/chat")
-                  ? "glow-active border-cyan-200/20 bg-cyan-200/12"
-                  : "hover:bg-white/10"
-              )}
-            >
-              <button className="min-w-0 flex-1 px-3 py-2 text-left" onClick={() => openExistingChat(chat.id)} type="button">
-                <span className="block truncate text-sm text-slate-100">{chat.title}</span>
-                <span className="mt-0.5 block truncate text-[11px] text-slate-500">{chat.mode || "normal"} / {chat.model}</span>
-                <span
-                  className="mt-1 flex items-center gap-1 truncate text-[10px] text-cyan-200/70"
-                  title={formatMessageDateTimeTitle(chat.updated_at || chat.created_at)}
-                >
-                  <CalendarClock size={11} className="shrink-0" />
-                  <time dateTime={chat.updated_at || chat.created_at}>{formatChatHistoryDateTime(chat.updated_at || chat.created_at)}</time>
-                </span>
-              </button>
-              <button
-                className="mr-1 rounded p-1 text-white/50 opacity-0 hover:text-white group-hover:opacity-100"
-                onClick={() => renameChat(chat.id, chat.title)}
-                title="Rename chat"
-                type="button"
-              >
-                <Pencil size={15} />
-              </button>
-              <button
-                className="mr-2 rounded p-1 text-white/50 opacity-0 hover:text-red-300 group-hover:opacity-100"
-                onClick={() => removeChat(chat.id, chat.title)}
-                title="Delete chat"
-                type="button"
-              >
-                <Trash2 size={15} />
-              </button>
-            </div>
-          ))}
+          {groupedChats.map((group) => <section className="chat-history-group" key={group.label} aria-labelledby={`chat-history-${group.label.replace(/\s+/g, "-").toLowerCase()}`}>
+            <h2 id={`chat-history-${group.label.replace(/\s+/g, "-").toLowerCase()}`}>{group.label}</h2>
+            {group.chats.map((chat) => (
+              <div key={chat.id} className={clsx("compact-sidebar-item group flex items-center", activeMode === "ai" && (activeConversationId === chat.id || activeChat?.id === chat.id) && location.pathname.startsWith("/chat") ? "glow-active" : "")}>
+                <button className="min-w-0 flex-1 px-3 py-2 text-left" onClick={() => openExistingChat(chat.id)} title={chat.title} type="button">
+                  <span className="block truncate text-sm text-slate-100">{chat.title}</span>
+                  <span className="chat-history-time" title={formatMessageDateTimeTitle(chat.updated_at || chat.created_at)}><CalendarClock size={11} /><time dateTime={chat.updated_at || chat.created_at}>{formatChatHistoryDateTime(chat.updated_at || chat.created_at)}</time></span>
+                </button>
+                <details className="chat-history-menu">
+                  <summary aria-label={`Actions for ${chat.title}`} title="Chat actions"><MoreHorizontal size={16} /></summary>
+                  <div role="menu">
+                    <button role="menuitem" onClick={() => void renameChat(chat.id, chat.title)} type="button"><Pencil size={14} /> Rename</button>
+                    <button role="menuitem" onClick={() => removeChat(chat.id, chat.title)} type="button"><Trash2 size={14} /> Delete</button>
+                  </div>
+                </details>
+              </div>
+            ))}
+          </section>)}
         </nav>
         <div ref={accountMenuRef} className="relative border-t border-white/10 p-3">
           {isAccountMenuOpen && (
@@ -364,8 +390,9 @@ export function Sidebar() {
               title="Profile menu"
               type="button"
             >
-              <span className="profileicon grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full border border-white/10 bg-white/[0.06] text-sm font-bold text-white">
-                {profileAvatar ? <img className="h-full w-full object-cover" src={profileAvatar} alt="" /> : profileInitial}
+              <span className="profileicon relative grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full border border-white/10 bg-white/[0.06] text-sm font-bold text-white">
+                <span aria-hidden="true">{profileInitial}</span>
+                {profileAvatar && <img className="absolute inset-0 h-full w-full object-cover" src={profileAvatar} alt="" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
               </span>
               <span className="min-w-0">
                 <span className="block truncate text-sm font-semibold text-white">{displayName}</span>
@@ -408,6 +435,7 @@ export function Sidebar() {
             <div className="min-w-0">
               <h2 id="chat-delete-dialog-title">Delete chat?</h2>
               <p id="chat-delete-dialog-description">“{pendingDeleteChat.title}” will be permanently deleted.</p>
+              {deleteError && <p className="chat-delete-dialog-error" role="alert">{deleteError}</p>}
             </div>
             <div className="chat-delete-dialog-actions">
               <button

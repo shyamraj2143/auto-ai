@@ -90,7 +90,7 @@ export function AppShell() {
           <ChatProvider>
           <AlarmWorkspaceScope enabled={!isAdminRoute}>
           <AndroidBackHandler />
-          <div className={`app-shell${isSidebarOpen ? " sidebar-open" : ""}`}>
+          <div className={`app-shell${isSidebarOpen ? " sidebar-open" : ""}${isChatWorkspace ? " chat-app-shell" : ""}`}>
             {!fullCanvasAdmin && <WorkspaceNavigation />}
             {!fullCanvasAdmin && isChatWorkspace && <Sidebar />}
             {!fullCanvasAdmin && isChatWorkspace && isSidebarCollapsed && (

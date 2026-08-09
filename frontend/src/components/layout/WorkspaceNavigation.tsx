@@ -65,6 +65,7 @@ export function WorkspaceNavigation() {
             key={to}
             to={to}
             className={({ isActive }) => isActive ? "active" : undefined}
+            title={label}
           >
             <Icon size={18} />
             <span>{label}</span>
@@ -73,7 +74,8 @@ export function WorkspaceNavigation() {
       </nav>
       <div className="autoai-workspace-profile">
         <span className="autoai-workspace-avatar">
-          {avatar ? <img src={avatar} alt="" /> : initials(user.name || user.email)}
+          <span aria-hidden="true">{initials(user.name || user.email)}</span>
+          {avatar && <img src={avatar} alt="" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
         </span>
         <span>
           <strong>{user.name || "AutoAI User"}</strong>

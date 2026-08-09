@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { Chat, ChatListItem, ChatMode, IntelligenceMode } from "../types";
 
@@ -27,6 +27,7 @@ type ChatContextValue = {
   loadingChats: boolean;
   refreshChats: () => Promise<void>;
   openChat: (id: string) => Promise<void>;
+  beginNewChat: () => void;
   createChat: (title?: string, preset?: PresetState) => Promise<Chat>;
   updateChat: (id: string, payload: ChatUpdatePayload) => Promise<void>;
   deleteChat: (id: string) => Promise<void>;
@@ -40,6 +41,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [chats, setChats] = useState<ChatListItem[]>([]);
   const [activeChat, setActiveChat] = useState<Chat | null>(null);
   const [loadingChats, setLoadingChats] = useState(false);
+  const openRequestRef = useRef(0);
 
   const refreshChats = useCallback(async () => {
     if (!token) return;
@@ -54,11 +56,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const openChat = useCallback(
     async (id: string) => {
       if (!token) return;
+      const requestId = ++openRequestRef.current;
       const chat = await api.getChat(token, id);
-      setActiveChat(chat);
+      if (requestId === openRequestRef.current) setActiveChat(chat);
     },
     [token]
   );
+
+  const beginNewChat = useCallback(() => {
+    openRequestRef.current += 1;
+    setActiveChat(null);
+  }, []);
 
   const createChat = useCallback(
     async (title = "New chat", preset?: PresetState) => {
@@ -113,12 +121,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       loadingChats,
       refreshChats,
       openChat,
+      beginNewChat,
       createChat,
       updateChat,
       deleteChat,
       setActiveChat
     }),
-    [activeChat, chats, createChat, deleteChat, loadingChats, openChat, refreshChats, updateChat]
+    [activeChat, beginNewChat, chats, createChat, deleteChat, loadingChats, openChat, refreshChats, updateChat]
   );
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
