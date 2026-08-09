@@ -1,0 +1,381 @@
+/* RTPS/ServicePlus-inspired application workspace: simple, dense and readable. */
+.seva-workspace-page,
+.seva-admin-portal,
+.seva-agent-portal {
+  background: #eef2f5;
+  color: #172033;
+}
+
+.seva-workspace-page .seva-topbar,
+.seva-admin-portal .seva-topbar,
+.seva-agent-portal .seva-topbar {
+  border-bottom: 3px solid #f3b61f;
+  background: #123f5a;
+  color: #fff;
+  backdrop-filter: none;
+}
+
+.seva-workspace-page .seva-topbar small,
+.seva-admin-portal .seva-topbar small,
+.seva-agent-portal .seva-topbar small {
+  color: #d9e8f1;
+}
+
+.seva-workspace-page .seva-mark,
+.seva-admin-portal .seva-mark,
+.seva-agent-portal .seva-mark {
+  border-radius: 4px;
+  background: #fff;
+  color: #155f7b;
+  box-shadow: none;
+}
+
+.seva-workspace-page .seva-icon-button,
+.seva-admin-portal .seva-history-button,
+.seva-agent-portal .seva-history-button {
+  border-color: rgba(255,255,255,.45);
+  border-radius: 4px;
+  background: transparent;
+  color: #fff;
+}
+
+.seva-workspace-page .seva-workspace {
+  width: min(1180px, calc(100% - 28px));
+  max-width: 1180px;
+}
+
+.seva-workspace-page .seva-workspace-summary {
+  border: 1px solid #cbd5df;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, .06);
+}
+
+.seva-workspace-page .seva-workspace-summary h1,
+.seva-workspace-page .seva-workspace-summary p,
+.seva-workspace-page .seva-workspace-summary span {
+  color: #172033;
+}
+
+.seva-workspace-page .seva-workspace-progress {
+  height: 6px;
+  background: #e2e8f0;
+}
+
+.seva-workspace-page .seva-workspace-progress span,
+.seva-workspace-page .service-progress > span {
+  background: #147a65;
+}
+
+.seva-workspace-page .seva-official-note {
+  border: 1px solid #dfc36a;
+  border-radius: 4px;
+  background: #fff9df;
+  color: #3f3a25;
+}
+
+.seva-workspace-page .seva-official-note small {
+  color: #615a3c;
+}
+
+.seva-task-shell .service-task-card {
+  width: 100%;
+  border: 1px solid #bdc9d5;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 3px 12px rgba(15, 23, 42, .07);
+  color: #172033;
+}
+
+.seva-task-shell .service-card-header {
+  border-bottom: 1px solid #cbd5df;
+  background: #f7fafc;
+}
+
+.seva-task-shell .service-card-icon {
+  border-color: #b5cfdb;
+  border-radius: 4px;
+  background: #e8f4f7;
+  color: #155f7b;
+}
+
+.seva-task-shell .service-card-header h3 { color: #15273a; }
+.seva-task-shell .service-card-header p { color: #536477; }
+.seva-task-shell .service-card-kicker { color: #0f6b65; }
+
+.seva-task-shell .service-card-form {
+  display: block;
+  padding: 0 18px 18px;
+}
+
+.rtps-form-heading {
+  margin: 0 -18px;
+  padding: 18px 22px;
+  border-bottom: 1px solid #aebdc9;
+  background: #155f7b;
+  color: #fff;
+  text-align: center;
+}
+
+.rtps-form-heading span {
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.rtps-form-heading h4 {
+  margin: 5px 0 2px;
+  color: #fff;
+  font-size: 1.15rem;
+}
+
+.rtps-form-heading p {
+  margin: 0;
+  color: #dcecf3;
+  font-size: .78rem;
+}
+
+.rtps-form-instructions {
+  margin: 16px 0;
+  padding: 11px 13px;
+  border: 1px solid #e0c66a;
+  border-left: 4px solid #d29b13;
+  background: #fff9df;
+  color: #463f29;
+  font-size: .77rem;
+  line-height: 1.5;
+}
+
+.rtps-form-instructions p { margin: 3px 0 0; }
+.rtps-form-instructions b { color: #b42318; }
+
+.rtps-form-section {
+  min-width: 0;
+  margin: 0 0 16px;
+  padding: 0 14px 14px;
+  border: 1px solid #bdc9d5;
+  border-radius: 2px;
+  background: #fff;
+}
+
+.rtps-form-section legend {
+  width: calc(100% + 28px);
+  margin: 0 -14px 14px;
+  padding: 9px 13px;
+  border-bottom: 1px solid #bdc9d5;
+  background: #eaf2f6;
+  color: #123f5a;
+  font-size: .82rem;
+  font-weight: 800;
+}
+
+.rtps-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px 20px;
+}
+
+.rtps-field-grid .service-field-textarea,
+.rtps-field-grid .service-field-address,
+.rtps-field-grid .service-field-multiselect,
+.rtps-field-grid .service-field-checkbox {
+  grid-column: 1 / -1;
+}
+
+.seva-task-shell .service-field { gap: 5px; }
+.seva-task-shell .service-field label { color: #26384b; font-size: .78rem; }
+.seva-task-shell .service-field label span { color: #c62828; }
+.seva-task-shell .service-field small { color: #66788a; }
+
+.seva-task-shell .service-field-control,
+.seva-task-shell .service-secure input {
+  min-height: 40px;
+  border: 1px solid #9eacba;
+  border-radius: 3px;
+  background: #fff !important;
+  color: #172033 !important;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, .04) !important;
+}
+
+.seva-task-shell textarea.service-field-control { min-height: 78px; }
+.seva-task-shell .service-field-control:focus,
+.seva-task-shell .service-secure input:focus {
+  border-color: #147a8d;
+  box-shadow: 0 0 0 2px rgba(20, 122, 141, .14);
+}
+
+.rtps-declaration {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+  margin: 4px 0 14px;
+  padding: 12px;
+  border: 1px solid #b9c8d3;
+  background: #f7fafc;
+  color: #33475b;
+  font-size: .77rem;
+  line-height: 1.5;
+}
+
+.rtps-declaration input {
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  accent-color: #147a65;
+}
+
+.rtps-form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid #d4dde5;
+}
+
+.rtps-form-actions p { margin: 0; color: #637486; font-size: .72rem; }
+.rtps-form-actions > div { display: flex; gap: 9px; }
+
+.seva-task-shell .service-primary,
+.seva-task-shell .service-secondary,
+.seva-task-shell .service-danger,
+.seva-task-shell .service-quiet-danger,
+.seva-task-shell .service-icon-button {
+  border-radius: 3px;
+  box-shadow: none;
+}
+
+.seva-task-shell .service-primary { background: #147a65; }
+.seva-task-shell .service-secondary { border-color: #9eb0bf; background: #fff; color: #23445a; }
+.seva-task-shell .service-card-actions { border-top: 1px solid #d4dde5; padding-top: 14px; }
+
+.seva-workspace-page .seva-assistance-panel {
+  border: 1px solid #bdc9d5;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 3px 12px rgba(15, 23, 42, .07);
+  color: #172033;
+}
+
+.seva-workspace-page .seva-assistance-panel small,
+.seva-workspace-page .seva-assistance-overview small,
+.seva-workspace-page .seva-employee-requirement p,
+.seva-workspace-page .seva-case-timeline small { color: #617386; }
+.seva-workspace-page .seva-assistance-icon { border-radius: 4px; background: #e8f4f7; color: #155f7b; }
+.seva-workspace-page .seva-assistance-overview article,
+.seva-workspace-page .seva-employee-requirement { border: 1px solid #d4dde5; border-radius: 3px; background: #f8fafc; }
+
+/* Operations console fixes: correct contrast and predictable form sizing. */
+.seva-admin-portal .seva-employee-page,
+.seva-agent-portal .seva-employee-page { background: transparent; }
+.seva-admin-portal .seva-list-heading h1,
+.seva-agent-portal .seva-list-heading h1 { color: #172033; }
+.seva-admin-portal .seva-list-heading span,
+.seva-agent-portal .seva-list-heading span { color: #176b77; }
+
+.seva-admin-portal :is(input, textarea, select):not([type="checkbox"]):not([type="radio"]),
+.seva-agent-portal :is(input, textarea, select):not([type="checkbox"]):not([type="radio"]) {
+  border-color: #aab7c4 !important;
+  border-radius: 3px;
+  background: #fff !important;
+  color: #172033 !important;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, .04) !important;
+}
+
+.seva-admin-portal .seva-requirement-builder,
+.seva-agent-portal .seva-requirement-builder,
+.seva-admin-portal .seva-final-upload,
+.seva-agent-portal .seva-final-upload {
+  border-color: #d4dde5;
+  border-radius: 4px;
+  background: #f8fafc;
+  color: #172033;
+}
+
+.seva-admin-portal .seva-agent-admin {
+  border: 1px solid #cbd5df;
+  border-radius: 6px;
+  background: #fff;
+  color: #172033;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, .05);
+}
+
+.seva-admin-portal .seva-agent-admin > header {
+  margin: -18px -18px 15px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #cbd5df;
+  background: #eaf2f6;
+}
+
+.seva-admin-portal .seva-agent-admin > header span { color: #176b77; }
+.seva-admin-portal .seva-agent-admin > header strong { color: #147a65; }
+.seva-admin-portal .seva-agent-summary span { border: 1px solid #dbe3ea; background: #f6f8fa; color: #526477; }
+.seva-admin-portal .seva-agent-summary b { color: #172033; }
+
+.seva-admin-portal .seva-agent-admin .seva-agent-create-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #d6dfe7;
+  background: #f8fafc;
+}
+
+.seva-agent-create-form label { display: grid; min-width: 0; gap: 5px; }
+.seva-agent-create-form label span { color: #33475b; font-size: .73rem; font-weight: 700; }
+.seva-admin-portal .seva-agent-create-form input {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid #aab7c4;
+  border-radius: 3px;
+  background: #fff !important;
+  color: #172033 !important;
+}
+
+.seva-admin-portal .seva-agent-create-form .seva-primary {
+  grid-column: 1 / -1;
+  width: max-content;
+  min-width: 150px;
+  border-radius: 3px;
+  background: #147a65;
+  color: #fff;
+}
+
+.seva-admin-portal .seva-agent-list article { border: 1px solid #dbe3ea; border-radius: 3px; background: #fff; color: #172033; }
+.seva-admin-portal .seva-agent-list small { color: #637486; }
+.seva-admin-portal .seva-agent-list b { color: #176b77; }
+.seva-admin-portal .seva-agent-editor input,
+.seva-admin-portal .seva-agent-editor select { border-color: #aab7c4; border-radius: 3px; background: #fff !important; color: #172033 !important; }
+.seva-admin-portal .seva-agent-editor button { border-color: #9eacba; border-radius: 3px; background: #fff; color: #23445a; }
+
+.seva-admin-portal .seva-work-order-list,
+.seva-admin-portal .seva-work-order-detail,
+.seva-agent-portal .seva-work-order-list,
+.seva-agent-portal .seva-work-order-detail { border-color: #cbd5df; border-radius: 6px; background: #fff; color: #172033; }
+.seva-admin-portal .seva-work-order-list button,
+.seva-agent-portal .seva-work-order-list button { border: 1px solid #dbe3ea; border-radius: 3px; background: #f8fafc; color: #172033; }
+.seva-admin-portal .seva-work-order-list button.active,
+.seva-agent-portal .seva-work-order-list button.active { border-color: #147a65; background: #edf8f4; }
+
+@media (max-width: 1000px) {
+  .seva-admin-portal .seva-agent-admin .seva-agent-create-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 640px) {
+  .seva-workspace-page .seva-workspace { width: min(100% - 16px, 1180px); }
+  .seva-task-shell .service-card-form { padding-right: 10px; padding-left: 10px; }
+  .rtps-form-heading { margin-right: -10px; margin-left: -10px; }
+  .rtps-field-grid { grid-template-columns: 1fr; }
+  .rtps-field-grid .service-field { grid-column: 1; }
+  .rtps-form-actions { align-items: stretch; flex-direction: column; }
+  .rtps-form-actions > div { flex-direction: column-reverse; }
+  .rtps-form-actions button { width: 100%; }
+  .seva-admin-portal .seva-agent-admin .seva-agent-create-form { grid-template-columns: 1fr; }
+  .seva-admin-portal .seva-agent-create-form .seva-primary { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seva-workspace-page .service-progress > span { transition: none; }
+}

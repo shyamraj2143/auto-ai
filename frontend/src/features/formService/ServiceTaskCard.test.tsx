@@ -48,6 +48,23 @@ describe("ServiceTaskCard", () => {
     await waitFor(() => expect(api.saveServiceFields).toHaveBeenCalledWith("token", "task-1", 4, "request-1", { email: "asha@example.test" }));
   });
 
+  it("uses the integrated RTPS declaration before submitting an assisted application", async () => {
+    const information = task("information_request", "COLLECTING_INFORMATION", { data_request_id: "request-1", saved_values: {}, fields: [{ key: "applicant_name", label: "Applicant name / आवेदक का नाम", type: "text", required: true }] }, ["save_fields"]);
+    information.execution_mode = "ASSIST";
+    information.active_card.execution_mode = "ASSIST";
+    const next = task("task_progress", "READY_TO_PREPARE", { steps: [] }, ["prepare"]);
+    vi.spyOn(api, "saveServiceFields").mockResolvedValue(next);
+    render(<ServiceTaskCard task={information} token="token" />);
+
+    expect(screen.getByText("आवेदक का विवरण / Applicant Details")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(/Applicant name/), { target: { value: "Asha Kumari" } });
+    const submit = screen.getByRole("button", { name: "Submit application / आवेदन जमा करें" });
+    expect(submit).toHaveProperty("disabled", true);
+    fireEvent.click(screen.getByLabelText(/authorize AutoAI Seva to assign/i));
+    fireEvent.click(submit);
+    await waitFor(() => expect(api.saveServiceFields).toHaveBeenCalledWith("token", "task-1", 4, "request-1", { applicant_name: "Asha Kumari" }));
+  });
+
   it("restores only non-secret offline draft fields after remount", () => {
     const information = task("information_request", "COLLECTING_INFORMATION", { data_request_id: "request-1", saved_values: {}, fields: [{ key: "district", label: "District", type: "text", required: true }] }, ["save_fields"]);
     const first = render(<ServiceTaskCard task={information} token="token" />);

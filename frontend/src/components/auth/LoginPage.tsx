@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
-import { ArrowRight, KeyRound, Lock, ShieldCheck } from "lucide-react";
+import { ArrowRight, BriefcaseBusiness, KeyRound, Lock, ShieldCheck } from "lucide-react";
 import { api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import { authErrorMessage, loginErrorMessage } from "../../utils/apiErrors";
@@ -190,6 +190,7 @@ export function LoginPage() {
         <p className="mt-4 text-center text-sm text-slate-400">
           New here? <Link className="font-medium text-cyan-200" to="/register">Create an account</Link>
         </p>
+        <Link className="mt-3 flex items-center justify-center gap-2 text-sm font-medium text-cyan-200" to="/agent/login"><BriefcaseBusiness size={15} /> Agent login</Link>
       </form>
     </AnimatedPage>
   );

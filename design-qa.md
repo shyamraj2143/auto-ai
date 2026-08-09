@@ -1,68 +1,47 @@
-# AutoAI Profile, Alerts, Calls and Responsive Settings QA
+# AutoAI Seva RTPS Form and Agent Portal QA
 
-- Source visual truth:
-  - `/workspace/scratch/f0c2b9a64a26/upload/01-Screenshot_20260729_143304.jpg`
-  - `/workspace/scratch/f0c2b9a64a26/upload/02-1000309577.jpg`
-  - `/workspace/scratch/f0c2b9a64a26/upload/03-1000309548.png`
-- Source pixel dimensions: 691 × 1536, 691 × 1536, and 864 × 1536 px.
-- Intended implementation viewport: Android mobile widths from 320–430 CSS px, plus fluid tablet/desktop layouts.
-- State: authenticated Settings account overview, Call settings, Call Hub alerts confirmation, and AI model selection.
-- Implementation screenshot: unavailable.
-- Density normalization: not possible because the Work Mode browser blocked the local preview.
+- Source visual truth: user-provided Operations Workspace and Employee Assistance screenshots in the active request.
+- Government references: Bihar RTPS portal, official Income Certificate form, and Bihar Applicant User Manual.
+- Intended viewports: 1280 × 720 desktop and 390 × 844 mobile.
+- States verified: public agent login; completed assisted form; automatic agent queue assignment.
+- Implementation evidence:
+  - `.playwright-cli/page-2026-08-09T03-53-08-422Z.png` — desktop agent login.
+  - `.playwright-cli/page-2026-08-09T03-53-38-098Z.png` — mobile agent login.
+  - `.playwright-cli/page-2026-08-09T03-52-24-288Z.png` — submitted application workspace.
+  - `.playwright-cli/element-2026-08-09T03-52-41-724Z.png` — automatic agent-processing panel.
 
 ## Full-view comparison evidence
 
-The selected profile reference uses a compact horizontal identity card: circular avatar, name and email, a small plan badge, and a right chevron. The previous implementation instead used a tall centered profile panel with four metadata rows and a separate Edit Profile button. The updated source now uses one compact, full-width clickable summary and opens the existing editor only after selection.
+The original Operations screenshot had low-contrast headings, dark form controls on a gray panel, and a narrow wrapped create-agent button. The updated government-style surface uses a light workspace, navy section headers, white high-contrast controls, flat borders, and a full-width create-agent action.
 
-The alert screenshot shows Android WebView's native JavaScript confirmation surface rendering as an oversized, duplicated layout with repeated AutoAI imagery. The updated source removes `window.confirm` from the clear-alert action and uses a bounded app-owned dialog with one icon, one description, and two actions.
+The original user flow contained a second Employee Assistance purpose/consent form after application completion. The updated flow removes that duplicate step. Submitting an ASSIST application creates or reuses the work order automatically and immediately displays case ID, queue/agent, current work, pending user actions, and timeline.
 
-The call reference request requires unambiguous audio and video identities. The updated Call settings use a phone icon for Audio calls and a video-camera icon for Video calls, larger 44 px icon containers, clearer descriptions, and matching call-history callback icons.
-
-The source screenshots use a narrow Android viewport. Updated Settings rows use minimum-width constraints, bounded text wrapping, dynamic viewport units for select sheets, and a 420 px narrow-screen contract that stacks selectors at full width.
+The RTPS reference uses simple bilingual labels, explicit required-field markers, dense two-column sections, declarations, preview, annexure/document handling, submission, and acknowledgement/status. The updated dynamic form follows those conventions while retaining AutoAI security boundaries for OTP, CAPTCHA, passwords, and final confirmation.
 
 ## Focused region comparison evidence
 
-Focused source regions inspected:
+- Agent login: desktop and 390 px mobile views have no cropped title, overflow, or inaccessible controls.
+- Application form: global dark-theme input overrides were detected in the first browser pass and replaced with scoped white government-form controls.
+- Agent processing: the final focused screenshot contains no Purpose field, consent handoff card, or `Request employee help` button.
+- Operations workspace: agent creation fields now use labeled grid rows and a stable full-row submit action.
 
-- Settings profile card in screenshots 1 and 3.
-- Broken clear-alert dialog in screenshot 2.
-- Settings navigation, row density, and bottom navigation clearance in screenshot 1.
+## Findings and fixes
 
-A browser-rendered implementation region could not be captured. `sites-preview` started successfully at the required local preview address, but the cloud browser returned `net::ERR_BLOCKED_BY_CLIENT`. Therefore a valid same-state, same-viewport composite comparison could not be produced.
+- [P1 fixed] Unreadable Operations workspace contrast and compressed create-agent action.
+- [P1 fixed] Redundant Employee Assistance form after application submission.
+- [P1 fixed] No discoverable agent-login entry from the public website or normal login page.
+- [P2 fixed] Global Action Hub input styles overrode the RTPS form controls.
+- [P2 fixed] Agent Workspace heading cropped at desktop width.
+- [P2 fixed] Employee terminology remained in user-facing agent status copy.
 
-## Findings
+## Verification
 
-- [P1] Browser-rendered visual verification is unavailable.
-  - Location: Profile summary, clear-alert dialog, Call settings and narrow Settings/model-selector layouts.
-  - Evidence: local preview server was healthy, but the Work Mode browser blocked `http://terminal.local:4173/` with `ERR_BLOCKED_BY_CLIENT`.
-  - Impact: exact pixel fidelity and authenticated interaction states cannot be certified from code and automated tests alone.
-  - Fix: capture the authenticated routes in a Work Mode browser that permits the local preview or verify the generated Android APK on 320, 360, 393 and 430 CSS-pixel widths.
+- Browser: desktop/mobile agent login rendered correctly.
+- Browser: completed assisted form automatically created case `SEVA-2026-BDA0E394` and entered agent queue.
+- Frontend: 53 test files, 276 tests passed.
+- Backend Seva operations: 6 tests passed, including agent login, password lifecycle, assignment, capacity, suspension, and notifications.
+- Production TypeScript/Vite build passed.
+- Python seed module compilation passed.
+- `git diff --check` passed.
 
-## Implemented fixes and code-level evidence
-
-- Profile summary is now one compact clickable card with avatar, identity, badges and chevron.
-- Existing profile fields, avatar upload/removal, validation and save API remain unchanged in the expanded editor.
-- Clear alerts uses a custom accessible dialog with backdrop dismissal, Escape dismissal, optimistic clearing and rollback on API failure.
-- Audio and video settings have distinct semantic icons and larger detailed rows.
-- Call-history callback buttons match the record type.
-- AI/settings selectors use `dvh`, safe-area bounds, full-width narrow-screen stacking and overflow-safe copy.
-- Existing settings routes, call API settings, notification deletion API and app navigation remain unchanged.
-- Frontend tests: 162/162 passed across 30 test files.
-- TypeScript and production Vite build: passed.
-- `git diff --check`: passed.
-
-## Required fidelity surfaces
-
-- Fonts and typography: existing Inter/system stack is preserved; new hierarchy uses responsive sizes and two-line bounded descriptions. Browser verification is blocked.
-- Spacing and layout rhythm: compact 60 px/54 px profile avatar grid, 44 px call icons, bounded dialog width, and 320–430 px responsive contracts are implemented. Browser verification is blocked.
-- Colors and visual tokens: existing AutoAI cyan/blue/violet glass tokens are reused; destructive alert action uses the existing red semantic tone.
-- Image quality and asset fidelity: the user's real avatar continues to use the existing API image. No placeholder raster, logo duplication, custom SVG, or generated image was added. Standard icons use the existing Lucide library.
-- Copy and content: profile identity, call type labels, alert safety text and existing settings descriptions remain user-facing and functional.
-
-## Comparison history
-
-- Attempt 1: started the required local preview and connected the Work Mode cloud browser.
-- Attempt 1 result: browser navigation failed with `net::ERR_BLOCKED_BY_CLIENT`; no implementation screenshot was available for composite comparison.
-- Automated fallback: all 162 tests across 30 test files, TypeScript and production build passed, but these do not substitute for visual QA.
-
-final result: blocked
+final result: passed

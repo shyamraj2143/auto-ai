@@ -4,6 +4,7 @@ import {
   ArrowRight,
   AudioLines,
   BrainCircuit,
+  BriefcaseBusiness,
   Check,
   Command,
   Copy,
@@ -319,7 +320,8 @@ export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
     { label: "Explore features", detail: "See chat, voice, vision, calls, and sharing", section: "features" },
     { label: "Download Android app", detail: "View the current APK release", to: "/download" },
     { label: "Compare plans", detail: "Review available Auto-AI plans", to: "/pricing" },
-    { label: "Sign in", detail: "Continue with your Auto-AI account", to: "/login" }
+    { label: "Sign in", detail: "Continue with your Auto-AI account", to: "/login" },
+    { label: "Agent portal", detail: "Open assigned Seva application work", to: "/agent/login" }
   ].filter((item) => `${item.label} ${item.detail}`.toLowerCase().includes(commandQuery.trim().toLowerCase())), [commandQuery, user]);
 
   const closeCommand = useCallback(() => {
@@ -589,6 +591,7 @@ export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
             <ScreenShare size={16} />
             <span>{elementText("header.screen-share", "Screen Share")}</span>
           </button>
+          {!user ? <Link className="prism-button" to="/agent/login" aria-label="Open agent login"><BriefcaseBusiness size={16} /><span>Agent login</span></Link> : null}
           <Link className="prism-button prism-nav-cta" style={elementStyle("header.sign-in")} to={elementHref("header.sign-in", user ? "/hub" : "/login")} {...editableElementProps("header.sign-in", "button", "Sign In", elementText("header.sign-in", user ? "Open app" : globalContent?.["header.sign_in"] || "Sign in"), elementHref("header.sign-in", user ? "/hub" : "/login"))}>
             {elementText("header.sign-in", user ? "Open app" : globalContent?.["header.sign_in"] || "Sign in")}
           </Link>
@@ -623,6 +626,7 @@ export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
             <Link to={user ? "/hub" : "/login"} onClick={() => setMobileMenuOpen(false)}>
               {user ? "Open app" : "Sign in"}
             </Link>
+            {!user ? <Link to="/agent/login" onClick={() => setMobileMenuOpen(false)}><BriefcaseBusiness size={16} /> Agent login</Link> : null}
           </PrismNavigation>
         )}
       </header>

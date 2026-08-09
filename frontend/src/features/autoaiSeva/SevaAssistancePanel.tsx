@@ -13,7 +13,7 @@ import {
   UsersRound,
   XCircle,
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { sevaApi, type SevaNotification, type SevaRequirement, type SevaWorkOrder } from "./sevaApi";
 
 const CLOSED = new Set(["COMPLETED", "CANCELLED"]);
@@ -28,13 +28,12 @@ function requirementIcon(requirement: SevaRequirement) {
   return <Send size={18} />;
 }
 
-export function SevaAssistancePanel({ token, taskId }: { token: string; taskId: string }) {
+export function SevaAssistancePanel({ token, taskId, autoAssign = false }: { token: string; taskId: string; autoAssign?: boolean }) {
   const [workOrder, setWorkOrder] = useState<SevaWorkOrder | null>(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState("");
   const [error, setError] = useState("");
-  const [consent, setConsent] = useState(false);
-  const [purpose, setPurpose] = useState("Help me complete this application safely and provide the final receipt PDF.");
+  const assignmentRequested = useRef(false);
   const [responses, setResponses] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [notifications, setNotifications] = useState<SevaNotification[]>([]);
@@ -43,16 +42,24 @@ export function SevaAssistancePanel({ token, taskId }: { token: string; taskId: 
     if (!silent) setLoading(true);
     try {
       const result = await sevaApi.getAssistance(token, taskId);
-      setWorkOrder(result.work_order);
+      let nextWorkOrder = result.work_order;
+      if (!nextWorkOrder && autoAssign && !assignmentRequested.current) {
+        assignmentRequested.current = true;
+        setWorking("request");
+        nextWorkOrder = await sevaApi.requestAssistance(token, taskId, "Process this submitted application and provide the final acknowledgement or receipt.");
+      }
+      setWorkOrder(nextWorkOrder);
       const alerts = await sevaApi.listNotifications(token);
-      setNotifications(alerts.items.filter((item) => !item.read_at && (!result.work_order || item.work_order_id === result.work_order.id)));
+      setNotifications(alerts.items.filter((item) => !item.read_at && (!nextWorkOrder || item.work_order_id === nextWorkOrder.id)));
       setError("");
     } catch (reason) {
-      if (!silent) setError(reason instanceof Error ? reason.message : "Employee assistance could not be loaded.");
+      if (autoAssign) assignmentRequested.current = false;
+      if (!silent) setError(reason instanceof Error ? reason.message : "Agent processing status could not be loaded.");
     } finally {
+      setWorking((current) => current === "request" ? "" : current);
       if (!silent) setLoading(false);
     }
-  }, [taskId, token]);
+  }, [autoAssign, taskId, token]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
@@ -65,19 +72,6 @@ export function SevaAssistancePanel({ token, taskId }: { token: string; taskId: 
     () => workOrder?.requirements.filter((item) => item.status === "REQUESTED").length ?? 0,
     [workOrder],
   );
-
-  async function requestHelp() {
-    if (!consent || working) return;
-    setWorking("request");
-    setError("");
-    try {
-      setWorkOrder(await sevaApi.requestAssistance(token, taskId, purpose));
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Employee assistance could not be requested.");
-    } finally {
-      setWorking("");
-    }
-  }
 
   async function submitText(event: FormEvent, requirement: SevaRequirement) {
     event.preventDefault();
@@ -152,34 +146,22 @@ export function SevaAssistancePanel({ token, taskId }: { token: string; taskId: 
   }
 
   return (
-    <section className="seva-assistance-panel" aria-label="AutoAI employee assistance">
+    <section className="seva-assistance-panel" aria-label="AutoAI agent processing">
       <header>
         <span className="seva-assistance-icon"><UsersRound size={21} /></span>
-        <span><strong>AutoAI Employee Assistance</strong><small>AI first • verified employee fallback • scoped access</small></span>
+        <span><strong>Application Processing</strong><small>Verified agent assignment • live status • protected access</small></span>
         {workOrder ? <b className={`seva-work-status status-${workOrder.status.toLowerCase()}`}>{readableStatus(workOrder.status)}</b> : null}
       </header>
 
       {loading ? <div className="seva-assistance-loading"><LoaderCircle className="spin" /> Loading assistance status…</div> : null}
-      {!loading && !workOrder ? (
-        <div className="seva-assistance-request">
-          <p>When automatic submission is unavailable, a verified AutoAI employee can continue from your saved form and request only the missing requirements.</p>
-          <label>Purpose<textarea value={purpose} onChange={(event) => setPurpose(event.target.value)} rows={3} maxLength={500} /></label>
-          <label className="seva-consent-check">
-            <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
-            <span>I approve sharing this application’s non-secret fields and uploaded documents with the assigned AutoAI employee. Password, OTP, CAPTCHA and payment secrets are excluded.</span>
-          </label>
-          <button type="button" className="seva-primary" disabled={!consent || Boolean(working)} onClick={() => void requestHelp()}>
-            {working === "request" ? <LoaderCircle className="spin" size={17} /> : <UserCheck size={17} />} Request employee help
-          </button>
-        </div>
-      ) : null}
+      {!loading && !workOrder && autoAssign ? <div className="seva-assistance-loading"><LoaderCircle className="spin" /> Sending the submitted application to the agent queue…</div> : null}
 
       {workOrder ? (
         <div className="seva-assistance-body">
           <div className="seva-assistance-overview">
             <article><FileText size={17} /><span><small>Case ID</small><strong>{workOrder.case_id}</strong></span></article>
             <article><Clock3 size={17} /><span><small>Current work · {workOrder.work_progress}%</small><strong>{workOrder.current_activity}</strong></span></article>
-            <article><UserCheck size={17} /><span><small>Assigned employee</small><strong>{workOrder.assigned_employee?.name || (workOrder.queue_position ? `Queue #${workOrder.queue_position}` : "Waiting for assignment")}</strong></span></article>
+            <article><UserCheck size={17} /><span><small>Assigned agent</small><strong>{workOrder.assigned_employee?.name || (workOrder.queue_position ? `Queue #${workOrder.queue_position}` : "Waiting for assignment")}</strong></span></article>
             <article><AlertTriangle size={17} /><span><small>User actions pending</small><strong>{pendingCount}</strong></span></article>
           </div>
           {workOrder.reference_number ? <p className="seva-employee-note"><FileText size={16} />Reference: {workOrder.reference_number}</p> : null}
@@ -188,17 +170,17 @@ export function SevaAssistancePanel({ token, taskId }: { token: string; taskId: 
           {workOrder.employee_note ? <p className="seva-employee-note"><UsersRound size={16} />{workOrder.employee_note}</p> : null}
 
           {workOrder.status === "QUEUED" || workOrder.status === "IN_PROGRESS" ? (
-            <div className="seva-live-working" aria-live="polite"><LoaderCircle className="spin" /><span><strong>{workOrder.status === "QUEUED" ? "Finding the right employee" : "Employee is working on the application"}</strong><small>Your saved progress remains active. Refresh is automatic.</small></span></div>
+            <div className="seva-live-working" aria-live="polite"><LoaderCircle className="spin" /><span><strong>{workOrder.status === "QUEUED" ? "Finding the right agent" : "Agent is working on the application"}</strong><small>Your saved progress remains active. Refresh is automatic.</small></span></div>
           ) : null}
 
           {workOrder.requirements.length ? (
             <div className="seva-requirements-list">
-              <h3>Employee requirements</h3>
+              <h3>Agent requirements</h3>
               {workOrder.requirements.map((requirement) => (
                 <article key={requirement.id} className={`seva-employee-requirement status-${requirement.status.toLowerCase()}`}>
                   <header><span>{requirementIcon(requirement)}<strong>{requirement.label}</strong></span><b>{readableStatus(requirement.status)}</b></header>
                   {requirement.instructions ? <p>{requirement.instructions}</p> : null}
-                  {requirement.kind === "PROTECTED_ACTION" ? <div className="seva-protected-warning"><ShieldCheck size={16} />Complete OTP, CAPTCHA, password or final confirmation directly on the official portal. Do not send the raw secret to an employee.</div> : null}
+                  {requirement.kind === "PROTECTED_ACTION" ? <div className="seva-protected-warning"><ShieldCheck size={16} />Complete OTP, CAPTCHA, password or final confirmation directly on the official portal. Do not send the raw secret to an agent.</div> : null}
                   {requirement.status === "REQUESTED" && requirement.kind === "TEXT" ? (
                     <form onSubmit={(event) => void submitText(event, requirement)}>
                       <textarea value={responses[requirement.id] || ""} onChange={(event) => setResponses((current) => ({ ...current, [requirement.id]: event.target.value }))} rows={3} maxLength={2000} placeholder="Enter the requested non-secret information" required />
@@ -223,7 +205,7 @@ export function SevaAssistancePanel({ token, taskId }: { token: string; taskId: 
               <h3>Application PDFs and receipts</h3>
               {workOrder.deliverables.map((item) => (
                 <article key={item.id}>
-                  <span><FileText size={20} /><span><strong>{item.label}</strong><small>{item.note || item.document?.filename || "Employee deliverable"}</small></span></span>
+                  <span><FileText size={20} /><span><strong>{item.label}</strong><small>{item.note || item.document?.filename || "Agent deliverable"}</small></span></span>
                   <button type="button" disabled={working === item.id} onClick={() => void download(item.id, item.document?.filename || `${item.label}.pdf`)}>{working === item.id ? <LoaderCircle className="spin" size={17} /> : <Download size={17} />} Download</button>
                 </article>
               ))}
@@ -232,11 +214,11 @@ export function SevaAssistancePanel({ token, taskId }: { token: string; taskId: 
 
           {workOrder.timeline.length ? <div className="seva-case-timeline"><h3>Application timeline</h3>{workOrder.timeline.map((event) => <article key={event.id}><span /><div><strong>{event.title}</strong><small>{new Date(event.created_at).toLocaleString()}</small></div></article>)}</div> : null}
 
-          {!CLOSED.has(workOrder.status) ? <button type="button" className="seva-cancel-assistance" disabled={Boolean(working)} onClick={() => void cancel()}><XCircle size={16} /> Revoke employee access</button> : null}
-          {workOrder.status === "CANCELLED" ? <p className="seva-revoked-note"><ShieldCheck size={16} />Employee access was revoked.</p> : null}
+          {!CLOSED.has(workOrder.status) ? <button type="button" className="seva-cancel-assistance" disabled={Boolean(working)} onClick={() => void cancel()}><XCircle size={16} /> Revoke agent access</button> : null}
+          {workOrder.status === "CANCELLED" ? <p className="seva-revoked-note"><ShieldCheck size={16} />Agent access was revoked.</p> : null}
         </div>
       ) : null}
-      {error ? <p className="seva-error" role="alert">{error}</p> : null}
+      {error ? <p className="seva-error" role="alert">{error} <button type="button" onClick={() => void load()}>Retry</button></p> : null}
     </section>
   );
 }

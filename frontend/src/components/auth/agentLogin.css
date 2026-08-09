@@ -1,0 +1,26 @@
+.agent-auth-page .auth-visual {
+  min-width: 0;
+  overflow: visible;
+}
+
+.agent-auth-page .auth-visual h1 {
+  max-width: 620px;
+  font-size: clamp(52px, 7vw, 96px);
+  line-height: .92;
+  overflow: visible;
+  overflow-wrap: normal;
+}
+
+.agent-auth-page .auth-card {
+  width: 100%;
+}
+
+@media (max-width: 1050px) and (min-width: 769px) {
+  .agent-auth-page {
+    grid-template-columns: minmax(0, 1fr) minmax(340px, 430px);
+  }
+
+  .agent-auth-page .auth-visual h1 {
+    font-size: clamp(48px, 7vw, 74px);
+  }
+}

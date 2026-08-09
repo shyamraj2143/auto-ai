@@ -28,6 +28,7 @@ import { sevaApi } from "./sevaApi";
 import "./autoaiSeva.css";
 import "./sevaAdvanced.css";
 import "./autoaiSevaScrollFix.css";
+import "./rtpsForm.css";
 
 const TERMINAL = new Set(["COMPLETED_VERIFIED", "FAILED_FINAL", "CANCELLED", "EXPIRED"]);
 
@@ -123,7 +124,7 @@ export function AutoAISevaPage() {
           <div className="seva-hero-copy">
             <span className="seva-eyebrow"><Sparkles size={16} /> Secure assisted applications</span>
             <h1>Search, fill and track applications from one workspace.</h1>
-            <p>AutoAI opens the correct form, collects required details, checks documents and shows live thinking. If automatic completion is unavailable, a verified employee continues from the saved application after your approval.</p>
+            <p>AutoAI opens the correct form, collects required details and checks documents. When agent processing is required, submitting the completed form automatically creates and assigns the task.</p>
             <div className="seva-hero-actions">
               <button type="button" className="seva-primary" disabled={Boolean(starting)} onClick={() => void begin("real")}>
                 {starting === "real" ? <LoaderCircle className="spin" size={18} /> : <FileText size={18} />}
@@ -145,12 +146,12 @@ export function AutoAISevaPage() {
             <span className="seva-orbit seva-orbit-one" />
             <span className="seva-orbit seva-orbit-two" />
             <div className="seva-visual-card">
-              <header><BadgeCheck size={20} /><span><strong>AutoAI Seva Workflow</strong><small>AI first · Employee fallback</small></span></header>
+              <header><BadgeCheck size={20} /><span><strong>AutoAI Seva Workflow</strong><small>AI first · verified agent processing</small></span></header>
               <div className="seva-progress"><span style={{ width: "68%" }} /></div>
               <ul>
                 <li className="done"><CheckCircle2 size={16} /> Service identified</li>
                 <li className="done"><CheckCircle2 size={16} /> Form and documents saved</li>
-                <li className="active"><Clock3 size={16} /> Submission or employee assistance</li>
+                <li className="active"><Clock3 size={16} /> Submission and agent assignment</li>
               </ul>
             </div>
           </div>
@@ -158,7 +159,7 @@ export function AutoAISevaPage() {
 
         <section className="seva-trust-strip">
           <article><ShieldCheck /><span><strong>Verified destination</strong><small>Only approved HTTPS portal origins</small></span></article>
-          <article><LockKeyhole /><span><strong>Protected secrets</strong><small>OTP, CAPTCHA and passwords are never shared with employees</small></span></article>
+          <article><LockKeyhole /><span><strong>Protected secrets</strong><small>OTP, CAPTCHA and passwords are never shared with agents</small></span></article>
           <article><Languages /><span><strong>Hindi friendly</strong><small>Hindi, Hinglish and English requests</small></span></article>
         </section>
 
@@ -169,7 +170,7 @@ export function AutoAISevaPage() {
               ["01", "Search the service", "Describe what you need. AutoAI matches a verified service or opens an assisted request."],
               ["02", "Fill the exact form", "Complete dynamic fields and upload only the documents required for that application."],
               ["03", "Watch live progress", "Thinking stages, validation, OCR review and saved progress remain visible."],
-              ["04", "AI or employee continues", "Automatic adapters proceed safely; otherwise a verified employee receives scoped access."],
+              ["04", "AI or agent continues", "Automatic adapters proceed safely; otherwise a verified agent receives only the submitted non-secret data."],
               ["05", "Receive proof", "Download the final application PDF or receipt and track the status."],
             ].map(([number, title, description]) => (
               <article key={number}><span>{number}</span><h3>{title}</h3><p>{description}</p></article>
@@ -253,6 +254,19 @@ export function SevaApplicationPage() {
   const [task, setTask] = useState<ServiceTaskView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const assignmentReadyStates = useMemo(() => new Set([
+    "READY_TO_PREPARE",
+    "PREPARING",
+    "REVIEW_REQUIRED",
+    "SUBMISSION_CONFIRMATION_REQUIRED",
+    "AWAITING_USER_ACTION",
+    "AWAITING_AUTHENTICATION",
+    "PORTAL_SESSION_ACTIVE",
+    "SUBMITTING",
+    "SUBMITTED_UNVERIFIED",
+    "VERIFYING",
+    "FAILED_RECOVERABLE",
+  ]), []);
 
   const load = useCallback(async (silent = false) => {
     if (!token || !applicationId) return;
@@ -296,12 +310,12 @@ export function SevaApplicationPage() {
             </section>
             <aside className="seva-official-note">
               <ShieldCheck size={19} />
-              <span><strong>Protected actions remain yours.</strong><small>AutoAI and employees never store your OTP, CAPTCHA or password. Review every field before final confirmation.</small></span>
+              <span><strong>Protected actions remain yours.</strong><small>AutoAI and agents never store your OTP, CAPTCHA or password. Review every field before final confirmation.</small></span>
             </aside>
             <section className="seva-task-shell">
               <ServiceTaskCard key={`${task.id}-${task.version}-${task.updated_at}`} task={task} token={token} />
             </section>
-            {token ? <SevaAssistancePanel token={token} taskId={task.id} /> : null}
+            {token && task.execution_mode === "ASSIST" && assignmentReadyStates.has(task.state) ? <SevaAssistancePanel token={token} taskId={task.id} autoAssign /> : null}
           </>
         ) : null}
       </main>

@@ -125,7 +125,7 @@ def _upsert_assisted_request_service(db: Session) -> None:
         "required_documents": [],
         "eligibility_rules": [{"description": "An AutoAI employee confirms the official requirements before any external action."}],
         "fee": {"amount": None, "currency": "INR", "label": "Confirmed before submission"},
-        "processing_information": "The request enters the AutoAI Seva employee queue after the user approves the handoff scope.",
+        "processing_information": "After the user submits the completed form, the request is automatically assigned to an eligible AutoAI Seva agent.",
         "authentication_type": "user_controlled",
         "tracking_method": "employee_work_order",
         "support_contact": {

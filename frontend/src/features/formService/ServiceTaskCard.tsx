@@ -139,11 +139,29 @@ function FieldControl({ field, value, onChange }: { field: ServiceFieldDefinitio
   return <input {...common} type={inputType} value={String(value ?? "")} min={field.min} max={field.max} minLength={field.min_length} maxLength={field.max_length} pattern={field.pattern} inputMode={field.type === "number" || field.type === "phone" ? "numeric" : undefined} onChange={(event) => onChange(field.type === "number" ? event.target.valueAsNumber : event.target.value)} />;
 }
 
+const RTPS_FORM_SECTIONS = [
+  { key: "service", title: "आवेदन का विवरण / Application Details" },
+  { key: "applicant", title: "आवेदक का विवरण / Applicant Details" },
+  { key: "address", title: "पता एवं क्षेत्र का विवरण / Address & Jurisdiction" },
+  { key: "other", title: "अन्य जानकारी / Additional Information" },
+] as const;
+
+function rtpsSectionForField(field: ServiceFieldDefinition) {
+  const key = field.key.toLowerCase();
+  if (/service|certificate|scheme|purpose|category/.test(key)) return "service";
+  if (/state|district|block|address|village|ward|pin|panchayat|jurisdiction/.test(key)) return "address";
+  if (/name|father|mother|dob|birth|gender|mobile|phone|email|occupation/.test(key)) return "applicant";
+  return "other";
+}
+
 function InformationCard({ task, onSubmit, working }: { task: ServiceTaskView; working: boolean; onSubmit: (requestId: string, values: Record<string, unknown>) => Promise<void> }) {
   const fields = dataValue<ServiceFieldDefinition[]>(task, "fields", []);
   const saved = dataValue<Record<string, unknown>>(task, "saved_values", {});
   const requestId = dataValue<string>(task, "data_request_id", "");
   const storageKey = `autoai:service-draft:${task.id}:${requestId}`;
+  const requiresAgentAuthorization = task.execution_mode === "ASSIST";
+  const [agentAuthorization, setAgentAuthorization] = useState(false);
+  const [draftMessage, setDraftMessage] = useState("Draft is saved automatically on this device.");
   const [values, setValues] = useState<Record<string, unknown>>(() => {
     let offlineValues: Record<string, unknown> = {};
     try { offlineValues = JSON.parse(localStorage.getItem(storageKey) || "{}") as Record<string, unknown>; } catch { localStorage.removeItem(storageKey); }
@@ -153,20 +171,60 @@ function InformationCard({ task, onSubmit, working }: { task: ServiceTaskView; w
     const safeValues = Object.fromEntries(fields.filter((field) => !["sensitive", "high"].includes(String((field as ServiceFieldDefinition & { sensitivity?: string }).sensitivity))).map((field) => [field.key, values[field.key]]));
     localStorage.setItem(storageKey, JSON.stringify(safeValues));
   }, [fields, storageKey, values]);
+  const visibleFields = fields.filter((field) => {
+    const dependency = field.depends_on;
+    return !dependency || values[dependency.field] === dependency.equals;
+  });
+  const sections = RTPS_FORM_SECTIONS.map((section) => ({
+    ...section,
+    fields: visibleFields.filter((field) => rtpsSectionForField(field) === section.key),
+  })).filter((section) => section.fields.length > 0);
+
+  function saveDraft() {
+    const safeValues = Object.fromEntries(fields
+      .filter((field) => !["sensitive", "high"].includes(String((field as ServiceFieldDefinition & { sensitivity?: string }).sensitivity)))
+      .map((field) => [field.key, values[field.key]]));
+    localStorage.setItem(storageKey, JSON.stringify(safeValues));
+    setDraftMessage(`Draft saved at ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`);
+  }
   return (
     <form className="service-card-form" onSubmit={async (event) => { event.preventDefault(); if (event.currentTarget.reportValidity()) { await onSubmit(requestId, values); localStorage.removeItem(storageKey); } }}>
-      {fields.map((field) => {
-        const dependency = field.depends_on;
-        if (dependency && values[dependency.field] !== dependency.equals) return null;
-        return (
-          <div className="service-field" key={field.key}>
-            <label htmlFor={`service-field-${field.key}`}>{field.label}{field.required ? <span aria-hidden="true"> *</span> : null}</label>
-            <FieldControl field={field} value={values[field.key]} onChange={(value) => setValues((current) => ({ ...current, [field.key]: value }))} />
-            {field.explanation ? <small id={`service-help-${field.key}`}>{field.explanation}</small> : null}
+      <header className="rtps-form-heading">
+        <span>ऑनलाइन आवेदन / Online Application</span>
+        <h4>{task.service_name}</h4>
+        <p>{task.provider}</p>
+      </header>
+      <aside className="rtps-form-instructions">
+        <strong>आवेदक के लिए निर्देश / Instructions</strong>
+        <p>Fields marked <b>*</b> are mandatory. Enter details exactly as shown on your supporting documents. Review the form before submission.</p>
+      </aside>
+      {sections.map((section) => (
+        <fieldset className="rtps-form-section" key={section.key}>
+          <legend>{section.title}</legend>
+          <div className="rtps-field-grid">
+            {section.fields.map((field) => (
+              <div className={`service-field service-field-${field.type}`} key={field.key}>
+                <label htmlFor={`service-field-${field.key}`}>{field.label}{field.required ? <span aria-hidden="true"> *</span> : null}</label>
+                <FieldControl field={field} value={values[field.key]} onChange={(value) => setValues((current) => ({ ...current, [field.key]: value }))} />
+                {field.explanation ? <small id={`service-help-${field.key}`}>{field.explanation}</small> : null}
+              </div>
+            ))}
           </div>
-        );
-      })}
-      <button className="service-primary" type="submit" disabled={working || !requestId}>{working ? <LoaderCircle className="spin" size={17} /> : <ChevronRight size={17} />} Save and continue</button>
+        </fieldset>
+      ))}
+      {requiresAgentAuthorization ? (
+        <label className="rtps-declaration">
+          <input type="checkbox" checked={agentAuthorization} onChange={(event) => setAgentAuthorization(event.target.checked)} required />
+          <span>I confirm that the information is correct and authorize AutoAI Seva to assign this application to a verified agent. OTP, password, CAPTCHA, PIN and payment secrets are excluded and remain under my control.</span>
+        </label>
+      ) : null}
+      <footer className="rtps-form-actions">
+        <p aria-live="polite">{draftMessage}</p>
+        <div>
+          <button className="service-secondary" type="button" onClick={saveDraft}>Save Draft / प्रारूप सहेजें</button>
+          <button className="service-primary" type="submit" disabled={working || !requestId || (requiresAgentAuthorization && !agentAuthorization)}>{working ? <LoaderCircle className="spin" size={17} /> : <ChevronRight size={17} />} {requiresAgentAuthorization ? "Submit application / आवेदन जमा करें" : "Save and continue"}</button>
+        </div>
+      </footer>
     </form>
   );
 }

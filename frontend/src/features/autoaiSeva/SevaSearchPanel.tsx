@@ -59,7 +59,7 @@ export function SevaSearchPanel({
       <div className="seva-search-copy">
         <span><Sparkles size={16} /> Tell AutoAI what you want to apply for</span>
         <h2>Search any form, certificate, scholarship or service.</h2>
-        <p>Known services open their exact verified form. Unknown services open an employee-assisted request without losing your progress.</p>
+        <p>Known services open their exact verified form. Unknown services open a structured agent-assisted request without losing your progress.</p>
       </div>
       <form onSubmit={submit} className="seva-search-form">
         <div className="seva-search-input">
@@ -99,7 +99,7 @@ export function SevaSearchPanel({
       ) : null}
       {resultMessage ? <p className="seva-search-result"><CheckCircle2 size={16} />{resultMessage}</p> : null}
       {error ? <p className="seva-error" role="alert">{error}</p> : null}
-      <div className="seva-search-fallback"><UsersRound size={17} /><span><strong>No automatic adapter?</strong> AutoAI prepares the request and sends it to a verified employee after your explicit approval.</span></div>
+      <div className="seva-search-fallback"><UsersRound size={17} /><span><strong>No automatic adapter?</strong> Complete the structured form once; submission automatically creates and assigns the agent task.</span></div>
     </section>
   );
 }

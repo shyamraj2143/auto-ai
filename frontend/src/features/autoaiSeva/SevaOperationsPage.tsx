@@ -7,6 +7,7 @@ import { sevaScopeApi, type SevaApprovedScope } from "./sevaScopeApi";
 import "./autoaiSeva.css";
 import "./sevaAdvanced.css";
 import "./autoaiSevaScrollFix.css";
+import "./rtpsForm.css";
 
 const STATUS_OPTIONS: Array<SevaWorkOrder["status"]> = ["IN_PROGRESS", "WAITING_USER", "SUBMITTED"];
 
@@ -223,7 +224,7 @@ export function SevaOperationsPage() {
   return (
     <div className={`seva-page ${user?.role === "seva_agent" ? "seva-agent-portal" : "seva-admin-portal"}`}>
       <header className="seva-topbar">
-        <div><span className="seva-mark"><UsersRound size={21} /></span><span><strong>AutoAI Seva Operations</strong><small>Employee application queue</small></span></div>
+        <div><span className="seva-mark"><UsersRound size={21} /></span><span><strong>AutoAI Seva Operations</strong><small>Agent application queue</small></span></div>
         <button type="button" className="seva-history-button" onClick={() => void load()}><RefreshCw className={loading ? "spin" : ""} size={17} /> Refresh</button>
       </header>
       <main className="seva-employee-page">
@@ -234,16 +235,16 @@ export function SevaOperationsPage() {
         {user?.is_admin ? <section className="seva-agent-admin">
           <header><div><span>Agent access</span><h2>Team capacity and automatic assignment</h2></div><strong>{agents.reduce((sum, agent) => sum + agent.available_slots, 0)} slots available</strong></header>
           <div className="seva-agent-summary"><span>Total <b>{agents.length}</b></span><span>Active <b>{agentSummary.active}</b></span><span>Inactive <b>{agentSummary.inactive}</b></span><span>Suspended <b>{agentSummary.suspended}</b></span><span>At capacity <b>{agentSummary.at_capacity}</b></span></div>
-          <form onSubmit={createAgent}>
-            <input value={agentForm.agent_id} onChange={(event) => setAgentForm({ ...agentForm, agent_id: event.target.value })} placeholder="Agent ID" pattern="[A-Za-z0-9._-]+" minLength={3} required />
-            <input value={agentForm.display_name} onChange={(event) => setAgentForm({ ...agentForm, display_name: event.target.value })} placeholder="Agent name" minLength={2} required />
-            <input type="password" value={agentForm.password} onChange={(event) => setAgentForm({ ...agentForm, password: event.target.value })} placeholder="Temporary password" minLength={8} autoComplete="new-password" required />
-            <input type="number" value={agentForm.capacity} onChange={(event) => setAgentForm({ ...agentForm, capacity: Number(event.target.value) })} min={1} max={50} aria-label="Agent capacity" required />
-            <input type="email" value={agentForm.work_email} onChange={(event) => setAgentForm({ ...agentForm, work_email: event.target.value })} placeholder="Work email (optional)" />
-            <input value={agentForm.contact_phone} onChange={(event) => setAgentForm({ ...agentForm, contact_phone: event.target.value })} placeholder="Contact phone (optional)" />
-            <input value={agentForm.specializations} onChange={(event) => setAgentForm({ ...agentForm, specializations: event.target.value })} placeholder="Categories, comma separated" />
-            <input value={agentForm.languages} onChange={(event) => setAgentForm({ ...agentForm, languages: event.target.value })} placeholder="Languages, comma separated" />
-            <button className="seva-primary" disabled={working === "create-agent"}><UserPlus size={16} /> Create agent</button>
+          <form className="seva-agent-create-form" onSubmit={createAgent}>
+            <label><span>Agent ID *</span><input value={agentForm.agent_id} onChange={(event) => setAgentForm({ ...agentForm, agent_id: event.target.value })} placeholder="e.g. agent-101" pattern="[A-Za-z0-9._-]+" minLength={3} required /></label>
+            <label><span>Agent name *</span><input value={agentForm.display_name} onChange={(event) => setAgentForm({ ...agentForm, display_name: event.target.value })} placeholder="Full name" minLength={2} required /></label>
+            <label><span>Temporary password *</span><input type="password" value={agentForm.password} onChange={(event) => setAgentForm({ ...agentForm, password: event.target.value })} placeholder="Minimum 8 characters" minLength={8} autoComplete="new-password" required /></label>
+            <label><span>Case capacity *</span><input type="number" value={agentForm.capacity} onChange={(event) => setAgentForm({ ...agentForm, capacity: Number(event.target.value) })} min={1} max={50} required /></label>
+            <label><span>Work email</span><input type="email" value={agentForm.work_email} onChange={(event) => setAgentForm({ ...agentForm, work_email: event.target.value })} placeholder="Optional" /></label>
+            <label><span>Contact phone</span><input value={agentForm.contact_phone} onChange={(event) => setAgentForm({ ...agentForm, contact_phone: event.target.value })} placeholder="Optional" /></label>
+            <label><span>Service categories</span><input value={agentForm.specializations} onChange={(event) => setAgentForm({ ...agentForm, specializations: event.target.value })} placeholder="Income, caste, admission" /></label>
+            <label><span>Languages</span><input value={agentForm.languages} onChange={(event) => setAgentForm({ ...agentForm, languages: event.target.value })} placeholder="Hindi, English" /></label>
+            <button className="seva-primary" disabled={working === "create-agent"}>{working === "create-agent" ? <LoaderCircle className="spin" size={16} /> : <UserPlus size={16} />} Create agent</button>
           </form>
           <div className="seva-agent-list">{agents.map((agent) => { const edit = agentEdits[agent.id] || { capacity: agent.capacity, password: "", specializations: agent.specializations.join(", ") }; return <article key={agent.id}><span><strong>{agent.display_name}</strong><small>{agent.agent_id} · {agent.active_load}/{agent.capacity} active · {agent.status.toLowerCase()}</small></span><b>{agent.is_active ? `${agent.available_slots} open` : "Disabled"}</b><div className="seva-agent-editor"><input type="number" min={1} max={50} value={edit.capacity} aria-label={`${agent.display_name} capacity`} onChange={(event) => setAgentEdits((current) => ({ ...current, [agent.id]: { ...edit, capacity: Number(event.target.value) } }))} /><input value={edit.specializations} placeholder="Specializations" aria-label={`${agent.display_name} specializations`} onChange={(event) => setAgentEdits((current) => ({ ...current, [agent.id]: { ...edit, specializations: event.target.value } }))} /><input type="password" minLength={8} value={edit.password} placeholder="New temporary password" aria-label={`${agent.display_name} password reset`} onChange={(event) => setAgentEdits((current) => ({ ...current, [agent.id]: { ...edit, password: event.target.value } }))} /><select value={agent.status} aria-label={`${agent.display_name} status`} onChange={(event) => void manageAgent(agent, event.target.value as SevaAgent["status"])}><option>ACTIVE</option><option>INACTIVE</option><option>SUSPENDED</option></select><button type="button" onClick={() => void manageAgent(agent)} disabled={Boolean(working)}>Save / reset</button></div></article>; })}</div>
         </section> : null}
@@ -256,7 +257,7 @@ export function SevaOperationsPage() {
         <div className="seva-employee-layout">
           <aside className="seva-work-order-list">
             {loading ? <div className="seva-assistance-loading"><LoaderCircle className="spin" /> Loading queue…</div> : null}
-            {!loading && !items.length ? <div className="seva-empty"><FileCheck2 /><p>No employee requests are waiting.</p></div> : null}
+            {!loading && !items.length ? <div className="seva-empty"><FileCheck2 /><p>No agent tasks are waiting.</p></div> : null}
             {items.map((item) => (
               <button key={item.id} type="button" className={selectedId === item.id ? "active" : ""} onClick={() => setSelectedId(item.id)}>
                 <strong>{item.service?.name || "AutoAI Seva request"}</strong>
