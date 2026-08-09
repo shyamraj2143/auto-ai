@@ -1,4 +1,4 @@
-import { Bell, CheckCircle2, Download, FileCheck2, FileText, LoaderCircle, RefreshCw, Search, Send, ShieldCheck, Upload, UserCheck, UserPlus, UsersRound } from "lucide-react";
+import { AlertTriangle, Bell, CheckCircle2, ClipboardCheck, Download, FileCheck2, FileText, Gauge, LoaderCircle, RefreshCw, Search, Send, ShieldCheck, Upload, UserCheck, UserPlus, UsersRound } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
@@ -9,7 +9,15 @@ import "./sevaAdvanced.css";
 import "./autoaiSevaScrollFix.css";
 import "./rtpsForm.css";
 
-const STATUS_OPTIONS: Array<SevaWorkOrder["status"]> = ["IN_PROGRESS", "WAITING_USER", "SUBMITTED"];
+const STATUS_OPTIONS: Array<SevaWorkOrder["status"]> = [
+  "IN_PROGRESS", "WAITING_USER", "DOCUMENT_VERIFICATION", "PROTECTED_ACTION_REQUIRED",
+  "READY_TO_SUBMIT", "SUBMITTED_TO_AUTHORITY", "UNDER_AUTHORITY_PROCESSING", "APPROVED",
+  "REJECTED", "ISSUED", "DELIVERED",
+];
+
+const STATUS_FILTER_OPTIONS = [
+  "QUEUED", ...STATUS_OPTIONS, "QUALITY_REVIEW", "ESCALATED", "COMPLETED", "CANCELLED",
+] as const;
 
 function readable(value: string) {
   return value.toLowerCase().replace(/_/g, " ");
@@ -47,20 +55,26 @@ export function SevaOperationsPage() {
   const [dashboard, setDashboard] = useState<{ counts: Record<string, number>; active_workload: number; completed_today: number; attention_required: number; agent: SevaAgent } | null>(null);
   const [notifications, setNotifications] = useState<Awaited<ReturnType<typeof sevaApi.listNotifications>> | null>(null);
   const [stateFilter, setStateFilter] = useState("");
+  const [priorityFilter, setPriorityFilter] = useState("");
+  const [slaFilter, setSlaFilter] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
   const [agentFilter, setAgentFilter] = useState("");
   const [searchText, setSearchText] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
   const [page, setPage] = useState(1);
   const [queueMeta, setQueueMeta] = useState({ total: 0, has_more: false });
+  const [overview, setOverview] = useState<Awaited<ReturnType<typeof sevaApi.getOperationsOverview>> | null>(null);
+  const [qualityReason, setQualityReason] = useState("");
+  const [escalationReason, setEscalationReason] = useState("");
 
   const load = useCallback(async (silent = false) => {
     if (!token) return;
     if (!silent) setLoading(true);
     try {
-      const result = await sevaApi.listWorkOrders(token, { state: stateFilter || undefined, q: appliedSearch || undefined, agentId: agentFilter || undefined, page, pageSize: 25 });
+      const result = await sevaApi.listWorkOrders(token, { state: stateFilter || undefined, q: appliedSearch || undefined, agentId: agentFilter || undefined, priority: priorityFilter || undefined, sla: slaFilter || undefined, department: departmentFilter || undefined, page, pageSize: 25 });
       setItems(result.items);
       setQueueMeta({ total: result.total, has_more: result.has_more });
-      if (user?.is_admin) { const team = await sevaApi.listAgents(token); setAgents(team.items); setAgentSummary(team.summary); setAgentEdits((current) => Object.fromEntries(team.items.map((agent) => [agent.id, current[agent.id] || { capacity: agent.capacity, password: "", specializations: agent.specializations.join(", ") }]))); }
+      if (user?.is_admin) { const [team, operations] = await Promise.all([sevaApi.listAgents(token), sevaApi.getOperationsOverview(token)]); setAgents(team.items); setAgentSummary(team.summary); setOverview(operations); setAgentEdits((current) => Object.fromEntries(team.items.map((agent) => [agent.id, current[agent.id] || { capacity: agent.capacity, password: "", specializations: agent.specializations.join(", ") }]))); }
       if (user?.role === "seva_agent") setDashboard(await sevaApi.getAgentDashboard(token));
       setNotifications(await sevaApi.listNotifications(token));
       setSelectedId((current) => current || result.items[0]?.id || "");
@@ -70,7 +84,7 @@ export function SevaOperationsPage() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [agentFilter, appliedSearch, page, stateFilter, token, user?.is_admin, user?.role]);
+  }, [agentFilter, appliedSearch, departmentFilter, page, priorityFilter, slaFilter, stateFilter, token, user?.is_admin, user?.role]);
 
   const loadSelected = useCallback(async () => {
     if (!token || !selectedId) {
@@ -232,6 +246,7 @@ export function SevaOperationsPage() {
         {error ? <p className="seva-error" role="alert">{error}</p> : null}
         {notifications?.items.length ? <section className="seva-notification-strip" aria-label="Case notifications"><header><Bell size={17} /><strong>Notifications</strong><span>{notifications.unread} unread</span></header><div>{notifications.items.slice(0, 4).map((notification) => <button type="button" key={notification.id} className={notification.read_at ? "" : "unread"} onClick={() => void openNotification(notification)}><strong>{notification.title}</strong><span>{notification.message}</span></button>)}</div></section> : null}
         {dashboard ? <section className="seva-agent-overview"><header><div><span>My work</span><h2>{dashboard.agent.display_name}</h2></div><strong>{dashboard.active_workload}/{dashboard.agent.capacity} active</strong></header><div><article><small>In progress</small><b>{dashboard.counts.IN_PROGRESS || 0}</b></article><article><small>Waiting for user</small><b>{dashboard.counts.WAITING_USER || 0}</b></article><article><small>Submitted</small><b>{dashboard.counts.SUBMITTED || 0}</b></article><article><small>Completed today</small><b>{dashboard.completed_today}</b></article><article><small>Attention required</small><b>{dashboard.attention_required}</b></article></div></section> : null}
+        {overview ? <section className="seva-agent-overview seva-ops-overview" aria-label="Operations overview"><header><div><span>Control centre</span><h2>Live service operations</h2></div><strong>{overview.total} total cases</strong></header><div><article><small>Active</small><b>{Object.entries(overview.counts).filter(([state]) => !["COMPLETED", "CANCELLED", "DELIVERED", "REJECTED"].includes(state)).reduce((sum, [, count]) => sum + count, 0)}</b></article><article><small>Overdue SLA</small><b>{overview.overdue}</b></article><article><small>Quality review</small><b>{overview.pending_quality_review}</b></article><article><small>Protected actions</small><b>{overview.protected_actions}</b></article><article><small>Agents available</small><b>{overview.agents_available}</b></article><article><small>At capacity</small><b>{overview.agents_at_capacity}</b></article></div></section> : null}
         {user?.is_admin ? <section className="seva-agent-admin">
           <header><div><span>Agent access</span><h2>Team capacity and automatic assignment</h2></div><strong>{agents.reduce((sum, agent) => sum + agent.available_slots, 0)} slots available</strong></header>
           <div className="seva-agent-summary"><span>Total <b>{agents.length}</b></span><span>Active <b>{agentSummary.active}</b></span><span>Inactive <b>{agentSummary.inactive}</b></span><span>Suspended <b>{agentSummary.suspended}</b></span><span>At capacity <b>{agentSummary.at_capacity}</b></span></div>
@@ -250,7 +265,10 @@ export function SevaOperationsPage() {
         </section> : null}
         <form className="seva-queue-filters" onSubmit={(event) => { event.preventDefault(); setPage(1); setAppliedSearch(searchText.trim()); }}>
           <label><Search size={16} /><input value={searchText} onChange={(event) => setSearchText(event.target.value)} placeholder="Case ID, user or request" /></label>
-          <select value={stateFilter} onChange={(event) => { setPage(1); setStateFilter(event.target.value); }} aria-label="Filter by status"><option value="">All statuses</option>{["QUEUED", "IN_PROGRESS", "WAITING_USER", "SUBMITTED", "COMPLETED", "CANCELLED"].map((status) => <option key={status}>{status}</option>)}</select>
+          <select value={stateFilter} onChange={(event) => { setPage(1); setStateFilter(event.target.value); }} aria-label="Filter by status"><option value="">All statuses</option>{STATUS_FILTER_OPTIONS.map((status) => <option key={status} value={status}>{readable(status)}</option>)}</select>
+          <select value={priorityFilter} onChange={(event) => { setPage(1); setPriorityFilter(event.target.value); }} aria-label="Filter by priority"><option value="">All priorities</option><option>LOW</option><option>NORMAL</option><option>HIGH</option><option>URGENT</option></select>
+          <select value={slaFilter} onChange={(event) => { setPage(1); setSlaFilter(event.target.value); }} aria-label="Filter by SLA"><option value="">All SLA states</option><option>ON_TRACK</option><option>OVERDUE</option><option>ESCALATED</option></select>
+          <input value={departmentFilter} onChange={(event) => { setPage(1); setDepartmentFilter(event.target.value); }} aria-label="Filter by department" placeholder="Department" />
           {user?.is_admin ? <select value={agentFilter} onChange={(event) => { setPage(1); setAgentFilter(event.target.value); }} aria-label="Filter by agent"><option value="">All agents</option>{agents.map((agent) => <option key={agent.user_id} value={agent.user_id}>{agent.display_name}</option>)}</select> : null}
           <button type="submit">Search</button><span>{queueMeta.total} cases</span>
         </form>
@@ -276,14 +294,16 @@ export function SevaOperationsPage() {
                   <div><span>{selected.owner?.name}{selected.owner?.email ? ` · ${selected.owner.email}` : ""}</span><h1>{selected.service?.name || "Assisted request"}</h1><p>{selected.current_activity} · work {selected.work_progress}%</p></div>
                   <div className="seva-workspace-progress"><span style={{ width: `${selected.work_progress}%` }} /></div>
                 </header>
+                <section className="seva-case-facts" aria-label="Case controls"><span><small>Case</small><strong>{selected.case_id}</strong></span><span><small>Department</small><strong>{selected.department || "Operations"}</strong></span><span><small>Queue</small><strong>{selected.queue_name || "General"}</strong></span><span className={`sla-${(selected.sla_status || "on_track").toLowerCase()}`}><small>SLA</small><strong>{readable(selected.sla_status || "ON_TRACK")}</strong></span><span><small>Quality</small><strong>{readable(selected.quality_status || (selected.quality_required ? "REQUIRED" : "NOT_REQUIRED"))}</strong></span><span><small>Official status</small><strong>{readable(selected.official_status || "NOT_SUBMITTED")}</strong></span></section>
                 <p className="seva-employee-note"><ShieldCheck size={16} />Only user-approved fields and documents are available. Never request a raw OTP, CAPTCHA, password or payment secret.</p>
                 <div className="seva-employee-toolbar">
                   {!selected.assigned_employee ? <button type="button" disabled={Boolean(working)} onClick={() => token && void run("claim", () => sevaApi.claimWorkOrder(token, selected.id))}><UserCheck size={16} /> Claim request</button> : <span>Assigned to <strong>{selected.assigned_employee.name}</strong></span>}
-                  {STATUS_OPTIONS.map((item) => <button key={item} type="button" disabled={Boolean(working) || (item === "SUBMITTED" && !referenceNumber.trim())} onClick={() => token && void run(item, () => sevaApi.updateWorkOrderStatus(token, selected.id, item, statusNote, progressPercent, referenceNumber))}>{readable(item)}</button>)}
+                  <label className="seva-status-control">Next status<select value="" aria-label="Update case status" disabled={Boolean(working)} onChange={(event) => { const next = event.target.value; if (next && token) void run(next, () => sevaApi.updateWorkOrderStatus(token, selected.id, next, statusNote, progressPercent, referenceNumber)); }}><option value="">Choose status</option>{STATUS_OPTIONS.map((item) => <option key={item} value={item}>{readable(item)}</option>)}</select></label>
                   {user?.is_admin ? <label className="seva-reassign-control">Reassign<select value={agents.find((agent) => agent.user_id === selected.assigned_employee?.id)?.id || ""} onChange={(event) => void reassign(event.target.value)} disabled={Boolean(working)}><option value="">Automatic assignment</option>{agents.filter((agent) => (agent.is_active && agent.available_slots > 0) || agent.user_id === selected.assigned_employee?.id).map((agent) => <option key={agent.id} value={agent.id}>{agent.display_name} ({agent.available_slots} open)</option>)}</select></label> : null}
                 </div>
                 <textarea value={statusNote} onChange={(event) => setStatusNote(event.target.value)} placeholder="Status note visible to the user" rows={2} />
                 <div className="seva-progress-controls"><label>Progress %<input type="number" min={selected.work_progress} max={99} value={progressPercent} onChange={(event) => setProgressPercent(Number(event.target.value))} /></label><label>Application/reference number<input value={referenceNumber} onChange={(event) => setReferenceNumber(event.target.value)} maxLength={120} placeholder="Required when submitted" /></label></div>
+                <section className="seva-governance-actions"><h3><Gauge size={17} /> Governance controls</h3><div>{!user?.is_admin && selected.quality_status !== "PENDING" && !["COMPLETED", "CANCELLED", "DELIVERED", "REJECTED"].includes(selected.status) ? <button type="button" disabled={Boolean(working)} onClick={() => token && void run("quality", () => sevaApi.requestQualityReview(token, selected.id))}><ClipboardCheck size={16} /> Request quality review</button> : null}{user?.is_admin && selected.quality_status === "PENDING" ? <><input value={qualityReason} onChange={(event) => setQualityReason(event.target.value)} placeholder="Review decision note" /><button type="button" disabled={Boolean(working)} onClick={() => token && void run("quality-approve", () => sevaApi.decideQualityReview(token, selected.id, true, qualityReason))}><CheckCircle2 size={16} /> Approve</button><button type="button" disabled={Boolean(working) || qualityReason.trim().length < 5} onClick={() => token && void run("quality-return", () => sevaApi.decideQualityReview(token, selected.id, false, qualityReason))}>Return for correction</button></> : null}<input value={escalationReason} onChange={(event) => setEscalationReason(event.target.value)} placeholder="Escalation reason" /><button type="button" disabled={Boolean(working) || escalationReason.trim().length < 5 || ["COMPLETED", "CANCELLED", "DELIVERED", "REJECTED"].includes(selected.status)} onClick={() => token && void run("escalate", () => sevaApi.escalateWorkOrder(token, selected.id, escalationReason))}><AlertTriangle size={16} /> Escalate</button></div>{selected.escalation_reason ? <p><AlertTriangle size={15} /> {selected.escalation_reason}</p> : null}</section>
 
                 {scope ? (
                   <section className="seva-approved-scope">

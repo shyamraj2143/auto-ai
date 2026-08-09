@@ -1,47 +1,43 @@
-# AutoAI Seva RTPS Form and Agent Portal QA
+# AutoAI Seva Corporate Operations and RTPS Form QA
 
-- Source visual truth: user-provided Operations Workspace and Employee Assistance screenshots in the active request.
-- Government references: Bihar RTPS portal, official Income Certificate form, and Bihar Applicant User Manual.
-- Intended viewports: 1280 × 720 desktop and 390 × 844 mobile.
-- States verified: public agent login; completed assisted form; automatic agent queue assignment.
-- Implementation evidence:
-  - `.playwright-cli/page-2026-08-09T03-53-08-422Z.png` — desktop agent login.
-  - `.playwright-cli/page-2026-08-09T03-53-38-098Z.png` — mobile agent login.
-  - `.playwright-cli/page-2026-08-09T03-52-24-288Z.png` — submitted application workspace.
-  - `.playwright-cli/element-2026-08-09T03-52-41-724Z.png` — automatic agent-processing panel.
+- Reference: official Bihar ServicePlus form captured at 1440 × 1000 from `serviceonline.bihar.gov.in`.
+- Product viewports: 1440 × 1000 desktop and 390 × 844 mobile.
+- User journey: search → multi-match confirmation → service preflight → application → secure draft resume → review.
+- Operations journey: admin overview → filters → case controls → assignment → requirement/protected action → quality/SLA/escalation.
 
-## Full-view comparison evidence
+## Evidence
 
-The original Operations screenshot had low-contrast headings, dark form controls on a gray panel, and a narrow wrapped create-agent button. The updated government-style surface uses a light workspace, navy section headers, white high-contrast controls, flat borders, and a full-width create-agent action.
+- `output/playwright/official-rtps-form-reference.png` — current official Bihar ServicePlus visual reference.
+- `output/playwright/seva-preflight-desktop.png` — truthful service preflight with non-government disclaimer.
+- `output/playwright/rtps-application-step-desktop.png` — bilingual desktop application form.
+- `output/playwright/rtps-application-production-mobile.png` — production-build mobile application form.
+- `output/playwright/seva-operations-admin-final.png` — dark corporate admin operations workspace after final metric-card and filter-layout QA.
 
-The original user flow contained a second Employee Assistance purpose/consent form after application completion. The updated flow removes that duplicate step. Submitting an ASSIST application creates or reuses the work order automatically and immediately displays case ID, queue/agent, current work, pending user actions, and timeline.
+## Comparison
 
-The RTPS reference uses simple bilingual labels, explicit required-field markers, dense two-column sections, declarations, preview, annexure/document handling, submission, and acknowledgement/status. The updated dynamic form follows those conventions while retaining AutoAI security boundaries for OTP, CAPTCHA, passwords, and final confirmation.
+The implementation uses the official form's plain bilingual section hierarchy, mandatory markers, dense two-column desktop fields, pale instruction panel, flat borders and explicit declaration/review flow. It deliberately keeps AutoAI navigation and security notices distinct so the product cannot be mistaken for an official government portal.
 
-## Focused region comparison evidence
-
-- Agent login: desktop and 390 px mobile views have no cropped title, overflow, or inaccessible controls.
-- Application form: global dark-theme input overrides were detected in the first browser pass and replaced with scoped white government-form controls.
-- Agent processing: the final focused screenshot contains no Purpose field, consent handoff card, or `Request employee help` button.
-- Operations workspace: agent creation fields now use labeled grid rows and a stable full-row submit action.
+The operations workspace uses the existing AutoAI shell with a dark, high-contrast command surface, structured capacity form, live metrics, server-side filters and a case-control panel. Application forms remain light and simple; agent/admin operations remain dark and information-dense.
 
 ## Findings and fixes
 
-- [P1 fixed] Unreadable Operations workspace contrast and compressed create-agent action.
-- [P1 fixed] Redundant Employee Assistance form after application submission.
-- [P1 fixed] No discoverable agent-login entry from the public website or normal login page.
-- [P2 fixed] Global Action Hub input styles overrode the RTPS form controls.
-- [P2 fixed] Agent Workspace heading cropped at desktop width.
-- [P2 fixed] Employee terminology remained in user-facing agent status copy.
+- [P1 fixed] Search previously created a task before the user confirmed the correct service; discovery is now non-mutating.
+- [P1 fixed] Drafts were device-only; server drafts now resume with optimistic version conflict handling.
+- [P1 fixed] Sensitive draft fields now use encrypted persistence; OTP/password/CAPTCHA remain excluded.
+- [P1 fixed] Quality-required cases could reach submission without review; backend gate and immutable decisions added.
+- [P1 fixed] Operations metric cards inherited a light background and unreadable text; dark scoped cards added.
+- [P1 fixed] Operations Search button collapsed vertically; deterministic responsive grid added.
+- [P2 fixed] Form fields were presented as one long screen; RTPS-style steps and final review/edit links added.
+- [P2 fixed] Agent assignment ignored specialization; service/category/department/queue/language matching added before least-load selection.
+- [P2 fixed] Expected stream cancellation was logged as a browser error; intentional aborts are now silent.
 
 ## Verification
 
-- Browser: desktop/mobile agent login rendered correctly.
-- Browser: completed assisted form automatically created case `SEVA-2026-BDA0E394` and entered agent queue.
-- Frontend: 53 test files, 276 tests passed.
-- Backend Seva operations: 6 tests passed, including agent login, password lifecycle, assignment, capacity, suspension, and notifications.
-- Production TypeScript/Vite build passed.
-- Python seed module compilation passed.
-- `git diff --check` passed.
+- Official reference and implementation inspected at matching desktop viewport.
+- Desktop and 390px mobile application states render without clipping or horizontal overflow.
+- Production target route console: 0 errors, 0 warnings.
+- Full backend: 350 passed.
+- Full frontend: 54 files, 277 passed.
+- Production TypeScript/Vite build and build budgets passed.
 
 final result: passed

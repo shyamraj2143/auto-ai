@@ -1,9 +1,22 @@
 /* RTPS/ServicePlus-inspired application workspace: simple, dense and readable. */
-.seva-workspace-page,
-.seva-admin-portal,
-.seva-agent-portal {
+.seva-workspace-page {
   background: #eef2f5;
   color: #172033;
+}
+
+.seva-admin-portal,
+.seva-agent-portal {
+  --seva-ops-page: #07111d;
+  --seva-ops-surface: #0d1a29;
+  --seva-ops-raised: #122236;
+  --seva-ops-input: #091624;
+  --seva-ops-border: #2a4058;
+  --seva-ops-text: #eef6ff;
+  --seva-ops-muted: #9bb0c6;
+  --seva-ops-accent: #4fd1c5;
+  background: var(--seva-ops-page);
+  color: var(--seva-ops-text);
+  color-scheme: dark;
 }
 
 .seva-workspace-page .seva-topbar,
@@ -169,6 +182,72 @@
   font-size: .82rem;
   font-weight: 800;
 }
+
+.rtps-form-section legend > span,
+.rtps-review-section > header > span {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  margin-right: 8px;
+  place-items: center;
+  border-radius: 50%;
+  background: #155f7b;
+  color: #fff;
+  font-size: .72rem;
+}
+
+.rtps-stepper {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1px;
+  margin: 16px 0;
+  border: 1px solid #bdc9d5;
+  background: #bdc9d5;
+}
+
+.rtps-stepper button {
+  display: flex;
+  min-width: 0;
+  min-height: 52px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 0;
+  background: #f7fafc;
+  color: #66788a;
+  text-align: left;
+}
+
+.rtps-stepper button > span {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #9eacba;
+  border-radius: 50%;
+  font-size: .72rem;
+}
+
+.rtps-stepper button small { overflow-wrap: anywhere; font-size: .68rem; line-height: 1.25; }
+.rtps-stepper button.active { background: #e7f2f6; color: #123f5a; font-weight: 800; }
+.rtps-stepper button.active > span { border-color: #155f7b; background: #155f7b; color: #fff; }
+.rtps-stepper button.complete { color: #147a65; cursor: pointer; }
+.rtps-stepper button.complete > span { border-color: #147a65; background: #e8f7f2; }
+
+.rtps-review-section { display: grid; gap: 12px; margin-bottom: 16px; }
+.rtps-review-section > header { display: flex; align-items: center; padding: 12px 14px; border: 1px solid #bdc9d5; background: #eaf2f6; }
+.rtps-review-section h4,
+.rtps-review-section h5,
+.rtps-review-section p { margin: 0; color: #172033; }
+.rtps-review-section > header p { margin-top: 3px; color: #66788a; font-size: .75rem; }
+.rtps-review-section article { border: 1px solid #cbd5df; background: #fff; }
+.rtps-review-section article > div { display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; border-bottom: 1px solid #dbe3ea; background: #f7fafc; }
+.rtps-review-section article button { min-height: 36px; border: 1px solid #9eacba; border-radius: 3px; background: #fff; color: #155f7b; font-weight: 700; }
+.rtps-review-section dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; }
+.rtps-review-section dl div { min-width: 0; padding: 10px 12px; border-bottom: 1px solid #edf1f4; }
+.rtps-review-section dt { color: #66788a; font-size: .7rem; }
+.rtps-review-section dd { margin: 3px 0 0; overflow-wrap: anywhere; color: #172033; font-size: .8rem; font-weight: 700; }
 
 .rtps-field-grid {
   display: grid;
@@ -359,8 +438,133 @@
 .seva-admin-portal .seva-work-order-list button.active,
 .seva-agent-portal .seva-work-order-list button.active { border-color: #147a65; background: #edf8f4; }
 
+/* Corporate industrial operations surfaces. These intentionally override the light application form. */
+.seva-admin-portal .seva-employee-page,
+.seva-agent-portal .seva-employee-page { color: var(--seva-ops-text); }
+.seva-admin-portal .seva-list-heading h1,
+.seva-agent-portal .seva-list-heading h1,
+.seva-admin-portal :is(h2, h3, strong, b),
+.seva-agent-portal :is(h2, h3, strong, b) { color: var(--seva-ops-text); }
+.seva-admin-portal .seva-list-heading span,
+.seva-agent-portal .seva-list-heading span,
+.seva-admin-portal small,
+.seva-agent-portal small { color: var(--seva-ops-muted); }
+.seva-admin-portal :is(.seva-agent-admin,.seva-work-order-list,.seva-work-order-detail,.seva-agent-overview,.seva-notification-strip,.seva-queue-filters),
+.seva-agent-portal :is(.seva-work-order-list,.seva-work-order-detail,.seva-agent-overview,.seva-notification-strip,.seva-queue-filters) {
+  border-color: var(--seva-ops-border);
+  background: var(--seva-ops-surface);
+  color: var(--seva-ops-text);
+  box-shadow: 0 12px 26px rgba(0,0,0,.18);
+}
+.seva-admin-portal .seva-agent-admin > header { border-color: var(--seva-ops-border); background: var(--seva-ops-raised); }
+.seva-admin-portal .seva-agent-admin > header span,
+.seva-admin-portal .seva-agent-admin > header strong { color: var(--seva-ops-accent); }
+.seva-admin-portal .seva-agent-admin .seva-agent-create-form,
+.seva-agent-portal .seva-requirement-builder,
+.seva-agent-portal .seva-final-upload,
+.seva-admin-portal .seva-requirement-builder,
+.seva-admin-portal .seva-final-upload { border-color: var(--seva-ops-border); background: var(--seva-ops-raised); color: var(--seva-ops-text); }
+.seva-admin-portal :is(input, textarea, select):not([type="checkbox"]):not([type="radio"]),
+.seva-agent-portal :is(input, textarea, select):not([type="checkbox"]):not([type="radio"]) {
+  border-color: #3a536d !important;
+  background: var(--seva-ops-input) !important;
+  color: var(--seva-ops-text) !important;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,.22) !important;
+}
+.seva-admin-portal :is(input, textarea)::placeholder,
+.seva-agent-portal :is(input, textarea)::placeholder { color: #7890a8; opacity: 1; }
+.seva-admin-portal :is(input, textarea, select):focus-visible,
+.seva-agent-portal :is(input, textarea, select):focus-visible { outline: 3px solid rgba(79,209,197,.22); outline-offset: 1px; border-color: var(--seva-ops-accent) !important; }
+.seva-admin-portal .seva-agent-create-form label span { color: #c4d4e4; }
+.seva-admin-portal .seva-agent-summary span,
+.seva-admin-portal .seva-agent-list article,
+.seva-admin-portal .seva-work-order-list button,
+.seva-agent-portal .seva-work-order-list button { border-color: var(--seva-ops-border); background: var(--seva-ops-raised); color: var(--seva-ops-text); }
+.seva-admin-portal .seva-work-order-list button.active,
+.seva-agent-portal .seva-work-order-list button.active { border-color: var(--seva-ops-accent); background: #11323a; }
+.seva-admin-portal .seva-agent-editor button { border-color: #3a536d; background: #162a3e; color: var(--seva-ops-text); }
+.seva-admin-portal .seva-agent-overview article,
+.seva-agent-portal .seva-agent-overview article { border: 1px solid var(--seva-ops-border); background: var(--seva-ops-raised); }
+.seva-admin-portal .seva-agent-overview article small,
+.seva-agent-portal .seva-agent-overview article small { color: var(--seva-ops-muted); }
+.seva-admin-portal .seva-agent-overview article b,
+.seva-agent-portal .seva-agent-overview article b { color: var(--seva-ops-text); }
+.seva-admin-portal .seva-queue-filters {
+  display: grid;
+  grid-template-columns: minmax(210px,2fr) repeat(5,minmax(105px,1fr)) auto auto;
+  align-items: center;
+}
+.seva-admin-portal .seva-queue-filters label { min-width: 0; }
+.seva-admin-portal .seva-queue-filters > button { width: auto; min-width: 82px; white-space: nowrap; }
+.seva-admin-portal .seva-queue-filters > span { color: var(--seva-ops-muted); }
+
+/* Service discovery and preflight. */
+.seva-service-matches { display: grid; gap: 12px; margin-top: 18px; }
+.seva-service-matches > header { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; }
+.seva-service-matches > header span { display: inline-flex; align-items: center; gap: 7px; color: #72ead7; font-weight: 800; }
+.seva-service-matches > header p { margin: 0; color: #8fa8bb; font-size: .78rem; }
+.seva-service-matches article { display: grid; gap: 10px; padding: 15px; border: 1px solid rgba(115,184,220,.24); border-radius: 8px; background: rgba(7,20,34,.78); }
+.seva-service-match-title { display: grid; grid-template-columns: auto minmax(0,1fr) auto; gap: 10px; align-items: center; }
+.seva-service-match-title > span { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 6px; background: rgba(79,209,197,.12); color: #72ead7; }
+.seva-service-match-title div { display: grid; gap: 2px; }
+.seva-service-match-title strong { color: #eef8ff; }
+.seva-service-match-title small { color: #8fa8bb; }
+.seva-service-match-title b { color: #72ead7; font-size: .72rem; }
+.seva-service-match-facts { display: flex; flex-wrap: wrap; gap: 8px 14px; color: #a9bdd0; font-size: .72rem; }
+.seva-service-match-facts span { display: inline-flex; align-items: center; gap: 5px; }
+.seva-service-matches article > p { margin: 0; color: #a9bdd0; font-size: .78rem; line-height: 1.5; }
+.seva-service-matches article > button { display: inline-flex; width: max-content; min-height: 40px; align-items: center; gap: 7px; border: 1px solid rgba(79,209,197,.42); border-radius: 5px; background: rgba(79,209,197,.1); color: #b9fff3; font-weight: 800; }
+
+.seva-preflight-page { min-height: 100dvh; background: #07111d; color: #eef6ff; }
+.seva-preflight { display: grid; width: min(1080px, calc(100% - 28px)); margin: 0 auto; padding: 28px 0 80px; gap: 16px; }
+.seva-preflight-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 22px; border: 1px solid #294158; border-radius: 8px; background: #0d1a29; }
+.seva-preflight-header span { color: #72ead7; font-size: .72rem; font-weight: 800; text-transform: uppercase; }
+.seva-preflight-header h1 { margin: 6px 0; color: #f4f9ff; font-size: clamp(1.55rem,3vw,2.35rem); }
+.seva-preflight-header p { max-width: 760px; margin: 0; color: #a9bdd0; line-height: 1.55; }
+.seva-preflight-header > b { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; padding: 8px 10px; border: 1px solid rgba(79,209,197,.32); border-radius: 5px; color: #72ead7; font-size: .72rem; }
+.seva-neutral-disclaimer { display: flex; gap: 10px; padding: 12px 14px; border: 1px solid #36506a; border-radius: 6px; background: #102133; color: #d5e4f2; }
+.seva-neutral-disclaimer span { display: grid; gap: 2px; }
+.seva-neutral-disclaimer small { color: #94aabf; }
+.seva-preflight-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.seva-preflight-grid > section,
+.seva-preflight-warning { padding: 18px; border: 1px solid #294158; border-radius: 8px; background: #0d1a29; }
+.seva-preflight-grid h2,
+.seva-preflight-warning h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; color: #eef6ff; font-size: 1rem; }
+.seva-preflight-grid h3 { margin: 16px 0 8px; color: #c7d8e8; font-size: .82rem; }
+.seva-preflight-grid dl { display: grid; margin: 0; }
+.seva-preflight-grid dl div { display: grid; grid-template-columns: minmax(120px,.7fr) minmax(0,1.3fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid #20364b; }
+.seva-preflight-grid dt { color: #8fa8bb; font-size: .74rem; }
+.seva-preflight-grid dd { margin: 0; color: #eef6ff; font-size: .78rem; font-weight: 700; }
+.seva-preflight-grid ul { display: grid; gap: 8px; margin: 0; padding-left: 18px; color: #b7c9d9; font-size: .78rem; }
+.seva-preflight-grid p,
+.seva-preflight-warning p { color: #b7c9d9; font-size: .78rem; line-height: 1.5; }
+.seva-preflight-actions { display: flex; flex-wrap: wrap; gap: 10px; padding: 14px; border: 1px solid #294158; border-radius: 8px; background: #0d1a29; }
+.seva-preflight-actions button { min-height: 44px; }
+
+.seva-case-facts { display: grid; grid-template-columns: repeat(6,minmax(0,1fr)); gap: 8px; margin: 12px 0; }
+.seva-case-facts > span { display: grid; gap: 4px; min-width: 0; padding: 10px; border: 1px solid var(--seva-ops-border); border-radius: 6px; background: var(--seva-ops-raised); }
+.seva-case-facts small { color: var(--seva-ops-muted); font-size: .66rem; text-transform: uppercase; }
+.seva-case-facts strong { overflow-wrap: anywhere; color: var(--seva-ops-text); font-size: .74rem; }
+.seva-case-facts .sla-overdue,
+.seva-case-facts .sla-escalated { border-color: #9a4b4b; background: #291b24; }
+.seva-case-facts .sla-overdue strong,
+.seva-case-facts .sla-escalated strong { color: #ffb5b5; }
+.seva-status-control { display: inline-flex; align-items: center; gap: 7px; color: var(--seva-ops-muted); font-size: .72rem; }
+.seva-status-control select { min-width: 200px; }
+.seva-governance-actions { display: grid; gap: 10px; margin: 14px 0; padding: 14px; border: 1px solid var(--seva-ops-border); border-radius: 7px; background: var(--seva-ops-raised); }
+.seva-governance-actions h3,
+.seva-governance-actions p { display: flex; align-items: center; gap: 7px; margin: 0; }
+.seva-governance-actions > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.seva-governance-actions input { flex: 1 1 220px; }
+.seva-governance-actions button { display: inline-flex; min-height: 38px; align-items: center; gap: 6px; padding: 7px 11px; border: 1px solid #3a536d; border-radius: 5px; background: #162a3e; color: var(--seva-ops-text); font-weight: 750; }
+.seva-ops-overview > div { grid-template-columns: repeat(6,minmax(0,1fr)); }
+
 @media (max-width: 1000px) {
   .seva-admin-portal .seva-agent-admin .seva-agent-create-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .seva-case-facts { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .seva-ops-overview > div { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .seva-admin-portal .seva-queue-filters { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .seva-admin-portal .seva-queue-filters label { grid-column: 1 / -1; }
 }
 
 @media (max-width: 640px) {
@@ -368,12 +572,31 @@
   .seva-task-shell .service-card-form { padding-right: 10px; padding-left: 10px; }
   .rtps-form-heading { margin-right: -10px; margin-left: -10px; }
   .rtps-field-grid { grid-template-columns: 1fr; }
+  .rtps-stepper { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; }
+  .rtps-stepper button { min-width: 145px; scroll-snap-align: start; }
+  .rtps-review-section dl { grid-template-columns: 1fr; }
   .rtps-field-grid .service-field { grid-column: 1; }
   .rtps-form-actions { align-items: stretch; flex-direction: column; }
   .rtps-form-actions > div { flex-direction: column-reverse; }
   .rtps-form-actions button { width: 100%; }
+  .rtps-stepped-form .rtps-form-actions { position: sticky; z-index: 4; bottom: env(safe-area-inset-bottom, 0); margin: 0 -10px -18px; padding: 10px; background: #fff; box-shadow: 0 -8px 20px rgba(15,23,42,.12); }
   .seva-admin-portal .seva-agent-admin .seva-agent-create-form { grid-template-columns: 1fr; }
   .seva-admin-portal .seva-agent-create-form .seva-primary { width: 100%; }
+  .seva-service-matches > header,
+  .seva-preflight-header { align-items: stretch; flex-direction: column; }
+  .seva-service-match-title { grid-template-columns: auto minmax(0,1fr); }
+  .seva-service-match-title b { grid-column: 2; }
+  .seva-preflight { width: min(100% - 16px,1080px); padding-top: 14px; }
+  .seva-preflight-grid { grid-template-columns: 1fr; }
+  .seva-preflight-grid dl div { grid-template-columns: 1fr; gap: 4px; }
+  .seva-preflight-actions { position: sticky; z-index: 5; bottom: env(safe-area-inset-bottom,0); }
+  .seva-preflight-actions button { width: 100%; }
+  .seva-case-facts { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .seva-ops-overview > div { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .seva-status-control { width: 100%; align-items: stretch; flex-direction: column; }
+  .seva-status-control select { width: 100%; }
+  .seva-admin-portal .seva-queue-filters { grid-template-columns: 1fr; }
+  .seva-admin-portal .seva-queue-filters > button { width: 100%; }
 }
 
 @media (prefers-reduced-motion: reduce) {

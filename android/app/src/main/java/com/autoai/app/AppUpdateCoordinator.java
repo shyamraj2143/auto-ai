@@ -44,6 +44,7 @@ public final class AppUpdateCoordinator {
 
     public static final String PREFS = "auto_ai_update_preferences";
     private static final String WORK_NAME = "auto_ai_apk_download";
+    private static final String BACKGROUND_DOWNLOAD_VERSION = "background_download_version";
     private static final long CHECK_COOLDOWN_MS = 5L * 60L * 1000L;
     private static final String GITHUB_RELEASE_API =
         "https://api.github.com/repos/shyamraj2143/auto-ai/releases/latest";
@@ -226,7 +227,11 @@ public final class AppUpdateCoordinator {
         OneTimeWorkRequest request = new OneTimeWorkRequest.Builder(AppUpdateDownloadWorker.class)
             .setInputData(input).setConstraints(constraints)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.SECONDS).build();
-        prefs.edit().putInt("active_download_version", m.versionCode).putString("download_work_id", request.getId().toString()).apply();
+        prefs.edit()
+            .putInt("active_download_version", m.versionCode)
+            .putString("download_work_id", request.getId().toString())
+            .remove(BACKGROUND_DOWNLOAD_VERSION)
+            .apply();
         set(new Snapshot(State.QUEUED, m, 0, m.fileSize, "Waiting to download", ""));
         WorkManager.getInstance(context).enqueueUniqueWork(
             WORK_NAME,
@@ -238,9 +243,27 @@ public final class AppUpdateCoordinator {
     public void cancelOptional() {
         if (snapshot.metadata != null && !snapshot.metadata.mandatory) {
             WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME);
-            prefs.edit().remove("active_download_version").remove("download_work_id").apply();
+            prefs.edit().remove("active_download_version").remove("download_work_id").remove(BACKGROUND_DOWNLOAD_VERSION).apply();
             set(new Snapshot(State.AVAILABLE, snapshot.metadata, 0, snapshot.metadata.fileSize, "Download cancelled", ""));
         }
+    }
+
+    /** Keeps the durable WorkManager download running without keeping a modal over the app. */
+    public void continueInBackground() {
+        Metadata metadata = snapshot.metadata;
+        if (metadata == null || !isDownloadInProgress(snapshot.state)) return;
+        prefs.edit().putInt(BACKGROUND_DOWNLOAD_VERSION, metadata.versionCode).apply();
+    }
+
+    public boolean isDownloadBackgrounded(@Nullable Metadata metadata) {
+        return metadata != null
+            && isDownloadInProgress(snapshot.state)
+            && prefs.getInt(BACKGROUND_DOWNLOAD_VERSION, 0) == metadata.versionCode;
+    }
+
+    static boolean isDownloadInProgress(State state) {
+        return state == State.QUEUED || state == State.DOWNLOADING
+            || state == State.VERIFYING || state == State.PAUSED_WAITING_FOR_NETWORK;
     }
 
     public boolean canInstallPackages() {
@@ -428,6 +451,9 @@ public final class AppUpdateCoordinator {
                 prefs.edit().putString("downloaded_apk_path", path == null ? "" : path).putBoolean("installer_pending", true).apply();
                 state = State.READY_TO_INSTALL; message = "Secure update verified";
             } else if (info.getState() == WorkInfo.State.FAILED) { state = State.FAILED; message = error; }
+            if (state == State.READY_TO_INSTALL || state == State.FAILED) {
+                prefs.edit().remove(BACKGROUND_DOWNLOAD_VERSION).apply();
+            }
             set(new Snapshot(state, snapshot.metadata, done, total, message == null ? "" : message, error == null ? "" : error));
         });
     }
@@ -443,7 +469,7 @@ public final class AppUpdateCoordinator {
         if (active > 0 && BuildConfig.VERSION_CODE >= active) {
             String path = prefs.getString("downloaded_apk_path", "");
             if (!path.isEmpty()) new java.io.File(path).delete();
-            prefs.edit().remove("active_download_version").remove("download_work_id").remove("downloaded_apk_path").remove("installer_pending").apply();
+            prefs.edit().remove("active_download_version").remove("download_work_id").remove("downloaded_apk_path").remove("installer_pending").remove(BACKGROUND_DOWNLOAD_VERSION).apply();
             snapshot = new Snapshot(State.INSTALLED, null, 0, 0, "Update installed", "");
         }
     }

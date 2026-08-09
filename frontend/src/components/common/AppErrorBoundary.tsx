@@ -12,6 +12,21 @@ type AppErrorBoundaryState = {
 };
 
 const CHUNK_RELOAD_KEY = "auto-ai-chunk-reload-attempted";
+const CHUNK_RELOAD_ENTRY_KEY = "auto-ai-chunk-reload-entry";
+
+function currentEntrySource(root: ParentNode = document) {
+  return root.querySelector<HTMLScriptElement>('script[type="module"][src]')?.getAttribute("src") ?? "";
+}
+
+async function deploymentVersionChanged() {
+  if (!navigator.onLine) return false;
+  const response = await fetch("/index.html", { cache: "no-store", headers: { "Cache-Control": "no-cache" } });
+  if (!response.ok) return false;
+  const documentCopy = new DOMParser().parseFromString(await response.text(), "text/html");
+  const latestEntry = currentEntrySource(documentCopy);
+  const activeEntry = currentEntrySource();
+  return Boolean(latestEntry && activeEntry && latestEntry !== activeEntry);
+}
 
 function isChunkLoadError(error: Error) {
   const message = `${error.name} ${error.message}`.toLowerCase();
@@ -32,7 +47,11 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
 
   componentDidMount() {
     try {
-      sessionStorage.removeItem(CHUNK_RELOAD_KEY);
+      const attemptedEntry = sessionStorage.getItem(CHUNK_RELOAD_ENTRY_KEY);
+      if (attemptedEntry && attemptedEntry !== currentEntrySource()) {
+        sessionStorage.removeItem(CHUNK_RELOAD_KEY);
+        sessionStorage.removeItem(CHUNK_RELOAD_ENTRY_KEY);
+      }
     } catch {
       return;
     }
@@ -47,14 +66,20 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("[Auto-AI] App render failed.", { referenceId: this.state.referenceId, error, info });
     if (!isChunkLoadError(error)) return;
+    void this.recoverFromDeploymentMismatch();
+  }
+
+  recoverFromDeploymentMismatch = async () => {
     try {
       if (sessionStorage.getItem(CHUNK_RELOAD_KEY) === "1") return;
+      if (!(await deploymentVersionChanged())) return;
       sessionStorage.setItem(CHUNK_RELOAD_KEY, "1");
+      sessionStorage.setItem(CHUNK_RELOAD_ENTRY_KEY, currentEntrySource());
     } catch {
       return;
     }
     window.setTimeout(() => window.location.reload(), 100);
-  }
+  };
 
   returnToHub = () => {
     window.location.assign("/hub");
@@ -80,7 +105,7 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
           </p>
           <p className="app-error-reference">Reference: {this.state.referenceId || "unavailable"}</p>
           <div className="app-error-actions">
-            <button className="btn-primary" type="button" onClick={() => this.setState({ error: null })}>
+            <button className="btn-primary" type="button" onClick={() => window.location.reload()}>
               Retry
             </button>
             <button className="btn-secondary" type="button" onClick={this.returnToHub}>

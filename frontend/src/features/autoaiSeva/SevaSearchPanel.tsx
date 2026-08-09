@@ -1,13 +1,12 @@
-import { ArrowRight, Bot, CheckCircle2, LoaderCircle, Search, Sparkles, UsersRound } from "lucide-react";
+import { ArrowRight, Bot, Building2, CheckCircle2, Clock3, FileText, LoaderCircle, Search, Sparkles, UsersRound } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
-import type { ServiceTaskView } from "../../types";
-import { sevaApi } from "./sevaApi";
+import { sevaApi, type SevaDiscovery, type SevaService } from "./sevaApi";
 
 const THINKING_STAGES = [
   "Understanding what you want to apply for",
   "Matching verified services and portal adapters",
   "Checking form fields and document requirements",
-  "Preparing a resumable application workspace",
+  "Preparing service details for your confirmation",
 ];
 
 const SUGGESTIONS = [
@@ -19,16 +18,16 @@ const SUGGESTIONS = [
 
 export function SevaSearchPanel({
   token,
-  onStarted,
+  onServiceSelected,
 }: {
   token: string;
-  onStarted: (task: ServiceTaskView, fallbackToEmployee: boolean) => void;
+  onServiceSelected: (service: SevaService, query: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const [working, setWorking] = useState(false);
   const [stage, setStage] = useState(0);
   const [error, setError] = useState("");
-  const [resultMessage, setResultMessage] = useState("");
+  const [discovery, setDiscovery] = useState<SevaDiscovery | null>(null);
 
   useEffect(() => {
     if (!working) return;
@@ -43,11 +42,10 @@ export function SevaSearchPanel({
     setWorking(true);
     setStage(0);
     setError("");
-    setResultMessage("");
+    setDiscovery(null);
     try {
-      const result = await sevaApi.startRequest(token, value);
-      setResultMessage(result.message);
-      onStarted(result.task, result.fallback_to_employee);
+      setDiscovery(await sevaApi.discoverServices(token, value));
+      setWorking(false);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "AutoAI could not prepare this application.");
       setWorking(false);
@@ -74,7 +72,7 @@ export function SevaSearchPanel({
           />
           <button type="submit" disabled={working || query.trim().length < 3}>
             {working ? <LoaderCircle className="spin" size={19} /> : <ArrowRight size={19} />}
-            {working ? "Preparing" : "Start application"}
+            {working ? "Searching" : "Find services"}
           </button>
         </div>
         <div className="seva-search-suggestions">
@@ -97,7 +95,32 @@ export function SevaSearchPanel({
           </div>
         </div>
       ) : null}
-      {resultMessage ? <p className="seva-search-result"><CheckCircle2 size={16} />{resultMessage}</p> : null}
+      {discovery ? (
+        <div className="seva-service-matches" aria-live="polite">
+          <header>
+            <span><CheckCircle2 size={17} /> Service matches</span>
+            <p>Review the details and confirm the correct service before an application is created.</p>
+          </header>
+          {(discovery.candidates.length ? discovery.candidates : discovery.fallback ? [discovery.fallback] : []).map((service) => (
+            <article key={service.id}>
+              <div className="seva-service-match-title">
+                <span><FileText size={18} /></span>
+                <div><strong>{service.name}</strong><small>{service.provider}</small></div>
+                {service.confidence ? <b>{Math.round(service.confidence * 100)}% match</b> : <b>Agent assisted</b>}
+              </div>
+              <div className="seva-service-match-facts">
+                <span><Building2 size={14} />{service.department}</span>
+                <span><Clock3 size={14} />{service.expected_timeline}</span>
+                <span>{service.documents.filter((item) => item.required !== false).length} required documents</span>
+              </div>
+              <p>{service.description}</p>
+              <button type="button" onClick={() => onServiceSelected(service, discovery.query)}>
+                View details and confirm <ArrowRight size={16} />
+              </button>
+            </article>
+          ))}
+        </div>
+      ) : null}
       {error ? <p className="seva-error" role="alert">{error}</p> : null}
       <div className="seva-search-fallback"><UsersRound size={17} /><span><strong>No automatic adapter?</strong> Complete the structured form once; submission automatically creates and assigns the agent task.</span></div>
     </section>

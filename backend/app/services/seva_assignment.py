@@ -10,7 +10,11 @@ from app.models.form_service import HumanHandoff, ServiceDefinition, ServiceTask
 from app.models.user import User
 
 
-ACTIVE_STATES = ("IN_PROGRESS", "WAITING_USER", "SUBMITTED")
+ACTIVE_STATES = (
+    "IN_PROGRESS", "WAITING_USER", "DOCUMENT_VERIFICATION", "PROTECTED_ACTION_REQUIRED",
+    "QUALITY_REVIEW", "READY_TO_SUBMIT", "SUBMITTED", "SUBMITTED_TO_AUTHORITY",
+    "UNDER_AUTHORITY_PROCESSING", "APPROVED", "ISSUED", "ESCALATED",
+)
 
 
 def case_event(db: Session, work_order: SevaWorkOrder, event_type: str, title: str, *, actor_id: str | None = None, visibility: str = "USER", details: dict | None = None, dedupe_key: str | None = None) -> None:
@@ -49,25 +53,32 @@ def assign_best_available_agent(db: Session, work_order: SevaWorkOrder) -> SevaA
         .where(SevaAgentProfile.is_active.is_(True), SevaAgentProfile.status == "ACTIVE", User.is_active.is_(True))
         .with_for_update()
     ))
-    candidates: list[tuple[int, SevaAgentProfile]] = []
+    candidates: list[tuple[int, int, int, SevaAgentProfile]] = []
     task = db.get(ServiceTask, work_order.task_id)
     service = db.get(ServiceDefinition, task.service_id) if task else None
     category = (service.category or "").strip().casefold() if service else ""
+    region = (service.region or "").strip().casefold() if service else ""
+    locale_language = (task.locale or "").split("-", 1)[0].casefold() if task else ""
     for profile in profiles:
         skills = {str(value).strip().casefold() for value in (profile.specializations or []) if value}
-        if skills and category and category not in skills and "all" not in skills:
+        eligible_skills = {category, region, work_order.department.casefold(), work_order.queue_name.casefold(), task.service_id.casefold() if task else ""}
+        if skills and "all" not in skills and not (skills & eligible_skills):
             continue
+        languages = {str(value).strip().casefold() for value in (profile.languages or []) if value}
+        language_penalty = 0 if not languages or "all" in languages or any(value.startswith(locale_language) for value in languages) else 1
+        specialization_penalty = 0 if skills else 1
         active_load = int(db.scalar(select(func.count()).select_from(SevaWorkOrder).where(
             SevaWorkOrder.assigned_employee_id == profile.user_id,
             SevaWorkOrder.status.in_(ACTIVE_STATES),
         )) or 0)
         if active_load < profile.capacity:
-            candidates.append((active_load, profile))
+            candidates.append((specialization_penalty, language_penalty, active_load, profile))
     if not candidates:
         work_order.status = "QUEUED"
         return None
-    _, agent = min(candidates, key=lambda item: (
-        item[0], item[1].last_assigned_at is not None, item[1].last_assigned_at or datetime.min, item[1].created_at
+    _, _, _, agent = min(candidates, key=lambda item: (
+        item[0], item[1], item[2], item[3].last_assigned_at is not None,
+        item[3].last_assigned_at or datetime.min, item[3].created_at,
     ))
     now = datetime.utcnow()
     work_order.assigned_employee_id = agent.user_id

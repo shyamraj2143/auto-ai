@@ -20,6 +20,58 @@ export type SevaRegistryItem = {
   last_verified_at?: string | null;
 };
 
+export type SevaService = {
+  id: string;
+  version: string;
+  name: string;
+  name_hi?: string | null;
+  provider: string;
+  authority: string;
+  category: string;
+  department: string;
+  country: string;
+  region?: string | null;
+  verified: boolean;
+  confidence?: number | null;
+  description: string;
+  who_can_apply: string;
+  application_mode: string;
+  processing_information: string;
+  expected_timeline: string;
+  fee: { amount?: number | null; currency?: string; label?: string };
+  eligibility: Array<{ description?: string }>;
+  fields: Array<{ key: string; label: string; type: string; required?: boolean }>;
+  documents: Array<{ key: string; label: string; required?: boolean; accepted?: string[]; max_bytes?: number }>;
+  execution_modes: string[];
+  authentication_type: string;
+  tracking_method: string;
+  protected_actions: string[];
+  warnings: string[];
+  official_source?: string | null;
+  official_origin?: string | null;
+  last_verified_at?: string | null;
+  is_official_portal: false;
+  disclaimer: string;
+};
+
+export type SevaDiscovery = {
+  query: string;
+  requires_confirmation: boolean;
+  candidates: SevaService[];
+  fallback?: SevaService | null;
+};
+
+export type SevaDraft = {
+  id?: string | null;
+  task_id: string;
+  status: string;
+  version: number;
+  schema_version: string;
+  values: Record<string, unknown>;
+  warnings: Array<{ field: string; message: string }>;
+  updated_at?: string | null;
+};
+
 export type SevaRequirement = {
   id: string;
   kind: "TEXT" | "DOCUMENT" | "PROTECTED_ACTION";
@@ -54,6 +106,8 @@ export type SevaWorkOrder = {
   handoff_id: string;
   status: "QUEUED" | "IN_PROGRESS" | "WAITING_USER" | "SUBMITTED" | "COMPLETED" | "CANCELLED" | string;
   priority: string;
+  department?: string;
+  queue_name?: string;
   request_summary: string;
   employee_note?: string | null;
   assigned_employee?: { id: string; name: string } | null;
@@ -64,6 +118,13 @@ export type SevaWorkOrder = {
   work_progress: number;
   current_activity: string;
   reference_number?: string | null;
+  official_status?: string | null;
+  sla_status?: string;
+  escalation_reason?: string | null;
+  escalated_at?: string | null;
+  quality_required?: boolean;
+  quality_status?: string;
+  quality_reviews?: Array<{ id: string; status: string; snapshot_version: number; decision_reason?: string | null; requested_at: string; reviewed_at?: string | null }>;
   submitted_at: string;
   due_at?: string | null;
   queue_position?: number | null;
@@ -151,6 +212,22 @@ function clientRequestId(prefix: string) {
 const operationsBase = "/form-services/seva-operations";
 
 export const sevaApi = {
+  discoverServices(token: string, query: string) {
+    return request<SevaDiscovery>(token, `${operationsBase}/discover`, {
+      method: "POST",
+      body: JSON.stringify({ query, limit: 5 }),
+    });
+  },
+
+  listCatalogue(token: string, category = "") {
+    const suffix = category ? `?category=${encodeURIComponent(category)}` : "";
+    return request<{ items: SevaService[]; categories: string[]; total: number }>(token, `${operationsBase}/catalogue${suffix}`);
+  },
+
+  getService(token: string, serviceId: string) {
+    return request<SevaService>(token, `${operationsBase}/catalogue/${encodeURIComponent(serviceId)}`);
+  },
+
   listApplications(token: string, options: { page?: number; pageSize?: number; state?: string; q?: string } = {}) {
     const params = new URLSearchParams({
       page: String(options.page ?? 1),
@@ -165,11 +242,12 @@ export const sevaApi = {
     return request<ServiceTaskView>(token, `/form-services/tasks/${encodeURIComponent(applicationId)}`);
   },
 
-  startRequest(token: string, query: string, locale = "hi-IN") {
+  startRequest(token: string, query: string, locale = "hi-IN", serviceId?: string) {
     return request<SevaStartResult>(token, `${operationsBase}/start`, {
       method: "POST",
       body: JSON.stringify({
         query,
+        service_id: serviceId || null,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Kolkata",
         locale,
         client_request_id: clientRequestId("seva-search"),
@@ -219,6 +297,17 @@ export const sevaApi = {
 
   getAssistance(token: string, taskId: string) {
     return request<{ work_order: SevaWorkOrder | null }>(token, `${operationsBase}/tasks/${encodeURIComponent(taskId)}/assistance`);
+  },
+
+  getDraft(token: string, taskId: string) {
+    return request<SevaDraft>(token, `/form-services/tasks/${encodeURIComponent(taskId)}/draft`);
+  },
+
+  saveDraft(token: string, taskId: string, draftVersion: number, schemaVersion: string, values: Record<string, unknown>) {
+    return request<SevaDraft>(token, `/form-services/tasks/${encodeURIComponent(taskId)}/draft`, {
+      method: "PUT",
+      body: JSON.stringify({ draft_version: draftVersion, schema_version: schemaVersion, values, request_id: clientRequestId("seva-draft") }),
+    });
   },
 
   requestAssistance(token: string, taskId: string, purpose: string) {
@@ -296,11 +385,18 @@ export const sevaApi = {
     return request<SevaWorkOrder>(token, `${operationsBase}/admin/work-orders/${encodeURIComponent(workOrderId)}/reassign`, { method: "POST", body: JSON.stringify({ agent_profile_id: agentProfileId, reason }) });
   },
 
-  listWorkOrders(token: string, options: { state?: string; q?: string; agentId?: string; page?: number; pageSize?: number } = {}) {
+  listWorkOrders(token: string, options: { state?: string; q?: string; agentId?: string; priority?: string; sla?: string; department?: string; queue?: string; category?: string; dateFrom?: string; dateTo?: string; page?: number; pageSize?: number } = {}) {
     const params = new URLSearchParams({ page: String(options.page ?? 1), page_size: String(options.pageSize ?? 50) });
     if (options.state) params.set("state", options.state);
     if (options.q) params.set("q", options.q);
     if (options.agentId) params.set("agent_id", options.agentId);
+    if (options.priority) params.set("priority", options.priority);
+    if (options.sla) params.set("sla", options.sla);
+    if (options.department) params.set("department", options.department);
+    if (options.queue) params.set("queue", options.queue);
+    if (options.category) params.set("category", options.category);
+    if (options.dateFrom) params.set("date_from", options.dateFrom);
+    if (options.dateTo) params.set("date_to", options.dateTo);
     const suffix = params.toString() ? `?${params.toString()}` : "";
     return request<{ items: SevaWorkOrder[]; total: number; page: number; page_size: number; has_more: boolean }>(token, `${operationsBase}/admin/work-orders${suffix}`);
   },
@@ -348,5 +444,21 @@ export const sevaApi = {
       method: "POST",
       body,
     });
+  },
+
+  requestQualityReview(token: string, workOrderId: string) {
+    return request<SevaWorkOrder>(token, `${operationsBase}/admin/work-orders/${encodeURIComponent(workOrderId)}/quality-review`, { method: "POST" });
+  },
+
+  decideQualityReview(token: string, workOrderId: string, approved: boolean, reason = "") {
+    return request<SevaWorkOrder>(token, `${operationsBase}/admin/work-orders/${encodeURIComponent(workOrderId)}/quality-review/decision`, { method: "POST", body: JSON.stringify({ approved, reason: reason || null }) });
+  },
+
+  escalateWorkOrder(token: string, workOrderId: string, reason: string) {
+    return request<SevaWorkOrder>(token, `${operationsBase}/admin/work-orders/${encodeURIComponent(workOrderId)}/escalate`, { method: "POST", body: JSON.stringify({ reason }) });
+  },
+
+  getOperationsOverview(token: string) {
+    return request<{ total: number; counts: Record<string, number>; overdue: number; pending_quality_review: number; protected_actions: number; agents_available: number; agents_at_capacity: number }>(token, `${operationsBase}/admin/overview`);
   },
 };

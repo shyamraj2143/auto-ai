@@ -13,7 +13,8 @@ from app.api.deps import get_current_user
 from app.api.routes import form_services
 from app.db.base import Base
 from app.db.session import get_db
-from app.models.autoai_seva import SevaAgentProfile, SevaAssignment, SevaDeliverable, SevaNotification, SevaRequirementRequest, SevaWorkOrder
+from app.models.autoai_seva import SevaAgentProfile, SevaAssignment, SevaDeliverable, SevaNotification, SevaQualityReview, SevaRequirementRequest, SevaWorkOrder
+from app.models.form_service import FormField, ServiceTask
 from app.models.document import Document
 from app.models.user import User
 from app.services.autoai_seva_seed import ASSISTED_REQUEST_SERVICE_ID, ensure_autoai_seva_demo
@@ -79,6 +80,91 @@ def test_unknown_service_falls_back_to_structured_employee_assisted_form(db: Ses
     assert payload["fallback_to_employee"] is True
     assert payload["task"]["service_id"] == ASSISTED_REQUEST_SERVICE_ID
     assert payload["task"]["active_card"]["type"] == "information_request"
+
+
+def test_discovery_requires_explicit_service_confirmation_and_exposes_preflight(db: Session) -> None:
+    applicant = add_user(db, "seva-discovery-user")
+    current = {"user": applicant}
+    client = client_for(db, current)
+    before = db.query(ServiceTask).count()
+
+    discovered = client.post(
+        "/api/v1/form-services/seva-operations/discover",
+        json={"query": "बिहार आय प्रमाण पत्र apply", "locale": "hi-IN"},
+    )
+    assert discovered.status_code == 200, discovered.text
+    payload = discovered.json()
+    assert payload["requires_confirmation"] is True
+    assert payload["candidates"][0]["id"] == "bihar.income-certificate"
+    assert payload["candidates"][0]["is_official_portal"] is False
+    assert payload["candidates"][0]["documents"]
+    assert db.query(ServiceTask).count() == before
+
+    started = client.post(
+        "/api/v1/form-services/seva-operations/start",
+        json={"query": "बिहार आय प्रमाण पत्र apply", "service_id": "bihar.income-certificate", "locale": "hi-IN", "timezone": "Asia/Kolkata", "client_request_id": "confirmed-discovery-1"},
+    )
+    assert started.status_code == 201, started.text
+    assert started.json()["task"]["service_id"] == "bihar.income-certificate"
+    assert db.query(ServiceTask).count() == before + 1
+
+
+def test_server_draft_resumes_and_rejects_stale_versions(db: Session) -> None:
+    applicant = add_user(db, "seva-draft-user")
+    current = {"user": applicant}
+    client = client_for(db, current)
+    started = client.post(
+        "/api/v1/form-services/seva-operations/start",
+        json={"query": "open a simple test form", "service_id": "autoai.safe-test-form", "locale": "en-IN", "timezone": "Asia/Kolkata", "client_request_id": "draft-start-1"},
+    ).json()["task"]
+    task_id = started["id"]
+    saved = client.put(
+        f"/api/v1/form-services/tasks/{task_id}/draft",
+        json={"draft_version": 0, "schema_version": "2026.08", "values": {"applicant_name": "Asha Kumari", "email": "", "date_of_birth": "", "district": "Patna"}, "request_id": "draft-save-1"},
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["version"] == 1
+    assert saved.json()["values"]["district"] == "Patna"
+    assert saved.json()["warnings"]
+    assert db.query(FormField).filter_by(field_key="district").one().value_json == {"value": "Patna"}
+    stale = client.put(
+        f"/api/v1/form-services/tasks/{task_id}/draft",
+        json={"draft_version": 0, "schema_version": "2026.08", "values": {"applicant_name": "Asha", "email": "", "date_of_birth": "", "district": "Gaya"}, "request_id": "draft-save-stale"},
+    )
+    assert stale.status_code == 409, stale.text
+
+
+def test_quality_review_is_immutable_and_gates_submission(db: Session) -> None:
+    applicant = add_user(db, "seva-quality-user")
+    admin = add_user(db, "seva-quality-admin", admin=True)
+    current = {"user": applicant}
+    client = client_for(db, current)
+    task = client.post(
+        "/api/v1/form-services/seva-operations/start",
+        json={"query": "income certificate", "service_id": "bihar.income-certificate", "locale": "en-IN", "timezone": "Asia/Kolkata", "client_request_id": "quality-start-1"},
+    ).json()["task"]
+    work_order = client.post(
+        f"/api/v1/form-services/seva-operations/tasks/{task['id']}/assistance",
+        json={"purpose": "Prepare and review this application", "consent_accepted": True},
+    ).json()
+    assert work_order["quality_required"] is True
+    current["user"] = admin
+    client.post(f"/api/v1/form-services/seva-operations/admin/work-orders/{work_order['id']}/claim")
+    blocked = client.post(
+        f"/api/v1/form-services/seva-operations/admin/work-orders/{work_order['id']}/status",
+        json={"status": "READY_TO_SUBMIT", "note": "Ready", "progress_percent": 75},
+    )
+    assert blocked.status_code == 409
+    review = client.post(f"/api/v1/form-services/seva-operations/admin/work-orders/{work_order['id']}/quality-review")
+    assert review.status_code == 201, review.text
+    decided = client.post(
+        f"/api/v1/form-services/seva-operations/admin/work-orders/{work_order['id']}/quality-review/decision",
+        json={"approved": True, "reason": "Fields and documents verified"},
+    )
+    assert decided.status_code == 200, decided.text
+    assert decided.json()["quality_status"] == "APPROVED"
+    persisted = db.query(SevaQualityReview).one()
+    assert persisted.status == "APPROVED" and persisted.snapshot_version >= 1
 
 
 def test_employee_workflow_blocks_raw_otp_and_delivers_scoped_receipt(db: Session) -> None:

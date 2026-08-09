@@ -2,6 +2,8 @@ import {
   ArrowLeft,
   ArrowRight,
   BadgeCheck,
+  Bookmark,
+  Building2,
   CheckCircle2,
   ClipboardCheck,
   Clock3,
@@ -10,6 +12,7 @@ import {
   FileText,
   History,
   Languages,
+  ListChecks,
   LoaderCircle,
   LockKeyhole,
   PlayCircle,
@@ -18,13 +21,13 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import type { ServiceTaskView } from "../../types";
 import { ServiceTaskCard } from "../formService/ServiceTaskCard";
 import { SevaAssistancePanel } from "./SevaAssistancePanel";
 import { SevaSearchPanel } from "./SevaSearchPanel";
-import { sevaApi } from "./sevaApi";
+import { sevaApi, type SevaService } from "./sevaApi";
 import "./autoaiSeva.css";
 import "./sevaAdvanced.css";
 import "./autoaiSevaScrollFix.css";
@@ -116,7 +119,7 @@ export function AutoAISevaPage() {
         {token ? (
           <SevaSearchPanel
             token={token}
-            onStarted={(task) => navigate(`/seva/applications/${encodeURIComponent(task.id)}`)}
+            onServiceSelected={(service, query) => navigate(`/seva/services/${encodeURIComponent(service.id)}?query=${encodeURIComponent(query)}`)}
           />
         ) : null}
 
@@ -192,6 +195,95 @@ export function AutoAISevaPage() {
             <button type="button" onClick={() => void begin("demo")} disabled={Boolean(starting)}>Run demo<PlayCircle size={17} /></button>
           </article>
         </section>
+      </main>
+    </div>
+  );
+}
+
+export function SevaServiceDetailPage() {
+  const { token } = useAuth();
+  const { serviceId = "" } = useParams();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const [service, setService] = useState<SevaService | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [starting, setStarting] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+  const originalQuery = searchParams.get("query")?.trim() || "";
+
+  useEffect(() => {
+    if (!token || !serviceId) return;
+    let active = true;
+    setLoading(true);
+    void sevaApi.getService(token, serviceId)
+      .then((item) => { if (active) setService(item); })
+      .catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : "Service details could not be loaded."); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [serviceId, token]);
+
+  async function startApplication() {
+    if (!token || !service || starting) return;
+    setStarting(true); setError("");
+    try {
+      const result = await sevaApi.startRequest(token, originalQuery || service.name, "hi-IN", service.id);
+      navigate(`/seva/applications/${encodeURIComponent(result.task.id)}`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Application could not be created.");
+      setStarting(false);
+    }
+  }
+
+  function saveForLater() {
+    if (!service) return;
+    const current = JSON.parse(localStorage.getItem("autoai-seva-saved-services") || "[]") as Array<{ id: string; query: string; saved_at: string }>;
+    const next = [{ id: service.id, query: originalQuery, saved_at: new Date().toISOString() }, ...current.filter((item) => item.id !== service.id)].slice(0, 20);
+    localStorage.setItem("autoai-seva-saved-services", JSON.stringify(next));
+    setSaved(true);
+  }
+
+  return (
+    <div className="seva-page seva-preflight-page">
+      <SevaHeader title="Service preparation" backTo="/seva" />
+      <main className="seva-preflight">
+        {loading ? <div className="seva-empty"><LoaderCircle className="spin" /><p>Loading verified service details…</p></div> : null}
+        {!loading && error && !service ? <div className="seva-empty error"><p>{error}</p><button type="button" onClick={() => navigate("/seva")}>Back to service search</button></div> : null}
+        {service ? <>
+          <header className="seva-preflight-header">
+            <div><span>{service.category.replace(/-/g, " ")}</span><h1>{service.name}</h1><p>{service.description}</p></div>
+            <b>{service.verified ? <><BadgeCheck size={17} /> Source checked</> : "Official verification required"}</b>
+          </header>
+          <aside className="seva-neutral-disclaimer"><ShieldCheck size={18} /><span><strong>AutoAI assistance service</strong><small>{service.disclaimer}</small></span></aside>
+          <div className="seva-preflight-grid">
+            <section>
+              <h2><Building2 size={18} /> Service information</h2>
+              <dl>
+                <div><dt>Processing authority</dt><dd>{service.authority || "Official verification required"}</dd></div>
+                <div><dt>Who can apply</dt><dd>{service.who_can_apply}</dd></div>
+                <div><dt>Application mode</dt><dd>{service.application_mode}</dd></div>
+                <div><dt>Expected timeline</dt><dd>{service.expected_timeline}</dd></div>
+                <div><dt>Known fee</dt><dd>{service.fee.label || "Official verification required"}</dd></div>
+                <div><dt>Tracking</dt><dd>{service.tracking_method.replace(/_/g, " ")}</dd></div>
+              </dl>
+            </section>
+            <section>
+              <h2><ListChecks size={18} /> Preparation checklist</h2>
+              <h3>Eligibility</h3>
+              <ul>{service.eligibility.length ? service.eligibility.map((item, index) => <li key={`${item.description}-${index}`}>{item.description || "Official verification required"}</li>) : <li>Official verification required</li>}</ul>
+              <h3>Documents</h3>
+              <ul>{service.documents.length ? service.documents.map((item) => <li key={item.key}><strong>{item.label}</strong>{item.required === false ? " (optional)" : " (required)"}</li>) : <li>No document is currently listed. The agent or official portal may confirm additional requirements.</li>}</ul>
+              {service.protected_actions.length ? <><h3>Protected actions</h3><p>{service.protected_actions.map((item) => item.replace(/_/g, " ")).join(", ")} remain under your direct control.</p></> : null}
+            </section>
+          </div>
+          {service.warnings.length ? <section className="seva-preflight-warning"><h2>Important warnings</h2>{service.warnings.map((item) => <p key={item}>{item}</p>)}</section> : null}
+          <footer className="seva-preflight-actions">
+            <button type="button" className="seva-primary" disabled={starting} onClick={() => void startApplication()}>{starting ? <LoaderCircle className="spin" size={17} /> : <FileText size={17} />} Start application</button>
+            <button type="button" className="seva-secondary" onClick={saveForLater}><Bookmark size={17} />{saved ? "Saved" : "Save for later"}</button>
+            <button type="button" className="seva-secondary" onClick={() => navigate("/chat", { state: { hubPrompt: `Explain ${service.name} eligibility, documents and safe next steps. Do not invent official facts.` } })}><Sparkles size={17} /> Ask AutoAI</button>
+          </footer>
+          {error ? <p className="seva-error" role="alert">{error}</p> : null}
+        </> : null}
       </main>
     </div>
   );

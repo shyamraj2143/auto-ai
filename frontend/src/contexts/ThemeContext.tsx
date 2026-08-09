@@ -19,10 +19,10 @@ function isTheme(value: string | null): value is Theme {
 function readStoredTheme(): Theme {
   try {
     const stored = localStorage.getItem(THEME_STORAGE_KEY);
-    return isTheme(stored) ? stored : "dark";
+    return isTheme(stored) ? stored : "light";
   } catch (error) {
     console.warn("[Auto-AI Theme] Unable to read saved theme.", error);
-    return "dark";
+    return "light";
   }
 }
 
@@ -35,7 +35,7 @@ function writeStoredTheme(theme: Theme) {
 }
 
 function getSystemTheme(): "light" | "dark" {
-  if (typeof window.matchMedia !== "function") return "dark";
+  if (typeof window.matchMedia !== "function") return "light";
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
@@ -70,7 +70,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     document.body?.classList.toggle("dark", resolvedTheme === "dark");
     document.body?.classList.toggle("light", resolvedTheme === "light");
 
-    const themeColor = resolvedTheme === "dark" ? "#05070d" : "#f8fafc";
+    const themeColor = resolvedTheme === "dark" ? "#111827" : "#f5f7fa";
     let meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
     if (!meta) {
       meta = document.createElement("meta");

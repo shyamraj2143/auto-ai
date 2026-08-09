@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   CirclePause,
   Download,
@@ -14,13 +15,16 @@ import {
   Printer,
   RefreshCw,
   RotateCcw,
+  Save,
   ShieldCheck,
   Upload,
   XCircle
 } from "lucide-react";
 
 import { api, streamServiceTaskEvents, type ServiceTaskEvent } from "../../api/client";
+import { useOptionalAuth } from "../../contexts/AuthContext";
 import type { LibraryAsset, ServiceFieldDefinition, ServiceTaskView } from "../../types";
+import { sevaApi } from "../autoaiSeva/sevaApi";
 import { serviceNative, type NativePermissionStatus } from "./serviceNative";
 import "./serviceTaskCard.css";
 import "./serviceTaskCardEnhancements.css";
@@ -154,19 +158,53 @@ function rtpsSectionForField(field: ServiceFieldDefinition) {
   return "other";
 }
 
-function InformationCard({ task, onSubmit, working }: { task: ServiceTaskView; working: boolean; onSubmit: (requestId: string, values: Record<string, unknown>) => Promise<void> }) {
+function InformationCard({ task, token, onSubmit, working }: { task: ServiceTaskView; token: string; working: boolean; onSubmit: (requestId: string, values: Record<string, unknown>) => Promise<void> }) {
+  const user = useOptionalAuth()?.user;
   const fields = dataValue<ServiceFieldDefinition[]>(task, "fields", []);
   const saved = dataValue<Record<string, unknown>>(task, "saved_values", {});
   const requestId = dataValue<string>(task, "data_request_id", "");
+  const schemaVersion = dataValue<string>(task, "schema_version", task.service_id || "1");
   const storageKey = `autoai:service-draft:${task.id}:${requestId}`;
   const requiresAgentAuthorization = task.execution_mode === "ASSIST";
   const [agentAuthorization, setAgentAuthorization] = useState(false);
-  const [draftMessage, setDraftMessage] = useState("Draft is saved automatically on this device.");
+  const [draftMessage, setDraftMessage] = useState("Loading secure draft…");
+  const [draftVersion, setDraftVersion] = useState(0);
+  const [draftReady, setDraftReady] = useState(false);
+  const [draftSaving, setDraftSaving] = useState(false);
+  const [activeStep, setActiveStep] = useState(0);
+  const changeRevision = useRef(0);
+  const persistedRevision = useRef(0);
+  const profileValue = (field: ServiceFieldDefinition) => {
+    const key = field.key.toLowerCase();
+    if (/^(applicant|student|patient)_name$/.test(key)) return user?.name || "";
+    if (key === "email") return user?.email || "";
+    if (/^(mobile|phone|phone_number)$/.test(key)) return user?.phone_number || user?.mobile || "";
+    return "";
+  };
   const [values, setValues] = useState<Record<string, unknown>>(() => {
     let offlineValues: Record<string, unknown> = {};
     try { offlineValues = JSON.parse(localStorage.getItem(storageKey) || "{}") as Record<string, unknown>; } catch { localStorage.removeItem(storageKey); }
-    return Object.fromEntries(fields.map((field) => [field.key, saved[field.key] ?? offlineValues[field.key] ?? (field.type === "multiselect" ? [] : field.type === "checkbox" ? false : "")]));
+    return Object.fromEntries(fields.map((field) => {
+      const prefill = profileValue(field);
+      return [field.key, saved[field.key] ?? offlineValues[field.key] ?? (prefill || (field.type === "multiselect" ? [] : field.type === "checkbox" ? false : ""))];
+    }));
   });
+  useEffect(() => {
+    let active = true;
+    void sevaApi.getDraft(token, task.id).then((draft) => {
+      if (!active) return;
+      setDraftVersion(draft.version);
+      setValues((current) => ({ ...current, ...draft.values }));
+      if (draft.version === 0 && Object.values(values).some((value) => value !== "" && value !== false && !(Array.isArray(value) && value.length === 0))) changeRevision.current = 1;
+      setDraftMessage(draft.updated_at ? `Saved securely at ${new Date(draft.updated_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.` : "Ready to save securely.");
+      setDraftReady(true);
+    }).catch((reason) => {
+      if (!active) return;
+      setDraftMessage(reason instanceof Error ? `Server draft unavailable: ${reason.message}. Current entries remain on this device.` : "Server draft unavailable. Current entries remain on this device.");
+      setDraftReady(true);
+    });
+    return () => { active = false; };
+  }, [task.id, token]);
   useEffect(() => {
     const safeValues = Object.fromEntries(fields.filter((field) => !["sensitive", "high"].includes(String((field as ServiceFieldDefinition & { sensitivity?: string }).sensitivity))).map((field) => [field.key, values[field.key]]));
     localStorage.setItem(storageKey, JSON.stringify(safeValues));
@@ -179,16 +217,54 @@ function InformationCard({ task, onSubmit, working }: { task: ServiceTaskView; w
     ...section,
     fields: visibleFields.filter((field) => rtpsSectionForField(field) === section.key),
   })).filter((section) => section.fields.length > 0);
+  const steps = [...sections.map((section) => ({ key: section.key, title: section.title })), { key: "review", title: "समीक्षा एवं घोषणा / Review & Declaration" }];
+  const currentSection = sections[activeStep];
+  const reviewStep = activeStep === steps.length - 1;
 
-  function saveDraft() {
-    const safeValues = Object.fromEntries(fields
-      .filter((field) => !["sensitive", "high"].includes(String((field as ServiceFieldDefinition & { sensitivity?: string }).sensitivity)))
-      .map((field) => [field.key, values[field.key]]));
-    localStorage.setItem(storageKey, JSON.stringify(safeValues));
-    setDraftMessage(`Draft saved at ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`);
+  async function persistDraft(manual = false) {
+    if (!draftReady || draftSaving || changeRevision.current === persistedRevision.current) {
+      if (manual && changeRevision.current === persistedRevision.current) setDraftMessage("All current changes are already saved securely.");
+      return;
+    }
+    const revision = changeRevision.current;
+    setDraftSaving(true);
+    setDraftMessage("Saving securely…");
+    try {
+      const draft = await sevaApi.saveDraft(token, task.id, draftVersion, schemaVersion, values);
+      setDraftVersion(draft.version);
+      if (changeRevision.current === revision) persistedRevision.current = revision;
+      setDraftMessage(`Saved securely at ${new Date(draft.updated_at || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`);
+    } catch (reason) {
+      setDraftMessage(reason instanceof Error ? `Not saved to server: ${reason.message}. Entries remain on this device; retry is safe.` : "Not saved to server. Entries remain on this device; retry is safe.");
+    } finally {
+      setDraftSaving(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!draftReady || changeRevision.current === persistedRevision.current) return;
+    const timer = window.setTimeout(() => { void persistDraft(); }, 900);
+    return () => window.clearTimeout(timer);
+  }, [draftReady, values]);
+
+  function updateField(field: ServiceFieldDefinition, value: unknown) {
+    changeRevision.current += 1;
+    setValues((current) => {
+      const next = { ...current, [field.key]: value };
+      fields.filter((candidate) => candidate.depends_on?.field === field.key && candidate.depends_on.equals !== value).forEach((candidate) => { next[candidate.key] = candidate.type === "multiselect" ? [] : candidate.type === "checkbox" ? false : ""; });
+      return next;
+    });
+    setDraftMessage("Unsaved changes — secure auto-save pending.");
+  }
+
+  function nextStep(form: HTMLFormElement) {
+    if (!form.reportValidity()) return;
+    void persistDraft(true);
+    setActiveStep((value) => Math.min(steps.length - 1, value + 1));
+    form.scrollIntoView?.({ behavior: "smooth", block: "start" });
   }
   return (
-    <form className="service-card-form" onSubmit={async (event) => { event.preventDefault(); if (event.currentTarget.reportValidity()) { await onSubmit(requestId, values); localStorage.removeItem(storageKey); } }}>
+    <form className="service-card-form rtps-stepped-form" onSubmit={async (event) => { event.preventDefault(); if (!reviewStep) { nextStep(event.currentTarget); return; } if (event.currentTarget.reportValidity()) { await onSubmit(requestId, values); localStorage.removeItem(storageKey); } }}>
       <header className="rtps-form-heading">
         <span>ऑनलाइन आवेदन / Online Application</span>
         <h4>{task.service_name}</h4>
@@ -198,21 +274,25 @@ function InformationCard({ task, onSubmit, working }: { task: ServiceTaskView; w
         <strong>आवेदक के लिए निर्देश / Instructions</strong>
         <p>Fields marked <b>*</b> are mandatory. Enter details exactly as shown on your supporting documents. Review the form before submission.</p>
       </aside>
-      {sections.map((section) => (
-        <fieldset className="rtps-form-section" key={section.key}>
-          <legend>{section.title}</legend>
+      <nav className="rtps-stepper" aria-label="Application steps">
+        {steps.map((step, index) => <button type="button" key={step.key} className={index === activeStep ? "active" : index < activeStep ? "complete" : ""} onClick={() => index <= activeStep && setActiveStep(index)} aria-current={index === activeStep ? "step" : undefined}><span>{index < activeStep ? <CheckCircle2 size={15} /> : index + 1}</span><small>{step.title}</small></button>)}
+      </nav>
+      {!reviewStep && currentSection ? (
+        <fieldset className="rtps-form-section" key={currentSection.key}>
+          <legend><span>{activeStep + 1}</span>{currentSection.title}</legend>
           <div className="rtps-field-grid">
-            {section.fields.map((field) => (
+            {currentSection.fields.map((field) => (
               <div className={`service-field service-field-${field.type}`} key={field.key}>
                 <label htmlFor={`service-field-${field.key}`}>{field.label}{field.required ? <span aria-hidden="true"> *</span> : null}</label>
-                <FieldControl field={field} value={values[field.key]} onChange={(value) => setValues((current) => ({ ...current, [field.key]: value }))} />
+                <FieldControl field={field} value={values[field.key]} onChange={(value) => updateField(field, value)} />
                 {field.explanation ? <small id={`service-help-${field.key}`}>{field.explanation}</small> : null}
               </div>
             ))}
           </div>
         </fieldset>
-      ))}
-      {requiresAgentAuthorization ? (
+      ) : null}
+      {reviewStep ? <section className="rtps-review-section" aria-labelledby="rtps-review-title"><header><span>{steps.length}</span><div><h4 id="rtps-review-title">समीक्षा एवं घोषणा / Review & Declaration</h4><p>Check every entry before creating the case.</p></div></header>{sections.map((section) => <article key={section.key}><div><h5>{section.title}</h5><button type="button" onClick={() => setActiveStep(sections.findIndex((item) => item.key === section.key))}>Edit</button></div><dl>{section.fields.map((field) => <div key={field.key}><dt>{field.label}</dt><dd>{printableValue(field.key, values[field.key]) || "Not provided"}</dd></div>)}</dl></article>)}</section> : null}
+      {reviewStep && requiresAgentAuthorization ? (
         <label className="rtps-declaration">
           <input type="checkbox" checked={agentAuthorization} onChange={(event) => setAgentAuthorization(event.target.checked)} required />
           <span>I confirm that the information is correct and authorize AutoAI Seva to assign this application to a verified agent. OTP, password, CAPTCHA, PIN and payment secrets are excluded and remain under my control.</span>
@@ -221,8 +301,9 @@ function InformationCard({ task, onSubmit, working }: { task: ServiceTaskView; w
       <footer className="rtps-form-actions">
         <p aria-live="polite">{draftMessage}</p>
         <div>
-          <button className="service-secondary" type="button" onClick={saveDraft}>Save Draft / प्रारूप सहेजें</button>
-          <button className="service-primary" type="submit" disabled={working || !requestId || (requiresAgentAuthorization && !agentAuthorization)}>{working ? <LoaderCircle className="spin" size={17} /> : <ChevronRight size={17} />} {requiresAgentAuthorization ? "Submit application / आवेदन जमा करें" : "Save and continue"}</button>
+          {activeStep > 0 ? <button className="service-secondary" type="button" onClick={() => setActiveStep((value) => Math.max(0, value - 1))}><ChevronLeft size={17} /> Back</button> : null}
+          <button className="service-secondary" type="button" disabled={draftSaving} onClick={() => void persistDraft(true)}>{draftSaving ? <LoaderCircle className="spin" size={17} /> : <Save size={17} />} Save Draft</button>
+          <button className="service-primary" type="submit" disabled={working || !requestId || (reviewStep && requiresAgentAuthorization && !agentAuthorization)}>{working ? <LoaderCircle className="spin" size={17} /> : <ChevronRight size={17} />} {reviewStep ? (requiresAgentAuthorization ? "Submit application / आवेदन जमा करें" : "Save and continue") : "Continue"}</button>
         </div>
       </footer>
     </form>
@@ -499,7 +580,7 @@ export function ServiceTaskCard({ task: initialTask, token }: Props) {
       {isBusy && workingStartedAt ? <WorkflowWorkingCard workflow={workflow} startedAt={workingStartedAt} latestEvent={latestEvent} /> : null}
       {offline ? <div className="service-inline-warning"><AlertTriangle size={16} /> Offline: saved non-secret fields remain visible, but external actions will wait for connectivity.</div> : null}
       {card.type === "service_plan" ? <div className="service-plan"><div className="service-plan-grid"><span><small>Service</small><strong>{String(card.data.service)}</strong></span><span><small>Provider</small><strong>{String(card.data.provider)}</strong></span><span><small>Estimated steps</small><strong>{String(card.data.estimated_steps)}</strong></span><span><small>Portal</small><strong>{String(card.data.official_origin || "Safe local test")}</strong></span></div><p className="service-mode-notice">{String(card.data.mode_notice || "")}</p>{requirementsOpen ? <div className="service-requirements-detail"><strong>Information</strong><ul>{dataValue<string[]>(task, "requirements", []).map((item) => <li key={item}><CheckCircle2 size={15} />{item}</li>)}</ul><strong>Documents</strong>{dataValue<string[]>(task, "required_documents", []).length ? <ul>{dataValue<string[]>(task, "required_documents", []).map((item) => <li key={item}><FileText size={15} />{item}</li>)}</ul> : <p>No documents required.</p>}</div> : null}</div> : null}
-      {card.type === "information_request" && token ? <InformationCard task={task} working={isBusy} onSubmit={(requestId, values) => run(() => api.saveServiceFields(token, task.id, task.version, requestId, values))} /> : null}
+      {card.type === "information_request" && token ? <InformationCard task={task} token={token} working={isBusy} onSubmit={(requestId, values) => run(() => api.saveServiceFields(token, task.id, task.version, requestId, values))} /> : null}
       {card.type === "document_request" && token ? <DocumentCard task={task} token={token} update={update} fail={fail} /> : null}
       {card.type === "permission_request" ? <div className="service-permission"><dl><div><dt>Capability</dt><dd>{String(card.data.capability || "")}</dd></div><div><dt>Data accessed</dt><dd>{dataValue<string[]>(task, "data_accessed", []).join(", ")}</dd></div><div><dt>Retention</dt><dd>{String(card.data.retention || "")}</dd></div><div><dt>Processing</dt><dd>{String(card.data.processing_location || "")}</dd></div></dl><p>{String(card.data.revoke_instructions || "")}</p></div> : null}
       {card.type === "secure_input_request" ? <div className="service-secure"><ShieldCheck size={25} /><p>AutoAI cannot read or remember this code. It is sent only to <strong>{officialOrigin}</strong> for this active session.</p>{secureChallengeId ? <form onSubmit={(event) => { event.preventDefault(); const value = secureValue; setSecureValue(""); if (token && value) void run(() => api.submitServiceSecureResponse(token, task.id, secureChallengeId, value)); }}><label>One-time code<input type="password" value={secureValue} inputMode="numeric" autoComplete="one-time-code" maxLength={8} onChange={(event) => setSecureValue(event.target.value.replace(/\D/g, ""))} onCopy={(event) => event.preventDefault()} required /></label><small>The value is excluded from chat, model context, analytics, receipts, and storage.</small><button className="service-primary" disabled={isBusy || !secureValue} type="submit">Verify securely</button></form> : <p>The previous secure code is unavailable or expired. Request a new isolated verification session.</p>}</div> : null}

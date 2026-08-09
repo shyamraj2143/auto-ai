@@ -33,7 +33,7 @@ import java.util.TimeZone;
 
 /** Compact native update surface. Durable state remains in AppUpdateCoordinator. */
 public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
-    static final String UPDATE_DIALOG_LAYOUT_VERSION = "single-page-v4";
+    static final String UPDATE_DIALOG_LAYOUT_VERSION = "single-page-v5-background";
     static final int DIALOG_LOGO_DP = 44;
     static final int ACTION_HEIGHT_DP = 48;
     static final int DIALOG_MAX_WIDTH_DP = 420;
@@ -86,7 +86,7 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         boolean metadataAvailable = AppUpdateCoordinator.hasPendingUpdate(metadata);
         eyebrow.setText(mandatory ? "MANDATORY SECURITY UPDATE"
             : metadataAvailable ? "VERSION " + metadata.versionName : "UPDATE ERROR");
-        eyebrow.setTextColor(mandatory ? Color.rgb(255, 181, 71) : Color.rgb(104, 227, 255));
+        eyebrow.setTextColor(mandatory ? Color.rgb(154, 101, 0) : Color.rgb(21, 91, 159));
         title.setText(mandatory ? "Update Required" : "AutoAI Update");
         version.setText("Current " + BuildConfig.VERSION_NAME + "   to   New "
             + (metadataAvailable ? metadata.versionName : "unavailable"));
@@ -99,16 +99,21 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         details.setText(metadataAvailable
             ? releaseDetails(metadata, density == Density.COMFORTABLE ? 3 : 2)
             : "- Release details unavailable");
-        status.setText(TextUtils.isEmpty(snapshot.message) ? label(snapshot.state) : snapshot.message);
-        status.setTextColor(snapshot.state == AppUpdateCoordinator.State.FAILED
-            ? Color.rgb(255, 104, 124)
-            : snapshot.state == AppUpdateCoordinator.State.READY_TO_INSTALL
-                ? Color.rgb(80, 231, 168) : Color.rgb(112, 216, 255));
-
         boolean downloading = snapshot.state == AppUpdateCoordinator.State.DOWNLOADING
             || snapshot.state == AppUpdateCoordinator.State.VERIFYING
             || snapshot.state == AppUpdateCoordinator.State.QUEUED
             || snapshot.state == AppUpdateCoordinator.State.PAUSED_WAITING_FOR_NETWORK;
+        if (downloading && coordinator.isDownloadBackgrounded(metadata)) {
+            if (dialog != null) dialog.dismiss();
+            dialog = null;
+            return;
+        }
+        String statusMessage = TextUtils.isEmpty(snapshot.message) ? label(snapshot.state) : snapshot.message;
+        status.setText(downloading ? statusMessage + " You may continue in the background." : statusMessage);
+        status.setTextColor(snapshot.state == AppUpdateCoordinator.State.FAILED
+            ? Color.rgb(180, 35, 24)
+            : snapshot.state == AppUpdateCoordinator.State.READY_TO_INSTALL
+                ? Color.rgb(32, 122, 69) : Color.rgb(21, 91, 159));
         progress.setVisibility(downloading ? View.VISIBLE : View.GONE);
         progressText.setVisibility(downloading ? View.VISIBLE : View.GONE);
         if (downloading && snapshot.totalBytes > 0) {
@@ -138,12 +143,12 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
 
         boolean mandatoryFailure = mandatory && snapshot.state == AppUpdateCoordinator.State.FAILED;
         boolean optionalSecondary = !mandatory && (snapshot.state == AppUpdateCoordinator.State.AVAILABLE
-            || snapshot.state == AppUpdateCoordinator.State.FAILED || downloading);
-        secondary.setVisibility(mandatoryFailure || optionalSecondary ? View.VISIBLE : View.GONE);
-        secondary.setText(mandatoryFailure ? "EXIT APP" : downloading ? "CANCEL DOWNLOAD" : "LATER");
+            || snapshot.state == AppUpdateCoordinator.State.FAILED);
+        secondary.setVisibility(mandatoryFailure || optionalSecondary || downloading ? View.VISIBLE : View.GONE);
+        secondary.setText(mandatoryFailure ? "EXIT APP" : downloading ? "CONTINUE IN BACKGROUND" : "LATER");
         secondary.setOnClickListener(view -> {
             if (mandatoryFailure) activity.finishAndRemoveTask();
-            else if (downloading) coordinator.cancelOptional();
+            else if (downloading) continueInBackground();
             else closeOptional(snapshot);
         });
         close.setVisibility(mandatory ? View.GONE : View.VISIBLE);
@@ -176,7 +181,7 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
             window.setBackgroundDrawableResource(android.R.color.transparent);
             window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
             WindowManager.LayoutParams attributes = window.getAttributes();
-            attributes.dimAmount = 0.76f;
+            attributes.dimAmount = 0.48f;
             window.setAttributes(attributes);
         }
     }
@@ -188,12 +193,12 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         int logoSize = density == Density.COMFORTABLE ? 44 : 40;
         int detailSize = density == Density.COMFORTABLE ? 13 : 12;
         card.setPadding(dp(outer), dp(outer), dp(outer), dp(outer));
-        card.setBackground(gradient(new int[]{Color.rgb(25, 18, 61), Color.rgb(7, 24, 52), Color.rgb(3, 42, 51)}, 18, Color.rgb(102, 79, 255)));
+        card.setBackground(gradient(new int[]{Color.WHITE, Color.WHITE}, 18, Color.rgb(215, 222, 231)));
 
         FrameLayout header = new FrameLayout(uiContext);
         header.setClipChildren(true);
         FrameLayout logoFrame = new FrameLayout(uiContext);
-        logoFrame.setBackground(gradient(new int[]{Color.rgb(49, 29, 103), Color.rgb(5, 69, 85)}, 13, Color.rgb(48, 231, 255)));
+        logoFrame.setBackground(gradient(new int[]{Color.rgb(238, 246, 255), Color.rgb(238, 246, 255)}, 13, Color.rgb(183, 206, 229)));
         ImageView logo = new ImageView(uiContext);
         logo.setImageResource(R.mipmap.ic_launcher);
         logo.setContentDescription("AutoAI logo");
@@ -202,10 +207,10 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         logoFrame.addView(logo, new FrameLayout.LayoutParams(-1, -1));
         header.addView(logoFrame, new FrameLayout.LayoutParams(dp(logoSize), dp(logoSize), Gravity.START | Gravity.CENTER_VERTICAL));
         LinearLayout headings = column();
-        title = text("", density == Density.COMFORTABLE ? 17 : density == Density.COMPACT ? 16 : 15, Color.WHITE);
+        title = text("", density == Density.COMFORTABLE ? 17 : density == Density.COMPACT ? 16 : 15, Color.rgb(31, 41, 55));
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setSingleLine(true);
-        eyebrow = text("", 11, Color.rgb(104, 227, 255));
+        eyebrow = text("", 11, Color.rgb(21, 91, 159));
         eyebrow.setTypeface(Typeface.DEFAULT_BOLD);
         headings.addView(title);
         headings.addView(eyebrow);
@@ -215,11 +220,12 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         header.addView(headings, headingParams);
         close = new Button(uiContext);
         close.setText("X");
+        close.setContentDescription("Close update dialog");
         close.setTextSize(18);
-        close.setTextColor(Color.WHITE);
+        close.setTextColor(Color.rgb(31, 41, 55));
         close.setGravity(Gravity.CENTER);
         close.setPadding(0, 0, 0, 0);
-        close.setBackground(gradient(new int[]{Color.rgb(24, 39, 82), Color.rgb(8, 23, 53)}, 25, Color.rgb(77, 105, 172)));
+        close.setBackground(gradient(new int[]{Color.rgb(248, 250, 252), Color.rgb(248, 250, 252)}, 25, Color.rgb(215, 222, 231)));
         FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(dp(38), dp(38), Gravity.END | Gravity.CENTER_VERTICAL);
         header.addView(close, closeParams);
         card.addView(header, new LinearLayout.LayoutParams(-1, dp(headerHeight)));
@@ -227,25 +233,25 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         LinearLayout content = column();
         content.setPadding(0, dp(density == Density.COMFORTABLE ? 8 : 4), 0, 0);
 
-        version = text("", detailSize, Color.rgb(195, 210, 243));
+        version = text("", detailSize, Color.rgb(95, 107, 122));
         version.setGravity(Gravity.CENTER_VERTICAL);
         version.setSingleLine(true);
         content.addView(version, new LinearLayout.LayoutParams(-1, dp(32)));
 
-        fileSize = infoRow("", Color.rgb(59, 226, 255));
-        releaseDate = infoRow("", Color.rgb(79, 205, 255));
-        TextView verified = infoRow("", Color.rgb(82, 230, 127));
+        fileSize = infoRow("", Color.rgb(21, 91, 159));
+        releaseDate = infoRow("", Color.rgb(21, 91, 159));
+        TextView verified = infoRow("", Color.rgb(32, 122, 69));
         verified.setText("Verified secure build");
-        verified.setTextColor(Color.rgb(89, 232, 126));
+        verified.setTextColor(Color.rgb(32, 122, 69));
         content.addView(fileSize, new LinearLayout.LayoutParams(-1, dp(30)));
         content.addView(releaseDate, new LinearLayout.LayoutParams(-1, dp(30)));
         if (density != Density.EXTRA_COMPACT) content.addView(verified, new LinearLayout.LayoutParams(-1, dp(30)));
 
-        TextView whatsNew = text("WHAT'S NEW", 12, Color.rgb(199, 92, 255));
+        TextView whatsNew = text("WHAT'S NEW", 12, Color.rgb(21, 91, 159));
         whatsNew.setTypeface(Typeface.DEFAULT_BOLD);
         whatsNew.setGravity(Gravity.CENTER_VERTICAL);
         content.addView(whatsNew, new LinearLayout.LayoutParams(-1, dp(26)));
-        details = text("", detailSize, Color.rgb(224, 229, 247));
+        details = text("", detailSize, Color.rgb(31, 41, 55));
         details.setLineSpacing(dp(1), 1f);
         details.setMaxLines(density == Density.COMFORTABLE ? 3 : 2);
         details.setEllipsize(TextUtils.TruncateAt.END);
@@ -254,7 +260,7 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
 
         LinearLayout footer = column();
         footer.setPadding(0, dp(4), 0, 0);
-        status = text("", detailSize, Color.rgb(112, 216, 255));
+        status = text("", detailSize, Color.rgb(21, 91, 159));
         status.setTypeface(Typeface.DEFAULT_BOLD);
         status.setMaxLines(2);
         status.setEllipsize(TextUtils.TruncateAt.END);
@@ -262,22 +268,24 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
         progress = new ProgressBar(uiContext, null, android.R.attr.progressBarStyleHorizontal);
         progress.setMax(100);
         footer.addView(progress, new LinearLayout.LayoutParams(-1, dp(6)));
-        progressText = text("", 12, Color.rgb(159, 205, 255));
+        progressText = text("", 12, Color.rgb(95, 107, 122));
         progressText.setSingleLine(true);
         footer.addView(progressText, new LinearLayout.LayoutParams(-1, dp(24)));
 
         primary = new Button(uiContext);
         primary.setTextColor(Color.WHITE);
+        primary.setContentDescription("Update action");
         primary.setAllCaps(false);
         primary.setTextSize(14);
         primary.setTypeface(Typeface.DEFAULT_BOLD);
-        primary.setBackground(gradient(new int[]{Color.rgb(147, 58, 255), Color.rgb(40, 111, 247), Color.rgb(0, 203, 235)}, 15, Color.TRANSPARENT));
+        primary.setBackground(gradient(new int[]{Color.rgb(21, 91, 159), Color.rgb(21, 91, 159)}, 15, Color.TRANSPARENT));
 
         secondary = new Button(uiContext);
-        secondary.setTextColor(Color.rgb(203, 213, 243));
+        secondary.setTextColor(Color.rgb(31, 41, 55));
+        secondary.setContentDescription("Update secondary action");
         secondary.setAllCaps(false);
         secondary.setTextSize(13);
-        secondary.setBackground(gradient(new int[]{Color.rgb(11, 25, 55), Color.rgb(9, 20, 45)}, 14, Color.rgb(97, 132, 203)));
+        secondary.setBackground(gradient(new int[]{Color.rgb(248, 250, 252), Color.rgb(248, 250, 252)}, 14, Color.rgb(183, 206, 229)));
         if (density == Density.EXTRA_COMPACT) {
             LinearLayout actions = new LinearLayout(uiContext);
             actions.setOrientation(LinearLayout.HORIZONTAL);
@@ -396,12 +404,23 @@ public final class AppUpdateDialog implements AppUpdateCoordinator.Listener {
     }
 
     private void closeOptional(AppUpdateCoordinator.Snapshot snapshot) {
+        if (AppUpdateCoordinator.isDownloadInProgress(snapshot.state)) {
+            continueInBackground();
+            return;
+        }
         if (AppUpdateCoordinator.hasPendingUpdate(snapshot.metadata)) {
             coordinator.dismissOptional();
             return;
         }
         if (dialog != null) dialog.dismiss();
         dialog = null;
+    }
+
+    private void continueInBackground() {
+        coordinator.continueInBackground();
+        if (dialog != null) dialog.dismiss();
+        dialog = null;
+        android.widget.Toast.makeText(activity, "Update download continues in the background.", android.widget.Toast.LENGTH_SHORT).show();
     }
 
     private TextView text(String value, int size, int color) {

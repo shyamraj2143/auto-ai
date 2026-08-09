@@ -23,11 +23,7 @@ import {
   Sun,
   Trash2,
   PhoneCall,
-  Gem,
   AudioLines,
-  CircleDot,
-  MousePointer2,
-  RotateCcw,
   Info,
   X,
   HeartHandshake,
@@ -51,8 +47,7 @@ import { userMessagesApi } from "../../features/userMessages/userMessagesApi";
 import type { ChatSettings } from "../../features/userMessages/types";
 import { useMotionMode } from "../../motion/MotionProvider";
 import type { MotionPreference } from "../../motion/tokens";
-import { CrystalButton, CrystalCard } from "../crystal/Crystal";
-import { crystalUiEnabled, type CrystalEffectsLevel } from "../../crystal/tokens";
+import { CrystalCard } from "../crystal/Crystal";
 import { isMobileAppRuntime } from "../../utils/runtime";
 import { NativeNotifications } from "../../notifications/nativeNotifications";
 
@@ -231,16 +226,10 @@ export function SettingsPage() {
     setVoiceEnabled,
     setNotificationsEnabled,
     setLanguage,
-    setVisualEffectsLevel,
-    setCrystalOrb,
-    setCrystalSurfaces,
-    setCrystalButtonMotion,
-    setCrystalVoiceVisualizer,
     setAssistantEnabled,
     setAssistantSpokenResponses,
     setAssistantPersonalization,
-    setAssistantActionConfirmations,
-    resetVisualEffects
+    setAssistantActionConfirmations
   } = useAppSettings();
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "unsupported">("unsupported");
   const [isClearingChats, setIsClearingChats] = useState(false);
@@ -492,10 +481,9 @@ export function SettingsPage() {
               onClick={() => openSection("chat")}
             />
             <SettingsRow
-              icon={Gem}
-              accent="violet"
-              title="Visual Effects"
-              description={`Crystal UI: ${crystalUiEnabled ? settings.visualEffectsLevel : "disabled"}`}
+              icon={Monitor}
+              title="Display"
+              description="Simple interface, theme and text preferences"
               onClick={() => openSection("visual")}
             />
           </SettingsCard>
@@ -542,52 +530,15 @@ export function SettingsPage() {
   }
 
   function renderVisualEffectsSettings() {
-    const controlsDisabled = !crystalUiEnabled || settings.visualEffectsLevel === "off";
-    const levels: Array<{ value: CrystalEffectsLevel; label: string }> = [
-      { value: "off", label: "Off" },
-      { value: "reduced", label: "Reduced" },
-      { value: "full", label: "Full" }
-    ];
     return (
       <div className="grid gap-3">
         <SettingsCard>
           <SettingsRow
-            icon={Gem}
-            accent="violet"
-            title="Visual Effects"
-            description={crystalUiEnabled ? "Reduced is optimized for Android and mobile." : "Disabled by the application feature flag."}
-          >
-            <div className="visual-effects-segment" role="group" aria-label="Visual effects level">
-              {levels.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  disabled={!crystalUiEnabled}
-                  aria-pressed={settings.visualEffectsLevel === option.value}
-                  onClick={() => setVisualEffectsLevel(option.value)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </SettingsRow>
-          <SettingsRow icon={CircleDot} accent="cyan" title="3D AI Orb" description="CSS crystal status tied to real chat and voice activity">
-            <Toggle checked={settings.crystalOrb} onChange={setCrystalOrb} disabled={controlsDisabled} />
-          </SettingsRow>
-          <SettingsRow icon={Gem} accent="violet" title="Crystal surfaces" description="Small cards and dialogs only">
-            <Toggle checked={settings.crystalSurfaces} onChange={setCrystalSurfaces} disabled={controlsDisabled} />
-          </SettingsRow>
-          <SettingsRow icon={MousePointer2} accent="green" title="Button motion" description="Short press-depth feedback">
-            <Toggle checked={settings.crystalButtonMotion} onChange={setCrystalButtonMotion} disabled={controlsDisabled} />
-          </SettingsRow>
-          <SettingsRow icon={AudioLines} accent="rose" title="Voice visualizer" description="Runs only during real listening or speaking activity">
-            <Toggle checked={settings.crystalVoiceVisualizer} onChange={setCrystalVoiceVisualizer} disabled={controlsDisabled} />
-          </SettingsRow>
-          <SettingsRow icon={RotateCcw} title="Reset visual effects" description="Restore lightweight defaults" showChevron={false}>
-            <CrystalButton className="btn-secondary min-h-8 px-2.5 py-1 text-[11px]" type="button" onClick={resetVisualEffects}>
-              <RotateCcw size={13} /> Reset
-            </CrystalButton>
-          </SettingsRow>
+            icon={Monitor}
+            title="Simple interface"
+            description="Decorative effects are disabled for faster, clearer and more reliable daily use. Theme and motion preferences are available under Preferences."
+            showChevron={false}
+          />
         </SettingsCard>
       </div>
     );

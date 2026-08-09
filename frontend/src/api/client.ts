@@ -599,7 +599,10 @@ function createAbortError(input: string, originalError: unknown, meta: RequestMe
     url: context.apiUrl,
     originalError
   });
-  logApiIssue(error, context, meta);
+  // Component unmounts, navigation and React StrictMode intentionally abort
+  // streaming requests. They are expected lifecycle events, not console errors.
+  void context;
+  void meta;
   return error;
 }
 

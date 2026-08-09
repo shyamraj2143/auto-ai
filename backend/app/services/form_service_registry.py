@@ -6,6 +6,7 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
 from difflib import SequenceMatcher
+from typing import Any
 from urllib.parse import urlparse
 
 from sqlalchemy import select
@@ -146,7 +147,23 @@ SERVICE_SEEDS: tuple[dict, ...] = (
         "processing_information": "The official portal publishes service-specific delivery information.",
         "authentication_type": "portal_session",
         "tracking_method": "application_reference",
-        "support_contact": {"portal": "https://serviceonline.bihar.gov.in/"},
+        "support_contact": {
+            "portal": "https://serviceonline.bihar.gov.in/",
+            "source_url": "https://serviceonline.bihar.gov.in/",
+            "catalogue_version": "2026.08",
+            "name_hi": "बिहार आय प्रमाण पत्र",
+            "authority": "Government of Bihar",
+            "department": "General Administration",
+            "description": "Prepare an income-certificate application for guided completion on Bihar ServicePlus.",
+            "who_can_apply": "Applicants seeking an income certificate in Bihar; final eligibility is verified by the issuing authority.",
+            "application_mode": "AutoAI preparation with guided official-portal completion",
+            "expected_timeline": "Shown by the official portal for the selected jurisdiction",
+            "protected_actions": ["OTP or CAPTCHA on the official portal", "Final declaration and submission by the applicant"],
+            "warnings": ["Document requirements and delivery time can vary by jurisdiction."],
+            "queue": "Bihar Certificates",
+            "internal_sla_days": 2,
+            "quality_required": True,
+        },
         "portal": {"name": "RTPS Bihar ServicePlus", "origin": "https://serviceonline.bihar.gov.in", "entry_url": "https://serviceonline.bihar.gov.in/", "terms_note": "Guided user completion only; no autonomous submission is represented."},
         "adapter": {"key": "bihar_serviceplus_guided", "type": "guided_browser", "capabilities": ["prepare", "guided_open", "track"]},
     },
@@ -174,7 +191,23 @@ SERVICE_SEEDS: tuple[dict, ...] = (
         "processing_information": "Varies by scholarship scheme and verification authorities.",
         "authentication_type": "otp",
         "tracking_method": "application_reference",
-        "support_contact": {"portal": "https://scholarships.gov.in/"},
+        "support_contact": {
+            "portal": "https://scholarships.gov.in/",
+            "source_url": "https://scholarships.gov.in/",
+            "catalogue_version": "2026.08",
+            "name_hi": "राष्ट्रीय छात्रवृत्ति आवेदन",
+            "authority": "National Scholarship Portal",
+            "department": "Education",
+            "description": "Prepare a scholarship application and its document checklist before official scheme submission.",
+            "who_can_apply": "Eligibility depends on the selected scholarship scheme and verification authorities.",
+            "application_mode": "AutoAI preparation with guided official-portal completion",
+            "expected_timeline": "Scheme and verification-authority dependent",
+            "protected_actions": ["OTP on the official portal", "Final scheme declaration and submission by the applicant"],
+            "warnings": ["Confirm the active scheme, deadlines, eligibility and document list on the official portal."],
+            "queue": "Education Benefits",
+            "internal_sla_days": 2,
+            "quality_required": True,
+        },
         "portal": {"name": "National Scholarship Portal", "origin": "https://scholarships.gov.in", "entry_url": "https://scholarships.gov.in/", "terms_note": "Guided user completion; OTP and declarations remain user-controlled."},
         "adapter": {"key": "national_scholarship_guided", "type": "guided_browser", "capabilities": ["prepare", "guided_open", "ephemeral_auth", "track"]},
     },
@@ -198,7 +231,23 @@ SERVICE_SEEDS: tuple[dict, ...] = (
         "processing_information": "Appointment availability depends on the selected hospital and department.",
         "authentication_type": "otp",
         "tracking_method": "appointment_reference",
-        "support_contact": {"portal": "https://ors.gov.in/"},
+        "support_contact": {
+            "portal": "https://ors.gov.in/",
+            "source_url": "https://ors.gov.in/",
+            "catalogue_version": "2026.08",
+            "name_hi": "सरकारी अस्पताल अपॉइंटमेंट",
+            "authority": "Online Registration System",
+            "department": "Health",
+            "description": "Prepare patient and appointment details for guided booking on the official ORS portal.",
+            "who_can_apply": "Patients seeking an appointment at a participating hospital.",
+            "application_mode": "AutoAI preparation with guided official-portal booking",
+            "expected_timeline": "Subject to hospital, department and slot availability",
+            "protected_actions": ["Mobile OTP on the official portal", "Appointment confirmation by the patient"],
+            "warnings": ["Appointment availability is controlled by the selected hospital."],
+            "queue": "Health Appointments",
+            "internal_sla_days": 1,
+            "quality_required": False,
+        },
         "portal": {"name": "ORS Patient Portal", "origin": "https://ors.gov.in", "entry_url": "https://ors.gov.in/index_1_1.html", "terms_note": "User-guided booking; identity verification remains on the official portal."},
         "adapter": {"key": "ors_guided", "type": "guided_browser", "capabilities": ["prepare", "guided_open", "ephemeral_auth", "track"]},
     },
@@ -274,6 +323,88 @@ def match_service_alias(message: str) -> tuple[str, float] | None:
         if best is None or confidence > best[1]:
             best = (service_id, confidence)
     return best
+
+
+def service_catalogue_payload(
+    service: ServiceDefinition,
+    portal: ServicePortal | None = None,
+    *,
+    confidence: float | None = None,
+) -> dict[str, Any]:
+    """Return the canonical, public-safe service preflight contract."""
+    support = dict(service.support_contact or {})
+    known_fee = dict(service.fee or {})
+    return {
+        "id": service.id,
+        "version": str(support.get("catalogue_version") or service.updated_at.isoformat()),
+        "name": service.name,
+        "name_hi": support.get("name_hi"),
+        "provider": service.provider,
+        "authority": support.get("authority") or service.provider,
+        "category": service.category,
+        "department": support.get("department") or service.category,
+        "country": service.country,
+        "region": service.region,
+        "verified": service.verified,
+        "confidence": confidence,
+        "description": support.get("description") or service.processing_information,
+        "who_can_apply": support.get("who_can_apply") or "Official verification required",
+        "application_mode": support.get("application_mode") or "AutoAI assisted preparation",
+        "processing_information": service.processing_information,
+        "expected_timeline": support.get("expected_timeline") or "Official verification required",
+        "fee": known_fee,
+        "eligibility": list(service.eligibility_rules or []),
+        "fields": list(service.requirements or []),
+        "documents": list(service.required_documents or []),
+        "execution_modes": list(service.execution_modes or []),
+        "authentication_type": service.authentication_type,
+        "tracking_method": service.tracking_method,
+        "protected_actions": list(support.get("protected_actions") or []),
+        "warnings": list(support.get("warnings") or []),
+        "official_source": support.get("source_url") or (portal.entry_url if portal else None),
+        "official_origin": portal.origin if portal else None,
+        "last_verified_at": service.last_verified_at.isoformat() if service.last_verified_at else None,
+        "is_official_portal": False,
+        "disclaimer": "AutoAI assists with preparation and operations. It is not a government department or official RTPS portal.",
+    }
+
+
+def search_service_candidates(db: Session, message: str, *, limit: int = 5) -> list[dict[str, Any]]:
+    """Rank multiple catalogue candidates without creating an application."""
+    normalized = normalize_service_message(message)
+    scores: dict[str, float] = {}
+    for service_id, aliases, base_confidence in SERVICE_ALIASES:
+        score = max(_alias_score(normalized, alias) for alias in aliases)
+        if score >= 0.42:
+            scores[service_id] = max(scores.get(service_id, 0.0), score * base_confidence)
+
+    for service in db.scalars(select(ServiceDefinition).where(ServiceDefinition.active.is_(True))):
+        haystacks = (service.name, service.provider, service.category, service.region or "")
+        lexical_score = max(_alias_score(normalized, value) for value in haystacks if value)
+        if lexical_score >= 0.42:
+            scores[service.id] = max(scores.get(service.id, 0.0), lexical_score * 0.9)
+
+    include_demo = any(token in normalized for token in ("demo", "test", "टेस्ट"))
+    ranked: list[tuple[float, ServiceDefinition]] = []
+    for service_id, score in scores.items():
+        service = db.get(ServiceDefinition, service_id)
+        if not service or not service.active:
+            continue
+        if service.category == "demonstration" and not include_demo:
+            continue
+        ranked.append((round(min(score, 0.99), 4), service))
+    ranked.sort(key=lambda item: (-item[0], item[1].name.casefold()))
+
+    result: list[dict[str, Any]] = []
+    for score, service in ranked[:limit]:
+        portal = db.scalar(
+            select(ServicePortal).where(
+                ServicePortal.service_id == service.id,
+                ServicePortal.verified.is_(True),
+            )
+        )
+        result.append(service_catalogue_payload(service, portal, confidence=score))
+    return result
 
 
 def ensure_service_registry(db: Session) -> None:

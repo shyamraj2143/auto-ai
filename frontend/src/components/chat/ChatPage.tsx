@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import "highlight.js/styles/github.css";
 import { AnimatePresence, motion } from "../../motion/staticMotion";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowDown, Brain, Languages, Library, Menu, MessageSquarePlus, MoreHorizontal, Search, Settings, Sparkles, Square, Trash2, Pencil, Eraser } from "lucide-react";

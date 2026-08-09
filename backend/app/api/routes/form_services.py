@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.datastructures import Headers
@@ -72,6 +73,7 @@ from app.services.form_service_service import (
     create_portal_session,
     create_task,
     decide_document_analysis,
+    draft_view,
     edit_task_information,
     ensure_version,
     get_owned_task,
@@ -90,6 +92,7 @@ from app.services.form_service_service import (
     revoke_consent,
     revoke_handoff,
     service_error,
+    save_draft,
     start_task,
     submit_fields,
     submit_task,
@@ -102,6 +105,13 @@ from app.services.library_storage import library_storage
 
 
 router = APIRouter(prefix="/form-services", tags=["form-services"])
+
+
+class DraftSaveRequest(BaseModel):
+    draft_version: int = Field(default=0, ge=0)
+    schema_version: str = Field(default="1", min_length=1, max_length=80)
+    values: dict = Field(default_factory=dict)
+    request_id: str = Field(min_length=8, max_length=120)
 
 
 @router.get("/tools")
@@ -185,6 +195,30 @@ def get_requirements(task_id: str, user: User = Depends(get_current_user), db: S
     task = get_owned_task(db, user.id, task_id)
     service = db.get(ServiceDefinition, task.service_id)
     return {"service_id": task.service_id, "information": service.requirements if service else [], "documents": service.required_documents if service else [], "eligibility": service.eligibility_rules if service else [], "fee": service.fee if service else {}}
+
+
+@router.get("/tasks/{task_id}/draft")
+def get_task_draft(task_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    task = get_owned_task(db, user.id, task_id)
+    return draft_view(db, task)
+
+
+@router.put("/tasks/{task_id}/draft")
+def save_task_draft(
+    task_id: str,
+    payload: DraftSaveRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    task = get_owned_task(db, user.id, task_id)
+    return save_draft(
+        db,
+        task,
+        values=payload.values,
+        draft_version=payload.draft_version,
+        schema_version=payload.schema_version,
+        request_id=payload.request_id,
+    )
 
 
 @router.post("/tasks/{task_id}/fields", response_model=ServiceTaskView)

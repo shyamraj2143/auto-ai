@@ -84,6 +84,25 @@ function reliableWindowsLiveReload(): Plugin {
 
 export default defineConfig({
   plugins: [react(), reliableWindowsLiveReload()],
+  build: {
+    cssCodeSplit: true,
+    sourcemap: false,
+    assetsInlineLimit: 4096,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          const normalized = id.replace(/\\/g, "/");
+          if (!normalized.includes("/node_modules/")) return undefined;
+          if (/\/node_modules\/(react|react-dom|react-router|react-router-dom)\//.test(normalized)) return "react-core";
+          if (normalized.includes("/node_modules/lucide-react/")) return "ui-icons";
+          if (/\/node_modules\/(react-markdown|remark-|rehype-|unified|micromark|mdast-|hast-|vfile)/.test(normalized)) return "markdown";
+          if (normalized.includes("/node_modules/highlight.js/")) return "syntax-highlighting";
+          if (normalized.includes("/node_modules/@capacitor/")) return "capacitor";
+          return undefined;
+        }
+      }
+    }
+  },
   test: {
     exclude: ["e2e/**", "**/node_modules/**", "**/.git/**"],
   },

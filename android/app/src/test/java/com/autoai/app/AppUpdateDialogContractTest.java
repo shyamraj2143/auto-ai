@@ -25,7 +25,7 @@ public class AppUpdateDialogContractTest {
         assertTrue(AppUpdateDialog.DIALOG_LOGO_DP <= 48);
         assertTrue(AppUpdateDialog.ACTION_HEIGHT_DP >= 48);
         assertTrue(AppUpdateDialog.DIALOG_MAX_WIDTH_DP <= 440);
-        assertEquals("single-page-v4", AppUpdateDialog.UPDATE_DIALOG_LAYOUT_VERSION);
+        assertEquals("single-page-v5-background", AppUpdateDialog.UPDATE_DIALOG_LAYOUT_VERSION);
     }
 
     @Test public void dialogDeclaresNoScrollableContainer() {
@@ -53,5 +53,15 @@ public class AppUpdateDialogContractTest {
         assertTrue(source.contains("dialog.setCancelable(!mandatory)"));
         assertTrue(source.contains("dialog.setCanceledOnTouchOutside(!mandatory)"));
         assertTrue(source.contains("coordinator.current().metadata.mandatory"));
+    }
+
+    @Test public void activeDownloadCanContinueWithoutKeepingTheDialogOpen() throws Exception {
+        String source = new String(
+            Files.readAllBytes(Paths.get("src/main/java/com/autoai/app/AppUpdateDialog.java")),
+            StandardCharsets.UTF_8
+        );
+        assertTrue(source.contains("CONTINUE IN BACKGROUND"));
+        assertTrue(source.contains("coordinator.continueInBackground()"));
+        assertTrue(source.contains("coordinator.isDownloadBackgrounded(metadata)"));
     }
 }

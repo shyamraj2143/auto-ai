@@ -19,6 +19,10 @@ deploy_htdocs_clean/
 *.tsbuildinfo
 *.log
 output/playwright/test-results/
+# Browser CLI snapshots may contain form values or test credentials. Keep curated
+# evidence under output/playwright/ instead of committing raw session captures.
+.playwright-cli/page-*.yml
+.playwright-cli/*.png
 database/*.db
 database/*.db-*
 backend/uploads/*

@@ -6,8 +6,6 @@ import { ShellProvider } from "./contexts/ShellContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { SeoManager } from "./seo/SeoManager";
 import { AppErrorBoundary } from "./components/common/AppErrorBoundary";
-import { LandingPage } from "./components/landing/LandingPage";
-import { PublicCmsPage } from "./components/common/PublicCmsPage";
 import { isMobileAppRuntime } from "./utils/runtime";
 import { MotionProvider } from "./motion/MotionProvider";
 import { consumeSafeRootRedirect, markStartupStable } from "./reliability/safeMode";
@@ -22,6 +20,8 @@ import { IndustrialLoader } from "./components/common/IndustrialLoader";
 import "./features/screenShare/screenShare.css";
 
 const AppShell = lazy(() => import("./components/layout/AppShell").then((module) => ({ default: module.AppShell })));
+const LandingPage = lazy(() => import("./components/landing/LandingPage").then((module) => ({ default: module.LandingPage })));
+const PublicCmsPage = lazy(() => import("./components/common/PublicCmsPage").then((module) => ({ default: module.PublicCmsPage })));
 const ChatPage = lazy(() => import("./components/chat/ChatPage").then((module) => ({ default: module.ChatPage })));
 const DownloadPage = lazy(() => import("./components/download/DownloadPage").then((module) => ({ default: module.DownloadPage })));
 const AdminDashboard = lazy(() =>
@@ -54,6 +54,7 @@ const RelationshipFollowupsPage = lazy(() => import("./features/relationshipFoll
 const AutoAISevaPage = lazy(() => import("./features/autoaiSeva/AutoAISevaPages").then((module) => ({ default: module.AutoAISevaPage })));
 const SevaApplicationsPage = lazy(() => import("./features/autoaiSeva/AutoAISevaPages").then((module) => ({ default: module.SevaApplicationsPage })));
 const SevaApplicationPage = lazy(() => import("./features/autoaiSeva/AutoAISevaPages").then((module) => ({ default: module.SevaApplicationPage })));
+const SevaServiceDetailPage = lazy(() => import("./features/autoaiSeva/AutoAISevaPages").then((module) => ({ default: module.SevaServiceDetailPage })));
 const SevaOperationsPage = lazy(() => import("./features/autoaiSeva/SevaOperationsPage").then((module) => ({ default: module.SevaOperationsPage })));
 
 /** Shows LandingPage for guests, redirects logged-in users to the Action Hub. */
@@ -196,6 +197,7 @@ function AppRoutes() {
               <Route path="/alarms" element={<AlarmPage />} />
               <Route path="/relationships" element={<RelationshipFollowupsPage />} />
               <Route path="/seva" element={<AutoAISevaPage />} />
+              <Route path="/seva/services/:serviceId" element={<SevaServiceDetailPage />} />
               <Route path="/seva/applications" element={<SevaApplicationsPage />} />
               <Route path="/seva/applications/:applicationId" element={<SevaApplicationPage />} />
               <Route path="/chat" element={<ChatPage />} />

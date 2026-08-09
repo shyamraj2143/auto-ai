@@ -1,6 +1,12 @@
 package com.autoai.app;
 
+import android.Manifest;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
@@ -23,12 +29,18 @@ import java.security.MessageDigest;
 import java.util.Locale;
 
 public final class AppUpdateDownloadWorker extends Worker {
+    private static final String UPDATE_CHANNEL_ID = "auto_ai_updates";
+    private static final int UPDATE_NOTIFICATION_ID = 1001;
+    private AppUpdateCoordinator.Metadata activeMetadata;
+    private int lastNotifiedPercent = -1;
+
     public AppUpdateDownloadWorker(@NonNull Context context, @NonNull WorkerParameters params) { super(context, params); }
 
     @NonNull @Override public Result doWork() {
         File partial = null;
         try {
             AppUpdateCoordinator.Metadata metadata = AppUpdateCoordinator.Metadata.restore(new JSONObject(getInputData().getString("metadata")));
+            activeMetadata = metadata;
             if (!metadata.valid() || metadata.versionCode <= BuildConfig.VERSION_CODE) return failure("Invalid or outdated update metadata.");
             if (!AppUpdateCoordinator.isTrustedDownloadUrl(metadata.downloadUrl)) return failure("Untrusted APK download URL.");
             File dir = new File(getApplicationContext().getFilesDir(), "updates");
@@ -54,14 +66,61 @@ public final class AppUpdateDownloadWorker extends Worker {
             if(version!=metadata.versionCode||version<=BuildConfig.VERSION_CODE){partial.delete();return failure("The downloaded APK version does not match the published update.");}
             if(!signaturesMatch(pm, partial)){partial.delete();return failure("This update cannot be installed because its signing certificate does not match the installed AutoAI app.");}
             if(!partial.renameTo(apk)) return failure("Unable to finalize downloaded update.");
+            showNotification("Update ready to install", "AutoAI " + metadata.versionName + " was downloaded and verified.", false, 100);
             return Result.success(new Data.Builder().putString("path",apk.getAbsolutePath()).build());
         } catch(java.net.UnknownHostException|java.net.SocketTimeoutException e){return retryOrFail("Waiting for internet connection.");}
         catch(Exception e){if(partial!=null)partial.delete();return failure(e.getMessage()==null?"Download failed.":e.getMessage());}
     }
 
     private Result retryOrFail(String message){progress(AppUpdateCoordinator.State.PAUSED_WAITING_FOR_NETWORK,0,0,message);return getRunAttemptCount()<4?Result.retry():failure(message);}
-    private Result failure(String message){return Result.failure(new Data.Builder().putString("error",message).build());}
-    private void progress(AppUpdateCoordinator.State state,long done,long total,String message){setProgressAsync(new Data.Builder().putString("state",state.name()).putLong("downloaded",done).putLong("total",total).putString("message",message).build());}
+    private Result failure(String message){
+        if (isBackgrounded()) showNotification("Update paused", message, false, -1);
+        return Result.failure(new Data.Builder().putString("error",message).build());
+    }
+    private void progress(AppUpdateCoordinator.State state,long done,long total,String message){
+        setProgressAsync(new Data.Builder().putString("state",state.name()).putLong("downloaded",done).putLong("total",total).putString("message",message).build());
+        if (!isBackgrounded()) return;
+        int percent = total > 0 ? (int)Math.min(100L, done * 100L / total) : -1;
+        if (percent >= 0 && lastNotifiedPercent >= 0 && percent < lastNotifiedPercent + 2 && percent < 100) return;
+        lastNotifiedPercent = percent;
+        showNotification("Downloading AutoAI update", percent >= 0 ? percent + "% complete" : message, true, percent);
+    }
+
+    private boolean isBackgrounded() {
+        return activeMetadata != null && getApplicationContext()
+            .getSharedPreferences(AppUpdateCoordinator.PREFS, Context.MODE_PRIVATE)
+            .getInt("background_download_version", 0) == activeMetadata.versionCode;
+    }
+
+    private void showNotification(String title, String body, boolean ongoing, int percent) {
+        Context context = getApplicationContext();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+            && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return;
+        NotificationManager manager = (NotificationManager)context.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager == null) return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(UPDATE_CHANNEL_ID, "AutoAI updates", NotificationManager.IMPORTANCE_HIGH);
+            channel.setDescription("Verified AutoAI application updates");
+            manager.createNotificationChannel(channel);
+        }
+        Intent intent = new Intent(context, MainActivity.class)
+            .putExtra("start_app_update", true)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) flags |= PendingIntent.FLAG_IMMUTABLE;
+        int requestCode = 8200 + (activeMetadata == null ? 0 : Math.abs(activeMetadata.versionCode % 100000));
+        PendingIntent pendingIntent = PendingIntent.getActivity(context, requestCode, intent, flags);
+        Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            ? new Notification.Builder(context, UPDATE_CHANNEL_ID) : new Notification.Builder(context);
+        builder.setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(title).setContentText(body).setContentIntent(pendingIntent)
+            .setOngoing(ongoing).setAutoCancel(!ongoing).setOnlyAlertOnce(ongoing)
+            .setCategory(Notification.CATEGORY_SYSTEM).setVisibility(Notification.VISIBILITY_PRIVATE);
+        if (percent >= 0 && ongoing) builder.setProgress(100, percent, false);
+        if (!ongoing) builder.addAction(new Notification.Action.Builder(android.R.drawable.stat_sys_download_done, "Open update", pendingIntent).build());
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) builder.setPriority(ongoing ? Notification.PRIORITY_LOW : Notification.PRIORITY_HIGH);
+        manager.notify(UPDATE_NOTIFICATION_ID, builder.build());
+    }
     @SuppressWarnings("deprecation") private boolean signaturesMatch(PackageManager pm,File archive)throws Exception{
         int flags=Build.VERSION.SDK_INT>=28?PackageManager.GET_SIGNING_CERTIFICATES:PackageManager.GET_SIGNATURES;
         PackageInfo installed=pm.getPackageInfo(getApplicationContext().getPackageName(),flags);

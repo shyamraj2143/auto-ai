@@ -48,4 +48,14 @@ public class AppUpdateCoordinatorTest {
             "https://github.com/another-owner/auto-ai/releases/download/android-101201/auto-ai.apk"));
         assertFalse(AppUpdateCoordinator.isTrustedDownloadUrl("http://github.com/shyamraj2143/auto-ai.apk"));
     }
+
+    @Test public void backgroundableStatesOnlyCoverAnActiveDownload() {
+        assertTrue(AppUpdateCoordinator.isDownloadInProgress(AppUpdateCoordinator.State.QUEUED));
+        assertTrue(AppUpdateCoordinator.isDownloadInProgress(AppUpdateCoordinator.State.DOWNLOADING));
+        assertTrue(AppUpdateCoordinator.isDownloadInProgress(AppUpdateCoordinator.State.VERIFYING));
+        assertTrue(AppUpdateCoordinator.isDownloadInProgress(AppUpdateCoordinator.State.PAUSED_WAITING_FOR_NETWORK));
+        assertFalse(AppUpdateCoordinator.isDownloadInProgress(AppUpdateCoordinator.State.AVAILABLE));
+        assertFalse(AppUpdateCoordinator.isDownloadInProgress(AppUpdateCoordinator.State.READY_TO_INSTALL));
+        assertFalse(AppUpdateCoordinator.isDownloadInProgress(AppUpdateCoordinator.State.FAILED));
+    }
 }

@@ -514,6 +514,160 @@ def _validate_field(definition: dict, value: Any) -> str | int | float | bool | 
     return text
 
 
+def draft_view(db: Session, task: ServiceTask) -> dict[str, Any]:
+    draft = db.scalar(
+        select(FormDraft).where(
+            FormDraft.task_id == task.id,
+            FormDraft.user_id == task.user_id,
+        )
+    )
+    if not draft:
+        service = db.get(ServiceDefinition, task.service_id)
+        support = dict(service.support_contact or {}) if service else {}
+        return {
+            "id": None,
+            "task_id": task.id,
+            "status": "EMPTY",
+            "version": 0,
+            "schema_version": str(support.get("catalogue_version") or "1"),
+            "values": {},
+            "warnings": [],
+            "updated_at": None,
+        }
+    fields = list(
+        db.scalars(
+            select(FormField).where(
+                FormField.draft_id == draft.id,
+                FormField.user_id == task.user_id,
+            )
+        )
+    )
+    return {
+        "id": draft.id,
+        "task_id": task.id,
+        "status": draft.status,
+        "version": draft.version,
+        "schema_version": str((draft.summary or {}).get("schema_version") or "1"),
+        "values": {
+            field.field_key: (
+                decrypt_sensitive_text(field.encrypted_value)
+                if field.encrypted_value and field.sensitivity in {"sensitive", "high"}
+                else (field.value_json or {}).get("value")
+            )
+            for field in fields
+            if "value" in (field.value_json or {}) or field.encrypted_value
+        },
+        "warnings": list(draft.warnings or []),
+        "updated_at": draft.updated_at.isoformat() if draft.updated_at else None,
+    }
+
+
+def save_draft(
+    db: Session,
+    task: ServiceTask,
+    *,
+    values: dict[str, Any],
+    draft_version: int,
+    schema_version: str,
+    request_id: str,
+) -> dict[str, Any]:
+    if task.state not in {TaskState.COLLECTING_INFORMATION.value, TaskState.PAUSED.value}:
+        raise service_error("POLICY_BLOCKED", "This application can no longer be edited as a draft")
+    request = db.scalar(
+        select(UserDataRequest).where(
+            UserDataRequest.task_id == task.id,
+            UserDataRequest.user_id == task.user_id,
+            UserDataRequest.status == "PENDING",
+        )
+    )
+    if not request:
+        raise service_error("SERVICE_NOT_FOUND", "Draft fields are unavailable", http_status=404)
+    definitions = {item["key"]: item for item in request.fields}
+    unexpected = set(values) - set(definitions)
+    if unexpected:
+        raise service_error(
+            "FIELD_VALIDATION_FAILED",
+            f"Unexpected fields: {', '.join(sorted(unexpected))}",
+            http_status=422,
+        )
+    normalized: dict[str, Any] = {}
+    warnings: list[dict[str, str]] = []
+    for key, definition in definitions.items():
+        value = values.get(key)
+        if any(token in key.casefold() for token in SECRET_TOKENS):
+            raise service_error(
+                "FIELD_VALIDATION_FAILED",
+                "Authentication secrets cannot be saved in drafts",
+                http_status=422,
+            )
+        if value in (None, "", [], False):
+            if definition.get("required"):
+                warnings.append({"field": key, "message": f"{definition['label']} is required"})
+            normalized[key] = value
+            continue
+        normalized[key] = _validate_field({**definition, "required": False}, value)
+
+    draft = db.scalar(
+        select(FormDraft).where(
+            FormDraft.task_id == task.id,
+            FormDraft.user_id == task.user_id,
+        )
+    )
+    if draft is None:
+        if draft_version not in {0, 1}:
+            raise service_error("DRAFT_CONFLICT", "The draft changed on another device", recovery=["reload_draft"])
+        draft = FormDraft(task_id=task.id, user_id=task.user_id, version=1)
+        db.add(draft)
+        db.flush()
+    else:
+        if draft.version != draft_version:
+            raise service_error("DRAFT_CONFLICT", "The draft changed on another device", recovery=["reload_draft"])
+        draft.version += 1
+
+    for key, value in normalized.items():
+        definition = definitions[key]
+        row = db.scalar(
+            select(FormField).where(
+                FormField.draft_id == draft.id,
+                FormField.field_key == key,
+            )
+        )
+        if row is None:
+            row = FormField(
+                draft_id=draft.id,
+                user_id=task.user_id,
+                field_key=key,
+                label=definition["label"],
+                source="user",
+            )
+            db.add(row)
+        sensitivity = str(definition.get("sensitivity", "ordinary"))
+        row.sensitivity = sensitivity
+        if sensitivity in {"sensitive", "high"} and value not in (None, "", [], False):
+            row.encrypted_value = encrypt_sensitive_text(str(value))
+            row.value_json = {"present": True}
+        else:
+            row.encrypted_value = None
+            row.value_json = {"value": value}
+        row.user_approved = False
+    draft.status = "DRAFT"
+    draft.summary = {
+        "schema_version": schema_version,
+        "task_version": task.version,
+        "field_count": len(normalized),
+    }
+    draft.warnings = warnings
+    append_audit_event(
+        db,
+        task,
+        "DRAFT_SAVED",
+        {"draft_id": draft.id, "draft_version": draft.version, "field_keys": sorted(normalized)},
+        request_id,
+    )
+    db.commit()
+    return draft_view(db, task)
+
+
 def submit_fields(db: Session, task: ServiceTask, *, data_request_id: str, values: dict[str, Any], expected_version: int, request_id: str) -> None:
     ensure_version(task, expected_version)
     if task.state != TaskState.COLLECTING_INFORMATION.value:
@@ -546,6 +700,10 @@ def submit_fields(db: Session, task: ServiceTask, *, data_request_id: str, value
             row.value_json = {"value": value}
             row.encrypted_value = None
     request.status = "COMPLETED"
+    draft = db.scalar(select(FormDraft).where(FormDraft.task_id == task.id, FormDraft.user_id == task.user_id))
+    if draft:
+        draft.status = "SUBMITTED"
+        draft.validated_at = datetime.utcnow()
     task.version += 1
     task.progress_percent = min(40, task.progress_percent + 10)
     append_audit_event(db, task, "USER_FIELDS_SAVED", {"data_request_id": request.id, "field_keys": sorted(normalized)}, request_id)

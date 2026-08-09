@@ -173,7 +173,8 @@ def get_cors_origins() -> list[str]:
 
 
 def get_trusted_hosts() -> list[str]:
-    hosts = {host.strip().lower() for host in settings.TRUSTED_HOSTS if host.strip() and host.strip() != "*"}
+    hosts = {"localhost", "127.0.0.1", "testserver"}
+    hosts.update(host.strip().lower() for host in settings.TRUSTED_HOSTS if host.strip() and host.strip() != "*")
     for configured_url in (settings.frontend_url, settings.backend_url):
         hostname = urlparse(configured_url).hostname
         if hostname:

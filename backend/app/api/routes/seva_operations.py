@@ -17,7 +17,7 @@ from app.api.routes.auth import ensure_user_can_authenticate, issue_session
 from app.core.security import get_password_hash, verify_password
 from app.db.session import get_db
 from app.models.admin_control import AuditLog
-from app.models.autoai_seva import SevaAgentProfile, SevaAssignment, SevaCaseEvent, SevaDeliverable, SevaNotification, SevaRequirementRequest, SevaWorkOrder
+from app.models.autoai_seva import SevaAgentProfile, SevaAssignment, SevaCaseEvent, SevaDeliverable, SevaNotification, SevaQualityReview, SevaRequirementRequest, SevaWorkOrder
 from app.models.document import Document
 from app.models.form_service import (
     HumanHandoff,
@@ -31,7 +31,13 @@ from app.models.user import User
 from app.schemas.form_service import ExecutionMode
 from app.services.autoai_seva_seed import ASSISTED_REQUEST_SERVICE_ID, ensure_autoai_seva_demo
 from app.services.form_service_documents import inspect_and_store_upload
-from app.services.form_service_registry import RegistryResolution, ensure_service_registry, resolve_service
+from app.services.form_service_registry import (
+    RegistryResolution,
+    ensure_service_registry,
+    resolve_service,
+    search_service_candidates,
+    service_catalogue_payload,
+)
 from app.services.form_service_service import (
     build_task_view,
     create_handoff,
@@ -51,20 +57,35 @@ SECRET_WORDS = (
     "recovery code", "credential", "authentication code", "verification code", "one-time code",
     "पासवर्ड", "ओटीपी", "पिन", "कैप्चा", "सीवीवी",
 )
-TERMINAL_WORK_ORDER_STATES = {"COMPLETED", "CANCELLED"}
+TERMINAL_WORK_ORDER_STATES = {"COMPLETED", "DELIVERED", "REJECTED", "CANCELLED"}
 ALLOWED_WORK_ORDER_TRANSITIONS = {
-    "QUEUED": {"IN_PROGRESS", "CANCELLED"},
-    "IN_PROGRESS": {"WAITING_USER", "SUBMITTED", "CANCELLED"},
-    "WAITING_USER": {"IN_PROGRESS", "CANCELLED"},
-    "SUBMITTED": {"IN_PROGRESS", "CANCELLED"},
+    "QUEUED": {"IN_PROGRESS", "ESCALATED", "CANCELLED"},
+    "IN_PROGRESS": {"WAITING_USER", "DOCUMENT_VERIFICATION", "PROTECTED_ACTION_REQUIRED", "QUALITY_REVIEW", "READY_TO_SUBMIT", "ESCALATED", "CANCELLED"},
+    "WAITING_USER": {"IN_PROGRESS", "PROTECTED_ACTION_REQUIRED", "ESCALATED", "CANCELLED"},
+    "DOCUMENT_VERIFICATION": {"IN_PROGRESS", "WAITING_USER", "QUALITY_REVIEW", "READY_TO_SUBMIT", "ESCALATED", "CANCELLED"},
+    "PROTECTED_ACTION_REQUIRED": {"IN_PROGRESS", "WAITING_USER", "READY_TO_SUBMIT", "ESCALATED", "CANCELLED"},
+    "QUALITY_REVIEW": {"IN_PROGRESS", "READY_TO_SUBMIT", "ESCALATED", "CANCELLED"},
+    "READY_TO_SUBMIT": {"SUBMITTED", "SUBMITTED_TO_AUTHORITY", "PROTECTED_ACTION_REQUIRED", "ESCALATED", "CANCELLED"},
+    "SUBMITTED": {"UNDER_AUTHORITY_PROCESSING", "APPROVED", "REJECTED", "ISSUED", "IN_PROGRESS", "ESCALATED", "CANCELLED"},
+    "SUBMITTED_TO_AUTHORITY": {"UNDER_AUTHORITY_PROCESSING", "APPROVED", "REJECTED", "ISSUED", "ESCALATED", "CANCELLED"},
+    "UNDER_AUTHORITY_PROCESSING": {"APPROVED", "REJECTED", "ISSUED", "ESCALATED", "CANCELLED"},
+    "APPROVED": {"ISSUED", "DELIVERED", "ESCALATED"},
+    "ISSUED": {"DELIVERED", "ESCALATED"},
+    "ESCALATED": {"IN_PROGRESS", "WAITING_USER", "QUALITY_REVIEW", "READY_TO_SUBMIT", "SUBMITTED_TO_AUTHORITY", "CANCELLED"},
 }
 
 
 class SevaStartRequest(BaseModel):
     query: str = Field(min_length=3, max_length=1000)
+    service_id: str | None = Field(default=None, min_length=3, max_length=80)
     timezone: str = Field(default="Asia/Kolkata", max_length=100)
     locale: str = Field(default="hi-IN", max_length=35)
     client_request_id: str = Field(min_length=8, max_length=120)
+
+
+class SevaDiscoverRequest(BaseModel):
+    query: str = Field(min_length=2, max_length=1000)
+    limit: int = Field(default=5, ge=1, le=10)
 
 
 class AssistanceCreateRequest(BaseModel):
@@ -106,10 +127,31 @@ class ProtectedActionResponse(BaseModel):
 
 
 class WorkOrderStatusRequest(BaseModel):
-    status: Literal["QUEUED", "IN_PROGRESS", "WAITING_USER", "SUBMITTED", "COMPLETED", "CANCELLED"]
+    status: Literal[
+        "QUEUED", "IN_PROGRESS", "WAITING_USER", "DOCUMENT_VERIFICATION",
+        "PROTECTED_ACTION_REQUIRED", "QUALITY_REVIEW", "READY_TO_SUBMIT", "SUBMITTED",
+        "SUBMITTED_TO_AUTHORITY", "UNDER_AUTHORITY_PROCESSING", "APPROVED", "REJECTED",
+        "ISSUED", "DELIVERED", "ESCALATED", "COMPLETED", "CANCELLED",
+    ]
     note: str | None = Field(default=None, max_length=2000)
     progress_percent: int | None = Field(default=None, ge=0, le=100)
     reference_number: str | None = Field(default=None, max_length=120)
+
+
+class QualityReviewRequest(BaseModel):
+    approved: bool
+    reason: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("reason")
+    @classmethod
+    def require_return_reason(cls, value: str | None, info):
+        if info.data.get("approved") is False and not (value or "").strip():
+            raise ValueError("A correction reason is required when returning a case")
+        return value
+
+
+class EscalationRequest(BaseModel):
+    reason: str = Field(min_length=5, max_length=500)
 
 
 class RequirementReviewRequest(BaseModel):
@@ -228,8 +270,15 @@ def _work_order_view(db: Session, work_order: SevaWorkOrder, *, include_owner: b
         )
     )
     fulfilled = sum(item.status in {"FULFILLED", "ACCEPTED"} for item in requirements)
-    progress_by_status = {"QUEUED": 5, "IN_PROGRESS": 30, "WAITING_USER": 50, "SUBMITTED": 90, "COMPLETED": 100, "CANCELLED": 0}
-    work_progress = 100 if work_order.status == "COMPLETED" else max(work_order.progress_percent or 0, progress_by_status.get(work_order.status, 10))
+    progress_by_status = {
+        "QUEUED": 10, "IN_PROGRESS": 25, "WAITING_USER": 45,
+        "DOCUMENT_VERIFICATION": 50, "PROTECTED_ACTION_REQUIRED": 65,
+        "QUALITY_REVIEW": 72, "READY_TO_SUBMIT": 80, "ESCALATED": 60,
+        "SUBMITTED": 90, "SUBMITTED_TO_AUTHORITY": 90,
+        "UNDER_AUTHORITY_PROCESSING": 92, "APPROVED": 95, "REJECTED": 100,
+        "ISSUED": 98, "DELIVERED": 100, "COMPLETED": 100, "CANCELLED": 0,
+    }
+    work_progress = 100 if work_order.status in {"COMPLETED", "DELIVERED", "REJECTED"} else max(work_order.progress_percent or 0, progress_by_status.get(work_order.status, 10))
     if work_order.status == "IN_PROGRESS" and requirements:
         work_progress = max(work_progress, min(85, 35 + round(fulfilled / len(requirements) * 45)))
     event_query = select(SevaCaseEvent).where(SevaCaseEvent.work_order_id == work_order.id)
@@ -237,6 +286,10 @@ def _work_order_view(db: Session, work_order: SevaWorkOrder, *, include_owner: b
         event_query = event_query.where(SevaCaseEvent.visibility == "USER")
     events = list(db.scalars(event_query.order_by(SevaCaseEvent.created_at.desc()).limit(100)))
     assignments = list(db.scalars(select(SevaAssignment).where(SevaAssignment.work_order_id == work_order.id).order_by(SevaAssignment.assigned_at))) if include_owner else []
+    quality_reviews = list(db.scalars(select(SevaQualityReview).where(SevaQualityReview.work_order_id == work_order.id).order_by(SevaQualityReview.requested_at)))
+    sla_status = work_order.sla_status
+    if work_order.due_at and work_order.due_at < datetime.utcnow() and work_order.status not in TERMINAL_WORK_ORDER_STATES:
+        sla_status = "OVERDUE" if sla_status != "ESCALATED" else sla_status
     return {
         "id": work_order.id,
         "case_id": work_order.case_number or f"SEVA-{work_order.created_at.year}-{work_order.id[:8].upper()}",
@@ -244,6 +297,8 @@ def _work_order_view(db: Session, work_order: SevaWorkOrder, *, include_owner: b
         "handoff_id": work_order.handoff_id,
         "status": work_order.status,
         "priority": work_order.priority,
+        "department": work_order.department,
+        "queue_name": work_order.queue_name,
         "request_summary": work_order.request_summary,
         "employee_note": work_order.employee_note,
         "assigned_employee": ({"id": employee.id, "name": employee.name} if employee else None),
@@ -254,6 +309,25 @@ def _work_order_view(db: Session, work_order: SevaWorkOrder, *, include_owner: b
         "work_progress": work_progress,
         "current_activity": work_order.current_activity or work_order.employee_note or work_order.status.replace("_", " ").title(),
         "reference_number": work_order.reference_number,
+        "official_status": work_order.official_status,
+        "sla_status": sla_status,
+        "escalation_reason": work_order.escalation_reason,
+        "escalated_at": work_order.escalated_at,
+        "quality_required": work_order.quality_required,
+        "quality_status": work_order.quality_status,
+        "quality_reviews": [
+            {
+                "id": item.id,
+                "status": item.status,
+                "snapshot_version": item.snapshot_version,
+                "decision_reason": item.decision_reason,
+                "requested_by_user_id": item.requested_by_user_id,
+                "reviewer_user_id": item.reviewer_user_id,
+                "requested_at": item.requested_at,
+                "reviewed_at": item.reviewed_at,
+            }
+            for item in quality_reviews
+        ],
         "submitted_at": work_order.submitted_at or work_order.created_at,
         "due_at": work_order.due_at,
         "queue_position": queue_position(db, work_order),
@@ -533,8 +607,29 @@ def start_seva_request(
 ):
     ensure_service_registry(db)
     ensure_autoai_seva_demo(db)
-    resolution = resolve_service(db, payload.query)
-    fallback = resolution is None
+    resolution = None
+    fallback = False
+    if payload.service_id:
+        service = db.get(ServiceDefinition, payload.service_id)
+        adapter = db.scalar(
+            select(PortalAdapterRecord).where(
+                PortalAdapterRecord.service_id == payload.service_id,
+                PortalAdapterRecord.enabled.is_(True),
+            )
+        )
+        if not service or not service.active or not adapter:
+            raise HTTPException(status_code=404, detail="The confirmed service is not available")
+        from app.models.form_service import ServicePortal
+        portal = db.scalar(
+            select(ServicePortal).where(
+                ServicePortal.service_id == service.id,
+                ServicePortal.verified.is_(True),
+            )
+        )
+        resolution = RegistryResolution(service=service, portal=portal, adapter=adapter, confidence=1.0)
+    else:
+        resolution = resolve_service(db, payload.query)
+        fallback = resolution is None
     if fallback:
         service = db.get(ServiceDefinition, ASSISTED_REQUEST_SERVICE_ID)
         adapter = db.scalar(
@@ -585,6 +680,77 @@ def start_seva_request(
     }
 
 
+@router.post("/discover")
+def discover_seva_services(
+    payload: SevaDiscoverRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    del user
+    ensure_service_registry(db)
+    ensure_autoai_seva_demo(db)
+    candidates = search_service_candidates(db, payload.query, limit=payload.limit)
+    if candidates:
+        return {
+            "query": payload.query,
+            "requires_confirmation": True,
+            "candidates": candidates,
+            "fallback": None,
+        }
+    fallback = db.get(ServiceDefinition, ASSISTED_REQUEST_SERVICE_ID)
+    if not fallback:
+        raise HTTPException(status_code=503, detail="AutoAI Seva assistance is unavailable")
+    return {
+        "query": payload.query,
+        "requires_confirmation": True,
+        "candidates": [],
+        "fallback": service_catalogue_payload(fallback),
+    }
+
+
+@router.get("/catalogue")
+def list_seva_catalogue(
+    category: str | None = Query(default=None, max_length=60),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    del user
+    ensure_service_registry(db)
+    ensure_autoai_seva_demo(db)
+    query = select(ServiceDefinition).where(ServiceDefinition.active.is_(True))
+    if category:
+        query = query.where(ServiceDefinition.category == category)
+    services = list(db.scalars(query.order_by(ServiceDefinition.category, ServiceDefinition.name)))
+    items = [service_catalogue_payload(service) for service in services if service.category != "demonstration"]
+    return {
+        "items": items,
+        "categories": sorted({item["category"] for item in items}),
+        "total": len(items),
+    }
+
+
+@router.get("/catalogue/{service_id}")
+def get_seva_catalogue_service(
+    service_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    del user
+    ensure_service_registry(db)
+    ensure_autoai_seva_demo(db)
+    service = db.get(ServiceDefinition, service_id)
+    if not service or not service.active:
+        raise HTTPException(status_code=404, detail="Service not found")
+    from app.models.form_service import ServicePortal
+    portal = db.scalar(
+        select(ServicePortal).where(
+            ServicePortal.service_id == service.id,
+            ServicePortal.verified.is_(True),
+        )
+    )
+    return service_catalogue_payload(service, portal)
+
+
 @router.post("/tasks/{task_id}/assistance", status_code=status.HTTP_201_CREATED)
 def request_employee_assistance(
     task_id: str,
@@ -626,17 +792,25 @@ def request_employee_assistance(
         expected_version=task.version,
         request_id=f"seva-handoff-{task.id}-{int(datetime.utcnow().timestamp())}",
     )
+    service = db.get(ServiceDefinition, task.service_id)
+    service_policy = dict(service.support_contact or {}) if service else {}
+    sla_days = max(1, min(int(service_policy.get("internal_sla_days") or 7), 90))
+    quality_required = bool(service_policy.get("quality_required", service_policy.get("quality_review_required", False)))
     work_order = SevaWorkOrder(
         case_number=f"SEVA-{datetime.utcnow().year}-{str(uuid.uuid4()).replace('-', '')[:8].upper()}",
         task_id=task.id,
         user_id=user.id,
         handoff_id=handoff.id,
         status="QUEUED",
+        department=str(service_policy.get("department") or (service.category if service else "AutoAI Seva Operations"))[:100],
+        queue_name=str(service_policy.get("queue") or (service.category if service else "General"))[:100],
         request_summary=task.original_request,
         current_activity="Submitted for agent assistance",
         progress_percent=5,
         submitted_at=datetime.utcnow(),
-        due_at=datetime.utcnow() + timedelta(days=7),
+        due_at=datetime.utcnow() + timedelta(days=sla_days),
+        quality_required=quality_required,
+        quality_status="REQUIRED" if quality_required else "NOT_REQUIRED",
         user_consent_scope={
             "field_keys": field_keys,
             "document_ids": document_ids,
@@ -837,6 +1011,13 @@ def download_deliverable(
 @router.get("/admin/work-orders")
 def list_employee_work_orders(
     state: str | None = Query(default=None, max_length=32),
+    priority: str | None = Query(default=None, max_length=16),
+    sla: str | None = Query(default=None, max_length=24),
+    department: str | None = Query(default=None, max_length=100),
+    queue: str | None = Query(default=None, max_length=100),
+    category: str | None = Query(default=None, max_length=80),
+    date_from: datetime | None = Query(default=None),
+    date_to: datetime | None = Query(default=None),
     q: str | None = Query(default=None, max_length=120),
     agent_id: str | None = Query(default=None, max_length=36),
     page: int = Query(default=1, ge=1),
@@ -849,6 +1030,22 @@ def list_employee_work_orders(
         query = query.where(SevaWorkOrder.assigned_employee_id == employee.id)
     if state:
         query = query.where(SevaWorkOrder.status == state.upper())
+    if priority:
+        query = query.where(SevaWorkOrder.priority == priority.upper())
+    if sla:
+        query = query.where(SevaWorkOrder.sla_status == sla.upper())
+    if department:
+        query = query.where(SevaWorkOrder.department.ilike(f"%{department.strip()}%"))
+    if queue:
+        query = query.where(SevaWorkOrder.queue_name.ilike(f"%{queue.strip()}%"))
+    if category:
+        query = query.join(ServiceTask, ServiceTask.id == SevaWorkOrder.task_id).join(
+            ServiceDefinition, ServiceDefinition.id == ServiceTask.service_id
+        ).where(ServiceDefinition.category == category)
+    if date_from:
+        query = query.where(SevaWorkOrder.created_at >= date_from)
+    if date_to:
+        query = query.where(SevaWorkOrder.created_at <= date_to)
     if agent_id and employee.is_admin:
         query = query.where(SevaWorkOrder.assigned_employee_id == agent_id)
     if q:
@@ -1068,6 +1265,137 @@ def download_requirement_document(
     return FileResponse(path, media_type=document.content_type, filename=document.filename)
 
 
+@router.post("/admin/work-orders/{work_order_id}/quality-review", status_code=status.HTTP_201_CREATED)
+def request_quality_review(
+    work_order_id: str,
+    employee: User = Depends(get_current_seva_employee),
+    db: Session = Depends(get_db),
+):
+    work_order = _admin_work_order(db, work_order_id)
+    _require_assigned_employee(work_order, employee)
+    if work_order.status in TERMINAL_WORK_ORDER_STATES:
+        raise HTTPException(status_code=409, detail="Closed cases cannot enter quality review")
+    unresolved = int(db.scalar(select(func.count()).select_from(SevaRequirementRequest).where(
+        SevaRequirementRequest.work_order_id == work_order.id,
+        SevaRequirementRequest.required.is_(True),
+        SevaRequirementRequest.status != "ACCEPTED",
+    )) or 0)
+    if unresolved:
+        raise HTTPException(status_code=409, detail="Resolve all required user responses before quality review")
+    existing = db.scalar(select(SevaQualityReview).where(
+        SevaQualityReview.work_order_id == work_order.id,
+        SevaQualityReview.status == "PENDING",
+    ))
+    if existing:
+        return _work_order_view(db, work_order, include_owner=True)
+    task = db.get(ServiceTask, work_order.task_id)
+    review = SevaQualityReview(
+        work_order_id=work_order.id,
+        requested_by_user_id=employee.id,
+        snapshot_version=task.version if task else 1,
+    )
+    db.add(review)
+    work_order.quality_required = True
+    work_order.quality_status = "PENDING"
+    work_order.status = "QUALITY_REVIEW"
+    work_order.current_activity = "Waiting for quality review"
+    work_order.progress_percent = max(work_order.progress_percent, 72)
+    case_event(db, work_order, "QUALITY_REVIEW_REQUESTED", "Quality review requested", actor_id=employee.id, visibility="INTERNAL")
+    for admin in db.scalars(select(User).where(User.is_admin.is_(True), User.is_active.is_(True))):
+        notify(db, work_order, admin.id, "QUALITY_REVIEW_REQUESTED", "Case ready for quality review", work_order.case_number or work_order.id)
+    db.commit()
+    return _work_order_view(db, work_order, include_owner=True)
+
+
+@router.post("/admin/work-orders/{work_order_id}/quality-review/decision")
+def decide_quality_review(
+    work_order_id: str,
+    payload: QualityReviewRequest,
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    work_order = _admin_work_order(db, work_order_id)
+    review = db.scalar(select(SevaQualityReview).where(
+        SevaQualityReview.work_order_id == work_order.id,
+        SevaQualityReview.status == "PENDING",
+    ).order_by(SevaQualityReview.requested_at.desc()))
+    if not review:
+        raise HTTPException(status_code=409, detail="No pending quality review exists")
+    review.reviewer_user_id = admin.id
+    review.reviewed_at = datetime.utcnow()
+    review.decision_reason = (payload.reason or "").strip() or None
+    work_order.reviewer_user_id = admin.id
+    if payload.approved:
+        review.status = "APPROVED"
+        work_order.quality_status = "APPROVED"
+        work_order.status = "READY_TO_SUBMIT"
+        work_order.current_activity = "Quality review approved — ready to submit"
+        work_order.progress_percent = max(work_order.progress_percent, 80)
+        title = "Quality review approved"
+    else:
+        review.status = "RETURNED"
+        work_order.quality_status = "RETURNED"
+        work_order.status = "IN_PROGRESS"
+        work_order.current_activity = "Returned for correction"
+        title = "Quality review returned for correction"
+    case_event(db, work_order, "QUALITY_REVIEW_DECIDED", title, actor_id=admin.id, visibility="INTERNAL", details={"approved": payload.approved, "reason": review.decision_reason})
+    if work_order.assigned_employee_id:
+        notify(db, work_order, work_order.assigned_employee_id, "QUALITY_REVIEW_DECIDED", title, review.decision_reason or title)
+    notify(db, work_order, work_order.user_id, "STATUS_UPDATED", "Application review updated", work_order.current_activity)
+    db.add(AuditLog(actor_user_id=admin.id, target_user_id=work_order.user_id, action="seva.quality_review.decided", reason=review.decision_reason or title, audit_metadata={"work_order_id": work_order.id, "approved": payload.approved, "review_id": review.id}))
+    db.commit()
+    return _work_order_view(db, work_order, include_owner=True)
+
+
+@router.post("/admin/work-orders/{work_order_id}/escalate")
+def escalate_work_order(
+    work_order_id: str,
+    payload: EscalationRequest,
+    employee: User = Depends(get_current_seva_employee),
+    db: Session = Depends(get_db),
+):
+    work_order = _admin_work_order(db, work_order_id)
+    if not employee.is_admin:
+        _require_assigned_employee(work_order, employee)
+    if work_order.status in TERMINAL_WORK_ORDER_STATES:
+        raise HTTPException(status_code=409, detail="Closed cases cannot be escalated")
+    work_order.status = "ESCALATED"
+    work_order.sla_status = "ESCALATED"
+    work_order.escalation_reason = payload.reason
+    work_order.escalated_at = datetime.utcnow()
+    work_order.current_activity = "Escalated for supervisor attention"
+    case_event(db, work_order, "CASE_ESCALATED", "Case escalated", actor_id=employee.id, visibility="INTERNAL", details={"reason": payload.reason})
+    notify(db, work_order, work_order.user_id, "CASE_ESCALATED", "Application needs supervisor attention", "The case remains active and its history is preserved.")
+    db.commit()
+    return _work_order_view(db, work_order, include_owner=True)
+
+
+@router.get("/admin/overview")
+def seva_operations_overview(
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    del admin
+    rows = list(db.scalars(select(SevaWorkOrder)))
+    now = datetime.utcnow()
+    counts = {state: sum(item.status == state for item in rows) for state in sorted({item.status for item in rows})}
+    overdue = sum(bool(item.due_at and item.due_at < now and item.status not in TERMINAL_WORK_ORDER_STATES) for item in rows)
+    agents = list(db.scalars(select(SevaAgentProfile)))
+    agent_views = [_agent_view(db, item) for item in agents]
+    return {
+        "total": len(rows),
+        "counts": counts,
+        "overdue": overdue,
+        "pending_quality_review": sum(item.quality_status == "PENDING" for item in rows),
+        "protected_actions": int(db.scalar(select(func.count()).select_from(SevaRequirementRequest).where(
+            SevaRequirementRequest.protected_action.is_(True),
+            SevaRequirementRequest.status == "REQUESTED",
+        )) or 0),
+        "agents_available": sum(item["is_active"] and item["available_slots"] > 0 for item in agent_views),
+        "agents_at_capacity": sum(item["available_slots"] == 0 for item in agent_views),
+    }
+
+
 @router.post("/admin/work-orders/{work_order_id}/status")
 def update_employee_work_order_status(
     work_order_id: str,
@@ -1084,19 +1412,26 @@ def update_employee_work_order_status(
         raise HTTPException(status_code=422, detail="Upload a verified receipt or deliverable to complete this case")
     if payload.status != work_order.status and payload.status not in ALLOWED_WORK_ORDER_TRANSITIONS.get(work_order.status, set()):
         raise HTTPException(status_code=409, detail=f"Cannot change case from {work_order.status} to {payload.status}")
+    if payload.status in {"READY_TO_SUBMIT", "SUBMITTED", "SUBMITTED_TO_AUTHORITY"} and work_order.quality_required and work_order.quality_status != "APPROVED":
+        raise HTTPException(status_code=409, detail="Required quality review must be approved before submission")
     if payload.progress_percent is not None:
         if payload.progress_percent < work_order.progress_percent:
             raise HTTPException(status_code=422, detail="Progress cannot move backwards")
         if payload.status != "SUBMITTED" and payload.progress_percent >= 100:
             raise HTTPException(status_code=422, detail="Only a completed case can reach 100%")
         work_order.progress_percent = payload.progress_percent
-    if payload.status == "SUBMITTED":
+    if payload.status in {"SUBMITTED", "SUBMITTED_TO_AUTHORITY"}:
         reference = (payload.reference_number or work_order.reference_number or "").strip()
         if not reference:
             raise HTTPException(status_code=422, detail="Reference number is required when marking submitted")
         work_order.reference_number = reference
         work_order.submitted_at = datetime.utcnow()
         work_order.progress_percent = max(work_order.progress_percent, 90)
+        work_order.official_status = "Submitted to authority" if payload.status == "SUBMITTED_TO_AUTHORITY" else "Submitted"
+    elif payload.status == "UNDER_AUTHORITY_PROCESSING":
+        work_order.official_status = "Under authority processing"
+    elif payload.status in {"APPROVED", "REJECTED", "ISSUED", "DELIVERED"}:
+        work_order.official_status = payload.status.replace("_", " ").title()
     work_order.status = payload.status
     work_order.employee_note = payload.note
     work_order.current_activity = payload.note or payload.status.replace("_", " ").title()
@@ -1104,6 +1439,10 @@ def update_employee_work_order_status(
         work_order.cancelled_at = datetime.utcnow()
         work_order.progress_percent = 0
         _close_current_assignment(db, work_order, "Cancelled by agent")
+    elif payload.status in {"DELIVERED", "REJECTED"}:
+        work_order.completed_at = datetime.utcnow()
+        work_order.progress_percent = 100
+        _close_current_assignment(db, work_order, f"Case {payload.status.lower()}")
     case_event(db, work_order, "STATUS_UPDATED", f"Status changed to {payload.status.replace('_', ' ').title()}", actor_id=employee.id, details={"progress": work_order.progress_percent, "reference_number_present": bool(work_order.reference_number)})
     notify(db, work_order, work_order.user_id, "STATUS_UPDATED", "Application status updated", f"Status: {payload.status.replace('_', ' ').title()}. {payload.note or ''}".strip())
     if payload.status in TERMINAL_WORK_ORDER_STATES:

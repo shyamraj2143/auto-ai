@@ -1,5 +1,5 @@
 function featureEnabled(value: string | undefined) {
-  return value?.trim().toLowerCase() !== "false";
+  return value?.trim().toLowerCase() === "true";
 }
 
 export const advancedMotionEnabled = featureEnabled(import.meta.env.VITE_ENABLE_ADVANCED_MOTION);

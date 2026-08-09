@@ -86,12 +86,23 @@ class SevaWorkOrder(Base):
     )
     status: Mapped[str] = mapped_column(String(32), default="QUEUED", index=True)
     priority: Mapped[str] = mapped_column(String(16), default="NORMAL")
+    department: Mapped[str] = mapped_column(String(100), default="AutoAI Seva Operations", index=True)
+    queue_name: Mapped[str] = mapped_column(String(100), default="General", index=True)
     request_summary: Mapped[str] = mapped_column(Text, default="")
     user_consent_scope: Mapped[dict] = mapped_column(JSON, default=dict)
     employee_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     current_activity: Mapped[str] = mapped_column(String(240), default="Submitted")
     progress_percent: Mapped[int] = mapped_column(Integer, default=0)
     reference_number: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    official_status: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    sla_status: Mapped[str] = mapped_column(String(24), default="ON_TRACK", index=True)
+    escalation_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    escalated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    quality_required: Mapped[bool] = mapped_column(Boolean, default=False)
+    quality_status: Mapped[str] = mapped_column(String(24), default="NOT_REQUIRED", index=True)
+    reviewer_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -256,3 +267,29 @@ class SevaDeliverable(Base):
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     verified_by_employee: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SevaQualityReview(Base):
+    """Second-person review record with immutable decision history."""
+
+    __tablename__ = "seva_quality_reviews"
+    __table_args__ = (
+        Index("ix_seva_quality_review_work_status", "work_order_id", "status"),
+        Index("ix_seva_quality_review_reviewer_status", "reviewer_user_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_id)
+    work_order_id: Mapped[str] = mapped_column(
+        ForeignKey("seva_work_orders.id", ondelete="CASCADE"), index=True
+    )
+    requested_by_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), index=True
+    )
+    reviewer_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    status: Mapped[str] = mapped_column(String(24), default="PENDING", index=True)
+    snapshot_version: Mapped[int] = mapped_column(Integer, default=1)
+    decision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

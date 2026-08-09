@@ -89,6 +89,15 @@ def ensure_runtime_schema() -> None:
             "current_activity": "VARCHAR(240) NOT NULL DEFAULT 'Submitted'",
             "progress_percent": "INTEGER NOT NULL DEFAULT 0",
             "reference_number": "VARCHAR(120)",
+            "department": "VARCHAR(100) NOT NULL DEFAULT 'AutoAI Seva Operations'",
+            "queue_name": "VARCHAR(100) NOT NULL DEFAULT 'General'",
+            "official_status": "VARCHAR(120)",
+            "sla_status": "VARCHAR(24) NOT NULL DEFAULT 'ON_TRACK'",
+            "escalation_reason": "VARCHAR(500)",
+            "escalated_at": "datetime",
+            "quality_required": "BOOLEAN NOT NULL DEFAULT FALSE",
+            "quality_status": "VARCHAR(24) NOT NULL DEFAULT 'NOT_REQUIRED'",
+            "reviewer_user_id": "VARCHAR(36)",
             "submitted_at": "datetime",
             "due_at": "datetime",
         }
@@ -110,6 +119,13 @@ def ensure_runtime_schema() -> None:
         for column_name, definition in additions.items():
             if column_name not in columns:
                 add_column("seva_agent_profiles", column_name, definition)
+
+    if "service_form_fields" in table_names:
+        columns = {column["name"] for column in inspector.get_columns("service_form_fields")}
+        if "encrypted_value" not in columns:
+            add_column("service_form_fields", "encrypted_value", "TEXT")
+        if "sensitivity" not in columns:
+            add_column("service_form_fields", "sensitivity", "VARCHAR(24) NOT NULL DEFAULT 'ordinary'")
 
     if "seva_notifications" in table_names:
         columns = {column["name"] for column in inspector.get_columns("seva_notifications")}

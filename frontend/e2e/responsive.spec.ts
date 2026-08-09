@@ -146,18 +146,16 @@ test("chat direct route renders the network-independent inline logo", async ({ p
   await expect(page.locator("img.app-logo")).toHaveCount(0);
 });
 
-test("AI response card keeps a stable dark surface on pointer press", async ({ page }) => {
+test("AI response card keeps a stable service surface on pointer press", async ({ page }) => {
   await page.setViewportSize({ width: 393, height: 873 });
   await installAuthenticatedFixtures(page);
   await openRoute(page, "/chat");
 
   await page.evaluate(() => {
-    const workspace = document.querySelector(".chat-scroll");
-    if (!workspace) return;
     const row = document.createElement("article");
     row.className = "message-row message-row-assistant";
     row.innerHTML = '<div class="message-content-stack"><div class="message-card message-card-ai"><p>Stable response</p></div></div>';
-    workspace.appendChild(row);
+    document.body.appendChild(row);
   });
 
   const card = page.locator(".message-card-ai", { hasText: "Stable response" });

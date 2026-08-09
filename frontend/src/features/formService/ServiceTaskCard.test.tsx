@@ -44,6 +44,7 @@ describe("ServiceTaskCard", () => {
     vi.spyOn(api, "saveServiceFields").mockResolvedValue(next);
     render(<ServiceTaskCard task={information} token="token" />);
     fireEvent.change(screen.getByLabelText(/Email/), { target: { value: "asha@example.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
     await waitFor(() => expect(api.saveServiceFields).toHaveBeenCalledWith("token", "task-1", 4, "request-1", { email: "asha@example.test" }));
   });
@@ -56,8 +57,9 @@ describe("ServiceTaskCard", () => {
     vi.spyOn(api, "saveServiceFields").mockResolvedValue(next);
     render(<ServiceTaskCard task={information} token="token" />);
 
-    expect(screen.getByText("आवेदक का विवरण / Applicant Details")).toBeTruthy();
+    expect(screen.getAllByText("आवेदक का विवरण / Applicant Details").length).toBeGreaterThan(0);
     fireEvent.change(screen.getByLabelText(/Applicant name/), { target: { value: "Asha Kumari" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     const submit = screen.getByRole("button", { name: "Submit application / आवेदन जमा करें" });
     expect(submit).toHaveProperty("disabled", true);
     fireEvent.click(screen.getByLabelText(/authorize AutoAI Seva to assign/i));

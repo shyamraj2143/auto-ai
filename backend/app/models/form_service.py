@@ -240,6 +240,8 @@ class FormField(Base):
     field_key: Mapped[str] = mapped_column(String(100))
     label: Mapped[str] = mapped_column(String(180))
     value_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    encrypted_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sensitivity: Mapped[str] = mapped_column(String(24), default="ordinary")
     source: Mapped[str] = mapped_column(String(48))
     confidence: Mapped[str] = mapped_column(String(16), default="high")
     user_approved: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -1,8 +1,4 @@
 <p align="center">
-  <img src="docs/assets/auto-ai-hero-3d.svg" width="100%" alt="Auto AI — advanced 3D multi-model intelligence platform" />
-</p>
-
-<p align="center">
   <img src="https://img.shields.io/badge/STATUS-ACTIVE%20DEVELOPMENT-6C4DFF?style=for-the-badge" alt="Active development" />
   <img src="https://img.shields.io/badge/PLATFORM-WEB%20%2B%20ANDROID-00B8FF?style=for-the-badge&logo=android&logoColor=white" alt="Web and Android" />
   <img src="https://img.shields.io/badge/AI-MULTI--MODEL-FF4FCB?style=for-the-badge" alt="Multi-model AI" />
@@ -142,11 +138,11 @@ flowchart LR
     CI[GitHub Actions] --> APK[Signed Android Release]
 ```
 
-## 🎨 Interface DNA
+## 🎨 Interface system
 
-- ChatGPT-style conversation layout
-- Sidebar conversation history
-- Light and dark themes
+- Simple professional service-portal layout
+- Predictable workspace navigation and conversation history
+- Accessible light theme with an optional high-contrast dark theme
 - Markdown rendering and highlighted code blocks
 - Copyable assistant code output
 - Streaming conversation updates
