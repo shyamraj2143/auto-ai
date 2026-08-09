@@ -249,6 +249,21 @@
 .rtps-review-section dt { color: #66788a; font-size: .7rem; }
 .rtps-review-section dd { margin: 3px 0 0; overflow-wrap: anywhere; color: #172033; font-size: .8rem; font-weight: 700; }
 
+.rtps-missing-summary {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 11px 12px;
+  border: 1px solid #e1a63b;
+  border-radius: 3px;
+  background: #fff8e8;
+  color: #6f4700;
+  font-size: .78rem;
+  line-height: 1.45;
+}
+
+.rtps-submit-button { min-width: 190px; }
+
 .rtps-field-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -329,6 +344,12 @@
 .seva-task-shell .service-primary { background: #147a65; }
 .seva-task-shell .service-secondary { border-color: #9eb0bf; background: #fff; color: #23445a; }
 .seva-task-shell .service-card-actions { border-top: 1px solid #d4dde5; padding-top: 14px; }
+.seva-task-shell .service-receipt dl > div { border-color: #cbd5df; border-radius: 4px; background: #f7fafc; }
+.seva-task-shell .service-receipt dt { color: #66788a; }
+.seva-task-shell .service-receipt dd { color: #172033; }
+.seva-task-shell .service-receipt-status.verified { background: #e8f7f2; color: #147a65; }
+.seva-task-shell .service-receipt-status.unverified { background: #fff8e8; color: #8a5800; }
+.seva-task-shell .service-evidence { border-color: #b9ddce; background: #f2fbf7; color: #147a65; }
 
 .seva-workspace-page .seva-assistance-panel {
   border: 1px solid #bdc9d5;

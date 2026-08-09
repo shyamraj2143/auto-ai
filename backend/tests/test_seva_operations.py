@@ -134,6 +134,35 @@ def test_server_draft_resumes_and_rejects_stale_versions(db: Session) -> None:
     assert stale.status_code == 409, stale.text
 
 
+def test_bihar_draft_accepts_canonical_fields_after_first_chunk_is_submitted(db: Session) -> None:
+    applicant = add_user(db, "seva-bihar-draft-user")
+    client = client_for(db, {"user": applicant})
+    task = client.post(
+        "/api/v1/form-services/seva-operations/start",
+        json={"query": "income certificate", "service_id": "bihar.income-certificate", "locale": "en-IN", "timezone": "Asia/Kolkata", "client_request_id": "bihar-draft-start"},
+    ).json()["task"]
+    first_fields = task["active_card"]["data"]["fields"]
+    first_values = {
+        "applicant_name": "Asha Kumari",
+        "father_name": "Ramesh Kumar",
+        "date_of_birth": "2000-01-02",
+        "district": "Patna",
+    }
+    submitted = client.post(
+        f"/api/v1/form-services/tasks/{task['id']}/fields",
+        json={"version": task["version"], "data_request_id": task["active_card"]["data"]["data_request_id"], "values": {field["key"]: first_values[field["key"]] for field in first_fields}, "request_id": "bihar-first-chunk"},
+    )
+    assert submitted.status_code == 200, submitted.text
+    assert submitted.json()["active_card"]["data"]["total_required_fields"] == 7
+
+    saved = client.put(
+        f"/api/v1/form-services/tasks/{task['id']}/draft",
+        json={"draft_version": 0, "schema_version": "2026.08", "values": {**first_values, "block": "Phulwari", "address": "Ward 10, Patna, Bihar", "annual_income": 120000}, "request_id": "bihar-full-draft"},
+    )
+    assert saved.status_code == 200, saved.text
+    assert set(saved.json()["values"]) == {"applicant_name", "father_name", "date_of_birth", "district", "block", "address", "annual_income"}
+
+
 def test_quality_review_is_immutable_and_gates_submission(db: Session) -> None:
     applicant = add_user(db, "seva-quality-user")
     admin = add_user(db, "seva-quality-admin", admin=True)

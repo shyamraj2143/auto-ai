@@ -49,6 +49,18 @@ describe("ServiceTaskCard", () => {
     await waitFor(() => expect(api.saveServiceFields).toHaveBeenCalledWith("token", "task-1", 4, "request-1", { email: "asha@example.test" }));
   });
 
+  it("submits only the active field chunk when earlier fields are already saved", async () => {
+    const information = task("information_request", "COLLECTING_INFORMATION", { data_request_id: "request-2", total_required_fields: 7, saved_values: { applicant_name: "Asha Kumari", father_name: "Ramesh Kumar", date_of_birth: "2000-01-02", district: "Patna" }, fields: [{ key: "block", label: "Block", type: "text", required: true }] }, ["save_fields"]);
+    const next = task("task_progress", "READY_TO_PREPARE", { steps: [] }, ["prepare"]);
+    vi.spyOn(api, "saveServiceFields").mockResolvedValue(next);
+    render(<ServiceTaskCard task={information} token="token" />);
+    fireEvent.change(screen.getByLabelText(/Block/), { target: { value: "Phulwari" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(screen.getByText("5/7 required fields completed.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Save and continue" }));
+    await waitFor(() => expect(api.saveServiceFields).toHaveBeenCalledWith("token", "task-1", 4, "request-2", { block: "Phulwari" }));
+  });
+
   it("uses the integrated RTPS declaration before submitting an assisted application", async () => {
     const information = task("information_request", "COLLECTING_INFORMATION", { data_request_id: "request-1", saved_values: {}, fields: [{ key: "applicant_name", label: "Applicant name / आवेदक का नाम", type: "text", required: true }] }, ["save_fields"]);
     information.execution_mode = "ASSIST";
@@ -94,6 +106,15 @@ describe("ServiceTaskCard", () => {
     render(<ServiceTaskCard task={receipt} token="token" />);
     expect(screen.getAllByText(/unverified/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/successfully submitted/i)).toBeNull();
+  });
+
+  it("shows verified success and a backend-derived read-only tracker", () => {
+    const receipt = task("action_receipt", "COMPLETED_VERIFIED", { status: "verified", application_id: "AUTOAI-TEST-1", submission_timestamp: "2026-08-04T10:00:00Z", last_updated: "2026-08-04T10:02:00Z", status_timeline: [{ key: "started", label: "Application started / आवेदन शुरू", status: "completed", timestamp: "2026-08-04T09:55:00Z" }, { key: "completed", label: "Completed / पूर्ण", status: "completed", timestamp: "2026-08-04T10:02:00Z" }], evidence: [{ type: "portal_receipt", verified: true }] }, ["track", "view_receipt"]);
+    render(<ServiceTaskCard task={receipt} token="token" />);
+    expect(screen.getByText("Application submitted successfully")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "OK, Done" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Track Status" }));
+    expect(screen.getByRole("region", { name: "Application status tracker" }).textContent).toContain("Completed / पूर्ण");
   });
 
   it("records a guided portal result as user-reported instead of verified success", async () => {

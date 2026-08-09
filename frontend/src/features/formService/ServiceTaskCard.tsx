@@ -21,7 +21,7 @@ import {
   XCircle
 } from "lucide-react";
 
-import { api, streamServiceTaskEvents, type ServiceTaskEvent } from "../../api/client";
+import { api, ApiClientError, streamServiceTaskEvents, type ServiceTaskEvent } from "../../api/client";
 import { useOptionalAuth } from "../../contexts/AuthContext";
 import type { LibraryAsset, ServiceFieldDefinition, ServiceTaskView } from "../../types";
 import { sevaApi } from "../autoaiSeva/sevaApi";
@@ -38,6 +38,7 @@ type ShareableField = { key: string; label: string };
 type ActiveHandoff = { id: string; purpose: string; approved_field_keys: string[]; approved_document_ids: string[]; agent_identity: { status?: string; verified?: boolean }; expires_at: string };
 type WorkflowSummary = { workflow_id?: string; current_step?: number; total_steps?: number; progress_percent?: number; current_operation?: string; completed_steps?: string[] };
 type ApplicationPreviewData = { portal_name?: string; official_origin?: string | null; current_stage?: string; completed_fields?: number; total_fields?: number; completed_documents?: number; total_documents?: number; currently_filling?: string; fields?: Array<{ key: string; label: string; value: unknown; source: string; status: string; confidence: string }>; documents?: Array<{ label: string; filename: string; status: string; warnings?: string[] }>; submission_ready?: boolean };
+type StatusTimelineItem = { key: string; label: string; status: "completed" | "current" | "pending"; timestamp?: string | null };
 
 function dataValue<T>(task: ServiceTaskView, key: string, fallback: T): T {
   const value = task.active_card.data[key];
@@ -52,6 +53,21 @@ function readableBytes(value: number) {
 
 function stateLabel(value: string) {
   return value.toLowerCase().replace(/_/g, " ");
+}
+
+function friendlyServiceError(cause: unknown) {
+  if (cause instanceof ApiClientError) {
+    const detail = cause.details as { detail?: { code?: string } } | undefined;
+    const code = detail?.detail?.code;
+    if (cause.status === 422 || code === "FIELD_VALIDATION_FAILED") return "Please check the highlighted information and try again. Your draft is still safe.";
+    if (code === "VERSION_CONFLICT" || code === "DRAFT_CONFLICT") return "This application changed elsewhere. Refresh it before trying again.";
+    if (cause.kind === "network_unavailable" || cause.kind === "server_unreachable") return "The server is temporarily unavailable. Your entries remain on this device; retry is safe.";
+  }
+  return "This step could not be completed. Your saved information is safe; please try again.";
+}
+
+function hasFieldValue(value: unknown) {
+  return value !== undefined && value !== null && value !== "" && value !== false && (!Array.isArray(value) || value.length > 0);
 }
 
 function escapeHtml(value: unknown) {
@@ -158,11 +174,12 @@ function rtpsSectionForField(field: ServiceFieldDefinition) {
   return "other";
 }
 
-function InformationCard({ task, token, onSubmit, working }: { task: ServiceTaskView; token: string; working: boolean; onSubmit: (requestId: string, values: Record<string, unknown>) => Promise<void> }) {
+function InformationCard({ task, token, onSubmit, working }: { task: ServiceTaskView; token: string; working: boolean; onSubmit: (requestId: string, values: Record<string, unknown>) => Promise<boolean> }) {
   const user = useOptionalAuth()?.user;
   const fields = dataValue<ServiceFieldDefinition[]>(task, "fields", []);
   const saved = dataValue<Record<string, unknown>>(task, "saved_values", {});
   const requestId = dataValue<string>(task, "data_request_id", "");
+  const totalRequiredFields = dataValue<number>(task, "total_required_fields", fields.filter((field) => field.required).length);
   const schemaVersion = dataValue<string>(task, "schema_version", task.service_id || "1");
   const storageKey = `autoai:service-draft:${task.id}:${requestId}`;
   const requiresAgentAuthorization = task.execution_mode === "ASSIST";
@@ -190,6 +207,16 @@ function InformationCard({ task, token, onSubmit, working }: { task: ServiceTask
     }));
   });
   useEffect(() => {
+    let offlineValues: Record<string, unknown> = {};
+    try { offlineValues = JSON.parse(localStorage.getItem(storageKey) || "{}") as Record<string, unknown>; } catch { localStorage.removeItem(storageKey); }
+    setValues((current) => ({
+      ...current,
+      ...Object.fromEntries(fields.map((field) => [field.key, saved[field.key] ?? offlineValues[field.key] ?? current[field.key] ?? profileValue(field) ?? (field.type === "multiselect" ? [] : field.type === "checkbox" ? false : "")]))
+    }));
+    setActiveStep(0);
+    setAgentAuthorization(false);
+  }, [requestId]);
+  useEffect(() => {
     let active = true;
     void sevaApi.getDraft(token, task.id).then((draft) => {
       if (!active) return;
@@ -200,7 +227,7 @@ function InformationCard({ task, token, onSubmit, working }: { task: ServiceTask
       setDraftReady(true);
     }).catch((reason) => {
       if (!active) return;
-      setDraftMessage(reason instanceof Error ? `Server draft unavailable: ${reason.message}. Current entries remain on this device.` : "Server draft unavailable. Current entries remain on this device.");
+      setDraftMessage(friendlyServiceError(reason));
       setDraftReady(true);
     });
     return () => { active = false; };
@@ -220,6 +247,8 @@ function InformationCard({ task, token, onSubmit, working }: { task: ServiceTask
   const steps = [...sections.map((section) => ({ key: section.key, title: section.title })), { key: "review", title: "समीक्षा एवं घोषणा / Review & Declaration" }];
   const currentSection = sections[activeStep];
   const reviewStep = activeStep === steps.length - 1;
+  const missingRequired = visibleFields.filter((field) => field.required && !hasFieldValue(values[field.key]));
+  const completedRequired = Math.min(totalRequiredFields, Object.values({ ...saved, ...values }).filter(hasFieldValue).length);
 
   async function persistDraft(manual = false) {
     if (!draftReady || draftSaving || changeRevision.current === persistedRevision.current) {
@@ -235,7 +264,7 @@ function InformationCard({ task, token, onSubmit, working }: { task: ServiceTask
       if (changeRevision.current === revision) persistedRevision.current = revision;
       setDraftMessage(`Saved securely at ${new Date(draft.updated_at || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`);
     } catch (reason) {
-      setDraftMessage(reason instanceof Error ? `Not saved to server: ${reason.message}. Entries remain on this device; retry is safe.` : "Not saved to server. Entries remain on this device; retry is safe.");
+      setDraftMessage(friendlyServiceError(reason));
     } finally {
       setDraftSaving(false);
     }
@@ -258,13 +287,16 @@ function InformationCard({ task, token, onSubmit, working }: { task: ServiceTask
   }
 
   function nextStep(form: HTMLFormElement) {
-    if (!form.reportValidity()) return;
+    if (!form.reportValidity()) {
+      form.querySelector<HTMLElement>(":invalid")?.focus();
+      return;
+    }
     void persistDraft(true);
     setActiveStep((value) => Math.min(steps.length - 1, value + 1));
     form.scrollIntoView?.({ behavior: "smooth", block: "start" });
   }
   return (
-    <form className="service-card-form rtps-stepped-form" onSubmit={async (event) => { event.preventDefault(); if (!reviewStep) { nextStep(event.currentTarget); return; } if (event.currentTarget.reportValidity()) { await onSubmit(requestId, values); localStorage.removeItem(storageKey); } }}>
+    <form className="service-card-form rtps-stepped-form" onSubmit={async (event) => { event.preventDefault(); if (!reviewStep) { nextStep(event.currentTarget); return; } if (!event.currentTarget.reportValidity() || missingRequired.length) { event.currentTarget.querySelector<HTMLElement>(":invalid")?.focus(); return; } const submitted = await onSubmit(requestId, Object.fromEntries(fields.map((field) => [field.key, values[field.key]]))); if (submitted) localStorage.removeItem(storageKey); }}>
       <header className="rtps-form-heading">
         <span>ऑनलाइन आवेदन / Online Application</span>
         <h4>{task.service_name}</h4>
@@ -291,7 +323,7 @@ function InformationCard({ task, token, onSubmit, working }: { task: ServiceTask
           </div>
         </fieldset>
       ) : null}
-      {reviewStep ? <section className="rtps-review-section" aria-labelledby="rtps-review-title"><header><span>{steps.length}</span><div><h4 id="rtps-review-title">समीक्षा एवं घोषणा / Review & Declaration</h4><p>Check every entry before creating the case.</p></div></header>{sections.map((section) => <article key={section.key}><div><h5>{section.title}</h5><button type="button" onClick={() => setActiveStep(sections.findIndex((item) => item.key === section.key))}>Edit</button></div><dl>{section.fields.map((field) => <div key={field.key}><dt>{field.label}</dt><dd>{printableValue(field.key, values[field.key]) || "Not provided"}</dd></div>)}</dl></article>)}</section> : null}
+      {reviewStep ? <section className="rtps-review-section" aria-labelledby="rtps-review-title"><header><span>{steps.length}</span><div><h4 id="rtps-review-title">समीक्षा एवं घोषणा / Review & Declaration</h4><p>{completedRequired}/{totalRequiredFields} required fields completed.</p></div></header>{missingRequired.length ? <div className="rtps-missing-summary" role="alert"><AlertTriangle size={17} /><span><strong>{missingRequired.length} required field{missingRequired.length === 1 ? " is" : "s are"} incomplete.</strong> {missingRequired.map((field) => field.label).join(", ")}</span></div> : null}{sections.map((section) => <article key={section.key}><div><h5>{section.title}</h5><button type="button" onClick={() => setActiveStep(sections.findIndex((item) => item.key === section.key))}>Edit</button></div><dl>{section.fields.map((field) => <div key={field.key}><dt>{field.label}</dt><dd>{printableValue(field.key, values[field.key]) || "Not provided"}</dd></div>)}</dl></article>)}</section> : null}
       {reviewStep && requiresAgentAuthorization ? (
         <label className="rtps-declaration">
           <input type="checkbox" checked={agentAuthorization} onChange={(event) => setAgentAuthorization(event.target.checked)} required />
@@ -303,7 +335,7 @@ function InformationCard({ task, token, onSubmit, working }: { task: ServiceTask
         <div>
           {activeStep > 0 ? <button className="service-secondary" type="button" onClick={() => setActiveStep((value) => Math.max(0, value - 1))}><ChevronLeft size={17} /> Back</button> : null}
           <button className="service-secondary" type="button" disabled={draftSaving} onClick={() => void persistDraft(true)}>{draftSaving ? <LoaderCircle className="spin" size={17} /> : <Save size={17} />} Save Draft</button>
-          <button className="service-primary" type="submit" disabled={working || !requestId || (reviewStep && requiresAgentAuthorization && !agentAuthorization)}>{working ? <LoaderCircle className="spin" size={17} /> : <ChevronRight size={17} />} {reviewStep ? (requiresAgentAuthorization ? "Submit application / आवेदन जमा करें" : "Save and continue") : "Continue"}</button>
+          <button className="service-primary rtps-submit-button" type="submit" disabled={working || !requestId || (reviewStep && (missingRequired.length > 0 || (requiresAgentAuthorization && !agentAuthorization)))}>{working ? <LoaderCircle className="spin" size={17} /> : <ChevronRight size={17} />} {reviewStep ? (requiresAgentAuthorization ? "Submit application / आवेदन जमा करें" : "Save and continue") : "Continue"}</button>
         </div>
       </footer>
     </form>
@@ -422,14 +454,21 @@ function ApplicationPreview({ preview, open, onToggle }: { preview: ApplicationP
   </section>;
 }
 
-function ReceiptCard({ task }: { task: ServiceTaskView }) {
+function ReceiptCard({ task, trackerOpen, onToggleTracker }: { task: ServiceTaskView; trackerOpen: boolean; onToggleTracker: () => void }) {
   const data = task.active_card.data;
   const evidence = Array.isArray(data.evidence) ? data.evidence as Array<Record<string, unknown>> : [];
+  const timeline = dataValue<StatusTimelineItem[]>(task, "status_timeline", []);
+  const handoffs = dataValue<ActiveHandoff[]>(task, "active_handoffs", []);
+  const verified = task.state === "COMPLETED_VERIFIED";
   return (
-    <div className="service-receipt">
-      <div className={task.state === "COMPLETED_VERIFIED" ? "service-receipt-status verified" : "service-receipt-status unverified"}>{task.state === "COMPLETED_VERIFIED" ? <ShieldCheck size={20} /> : <AlertTriangle size={20} />}<strong>{String(data.status || stateLabel(task.state))}</strong></div>
+    <div className={`service-receipt ${verified ? "service-success-receipt" : ""}`}>
+      {verified ? <section className="service-success-hero" role="status" aria-live="polite"><CheckCircle2 size={44} /><div><h4>Application submitted successfully</h4><p>आवेदन सफलतापूर्वक जमा हो गया</p></div></section> : <div className="service-pending-notice"><AlertTriangle size={20} /><span><strong>Submission initiated — waiting for portal confirmation</strong><small>This is not marked successful until the backend receives verified evidence.</small></span></div>}
+      <div className={verified ? "service-receipt-status verified" : "service-receipt-status unverified"}>{verified ? <ShieldCheck size={20} /> : <AlertTriangle size={20} />}<strong>{String(data.status || stateLabel(task.state))}</strong></div>
       <dl><div><dt>Application ID</dt><dd>{String(data.application_id || "Not provided")}</dd></div><div><dt>Transaction ID</dt><dd>{String(data.transaction_id || "Not provided")}</dd></div><div><dt>Portal</dt><dd>{String(data.verified_portal || "AutoAI local adapter")}</dd></div><div><dt>Submitted</dt><dd>{data.submission_timestamp ? new Date(String(data.submission_timestamp)).toLocaleString() : "Not verified"}</dd></div></dl>
+      {data.expected_timeline ? <p className="service-expected-timeline"><strong>Expected timeline:</strong> {String(data.expected_timeline)}</p> : null}
       {evidence.map((item, index) => <div className="service-evidence" key={`${String(item.type)}-${index}`}><FileCheck2 size={16} /><span>{String(item.type)}</span><strong>{item.verified ? "Verified" : "Unverified"}</strong></div>)}
+      <div className="service-receipt-navigation"><button className="service-secondary" type="button" aria-expanded={trackerOpen} onClick={onToggleTracker}>Track Status</button><button className="service-secondary" type="button" onClick={() => window.location.assign("/seva/applications")}>My Applications</button>{verified ? <button className="service-primary service-ok-done" type="button" onClick={() => window.location.assign("/seva/applications")}>OK, Done</button> : null}</div>
+      {trackerOpen ? <section className="service-status-tracker" aria-label="Application status tracker"><header><div><h4>Application Status / आवेदन स्थिति</h4><p>Reference: {String(data.reference_number || data.application_id || task.id)}</p></div><small>Last updated {new Date(String(data.last_updated || task.updated_at)).toLocaleString()}</small></header>{handoffs.length ? <p className="service-agent-assignment"><ShieldCheck size={16} /> Assigned to a verified Seva Agent</p> : null}<ol>{timeline.map((item) => <li className={item.status} key={item.key}><span>{item.status === "completed" ? <CheckCircle2 size={17} /> : item.status === "current" ? <RefreshCw size={17} /> : <span />}</span><div><strong>{item.label}</strong><small>{item.timestamp ? new Date(item.timestamp).toLocaleString() : item.status === "current" ? "Status update pending" : "Pending"}</small></div></li>)}</ol></section> : null}
     </div>
   );
 }
@@ -452,6 +491,7 @@ export function ServiceTaskCard({ task: initialTask, token }: Props) {
   const [approvedDocuments, setApprovedDocuments] = useState<string[]>([]);
   const [handoffResult, setHandoffResult] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [trackerOpen, setTrackerOpen] = useState(false);
   const [latestEvent, setLatestEvent] = useState<ServiceTaskEvent | null>(null);
   const [eventStreamKey, setEventStreamKey] = useState(0);
   const [workingStartedAt, setWorkingStartedAt] = useState<number | null>(null);
@@ -496,11 +536,11 @@ export function ServiceTaskCard({ task: initialTask, token }: Props) {
   }, [eventStreamKey, task.id, token]);
 
   const update = (next: ServiceTaskView) => { setTask(next); setStatus("success"); setWorkingStartedAt(null); setError(""); setEventStreamKey((value) => value + 1); window.setTimeout(() => setStatus("idle"), 1200); };
-  const fail = (cause: unknown) => { setStatus("error"); setError(cause instanceof Error ? cause.message : "The service step could not be completed. Retry is safe."); };
+  const fail = (cause: unknown) => { setStatus("error"); setWorkingStartedAt(null); setError(friendlyServiceError(cause)); };
   const run = async (work: () => Promise<ServiceTaskView>) => {
-    if (!token || status === "working") return;
+    if (!token || status === "working") return false;
     setStatus("working"); setWorkingStartedAt(Date.now()); setError(""); setEventStreamKey((value) => value + 1);
-    try { update(await work()); } catch (cause) { fail(cause); }
+    try { update(await work()); return true; } catch (cause) { fail(cause); return false; }
   };
   const card = task.active_card;
   const officialOrigin = dataValue<string>(task, "official_origin", "");
@@ -589,7 +629,7 @@ export function ServiceTaskCard({ task: initialTask, token }: Props) {
       {card.type === "portal_session" && portalOutcomeOpen ? <form className="service-outcome-form" onSubmit={(event) => { event.preventDefault(); void reportPortalOutcome("submitted"); }}><p>Report only what the official portal showed. AutoAI will keep this unverified until independent evidence is available.</p><label>Application ID (optional)<input value={applicationId} maxLength={180} onChange={(event) => setApplicationId(event.target.value)} /></label><label>Transaction ID (optional)<input value={transactionId} maxLength={180} onChange={(event) => setTransactionId(event.target.value)} /></label><div><button className="service-primary" disabled={isBusy || offline} type="submit">Report submitted</button><button className="service-secondary" disabled={isBusy} onClick={() => void reportPortalOutcome("not_submitted")} type="button">Not submitted</button><button className="service-quiet-danger" disabled={isBusy} onClick={() => void reportPortalOutcome("rejected")} type="button">Report rejected</button></div></form> : null}
       {card.type === "form_review" ? <ReviewCard task={task} /> : null}
       {card.type === "submission_confirmation" ? <div className="service-confirmation"><dl><div><dt>Application</dt><dd>{String(card.data.application)}</dd></div><div><dt>Portal</dt><dd>{String(card.data.portal)}</dd></div><div><dt>Documents</dt><dd>{String(card.data.documents)}</dd></div><div><dt>Fee</dt><dd>{String((card.data.fee as Record<string, unknown> | undefined)?.label || "Check portal")}</dd></div></dl><label className="service-declaration"><input type="checkbox" checked={declaration || Boolean(card.data.confirmed)} disabled={Boolean(card.data.confirmed)} onChange={(event) => setDeclaration(event.target.checked)} /><span>{String(card.data.declaration)}</span></label></div> : null}
-      {card.type === "action_receipt" ? <ReceiptCard task={task} /> : null}
+      {card.type === "action_receipt" ? <ReceiptCard task={task} trackerOpen={trackerOpen} onToggleTracker={() => setTrackerOpen((value) => !value)} /> : null}
       {handoffOpen && dataValue<ActiveHandoff[]>(task, "active_handoffs", []).length ? <section className="service-handoff service-handoff-active-list" aria-label="Active human assistance"><h4>Active assistance access</h4>{dataValue<ActiveHandoff[]>(task, "active_handoffs", []).map((handoff) => <article className="service-handoff-active" key={handoff.id}><strong>{handoff.purpose}</strong><small>Agent: {handoff.agent_identity.verified ? "verified" : handoff.agent_identity.status || "unassigned"} · expires {new Date(handoff.expires_at).toLocaleTimeString()}</small><button className="service-quiet-danger" disabled={isBusy} onClick={() => void revokeHandoff(handoff.id)} type="button">Revoke access</button></article>)}</section> : null}
       {card.type === "task_progress" ? <div className="service-step-list">{dataValue<Array<{ label: string; complete: boolean }>>(task, "steps", []).map((step) => <span key={step.label} className={step.complete ? "complete" : ""}>{step.complete ? <CheckCircle2 size={17} /> : <span className="service-step-dot" />}{step.label}</span>)}</div> : null}
       {card.type === "task_error" || card.type === "recovery_options" ? <div className="service-recovery"><AlertTriangle size={19} /><span><strong>{String(card.data.code || stateLabel(task.state))}</strong><p>{card.description}</p></span></div> : null}

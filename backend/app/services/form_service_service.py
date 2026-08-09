@@ -32,6 +32,7 @@ from app.models.form_service import (
     ServiceTaskStep,
     SubmissionAttempt,
     SubmissionConfirmation,
+    TaskStateTransition,
     TrackingSubscription,
     UserDataRequest,
     UserFieldResponse,
@@ -132,6 +133,36 @@ def _latest_receipt(db: Session, task: ServiceTask) -> ServiceActionReceipt | No
     return db.scalar(select(ServiceActionReceipt).where(ServiceActionReceipt.task_id == task.id, ServiceActionReceipt.user_id == task.user_id))
 
 
+def _status_timeline(db: Session, task: ServiceTask) -> list[dict[str, Any]]:
+    transitions = list(
+        db.scalars(
+            select(TaskStateTransition)
+            .where(TaskStateTransition.task_id == task.id, TaskStateTransition.user_id == task.user_id)
+            .order_by(TaskStateTransition.created_at, TaskStateTransition.id)
+        )
+    )
+    reached_at = {transition.new_state: transition.created_at for transition in transitions}
+    stages = [
+        ("application_started", "Application started / आवेदन शुरू", {TaskState.CREATED.value}, task.created_at),
+        ("information_ready", "Information completed / जानकारी पूर्ण", {TaskState.COLLECTING_DOCUMENTS.value, TaskState.READY_TO_PREPARE.value, TaskState.PREPARING.value, TaskState.VALIDATING.value, TaskState.REVIEW_REQUIRED.value}, None),
+        ("submitted", "Sent to department / विभाग को भेजा गया", {TaskState.SUBMITTING.value, TaskState.SUBMITTED_UNVERIFIED.value}, None),
+        ("verification", "Under verification / सत्यापन जारी", {TaskState.VERIFYING.value}, None),
+        ("completed", "Completed / पूर्ण", {TaskState.COMPLETED_VERIFIED.value}, None),
+    ]
+    result: list[dict[str, Any]] = []
+    for key, label, states, default_time in stages:
+        timestamps = [reached_at[state] for state in states if state in reached_at]
+        timestamp = min(timestamps) if timestamps else default_time
+        if timestamp:
+            stage_status = "completed" if key != "completed" or task.state == TaskState.COMPLETED_VERIFIED.value else "current"
+        elif key == "verification" and task.state in {TaskState.SUBMITTED_UNVERIFIED.value, TaskState.VERIFYING.value}:
+            stage_status = "current"
+        else:
+            stage_status = "pending"
+        result.append({"key": key, "label": label, "status": stage_status, "timestamp": timestamp})
+    return result
+
+
 def _workflow_summary(db: Session, task: ServiceTask, service: ServiceDefinition, portal: ServicePortal | None) -> dict[str, Any]:
     responses = {
         item.field_key: item
@@ -218,8 +249,8 @@ def build_task_view(db: Session, task: ServiceTask) -> ServiceTaskView:
         card_type = CardType.INFORMATION_REQUEST
         title = request.title if request else "Required information"
         description = request.description if request else "Provide the remaining required information."
-        actions = ["save_fields", "pause", "cancel"]
-        data = {"data_request_id": request.id if request else None, "fields": request.fields if request else [], "saved_values": _task_fields(db, task)}
+        actions = ["save_fields"]
+        data = {"data_request_id": request.id if request else None, "fields": request.fields if request else [], "saved_values": _task_fields(db, task), "total_required_fields": len(service.requirements)}
     elif state == TaskState.COLLECTING_DOCUMENTS:
         requirements = list(db.scalars(select(DocumentRequirement).where(DocumentRequirement.task_id == task.id).order_by(DocumentRequirement.position)))
         last_permission = db.scalar(select(PermissionRequest).where(PermissionRequest.task_id == task.id, PermissionRequest.capability == "camera").order_by(PermissionRequest.prompted_at.desc(), PermissionRequest.id.desc()))
@@ -293,7 +324,7 @@ def build_task_view(db: Session, task: ServiceTask) -> ServiceTaskView:
         title = "Action receipt"
         description = "Submission is verified." if state == TaskState.COMPLETED_VERIFIED else "The portal acknowledged an action, but final completion is not yet verified."
         actions = ["track", "view_receipt"] if state == TaskState.COMPLETED_VERIFIED else ["track", "retry_verification", "recovery", "human_help"]
-        data = {"service_name": service.name, "status": receipt.status if receipt else task.state, "submission_timestamp": receipt.submitted_at if receipt else None, "verified_portal": receipt.portal_origin if receipt else (portal.origin if portal else None), "application_id": receipt.application_id if receipt else None, "transaction_id": receipt.transaction_id if receipt else None, "uploaded_document_count": receipt.document_count if receipt else len(_task_documents(db, task)), "fee": receipt.fee if receipt else service.fee, "expected_timeline": receipt.expected_timeline if receipt else None, "verified_at": receipt.verified_at if receipt else None, "evidence": [{"type": item.evidence_type, "verified": item.verified, "reference": item.reference} for item in evidence]}
+        data = {"service_name": service.name, "status": receipt.status if receipt else task.state, "submission_timestamp": receipt.submitted_at if receipt else None, "verified_portal": receipt.portal_origin if receipt else (portal.origin if portal else None), "application_id": receipt.application_id if receipt else None, "reference_number": receipt.application_id if receipt else None, "transaction_id": receipt.transaction_id if receipt else None, "uploaded_document_count": receipt.document_count if receipt else len(_task_documents(db, task)), "fee": receipt.fee if receipt else service.fee, "expected_timeline": receipt.expected_timeline if receipt else None, "verified_at": receipt.verified_at if receipt else None, "last_updated": task.updated_at, "status_timeline": _status_timeline(db, task), "evidence": [{"type": item.evidence_type, "verified": item.verified, "reference": item.reference} for item in evidence]}
     elif state in {TaskState.FAILED_RECOVERABLE, TaskState.FAILED_FINAL}:
         card_type = CardType.TASK_ERROR
         title = "Service task needs attention"
@@ -582,12 +613,15 @@ def save_draft(
     )
     if not request:
         raise service_error("SERVICE_NOT_FOUND", "Draft fields are unavailable", http_status=404)
-    definitions = {item["key"]: item for item in request.fields}
+    service = db.get(ServiceDefinition, task.service_id)
+    if not service:
+        raise service_error("SERVICE_NOT_FOUND", "Application field definitions are unavailable", http_status=404)
+    definitions = {item["key"]: item for item in service.requirements}
     unexpected = set(values) - set(definitions)
     if unexpected:
         raise service_error(
             "FIELD_VALIDATION_FAILED",
-            f"Unexpected fields: {', '.join(sorted(unexpected))}",
+            "Some saved fields are not part of this application. Refresh the form and try again.",
             http_status=422,
         )
     normalized: dict[str, Any] = {}
