@@ -13,7 +13,7 @@ from app.schemas.notifications import ApkUpdateNotificationRequest, DeviceTokenR
 from app.models.call import UserDevice
 from app.models.user import User
 from app.services.device_token_security import encrypt_token, token_hash
-from app.services.firebase_notifications import FcmSendResult
+from app.services.firebase_notifications import FcmSendResult, FirebaseNotificationService
 from fastapi import HTTPException
 import pytest
 
@@ -110,3 +110,74 @@ def test_update_notifications_use_encrypted_user_device_token(monkeypatch) -> No
     monkeypatch.setattr(notifications.firebase_notification_service, "send_update_notification", lambda token, **kwargs: sent.append((token, kwargs)) or FcmSendResult(ok=True))
     notifications.dispatch_apk_update_notifications(101500, "1.0.101500", "Secure push")
     assert sent[0][0] == target
+    assert sent[0][1]["target_kind"] == "token"
+
+
+def test_update_notifications_target_firebase_installations_by_fid(monkeypatch) -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        user = User(id="fid-user", email="fid@example.test", name="FID", username="fid-user", hashed_password="x", is_active=True)
+        target = "firebase-installation-id-1234567890"
+        db.add(user)
+        db.add(UserDevice(
+            user_id=user.id,
+            device_id="android-fid-1",
+            platform="android",
+            push_provider="fcm_fid",
+            is_active=True,
+            fcm_token_ciphertext=encrypt_token(target),
+            fcm_token_hash=token_hash(target),
+        ))
+        db.commit()
+
+    class SessionContext:
+        def __enter__(self):
+            self.db = Session(engine)
+            return self.db
+
+        def __exit__(self, *_):
+            self.db.close()
+
+    sent = []
+    monkeypatch.setattr(notifications, "SessionLocal", SessionContext)
+    monkeypatch.setattr(
+        notifications.firebase_notification_service,
+        "send_update_notification",
+        lambda target, **kwargs: sent.append((target, kwargs)) or FcmSendResult(ok=True),
+    )
+
+    notifications.dispatch_apk_update_notifications(101501, "1.0.101501", "FID push")
+
+    assert sent == [(target, {
+        "version_code": 101501,
+        "version_name": "1.0.101501",
+        "changelog": "FID push",
+        "target_kind": "fid",
+    })]
+
+
+def test_update_notification_payload_uses_requested_target_kind(monkeypatch) -> None:
+    service = FirebaseNotificationService()
+    captured = {}
+    monkeypatch.setattr(service, "_send", lambda message: captured.update(message) or FcmSendResult(ok=True))
+
+    service.send_update_notification(
+        "firebase-installation-id",
+        version_code=101502,
+        version_name="1.0.101502",
+        target_kind="fid",
+    )
+
+    assert captured["message"]["fid"] == "firebase-installation-id"
+    assert "token" not in captured["message"]
+
+    captured.clear()
+    service.send_update_notification(
+        "registration-token",
+        version_code=101503,
+        version_name="1.0.101503",
+    )
+
+    assert captured["message"]["token"] == "registration-token"
+    assert "fid" not in captured["message"]

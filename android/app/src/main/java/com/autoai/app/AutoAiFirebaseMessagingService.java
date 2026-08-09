@@ -10,6 +10,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.os.Handler;
 import android.os.PowerManager;
 import android.util.Log;
 
@@ -19,6 +20,7 @@ import com.google.firebase.messaging.FirebaseMessagingService;
 import com.google.firebase.messaging.RemoteMessage;
 
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
     private static final String TAG = "AutoAiFcm";
@@ -31,6 +33,7 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
     private static final String SEVA_CHANNEL_ID = "auto_ai_seva_cases";
     private static final String UPDATE_PREFERENCES = "auto_ai_update_preferences";
     private static final String LAST_NOTIFIED_UPDATE_VERSION_CODE = "last_notified_update_version_code";
+    private static final long UPDATE_CHECK_LISTENER_TIMEOUT_MS = 95_000L;
 
     @Override
     public void onNewToken(@NonNull String token) {
@@ -151,16 +154,7 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         }
         if ("apk_update".equals(messageType)) {
             // Push data is routing-only. The coordinator fetches signed release metadata from the API.
-            AppUpdateCoordinator.get(this).check(true);
-            new android.os.Handler(getMainLooper()).postDelayed(() -> {
-                AppUpdateCoordinator.Snapshot update = AppUpdateCoordinator.get(this).current();
-                if (update.metadata != null && update.metadata.versionCode > BuildConfig.VERSION_CODE) {
-                    showNotification(update.metadata.versionCode, "AutoAI " + update.metadata.versionName + " update",
-                        update.metadata.changelog == null || update.metadata.changelog.trim().isEmpty()
-                            ? "A verified AutoAI update is ready."
-                            : update.metadata.changelog.trim());
-                }
-            }, 2500L);
+            notifyAfterVerifiedUpdateCheck();
             return;
         }
         int versionCode = parseInt(data.get("version_code"));
@@ -185,6 +179,105 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
                 : "Version " + versionName + " is ready to install.";
         }
         showNotification(versionCode, title, body);
+    }
+
+    private void notifyAfterVerifiedUpdateCheck() {
+        try {
+            // FCM may reclaim this service after onMessageReceived returns. Keep the
+            // same verified check durable so delivery does not depend on this process.
+            UpdateCheckScheduler.schedule(this);
+        } catch (RuntimeException error) {
+            Log.w(TAG, "Unable to schedule durable pushed APK update check.", error);
+        }
+        try {
+            new UpdateNotificationListener(
+                AppUpdateCoordinator.get(this),
+                new Handler(getMainLooper())
+            ).start();
+        } catch (RuntimeException error) {
+            Log.w(TAG, "Unable to start pushed APK update check.", error);
+        }
+    }
+
+    static boolean shouldNotifyForVerifiedUpdate(
+        AppUpdateCoordinator.Snapshot snapshot,
+        int installedVersionCode
+    ) {
+        if (snapshot == null || snapshot.metadata == null
+            || snapshot.metadata.versionCode <= installedVersionCode) return false;
+        return snapshot.state == AppUpdateCoordinator.State.AVAILABLE
+            || snapshot.state == AppUpdateCoordinator.State.READY_TO_INSTALL;
+    }
+
+    static boolean isTerminalUpdateCheckState(AppUpdateCoordinator.State state) {
+        return state == AppUpdateCoordinator.State.UP_TO_DATE
+            || state == AppUpdateCoordinator.State.FAILED
+            || state == AppUpdateCoordinator.State.INSTALLED
+            || state == AppUpdateCoordinator.State.IDLE;
+    }
+
+    /** One-shot listener for a routing-only FCM update event. */
+    private final class UpdateNotificationListener implements AppUpdateCoordinator.Listener {
+        private final AppUpdateCoordinator coordinator;
+        private final Handler mainHandler;
+        private final AtomicBoolean armed = new AtomicBoolean(false);
+        private final AtomicBoolean stopped = new AtomicBoolean(false);
+        private final Runnable timeout = this::stop;
+
+        UpdateNotificationListener(AppUpdateCoordinator coordinator, Handler mainHandler) {
+            this.coordinator = coordinator;
+            this.mainHandler = mainHandler;
+        }
+
+        void start() {
+            mainHandler.postDelayed(timeout, UPDATE_CHECK_LISTENER_TIMEOUT_MS);
+            try {
+                // addListener publishes the current snapshot synchronously. Ignore that
+                // stale value until this instance is armed for its own refresh.
+                coordinator.addListener(this);
+                armed.set(true);
+                coordinator.check(true);
+            } catch (RuntimeException error) {
+                Log.w(TAG, "Pushed APK update check failed to start.", error);
+                stop();
+            }
+        }
+
+        @Override
+        public void onUpdateChanged(AppUpdateCoordinator.Snapshot snapshot) {
+            if (!armed.get() || stopped.get()) return;
+            try {
+                if (shouldNotifyForVerifiedUpdate(snapshot, BuildConfig.VERSION_CODE)) {
+                    AppUpdateCoordinator.Metadata metadata = snapshot.metadata;
+                    int versionCode = metadata.versionCode;
+                    String versionName = metadata.versionName;
+                    String changelog = metadata.changelog;
+                    if (!stop()) return;
+                    mainHandler.post(() -> {
+                        try {
+                            showNotification(versionCode, "AutoAI " + versionName + " update",
+                                changelog == null || changelog.trim().isEmpty()
+                                    ? "A verified AutoAI update is ready."
+                                    : changelog.trim());
+                        } catch (RuntimeException error) {
+                            Log.w(TAG, "Unable to show pushed APK update notification.", error);
+                        }
+                    });
+                    return;
+                }
+                if (isTerminalUpdateCheckState(snapshot == null ? null : snapshot.state)) stop();
+            } catch (RuntimeException error) {
+                Log.w(TAG, "Pushed APK update listener failed.", error);
+                stop();
+            }
+        }
+
+        private boolean stop() {
+            if (!stopped.compareAndSet(false, true)) return false;
+            mainHandler.removeCallbacks(timeout);
+            coordinator.removeListener(this);
+            return true;
+        }
     }
 
     @Override

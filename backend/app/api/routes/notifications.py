@@ -178,6 +178,7 @@ def dispatch_apk_update_notifications(
                 version_code=version_code,
                 version_name=version_name,
                 changelog=changelog,
+                target_kind="fid" if device.push_provider == "fcm_fid" else "token",
             )
             if result.ok:
                 sent += 1

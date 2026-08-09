@@ -45,16 +45,17 @@ class FirebaseNotificationService:
 
     def send_update_notification(
         self,
-        token: str,
+        target: str,
         *,
         version_code: int,
         version_name: str,
         changelog: str | None = None,
         release_id: str = "",
+        target_kind: str = "token",
     ) -> FcmSendResult:
         message = {
             "message": {
-                "token": token,
+                **self._target(target, target_kind),
                 "data": with_notification_destination({
                     "type": "apk_update",
                     "event_id": f"apk_update:{release_id or version_code}",
