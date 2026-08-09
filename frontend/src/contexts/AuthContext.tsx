@@ -29,7 +29,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const persistSession = useCallback(async (session: AuthSession, persistent = true) => {
-    await writeStoredSession(session.access_token, session.refresh_token, persistent);
+    // Persist the auth session, but never let an optional Android secure-storage
+    // implementation prevent the authenticated WebView from becoming usable.
+    try {
+      await writeStoredSession(session.access_token, session.refresh_token, persistent);
+    } catch (error) {
+      console.warn("[Auto-AI Auth] Secure session persistence failed; continuing with the active WebView session.", error);
+    }
     setToken(session.access_token);
     setRefreshToken(session.refresh_token ?? null);
     setUser(session.user);
@@ -84,13 +90,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [persistSession]);
 
-  useEffect(() => {
-    if (!loading && token && user && callNative.isAndroid()) {
-      void callNative.startCallingSetupIfNeeded().catch((error) => {
-        console.warn("[Auto-AI Calls] Calling setup could not be started.", error);
-      });
-    }
-  }, [loading, token, user]);
+  // IMPORTANT: do not start Android calling setup automatically after login.
+  // This native onboarding can request permissions/start foreground services and
+  // must only run from the calling setup UI. Running it immediately after auth
+  // was able to terminate the Android process on affected devices.
 
   const value = useMemo<AuthContextValue>(
     () => ({
