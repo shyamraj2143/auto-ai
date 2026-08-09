@@ -226,7 +226,16 @@ public final class CallingPermissionCoordinator {
 
     private static boolean hasCallForegroundService(Context context) {
         try {
-            ServiceInfo info = context.getPackageManager().getServiceInfo(new ComponentName(context, CallForegroundService.class), PackageManager.ComponentInfoFlags.of(0));
+            PackageManager packageManager = context.getPackageManager();
+            ComponentName service = new ComponentName(context, CallForegroundService.class);
+            ServiceInfo info;
+            if (Build.VERSION.SDK_INT >= 33) {
+                info = packageManager.getServiceInfo(service, PackageManager.ComponentInfoFlags.of(0));
+            } else {
+                // ComponentInfoFlags was introduced in API 33. Never reference it
+                // on older Android runtimes; the legacy int-flags overload is safe.
+                info = packageManager.getServiceInfo(service, 0);
+            }
             if (Build.VERSION.SDK_INT < 29) return true;
             int required = ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL | ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE | ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
             return (info.getForegroundServiceType() & required) == required;
