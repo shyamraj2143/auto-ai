@@ -42,7 +42,7 @@ function accessMessage(status: AlarmNativeStatus) {
   return "Finish the required Android alarm access, then create the alarm again.";
 }
 
-export function AlarmProvider({ children }: { children: ReactNode }) {
+export function AlarmProvider({ children, nativeEnabled = true }: { children: ReactNode; nativeEnabled?: boolean }) {
   const { token, user } = useAuth();
   const [alarms, setAlarms] = useState<UserAlarm[]>([]);
   const [activeAlarm, setActiveAlarm] = useState<UserAlarm | null>(null);
@@ -53,24 +53,29 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
   const refreshRunning = useRef(false);
 
   const refreshStatus = useCallback(async () => {
+    if (!nativeEnabled) return;
     const status = await alarmNative.status().catch(() => null);
     if (status) setNativeStatus(status);
-  }, []);
+  }, [nativeEnabled]);
 
   const refresh = useCallback(async () => {
     if (!token || refreshRunning.current) return;
     refreshRunning.current = true;
     try {
-      if (user?.id && !alarmNative.isAndroid() && (typeof navigator === "undefined" || navigator.onLine)) {
+      if (nativeEnabled && user?.id && !alarmNative.isAndroid() && (typeof navigator === "undefined" || navigator.onLine)) {
         await flushAlarmActions(user.id, token);
       }
       const result = await alarmsApi.list(token);
       const items = sortAlarms(result.items);
       setAlarms(items);
-      const sync = await alarmNative.sync(items);
-      const scheduledCount = items.filter((item) => item.enabled && item.status === "scheduled").length;
-      if (alarmNative.isAndroid() && scheduledCount > 0 && (!sync.exact || sync.failed > 0)) {
-        setError("One or more alarms are saved but not armed. Enable exact alarm access before relying on them.");
+      if (nativeEnabled) {
+        const sync = await alarmNative.sync(items);
+        const scheduledCount = items.filter((item) => item.enabled && item.status === "scheduled").length;
+        if (alarmNative.isAndroid() && scheduledCount > 0 && (!sync.exact || sync.failed > 0)) {
+          setError("One or more alarms are saved but not armed. Enable exact alarm access before relying on them.");
+        } else {
+          setError("");
+        }
       } else {
         setError("");
       }
@@ -80,7 +85,7 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
       refreshRunning.current = false;
       setLoading(false);
     }
-  }, [token, user?.id]);
+  }, [nativeEnabled, token, user?.id]);
 
   useEffect(() => {
     if (!token) {
@@ -102,7 +107,9 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
     window.addEventListener("online", onVisible);
     document.addEventListener("visibilitychange", onVisible);
     let actionListener: { remove: () => Promise<void> } | null = null;
-    void alarmNative.onAction(() => void refresh()).then((handle) => { actionListener = handle; });
+    if (nativeEnabled) {
+      void alarmNative.onAction(() => void refresh()).then((handle) => { actionListener = handle; }).catch(() => undefined);
+    }
     return () => {
       window.clearInterval(interval);
       window.removeEventListener("focus", onVisible);
@@ -110,15 +117,15 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
       document.removeEventListener("visibilitychange", onVisible);
       void actionListener?.remove();
     };
-  }, [refresh, refreshStatus, token]);
+  }, [nativeEnabled, refresh, refreshStatus, token]);
 
   useEffect(() => {
-    if (alarmNative.isAndroid() || !alarms.some((alarm) => alarm.enabled && ["scheduled", "ringing"].includes(alarm.status))) return;
+    if (!nativeEnabled || alarmNative.isAndroid() || !alarms.some((alarm) => alarm.enabled && ["scheduled", "ringing"].includes(alarm.status))) return;
     void import("./webAwakeVerifier").then(({ prewarmWebAwakeVerifier }) => prewarmWebAwakeVerifier()).catch(() => undefined);
-  }, [alarms]);
+  }, [alarms, nativeEnabled]);
 
   useEffect(() => {
-    if (!token || alarmNative.isAndroid()) return;
+    if (!nativeEnabled || !token || alarmNative.isAndroid()) return;
     const checkDue = () => {
       if (activeAlarm) return;
       const now = Date.now();
@@ -134,7 +141,7 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
     checkDue();
     const timer = window.setInterval(checkDue, 1_000);
     return () => window.clearInterval(timer);
-  }, [activeAlarm, alarms, token]);
+  }, [activeAlarm, alarms, nativeEnabled, token]);
 
   const upsert = useCallback((updated: UserAlarm) => {
     setAlarms((items) => sortAlarms([...items.filter((item) => item.id !== updated.id), updated]));
@@ -142,7 +149,7 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const ensureNativeAccess = useCallback(async () => {
-    if (!alarmNative.isAndroid()) return;
+    if (!nativeEnabled || !alarmNative.isAndroid()) return;
     let status = await alarmNative.status();
     setNativeStatus(status);
     if (status.ready) return;
@@ -150,7 +157,7 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
     status = await alarmNative.status();
     setNativeStatus(status);
     if (!status.ready) throw new Error(accessMessage(status));
-  }, []);
+  }, [nativeEnabled]);
 
   const createAlarm = useCallback(async (payload: AlarmDraft) => {
     if (!token) throw new Error("Sign in to create an alarm.");
@@ -159,9 +166,11 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
     try {
       await ensureNativeAccess();
       const created = upsert(await alarmsApi.create(token, payload));
-      const armed = await alarmNative.schedule(created);
-      if (alarmNative.isAndroid() && (!armed.scheduled || !armed.exact)) {
-        throw new Error("Alarm was saved to your account but Android did not arm it. Enable exact alarm access and re-enable this alarm.");
+      if (nativeEnabled) {
+        const armed = await alarmNative.schedule(created);
+        if (alarmNative.isAndroid() && (!armed.scheduled || !armed.exact)) {
+          throw new Error("Alarm was saved to your account but Android did not arm it. Enable exact alarm access and re-enable this alarm.");
+        }
       }
       return created;
     } catch (requestError) {
@@ -170,7 +179,7 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
     } finally {
       setSaving(false);
     }
-  }, [ensureNativeAccess, token, upsert]);
+  }, [ensureNativeAccess, nativeEnabled, token, upsert]);
 
   const updateAlarm = useCallback(async (alarmId: string, payload: Partial<AlarmDraft> & { enabled?: boolean }) => {
     if (!token) throw new Error("Sign in to update an alarm.");
@@ -179,13 +188,12 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
     try {
       if (payload.enabled !== false) await ensureNativeAccess();
       const updated = upsert(await alarmsApi.update(token, alarmId, payload));
-      if (updated.enabled) {
+      if (nativeEnabled && updated.enabled) {
         const armed = await alarmNative.schedule(updated);
         if (alarmNative.isAndroid() && (!armed.scheduled || !armed.exact)) {
           throw new Error("Changes were saved, but Android did not arm this alarm. Enable exact alarm access and try again.");
         }
-      }
-      else await alarmNative.cancel(updated.id).catch(() => undefined);
+      } else if (nativeEnabled) await alarmNative.cancel(updated.id).catch(() => undefined);
       return updated;
     } catch (requestError) {
       setError(readableError(requestError));
@@ -193,7 +201,7 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
     } finally {
       setSaving(false);
     }
-  }, [ensureNativeAccess, token, upsert]);
+  }, [ensureNativeAccess, nativeEnabled, token, upsert]);
 
   const deleteAlarm = useCallback(async (alarmId: string) => {
     if (!token) return;
@@ -202,13 +210,13 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
     try {
       await alarmsApi.remove(token, alarmId);
       setAlarms((items) => items.filter((item) => item.id !== alarmId));
-      await alarmNative.cancel(alarmId).catch(() => undefined);
+      if (nativeEnabled) await alarmNative.cancel(alarmId).catch(() => undefined);
     } catch (requestError) {
       setError(readableError(requestError));
     } finally {
       setSaving(false);
     }
-  }, [token]);
+  }, [nativeEnabled, token]);
 
   const dismissAlarm = useCallback(async (alarmId: string) => {
     if (!token || !user) return;
@@ -219,20 +227,12 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
     setAlarms((items) => items.filter((item) => item.id !== alarmId));
     try {
       await alarmsApi.action(token, alarmId, "dismiss", 10, { scheduledAt: current?.scheduled_at, clientRevision });
-      await alarmNative.cancel(alarmId).catch(() => undefined);
+      if (nativeEnabled) await alarmNative.cancel(alarmId).catch(() => undefined);
     } catch (requestError) {
-      enqueueAlarmAction({
-        userId: user.id,
-        alarmId,
-        action: "dismiss",
-        snoozeMinutes: 10,
-        scheduledAt: current?.scheduled_at,
-        clientRevision,
-        queuedAt: new Date().toISOString(),
-      });
+      enqueueAlarmAction({ userId: user.id, alarmId, action: "dismiss", snoozeMinutes: 10, scheduledAt: current?.scheduled_at, clientRevision, queuedAt: new Date().toISOString() });
       if (typeof navigator === "undefined" || navigator.onLine) setError(`${readableError(requestError)} The verified dismissal was saved offline and will sync automatically.`);
     }
-  }, [activeAlarm, alarms, token, user]);
+  }, [activeAlarm, alarms, nativeEnabled, token, user]);
 
   const verifyAwake = useCallback(async (alarmId: string, photo: Blob) => {
     if (!token) throw new Error("Sign in to verify this alarm.");
@@ -245,85 +245,45 @@ export function AlarmProvider({ children }: { children: ReactNode }) {
     const current = alarms.find((alarm) => alarm.id === alarmId) ?? activeAlarm;
     const scheduledAt = new Date(Date.now() + minutes * 60_000).toISOString();
     const clientRevision = Math.max(1, (current?.revision ?? 0) + 1);
-    if (current) {
-      upsert({
-        ...current,
-        scheduled_at: scheduledAt,
-        enabled: true,
-        status: "scheduled",
-        snooze_count: current.snooze_count + 1,
-        revision: clientRevision,
-      });
-    }
+    if (current) upsert({ ...current, scheduled_at: scheduledAt, enabled: true, status: "scheduled", snooze_count: current.snooze_count + 1, revision: clientRevision });
     setActiveAlarm(null);
     try {
       const updated = upsert(await alarmsApi.action(token, alarmId, "snooze", minutes, { scheduledAt, clientRevision }));
-      await alarmNative.schedule(updated).catch(() => undefined);
+      if (nativeEnabled) await alarmNative.schedule(updated).catch(() => undefined);
     } catch (requestError) {
-      enqueueAlarmAction({
-        userId: user.id,
-        alarmId,
-        action: "snooze",
-        snoozeMinutes: minutes,
-        scheduledAt,
-        clientRevision,
-        queuedAt: new Date().toISOString(),
-      });
+      enqueueAlarmAction({ userId: user.id, alarmId, action: "snooze", snoozeMinutes: minutes, scheduledAt, clientRevision, queuedAt: new Date().toISOString() });
       if (typeof navigator === "undefined" || navigator.onLine) setError(`${readableError(requestError)} Snooze was saved offline and will sync automatically.`);
     }
-  }, [activeAlarm, alarms, token, upsert, user]);
+  }, [activeAlarm, alarms, nativeEnabled, token, upsert, user]);
 
   const previewAlarm = useCallback(async (alarm: UserAlarm) => {
     setError("");
-    try {
-      await alarmNative.preview(alarm);
-    } catch (requestError) {
-      setError(readableError(requestError));
-    }
-  }, []);
+    try { if (nativeEnabled) await alarmNative.preview(alarm); }
+    catch (requestError) { setError(readableError(requestError)); }
+  }, [nativeEnabled]);
 
   const skipAlarm = useCallback(async (alarmId: string) => {
     if (!token) return;
     setSaving(true);
     try {
       const updated = upsert(await alarmsApi.action(token, alarmId, "skip"));
-      await alarmNative.schedule(updated);
+      if (nativeEnabled) await alarmNative.schedule(updated);
     } catch (requestError) {
       setError(readableError(requestError));
       throw requestError;
     } finally { setSaving(false); }
-  }, [token, upsert]);
+  }, [nativeEnabled, token, upsert]);
 
   const requestAlarmAccess = useCallback(async () => {
     setError("");
     try {
       const status = await alarmNative.requestAccess();
       setNativeStatus(status);
-    } catch (requestError) {
-      setError(readableError(requestError));
-    }
+    } catch (requestError) { setError(readableError(requestError)); }
   }, []);
 
   const nextAlarm = useMemo(() => alarms.find((alarm) => alarm.enabled && alarm.status === "scheduled" && Date.parse(alarm.scheduled_at) > Date.now()) ?? null, [alarms]);
-  const value = useMemo<AlarmContextValue>(() => ({
-    alarms,
-    nextAlarm,
-    activeAlarm,
-    loading,
-    saving,
-    error,
-    nativeStatus,
-    refresh,
-    createAlarm,
-    updateAlarm,
-    deleteAlarm,
-    dismissAlarm,
-    verifyAwake,
-    snoozeAlarm,
-    skipAlarm,
-    previewAlarm,
-    requestAlarmAccess,
-  }), [activeAlarm, alarms, createAlarm, deleteAlarm, dismissAlarm, error, loading, nativeStatus, nextAlarm, previewAlarm, refresh, requestAlarmAccess, saving, skipAlarm, snoozeAlarm, updateAlarm, verifyAwake]);
+  const value = useMemo<AlarmContextValue>(() => ({ alarms, nextAlarm, activeAlarm, loading, saving, error, nativeStatus, refresh, createAlarm, updateAlarm, deleteAlarm, dismissAlarm, verifyAwake, snoozeAlarm, skipAlarm, previewAlarm, requestAlarmAccess }), [activeAlarm, alarms, createAlarm, deleteAlarm, dismissAlarm, error, loading, nativeStatus, nextAlarm, previewAlarm, refresh, requestAlarmAccess, saving, skipAlarm, snoozeAlarm, updateAlarm, verifyAwake]);
 
   return <AlarmContext.Provider value={value}>{children}</AlarmContext.Provider>;
 }
