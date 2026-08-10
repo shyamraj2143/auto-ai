@@ -30,9 +30,7 @@ function timeLabel(value: string | number) {
   const date = new Date(value);
   const now = new Date();
   const sameDay = date.toDateString() === now.toDateString();
-  return sameDay
-    ? `Today, ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-    : date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return sameDay ? `Today, ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 export function ActionHubPage() {
@@ -89,126 +87,51 @@ export function ActionHubPage() {
     const items: HubActivityItem[] = [];
     const sortedChats = [...chats].sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
     const chatLimit = activityOnly ? 5 : 1;
-    sortedChats.slice(0, chatLimit).forEach((chat) => items.push({
-      id: `chat-${chat.id}`,
-      tone: "ai",
-      label: "Recent AI chat",
-      title: chat.title || "Untitled conversation",
-      meta: timeLabel(chat.updated_at),
-      onOpen: () => navigate(`/chat/${encodeURIComponent(chat.id)}`),
-    }));
+    sortedChats.slice(0, chatLimit).forEach((chat) => items.push({ id: `chat-${chat.id}`, tone: "ai", label: "Recent AI chat", title: chat.title || "Untitled conversation", meta: timeLabel(chat.updated_at), onOpen: () => navigate(`/chat/${encodeURIComponent(chat.id)}`) }));
     if (isActiveScreenShareState(screenShare.uiState) && screenShare.session) {
       const sessionId = screenShare.session.sessionId ?? screenShare.session.session_id ?? "active";
-      items.push({
-        id: `screen-${sessionId}`,
-        tone: "screen",
-        label: "Active screen room",
-        title: screenShare.role === "sharer" ? "Your screen share" : "Joined screen share",
-        meta: `${screenShare.uiState}${screenShare.startedAt ? ` · ${timeLabel(screenShare.startedAt)}` : ""}`,
-      });
+      items.push({ id: `screen-${sessionId}`, tone: "screen", label: "Active screen room", title: screenShare.role === "sharer" ? "Your screen share" : "Joined screen share", meta: `${screenShare.uiState}${screenShare.startedAt ? ` · ${timeLabel(screenShare.startedAt)}` : ""}` });
     }
     const callLimit = activityOnly ? 5 : 1;
-    calls.slice(0, callLimit).forEach((call) => items.push({
-      id: `call-${call.id}`,
-      tone: "call",
-      label: `Recent ${call.call_type} call`,
-      title: call.peer.display_name,
-      meta: `${call.status} · ${timeLabel(call.created_at)}`,
-      onOpen: () => navigate("/calls?view=calls"),
-    }));
-    if (relationshipSummary && relationshipSummary.unread_due > 0) items.push({
-      id: "relationship-followups-due",
-      tone: "relationship",
-      label: "Relationship follow-ups",
-      title: `${relationshipSummary.unread_due} ${relationshipSummary.unread_due === 1 ? "reminder" : "reminders"} due`,
-      meta: relationshipSummary.overdue ? `${relationshipSummary.overdue} overdue` : "Due today",
-      onOpen: () => navigate("/relationships"),
-    });
+    calls.slice(0, callLimit).forEach((call) => items.push({ id: `call-${call.id}`, tone: "call", label: `Recent ${call.call_type} call`, title: call.peer?.display_name || "Recent call", meta: `${call.status} · ${timeLabel(call.created_at)}`, onOpen: () => navigate("/calls?view=calls") }));
+    if (relationshipSummary && relationshipSummary.unread_due > 0) items.push({ id: "relationship-followups-due", tone: "relationship", label: "Relationship follow-ups", title: `${relationshipSummary.unread_due} ${relationshipSummary.unread_due === 1 ? "reminder" : "reminders"} due`, meta: relationshipSummary.overdue ? `${relationshipSummary.overdue} overdue` : "Due today", onOpen: () => navigate("/relationships") });
     return activityOnly ? items.slice(0, 10) : items.slice(0, 3);
   }, [activityOnly, calls, chats, navigate, relationshipSummary, screenShare.role, screenShare.session, screenShare.startedAt, screenShare.uiState]);
 
   if (!user) return null;
-  const firstName = user.name.trim().split(/\s+/)[0] || "there";
+  const safeName = typeof user.name === "string" ? user.name.trim() : "";
+  const firstName = safeName.split(/\s+/)[0] || "there";
+  const online = typeof navigator === "undefined" ? true : navigator.onLine;
 
   return (
     <div className="action-hub-page">
-      <HubHeader
-        user={user}
-        unreadNotifications={socialUnreadNotifications + (relationshipSummary?.unread_due ?? 0)}
-        notificationHref={socialUnreadNotifications > 0 ? "/call-hub/alerts" : relationshipSummary?.unread_due ? "/relationships" : "/call-hub/alerts"}
-        onOpenQuickConnect={() => openQuick("ai")}
-        onLogout={logout}
-      />
+      <HubHeader user={user} unreadNotifications={socialUnreadNotifications + (relationshipSummary?.unread_due ?? 0)} notificationHref={socialUnreadNotifications > 0 ? "/call-hub/alerts" : relationshipSummary?.unread_due ? "/relationships" : "/call-hub/alerts"} onOpenQuickConnect={() => openQuick("ai")} onLogout={logout} />
       <main className="hub-main">
         {activityOnly ? (
-          <div className="hub-activity-page">
-            <div className="hub-welcome hub-activity-welcome"><p>AutoAI workspace</p><h1>Activity</h1><span>Your real recent chats, calls, and active sharing sessions.</span></div>
-            <RecentActivity items={recentItems} loading={loadingChats || activityLoading} error={activityError} expanded />
-          </div>
+          <div className="hub-activity-page"><div className="hub-welcome hub-activity-welcome"><p>AutoAI workspace</p><h1>Activity</h1><span>Your real recent chats, calls, and active sharing sessions.</span></div><RecentActivity items={recentItems} loading={loadingChats || activityLoading} error={activityError} expanded /></div>
         ) : (
           <>
-            <section className="hub-welcome" aria-labelledby="hub-title">
-              <p>Your AI Control Center</p>
-              <h1 id="hub-title">{greeting()}, {firstName}</h1>
-              <span>Choose a workspace and get things done.</span>
-            </section>
-
+            <section className="hub-welcome" aria-labelledby="hub-title"><p>Your AI Control Center</p><h1 id="hub-title">{greeting()}, {firstName}</h1><span>Choose a workspace and get things done.</span></section>
             <section className="hub-feature-stage" aria-label="Primary AutoAI actions">
-              <div className="hub-card-position hub-card-ai">
-                <FeatureCard tone="ai" icon={MessageCircle} title="AI Chat" description="Intelligent conversations that get things done." details="Voice · Images · Files · Models" primaryAction={{ label: "Start Chat", onClick: () => navigate("/chat") }} secondaryAction={chats[0] ? { label: "Continue", onClick: () => navigate(`/chat/${encodeURIComponent(chats[0].id)}`) } : undefined} />
-              </div>
-              <div className="hub-card-position hub-card-screen">
-                <FeatureCard tone="screen" icon={MonitorUp} title="Screen Sharing" description="Share, collaborate and solve problems together." details={`${screenShare.canShareScreen ? "Ready to share" : "Join supported"} · ${screenShare.networkQuality === "unknown" ? "secure relay" : `${screenShare.networkQuality} network`}`} primaryAction={{ label: "Share Screen", onClick: () => navigate("/screen-share") }} secondaryAction={{ label: "Join code", onClick: () => openQuick("screen") }} />
-              </div>
-              <div className="hub-card-position hub-card-call">
-                <FeatureCard tone="call" icon={Phone} title="Audio / Video Call" description="Crystal clear calls with contacts and teams." details="Contacts · Recent calls · Alerts" primaryAction={{ label: "Start Call", onClick: () => navigate("/call-hub/search") }} secondaryAction={{ label: "History", onClick: () => navigate("/call-hub/calls") }} />
-              </div>
-              <div className="hub-card-position hub-card-alarm">
-                <FeatureCard tone="alarm" icon={AlarmClock} title="AI Alarm" description="Wake up with a personal reminder in your language." details={nextAlarm ? `${countdownLabel(nextAlarm.scheduled_at)} · ${nextAlarm.title}` : "Calendar · AI voice · Native ringtone"} primaryAction={{ label: "Set Alarm", onClick: () => navigate("/alarms") }} secondaryAction={nextAlarm ? { label: "Manage", onClick: () => navigate("/alarms") } : undefined} />
-              </div>
-              <div className="hub-card-position hub-card-relationship">
-                <FeatureCard tone="relationship" icon={HeartHandshake} title="Relationship Follow-up" description="Stay connected with people who matter." details={`${relationshipSummary?.unread_due ?? 0} due · Manual entry · Private notes`} primaryAction={{ label: "Open", onClick: () => navigate("/relationships") }} secondaryAction={{ label: "Add person", onClick: () => navigate("/relationships", { state: { addPerson: true } }) }} />
-              </div>
-              <div className="hub-card-position hub-card-seva">
-                <FeatureCard tone="seva" icon={FileCheck2} title="AutoAI Seva" description="Prepare government-service applications with guided verification." details="Income Certificate · Documents · Receipt · Tracking" primaryAction={{ label: "Open Seva", onClick: () => navigate("/seva") }} secondaryAction={{ label: "My applications", onClick: () => navigate("/seva/applications") }} />
-              </div>
+              <div className="hub-card-position hub-card-ai"><FeatureCard tone="ai" icon={MessageCircle} title="AI Chat" description="Intelligent conversations that get things done." details="Voice · Images · Files · Models" primaryAction={{ label: "Start Chat", onClick: () => navigate("/chat") }} secondaryAction={chats[0] ? { label: "Continue", onClick: () => navigate(`/chat/${encodeURIComponent(chats[0].id)}`) } : undefined} /></div>
+              <div className="hub-card-position hub-card-screen"><FeatureCard tone="screen" icon={MonitorUp} title="Screen Sharing" description="Share, collaborate and solve problems together." details={`${screenShare.canShareScreen ? "Ready to share" : "Join supported"} · ${screenShare.networkQuality === "unknown" ? "secure relay" : `${screenShare.networkQuality} network`}`} primaryAction={{ label: "Share Screen", onClick: () => navigate("/screen-share") }} secondaryAction={{ label: "Join code", onClick: () => openQuick("screen") }} /></div>
+              <div className="hub-card-position hub-card-call"><FeatureCard tone="call" icon={Phone} title="Audio / Video Call" description="Crystal clear calls with contacts and teams." details="Contacts · Recent calls · Alerts" primaryAction={{ label: "Start Call", onClick: () => navigate("/call-hub/search") }} secondaryAction={{ label: "History", onClick: () => navigate("/call-hub/calls") }} /></div>
+              <div className="hub-card-position hub-card-alarm"><FeatureCard tone="alarm" icon={AlarmClock} title="AI Alarm" description="Wake up with a personal reminder in your language." details={nextAlarm ? `${countdownLabel(nextAlarm.scheduled_at)} · ${nextAlarm.title}` : "Calendar · AI voice · Native ringtone"} primaryAction={{ label: "Set Alarm", onClick: () => navigate("/alarms") }} secondaryAction={nextAlarm ? { label: "Manage", onClick: () => navigate("/alarms") } : undefined} /></div>
+              <div className="hub-card-position hub-card-relationship"><FeatureCard tone="relationship" icon={HeartHandshake} title="Relationship Follow-up" description="Stay connected with people who matter." details={`${relationshipSummary?.unread_due ?? 0} due · Manual entry · Private notes`} primaryAction={{ label: "Open", onClick: () => navigate("/relationships") }} secondaryAction={{ label: "Add person", onClick: () => navigate("/relationships", { state: { addPerson: true } }) }} /></div>
+              <div className="hub-card-position hub-card-seva"><FeatureCard tone="seva" icon={FileCheck2} title="AutoAI Seva" description="Prepare government-service applications with guided verification." details="Income Certificate · Documents · Receipt · Tracking" primaryAction={{ label: "Open Seva", onClick: () => navigate("/seva") }} secondaryAction={{ label: "My applications", onClick: () => navigate("/seva/applications") }} /></div>
             </section>
-
             <section className="hub-metric-grid" aria-label="Workspace metrics">
               <article><span><Activity size={16} /> AI conversations</span><strong>{chats.length}</strong><small>Available chat threads</small></article>
               <article><span><MonitorUp size={16} /> Screen sharing</span><strong>{isActiveScreenShareState(screenShare.uiState) ? "Live" : "Ready"}</strong><small>{screenShare.networkQuality === "unknown" ? "Secure relay" : `${screenShare.networkQuality} network`}</small></article>
               <article><span><Phone size={16} /> Call history</span><strong>{calls.length}</strong><small>Recent call records</small></article>
               <article><span><AlarmClock size={16} /> Next alarm</span><strong>{nextAlarm ? formatAlarmTime24(nextAlarm.scheduled_at) : "Ready"}</strong><small>{nextAlarm ? formatAlarmDate(nextAlarm.scheduled_at) : "No alarm scheduled"}</small></article>
             </section>
-
-            <section className="hub-dashboard-lower">
-              <RecentActivity items={recentItems} loading={loadingChats || activityLoading} error={activityError} />
-              <aside className="hub-system-status">
-                <header><span>Workspace Status</span><small>Live app state</small></header>
-                {[
-                  ["AI Chat", loadingChats ? "Checking" : "Ready"],
-                  ["Calling Service", activityError ? "Unavailable" : activityLoading ? "Checking" : "Connected"],
-                  ["Screen Sharing", screenShare.networkQuality === "reconnecting" ? "Reconnecting" : "Operational"],
-                  ["Network", navigator.onLine ? "Online" : "Offline"],
-                ].map(([label, status]) => (
-                  <div key={label}><span><CheckCircle2 size={15} /> {label}</span><small>{status}<i /></small></div>
-                ))}
-              </aside>
-            </section>
-            <div className="hub-quick-launch-wrap">
-              <button type="button" className="hub-quick-launch" onClick={() => openQuick("ai")}><Zap /> Quick Connect</button>
-            </div>
+            <section className="hub-dashboard-lower"><RecentActivity items={recentItems} loading={loadingChats || activityLoading} error={activityError} /><aside className="hub-system-status"><header><span>Workspace Status</span><small>Live app state</small></header>{[["AI Chat", loadingChats ? "Checking" : "Ready"],["Calling Service", activityError ? "Unavailable" : activityLoading ? "Checking" : "Connected"],["Screen Sharing", screenShare.networkQuality === "reconnecting" ? "Reconnecting" : "Operational"],["Network", online ? "Online" : "Offline"]].map(([label, status]) => <div key={label}><span><CheckCircle2 size={15} /> {label}</span><small>{status}<i /></small></div>)}</aside></section>
+            <div className="hub-quick-launch-wrap"><button type="button" className="hub-quick-launch" onClick={() => openQuick("ai")}><Zap /> Quick Connect</button></div>
           </>
         )}
       </main>
-      <QuickConnect
-        open={quickOpen}
-        initialAction={quickAction}
-        onClose={() => setQuickOpen(false)}
-        onAiCommand={(command) => navigate("/chat", { state: { hubPrompt: command } })}
-        onJoinScreen={screenShare.joinWithCode}
-        onFindContact={(query, type) => navigate(callSearchRoute(query, type))}
-      />
+      <QuickConnect open={quickOpen} initialAction={quickAction} onClose={() => setQuickOpen(false)} onAiCommand={(command) => navigate("/chat", { state: { hubPrompt: command } })} onJoinScreen={screenShare.joinWithCode} onFindContact={(query, type) => navigate(callSearchRoute(query, type))} />
     </div>
   );
 }
