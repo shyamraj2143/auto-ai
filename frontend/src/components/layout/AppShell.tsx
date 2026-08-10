@@ -19,6 +19,19 @@ function AlarmWorkspaceScope({ enabled, children }: { enabled: boolean; children
   return <AlarmProvider>{children}<AlarmOverlay /></AlarmProvider>;
 }
 
+/**
+ * Keep the realtime calling runtime out of normal authenticated app startup.
+ * CallProvider performs websocket/signaling/native-call initialization as soon as
+ * it mounts. Mounting it globally made a post-login native failure capable of
+ * taking down the whole Android process even when the user never opened Call Hub.
+ * The call runtime is now scoped to the actual Call Hub workspace. Native
+ * incoming-call activities remain registered independently in Android.
+ */
+function CallWorkspaceScope({ enabled, children }: { enabled: boolean; children: ReactNode }) {
+  if (!enabled) return <>{children}</>;
+  return <CallProvider>{children}<CallOverlay /></CallProvider>;
+}
+
 export function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -33,6 +46,7 @@ export function AppShell() {
   const fullCanvasAdmin = location.pathname.startsWith("/admin/live-pages");
   const isAdminRoute = location.pathname.startsWith("/admin");
   const isChatWorkspace = location.pathname.startsWith("/chat");
+  const isCallWorkspace = location.pathname.startsWith("/call-hub") || location.pathname.startsWith("/calls");
 
   useEffect(() => {
     closeSidebar();
@@ -85,40 +99,39 @@ export function AppShell() {
     return () => window.removeEventListener("auto-ai-destination-consumed", clearConsumedDestination);
   }, []);
 
-  return (
-      <CallProvider>
-          <ChatProvider>
-          <AlarmWorkspaceScope enabled={!isAdminRoute}>
-          <AndroidBackHandler />
-          <div className={`app-shell${isSidebarOpen ? " sidebar-open" : ""}${isChatWorkspace ? " chat-app-shell" : ""}`}>
-            {!fullCanvasAdmin && <WorkspaceNavigation />}
-            {!fullCanvasAdmin && isChatWorkspace && <Sidebar />}
-            {!fullCanvasAdmin && isChatWorkspace && isSidebarCollapsed && (
-              <button
-                className="sidebar-restore-button hidden md:inline-flex"
-                onClick={expandSidebar}
-                title="Show chat history"
-                type="button"
-              >
-                <PanelLeftOpen size={17} />
-              </button>
-            )}
-            <main className="flex min-w-0 flex-1 flex-col">
-              {safeMode && (
-                <div className="safe-mode-banner" role="status">
-                  <span>Safe Mode active{safeModeReason ? `: ${safeModeReason}` : ""}</span>
-                  <button type="button" onClick={disableSafeMode}>Exit Safe Mode</button>
-                </div>
-              )}
-              <div className="route-transition-stage" key={`${location.pathname}${location.search}`}>
-                <Outlet />
+  const shell = (
+    <ChatProvider>
+      <AlarmWorkspaceScope enabled={!isAdminRoute}>
+        <AndroidBackHandler />
+        <div className={`app-shell${isSidebarOpen ? " sidebar-open" : ""}${isChatWorkspace ? " chat-app-shell" : ""}`}>
+          {!fullCanvasAdmin && <WorkspaceNavigation />}
+          {!fullCanvasAdmin && isChatWorkspace && <Sidebar />}
+          {!fullCanvasAdmin && isChatWorkspace && isSidebarCollapsed && (
+            <button
+              className="sidebar-restore-button hidden md:inline-flex"
+              onClick={expandSidebar}
+              title="Show chat history"
+              type="button"
+            >
+              <PanelLeftOpen size={17} />
+            </button>
+          )}
+          <main className="flex min-w-0 flex-1 flex-col">
+            {safeMode && (
+              <div className="safe-mode-banner" role="status">
+                <span>Safe Mode active{safeModeReason ? `: ${safeModeReason}` : ""}</span>
+                <button type="button" onClick={disableSafeMode}>Exit Safe Mode</button>
               </div>
-            </main>
-            {!fullCanvasAdmin && <WorkspaceMobileNavigation />}
-            <CallOverlay />
-          </div>
-          </AlarmWorkspaceScope>
-          </ChatProvider>
-      </CallProvider>
+            )}
+            <div className="route-transition-stage" key={`${location.pathname}${location.search}`}>
+              <Outlet />
+            </div>
+          </main>
+          {!fullCanvasAdmin && <WorkspaceMobileNavigation />}
+        </div>
+      </AlarmWorkspaceScope>
+    </ChatProvider>
   );
+
+  return <CallWorkspaceScope enabled={isCallWorkspace}>{shell}</CallWorkspaceScope>;
 }
