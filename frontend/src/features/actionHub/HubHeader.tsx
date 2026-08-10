@@ -1,6 +1,6 @@
-import { Bell, Download, Home, LogOut, Search, Settings2, TimerReset } from "lucide-react";
+import { Bell, Download, LogOut, Search, Settings2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { resolveApiAssetUrl } from "../../api/client";
 import type { User } from "../../types";
 import { LogoIcon } from "../../components/brand/LogoIcon";
@@ -75,11 +75,6 @@ export function HubHeader({
           </button>
         )}
       </div>
-
-      <nav className="hub-desktop-nav" aria-label="Action Hub navigation">
-        <NavLink to="/hub"><Home size={15} /> Home</NavLink>
-        <NavLink to="/activity"><TimerReset size={15} /> Activity</NavLink>
-      </nav>
 
       <button className="hub-command-search" type="button" onClick={onOpenQuickConnect} aria-label="Open Quick Connect">
         <Search size={18} />

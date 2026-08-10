@@ -35,6 +35,20 @@ public class AppUpdateCoordinatorTest {
         assertFalse(AppUpdateCoordinator.requiresMandatoryUpdate(102351, optional));
     }
 
+    @Test public void backgroundUpdaterDownloadsOnlyMandatoryReleases() {
+        AppUpdateCoordinator.Metadata optional = new AppUpdateCoordinator.Metadata();
+        optional.versionCode = 102351;
+        optional.minimumSupportedVersionCode = 102300;
+        assertFalse(UpdateCheckWorker.shouldAutomaticallyDownload(optional, 102341));
+
+        optional.forceUpdate = true;
+        assertTrue(UpdateCheckWorker.shouldAutomaticallyDownload(optional, 102341));
+
+        optional.forceUpdate = false;
+        optional.minimumSupportedVersionCode = 102350;
+        assertTrue(UpdateCheckWorker.shouldAutomaticallyDownload(optional, 102341));
+    }
+
     @Test public void verifiedApkCanOnlyBeReusedForItsExactVersionCode() {
         assertTrue(AppUpdateCoordinator.downloadedVersionMatches(102351, 102351));
         assertFalse(AppUpdateCoordinator.downloadedVersionMatches(102341, 102351));

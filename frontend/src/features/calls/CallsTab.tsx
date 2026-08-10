@@ -1,5 +1,5 @@
 import { ArrowDownLeft, ArrowUpRight, Bell, Check, LoaderCircle, MessageCircle, Phone, Search, ShieldAlert, Trash2, UserPlus, Video, X } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ApiClientError } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
@@ -14,8 +14,8 @@ import type { CallRecord, CallType, PublicCallUser, SearchHistoryItem, SocialNot
 import { AlertsPanel } from "./AlertsPanel";
 import { CallHistoryPanel } from "./CallHistoryPanel";
 import { CallAvatar } from "./CallAvatar";
+import { asArray, pageCount, pageItems } from "./callHubData";
 import { CallHubEmptyState } from "./CallHubEmptyState";
-import { CallHubHeader } from "./CallHubHeader";
 import { CallHubNavigation, type CallHubView } from "./CallHubNavigation";
 import { CallHubShell } from "./CallHubShell";
 import { CallHubStatusBanner } from "./CallHubStatusBanner";
@@ -36,6 +36,17 @@ type RequestView = "incoming" | "sent" | "connected" | "history";
 type CallFilter = "all" | "missed" | "audio" | "video";
 type ChatFilter = "recent" | "unread";
 export const CALL_HUB_SECTIONS = ["search", "requests", "chats", "calls", "alerts"] as const;
+const CONNECTION_TABS = [
+  ["incoming", "Incoming"],
+  ["sent", "Sent"],
+  ["connected", "Connected"],
+  ["history", "History"],
+] as const satisfies ReadonlyArray<readonly [RequestView, string]>;
+const CONNECTION_PANEL_ID = "connection-panel";
+
+function connectionTabId(view: RequestView) {
+  return `connection-tab-${view}`;
+}
 
 function errorText(error: unknown, fallback: string) {
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
@@ -225,8 +236,8 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
     try {
       const page = await socialApi.searchUsers(token, normalized, 1, 20, controller.signal);
       if (!controller.signal.aborted) {
-        setResults(page.items.filter((item) => item.id !== currentUser?.id));
-        setUnread(page.unread_notifications);
+        setResults(pageItems<SocialProfile>(page).filter((item) => item.id !== currentUser?.id));
+        setUnread(pageCount(page, "unread_notifications"));
         void socialApi.addSearchHistory(token, normalized).then((item) => setSearchHistory((items) => [item, ...items.filter((entry) => entry.id !== item.id)].slice(0, 20))).catch(() => undefined);
       }
     } catch (searchError) {
@@ -238,7 +249,7 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
 
   const loadSearchHistory = useCallback(async () => {
     if (!token) return;
-    try { setSearchHistory(await socialApi.searchHistory(token)); }
+    try { setSearchHistory(asArray<SearchHistoryItem>(await socialApi.searchHistory(token))); }
     catch (loadError) { showToast(errorText(loadError, "Unable to load recent searches.")); }
   }, [showToast, token]);
 
@@ -249,10 +260,10 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
       const [incomingPage, sentPage, historyPage, connectionsPage] = await Promise.all([
         socialApi.incomingRequests(token), socialApi.sentRequests(token), socialApi.requestHistory(token), socialApi.connections(token)
       ]);
-      setIncoming(incomingPage.items);
-      setSent(sentPage.items);
-      setHistoryRequests(historyPage.items);
-      setConnections(connectionsPage.items);
+      setIncoming(pageItems<SocialRequest>(incomingPage));
+      setSent(pageItems<SocialRequest>(sentPage));
+      setHistoryRequests(pageItems<SocialRequest>(historyPage));
+      setConnections(pageItems<SocialProfile>(connectionsPage));
     } catch (loadError) {
       showToast(errorText(loadError, "Unable to load follow requests."));
     } finally {
@@ -265,8 +276,8 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
     setLoading(true);
     try {
       const page = await socialApi.notifications(token);
-      setNotifications(page.items);
-      setUnread(page.unread_count);
+      setNotifications(pageItems<SocialNotification>(page));
+      setUnread(pageCount(page, "unread_count"));
     } catch (loadError) {
       showToast(errorText(loadError, "Unable to load notifications."));
     } finally {
@@ -277,14 +288,14 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
   const loadChats = useCallback(async () => {
     if (!token) return;
     setLoading(true);
-    try { setThreads((await userMessagesApi.listThreads(token, false)).items); }
+    try { setThreads(pageItems<UserThread>(await userMessagesApi.listThreads(token, false))); }
     catch (loadError) { showToast(errorText(loadError, "Unable to load conversations.")); }
     finally { setLoading(false); }
   }, [showToast, token]);
 
   const loadCallHistory = useCallback(async () => {
     if (!token) return;
-    try { setHistory((await callApi.history(token, 1, 20)).items); }
+    try { setHistory(pageItems<CallRecord>(await callApi.history(token, 1, 20))); }
     catch (loadError) { showToast(errorText(loadError, "Unable to load call history.")); }
   }, [showToast, token]);
 
@@ -303,11 +314,11 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
         userMessagesApi.listThreads(token, false),
       ] as const;
       const [historyResult, realtimeResult, searchResult, notificationResult, incomingResult, threadsResult] = await Promise.allSettled(requests);
-      if (historyResult.status === "fulfilled") setHistory(historyResult.value.items);
-      if (searchResult.status === "fulfilled" && searchResult.value) setResults(searchResult.value.items.filter((item) => item.id !== currentUser?.id));
-      if (notificationResult.status === "fulfilled") setUnread(notificationResult.value.unread_count);
-      if (incomingResult.status === "fulfilled") setIncoming(incomingResult.value.items);
-      if (threadsResult.status === "fulfilled") setThreads(threadsResult.value.items);
+      if (historyResult.status === "fulfilled") setHistory(pageItems<CallRecord>(historyResult.value));
+      if (searchResult.status === "fulfilled" && searchResult.value) setResults(pageItems<SocialProfile>(searchResult.value).filter((item) => item.id !== currentUser?.id));
+      if (notificationResult.status === "fulfilled") setUnread(pageCount(notificationResult.value, "unread_count"));
+      if (incomingResult.status === "fulfilled") setIncoming(pageItems<SocialRequest>(incomingResult.value));
+      if (threadsResult.status === "fulfilled") setThreads(pageItems<UserThread>(threadsResult.value));
       if (realtimeResult.status === "rejected" && notifyOnError) {
         setMessage(errorText(realtimeResult.reason, "Realtime calling is temporarily unavailable."));
       }
@@ -412,10 +423,11 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
       }
       try {
         const historyPage = await socialApi.requestHistory(token);
-        const accepted = historyPage.items.find((item) => item.id === request.id && item.status === "accepted");
+        const reconciledHistory = pageItems<SocialRequest>(historyPage);
+        const accepted = reconciledHistory.find((item) => item.id === request.id && item.status === "accepted");
         if (accepted) {
           setIncoming((items) => items.filter((item) => item.id !== request.id));
-          setHistoryRequests(historyPage.items);
+          setHistoryRequests(reconciledHistory);
           updateProfileInLists(accepted.user);
           setConnections((items) => [accepted.user, ...items.filter((item) => item.id !== accepted.user.id)]);
           return;
@@ -597,9 +609,22 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
     void runSearch(query);
   }
 
+  function handleConnectionTabKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>, index: number) {
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight") nextIndex = (index + 1) % CONNECTION_TABS.length;
+    if (event.key === "ArrowLeft") nextIndex = (index - 1 + CONNECTION_TABS.length) % CONNECTION_TABS.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = CONNECTION_TABS.length - 1;
+    if (nextIndex === null) return;
+    event.preventDefault();
+    const nextView = CONNECTION_TABS[nextIndex][0];
+    setRequestView(nextView);
+    window.requestAnimationFrame(() => document.getElementById(connectionTabId(nextView))?.focus());
+  }
+
   const featureEnabled = config?.enabled !== false;
   const readiness = !featureEnabled || !config?.realtime_configured ? "unavailable" : config?.limitations?.length || !config.turn_configured ? "limited" : "ready";
-  const readinessDetails = [config?.diagnostic, ...(config?.limitations || [])].filter((item): item is string => Boolean(item));
+  const readinessDetails = [config?.diagnostic, ...asArray<string>(config?.limitations)].filter((item): item is string => Boolean(item));
   const missedCount = history.filter((item) => item.status === "missed").length;
   const unreadChatCount = threads.reduce((sum, thread) => sum + thread.unread_count, 0);
   const visibleThreads = threads.filter((thread) => {
@@ -621,7 +646,6 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
   return (
     <CallHubShell
       navigation={<CallHubNavigation active={view} counts={{ requests: incoming.length, chats: unreadChatCount, calls: missedCount, alerts: unread }} onChange={changeView} />}
-      header={<CallHubHeader view={view} ready={readiness} refreshing={loading} onRefresh={() => void refresh(true)} onSettings={() => navigate("/settings?section=calls")} />}
       status={<CallHubStatusBanner state={readiness} details={readinessDetails} />}
     >
       {message && <AppNotice kind="error" message={message} onRetry={() => void refresh(true)} onDismiss={() => setMessage("")} />}
@@ -631,12 +655,16 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
           <div className="chat-list-tools"><label><Search size={15} /><input value={chatQuery} onChange={(event) => setChatQuery(event.target.value)} placeholder="Search accepted contacts" aria-label="Search accepted conversations" /></label><div className="chat-filter-buttons" role="group" aria-label="Conversation filter"><button type="button" className={chatFilter === "recent" ? "active" : ""} onClick={() => setChatFilter("recent")}>Recent</button><button type="button" className={chatFilter === "unread" ? "active" : ""} onClick={() => setChatFilter("unread")}>Unread</button></div></div>
           {loading && !threads.length && <div className="connection-skeleton" aria-label="Loading conversations"><i /><i /><i /></div>}
           {visibleThreads.map((thread) => (
-            <div className="call-history-row call-chat-row" key={thread.id} role="button" tabIndex={0} onClick={() => navigate(`/messages/${thread.id}`)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") navigate(`/messages/${thread.id}`); }}>
-              <CallAvatar name={thread.peer.display_name} avatarUrl={thread.peer.avatar_url}><i className={`call-presence-dot ${thread.peer.presence}`} /></CallAvatar>
-              <span><strong>{thread.peer.display_name}</strong><small>{thread.last_message?.text_content || "Start a conversation"} · {thread.last_message ? new Date(thread.last_message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : `@${thread.peer.username}`}</small></span>
-              {thread.muted && <small className="thread-muted" aria-label="Muted">Muted</small>}{thread.unread_count > 0 && <b className="thread-unread">{thread.unread_count > 99 ? "99+" : thread.unread_count}</b>}
-              <button type="button" onClick={(event) => { event.stopPropagation(); void placeUserCall(thread.peer, "audio"); }} disabled={!thread.peer.can_audio_call} aria-label={`Voice call ${thread.peer.display_name}`}><Phone size={15} /></button>
-              <button type="button" onClick={(event) => { event.stopPropagation(); void placeUserCall(thread.peer, "video"); }} disabled={!thread.peer.can_video_call} aria-label={`Video call ${thread.peer.display_name}`}><Video size={15} /></button>
+            <div className="call-history-row call-chat-row" key={thread.id}>
+              <button type="button" className="call-chat-open" onClick={() => navigate(`/messages/${thread.id}`)}>
+                <CallAvatar name={thread.peer.display_name} avatarUrl={thread.peer.avatar_url}><i className={`call-presence-dot ${thread.peer.presence}`} /></CallAvatar>
+                <span><strong>{thread.peer.display_name}</strong><small>{thread.last_message?.text_content || "Start a conversation"} · {thread.last_message ? new Date(thread.last_message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : `@${thread.peer.username}`}</small></span>
+                {thread.muted && <small className="thread-muted" aria-label="Muted">Muted</small>}{thread.unread_count > 0 && <b className="thread-unread" aria-label={`${thread.unread_count} unread messages`}>{thread.unread_count > 99 ? "99+" : thread.unread_count}</b>}
+              </button>
+              <span className="call-chat-actions">
+                <button type="button" onClick={() => void placeUserCall(thread.peer, "audio")} disabled={!thread.peer.can_audio_call} aria-label={`Voice call ${thread.peer.display_name}`}><Phone size={15} /></button>
+                <button type="button" onClick={() => void placeUserCall(thread.peer, "video")} disabled={!thread.peer.can_video_call} aria-label={`Video call ${thread.peer.display_name}`}><Video size={15} /></button>
+              </span>
             </div>
           ))}
           {!visibleThreads.length && !loading && <CallHubEmptyState title={chatFilter === "unread" ? "No unread conversations" : "Your accepted conversations will appear here"} action={<button type="button" onClick={() => changeView("search")}>Find People</button>} />}
@@ -708,22 +736,27 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
             <button type="button" onClick={() => void loadRequests()} disabled={loading} aria-label="Refresh connections"><LoaderCircle className={loading ? "animate-spin" : ""} size={17} /> Refresh</button>
           </header>
           <div className="connection-tabs" role="tablist" aria-label="Connection request categories">
-            <button className={requestView === "incoming" ? "active" : ""} onClick={() => setRequestView("incoming")} role="tab">Incoming <i>{incoming.length}</i></button>
-            <button className={requestView === "sent" ? "active" : ""} onClick={() => setRequestView("sent")} role="tab">Sent <i>{sent.length}</i></button>
-            <button className={requestView === "connected" ? "active" : ""} onClick={() => setRequestView("connected")} role="tab">Connected <i>{connections.length}</i></button>
-            <button className={requestView === "history" ? "active" : ""} onClick={() => setRequestView("history")} role="tab">History</button>
+            {CONNECTION_TABS.map(([tab, label], index) => {
+              const count = tab === "incoming" ? incoming.length : tab === "sent" ? sent.length : tab === "connected" ? connections.length : historyRequests.length;
+              return <button key={tab} id={connectionTabId(tab)} type="button" className={requestView === tab ? "active" : ""} onClick={() => setRequestView(tab)} onKeyDown={(event) => handleConnectionTabKeyDown(event, index)} role="tab" aria-label={count > 0 ? `${label}, ${count}` : label} aria-selected={requestView === tab} aria-controls={CONNECTION_PANEL_ID} tabIndex={requestView === tab ? 0 : -1}>
+                {label}{(tab !== "history" || count > 0) && <i aria-hidden="true">{count}</i>}
+              </button>;
+            })}
           </div>
+          <div className="connection-tab-panel" id={CONNECTION_PANEL_ID} role="tabpanel" aria-labelledby={connectionTabId(requestView)} tabIndex={0}>
           {loading && !incoming.length && !sent.length && <div className="connection-skeleton" aria-label="Loading connections"><i /><i /><i /></div>}
           {requestView === "incoming" && incoming.map((request) => {
             const processing = pendingRequestId === request.id;
             return <div className="social-request-row" key={request.id}>
               <Avatar profile={request.user} />
               <span><strong>{request.user.display_name}</strong><small>@{request.user.username} · {new Date(request.requested_at).toLocaleString()}</small></span>
-              <button type="button" className="primary" disabled={Boolean(pendingRequestId)} onClick={() => void accept(request)}>
-                {processing ? <LoaderCircle className="animate-spin" size={15} /> : failedRequestId === request.id ? <LoaderCircle size={15} /> : <Check size={15} />}
-                {processing ? "Accepting…" : failedRequestId === request.id ? "Retry" : "Accept"}
-              </button>
-              <button type="button" disabled={Boolean(pendingRequestId)} onClick={() => void reject(request)}><X size={15} /> Decline</button>
+              <span className="request-row-actions">
+                <button type="button" className="primary" disabled={Boolean(pendingRequestId)} onClick={() => void accept(request)}>
+                  {processing ? <LoaderCircle className="animate-spin" size={15} /> : failedRequestId === request.id ? <LoaderCircle size={15} /> : <Check size={15} />}
+                  {processing ? "Accepting…" : failedRequestId === request.id ? "Retry" : "Accept"}
+                </button>
+                <button type="button" disabled={Boolean(pendingRequestId)} onClick={() => void reject(request)}><X size={15} /> Decline</button>
+              </span>
             </div>;
           })}
           {requestView === "incoming" && !incoming.length && !loading && <CallHubEmptyState title="No incoming requests" />}
@@ -754,6 +787,7 @@ export function CallsTab({ refreshRequestId, onRefreshingChange, routeSection }:
             {request.status === "accepted" && <button type="button" onClick={() => void openMessage(request.user)}><MessageCircle size={15} /> Message</button>}
           </div>)}
           {requestView === "history" && !historyRequests.length && !loading && <div className="calls-empty">No request history</div>}
+          </div>
         </RequestsPanel>
       )}
 

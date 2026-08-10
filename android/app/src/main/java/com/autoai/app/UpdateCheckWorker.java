@@ -2,7 +2,6 @@ package com.autoai.app;
 
 import android.Manifest;
 import android.app.Notification;
-import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
@@ -43,8 +42,8 @@ public final class UpdateCheckWorker extends Worker {
     private static final String DOWNLOAD_WORK_NAME = "auto_ai_apk_download";
     private static final String GITHUB_RELEASE_API =
         "https://api.github.com/repos/shyamraj2143/auto-ai/releases/latest";
-    private static final String UPDATE_CHANNEL_ID = "auto_ai_updates";
     private static final int UPDATE_NOTIFICATION_ID = 1001;
+    private static final String LAST_NOTIFIED_UPDATE_VERSION_CODE = "last_notified_update_version_code";
 
     public UpdateCheckWorker(@NonNull Context context, @NonNull WorkerParameters params) {
         super(context, params);
@@ -58,10 +57,12 @@ public final class UpdateCheckWorker extends Worker {
             if (!metadata.valid() || metadata.versionCode <= BuildConfig.VERSION_CODE) {
                 return Result.success();
             }
-            metadata.forceUpdate = true;
-            metadata.mandatory = true;
-            queueDownload(metadata);
-            showUpdateNotification(metadata);
+            boolean mandatory = shouldAutomaticallyDownload(metadata, BuildConfig.VERSION_CODE);
+            metadata.mandatory = mandatory;
+            if (mandatory) queueDownload(metadata);
+            if (hasNotifiedVersion(metadata.versionCode) || showUpdateNotification(metadata, mandatory)) {
+                markNotifiedVersion(metadata.versionCode);
+            }
             return Result.success(new Data.Builder()
                 .putInt("version_code", metadata.versionCode)
                 .putString("version_name", metadata.versionName)
@@ -177,23 +178,33 @@ public final class UpdateCheckWorker extends Worker {
         );
     }
 
-    private void showUpdateNotification(AppUpdateCoordinator.Metadata metadata) {
+    static boolean shouldAutomaticallyDownload(AppUpdateCoordinator.Metadata metadata, int installedVersionCode) {
+        return AppUpdateCoordinator.requiresMandatoryUpdate(installedVersionCode, metadata);
+    }
+
+    private boolean hasNotifiedVersion(int versionCode) {
+        return getApplicationContext()
+            .getSharedPreferences(AppUpdateCoordinator.PREFS, Context.MODE_PRIVATE)
+            .getInt(LAST_NOTIFIED_UPDATE_VERSION_CODE, 0) >= versionCode;
+    }
+
+    private void markNotifiedVersion(int versionCode) {
+        getApplicationContext()
+            .getSharedPreferences(AppUpdateCoordinator.PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putInt(LAST_NOTIFIED_UPDATE_VERSION_CODE, versionCode)
+            .apply();
+    }
+
+    private boolean showUpdateNotification(AppUpdateCoordinator.Metadata metadata, boolean downloadingAutomatically) {
         Context context = getApplicationContext();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
             && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            return;
+            return false;
         }
         NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-        if (manager == null) return;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
-                UPDATE_CHANNEL_ID,
-                "AutoAI updates",
-                NotificationManager.IMPORTANCE_HIGH
-            );
-            channel.setDescription("Automatic verified AutoAI application updates");
-            manager.createNotificationChannel(channel);
-        }
+        if (manager == null) return false;
+        UpdateNotificationChannel.create(context);
 
         Intent intent = new Intent(context, MainActivity.class)
             .putExtra("start_app_update", true)
@@ -207,11 +218,16 @@ public final class UpdateCheckWorker extends Worker {
             flags
         );
 
-        String body = metadata.changelog == null || metadata.changelog.trim().isEmpty()
-            ? "A verified update is downloading automatically. Tap to install when ready."
-            : metadata.changelog.trim();
+        String details = metadata.changelog == null ? "" : metadata.changelog.trim();
+        String body = downloadingAutomatically
+            ? (details.isEmpty()
+                ? "A verified required update is downloading automatically. Tap to install when ready."
+                : details)
+            : (details.isEmpty()
+                ? "A verified update is available. Tap to review and install it."
+                : details);
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-            ? new Notification.Builder(context, UPDATE_CHANNEL_ID)
+            ? new Notification.Builder(context, UpdateNotificationChannel.ID)
             : new Notification.Builder(context);
         builder
             .setSmallIcon(R.mipmap.ic_launcher)
@@ -234,6 +250,7 @@ public final class UpdateCheckWorker extends Worker {
             builder.setPriority(Notification.PRIORITY_HIGH);
         }
         manager.notify(UPDATE_NOTIFICATION_ID, builder.build());
+        return true;
     }
 
     private static String safeMessage(Exception error) {

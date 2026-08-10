@@ -25,7 +25,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
     private static final String TAG = "AutoAiFcm";
     private static final int UPDATE_NOTIFICATION_ID = 1001;
-    private static final String UPDATE_NOTIFICATION_CHANNEL_ID = "app_updates";
     private static final String CHAT_NOTIFICATION_CHANNEL_ID = "auto_ai_messages";
     private static final String MISSED_CALL_CHANNEL_ID = "auto_ai_missed_calls";
     private static final String SOCIAL_CHANNEL_ID = "auto_ai_social";
@@ -394,7 +393,7 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         PendingIntent updateNow = PendingIntent.getActivity(this, NotificationDeepLink.requestCode("apk_update", String.valueOf(versionCode), "install"), updateIntent, flags);
 
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-            ? new Notification.Builder(this, UPDATE_NOTIFICATION_CHANNEL_ID)
+            ? new Notification.Builder(this, UpdateNotificationChannel.ID)
             : new Notification.Builder(this);
         builder
             .setSmallIcon(R.mipmap.ic_launcher)
@@ -423,16 +422,7 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
     }
 
     private void createUpdateNotificationChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
-        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        if (manager == null) return;
-        NotificationChannel channel = new NotificationChannel(
-            UPDATE_NOTIFICATION_CHANNEL_ID,
-            "Auto-AI updates",
-            NotificationManager.IMPORTANCE_HIGH
-        );
-        channel.setDescription("Auto-AI APK update alerts");
-        manager.createNotificationChannel(channel);
+        UpdateNotificationChannel.create(this);
     }
 
     private void showSocialNotification(Map<String, String> data, RemoteMessage.Notification notification) {

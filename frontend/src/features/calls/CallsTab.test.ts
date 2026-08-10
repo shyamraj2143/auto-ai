@@ -15,7 +15,10 @@ describe("Call Hub navigation", () => {
   });
 
   it("keeps every Call Hub section in a top navigation bar with real badge inputs", () => {
-    expect(shell).toContain("{header}{navigation}{status}");
+    expect(shell).toContain('className="calls-tab pulse-connect-shell"');
+    expect(shell).toContain("{navigation}{status}");
+    expect(shell).not.toContain("{header}");
+    expect(source).not.toContain("CallHubHeader");
     expect(styles).toContain(".pulse-connect-nav{z-index:12;display:flex");
     expect(styles).toContain("border-bottom:1px solid");
     expect(styles).not.toContain("grid-row:2;flex-direction:row");
@@ -52,6 +55,35 @@ describe("Call Hub navigation", () => {
     expect(styles).toContain(".sent-request-row>.cancel-request-action{grid-column:1/-1;width:100%");
   });
 
+  it("uses complete keyboard-operable semantics for connection tabs", () => {
+    expect(source).toContain('role="tablist"');
+    expect(source).toContain('aria-selected={requestView === tab}');
+    expect(source).toContain('aria-controls={CONNECTION_PANEL_ID}');
+    expect(source).toContain('role="tabpanel"');
+    expect(source).toContain('event.key === "ArrowRight"');
+    expect(source).toContain('event.key === "ArrowLeft"');
+    expect(source).toContain('tabIndex={requestView === tab ? 0 : -1}');
+  });
+
+  it("keeps request actions out of the avatar column with full touch targets", () => {
+    expect(source).toContain('className="request-row-actions"');
+    expect(styles).toContain(".request-row-actions{display:grid");
+    expect(styles).toContain(".request-row-actions button{display:flex;min-width:0;min-height:44px");
+    expect(styles).toContain(".connections-panel .request-row-actions{grid-column:1/-1;width:100%}");
+  });
+
+  it("keeps all four connection tabs visible on narrow mobile screens", () => {
+    expect(styles).toContain(".connection-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;overflow:visible}");
+    expect(styles).toContain(".connection-tabs button{min-width:0;gap:3px;padding:0 2px;font-size:10px}");
+  });
+
+  it("does not nest call buttons inside a keyboard-activated chat row", () => {
+    expect(source).toContain('className="call-chat-open"');
+    expect(source).toContain('className="call-chat-actions"');
+    expect(source).not.toContain('className="call-history-row call-chat-row" key={thread.id} role="button"');
+    expect(source).not.toContain("event.stopPropagation()");
+  });
+
   it("keeps search controls keyboard-visible with accessible touch targets", () => {
     expect(styles).toContain(".calls-search-wrap:focus-within");
     expect(styles).toContain(".calls-search-wrap>button{min-height:44px");
@@ -80,7 +112,7 @@ describe("Call Hub navigation", () => {
   });
 
   it("shows safe readiness diagnostics to users", () => {
-    expect(source).toContain("[config?.diagnostic, ...(config?.limitations || [])]");
+    expect(source).toContain("[config?.diagnostic, ...asArray<string>(config?.limitations)]");
     expect(source).not.toContain("import.meta.env.DEV");
     expect(source).toContain("CallHubStatusBanner");
   });

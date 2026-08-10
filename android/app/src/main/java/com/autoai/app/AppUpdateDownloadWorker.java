@@ -2,7 +2,6 @@ package com.autoai.app;
 
 import android.Manifest;
 import android.app.Notification;
-import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
@@ -29,7 +28,6 @@ import java.security.MessageDigest;
 import java.util.Locale;
 
 public final class AppUpdateDownloadWorker extends Worker {
-    private static final String UPDATE_CHANNEL_ID = "auto_ai_updates";
     private static final int UPDATE_NOTIFICATION_ID = 1001;
     private AppUpdateCoordinator.Metadata activeMetadata;
     private int lastNotifiedPercent = -1;
@@ -98,11 +96,7 @@ public final class AppUpdateDownloadWorker extends Worker {
             && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return;
         NotificationManager manager = (NotificationManager)context.getSystemService(Context.NOTIFICATION_SERVICE);
         if (manager == null) return;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(UPDATE_CHANNEL_ID, "AutoAI updates", NotificationManager.IMPORTANCE_HIGH);
-            channel.setDescription("Verified AutoAI application updates");
-            manager.createNotificationChannel(channel);
-        }
+        UpdateNotificationChannel.create(context);
         Intent intent = new Intent(context, MainActivity.class)
             .putExtra("start_app_update", true)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -111,7 +105,7 @@ public final class AppUpdateDownloadWorker extends Worker {
         int requestCode = 8200 + (activeMetadata == null ? 0 : Math.abs(activeMetadata.versionCode % 100000));
         PendingIntent pendingIntent = PendingIntent.getActivity(context, requestCode, intent, flags);
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-            ? new Notification.Builder(context, UPDATE_CHANNEL_ID) : new Notification.Builder(context);
+            ? new Notification.Builder(context, UpdateNotificationChannel.ID) : new Notification.Builder(context);
         builder.setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title).setContentText(body).setContentIntent(pendingIntent)
             .setOngoing(ongoing).setAutoCancel(!ongoing).setOnlyAlertOnce(ongoing)

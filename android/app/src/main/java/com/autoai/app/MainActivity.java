@@ -3,7 +3,6 @@ package com.autoai.app;
 import android.Manifest;
 import android.app.AlertDialog;
 import android.app.Notification;
-import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.PictureInPictureParams;
@@ -21,11 +20,13 @@ import android.os.Message;
 import android.provider.Settings;
 import android.util.Rational;
 import android.view.View;
+import android.view.ViewGroup;
 import android.webkit.CookieManager;
 import android.webkit.JsResult;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.webkit.WebChromeClient;
 import android.webkit.WebViewClient;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -74,7 +75,6 @@ public class MainActivity extends BridgeActivity {
     private static final int MAX_DOWNLOAD_ATTEMPTS = 3;
     private static final long UPDATE_CHECK_INTERVAL_MS = 5L * 60L * 1000L;
     private static final int UPDATE_NOTIFICATION_ID = 1001;
-    private static final String UPDATE_NOTIFICATION_CHANNEL_ID = "auto_ai_updates";
     private static final String LAST_NOTIFIED_UPDATE_VERSION_CODE = "last_notified_update_version_code";
     private static final String UPDATE_PREFERENCES = "auto_ai_update_preferences";
     private static final int NOTIFICATION_DESTINATION_MAX_ATTEMPTS = 120;
@@ -99,6 +99,10 @@ public class MainActivity extends BridgeActivity {
     private final AtomicBoolean directInstallerHandoff = new AtomicBoolean(false);
     private final AppUpdateCoordinator.Listener directUpdateListener = this::handleDirectUpdateState;
     private AppUpdateDialog fallbackUpdateDialog;
+    private Insets lastSafeInsets = Insets.NONE;
+    private boolean nativeKeyboardOpen;
+    private AlertDialog paymentPopupDialog;
+    private WebView paymentPopupWebView;
     private boolean callingSetupVisible;
     private int notificationDestinationDispatchAttempts;
     private final Runnable notificationDestinationDispatch = new Runnable() {
@@ -148,8 +152,9 @@ public class MainActivity extends BridgeActivity {
             Insets safeInsets = windowInsets.getInsets(
                 WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout()
             );
-            boolean keyboardOpen = windowInsets.isVisible(WindowInsetsCompat.Type.ime());
-            syncWebInsets(webView, safeInsets, keyboardOpen);
+            lastSafeInsets = safeInsets;
+            nativeKeyboardOpen = windowInsets.isVisible(WindowInsetsCompat.Type.ime());
+            syncWebInsets(webView, lastSafeInsets, nativeKeyboardOpen);
             return windowInsets;
         });
         ViewCompat.requestApplyInsets(webView);
@@ -373,6 +378,7 @@ public class MainActivity extends BridgeActivity {
     public void onDestroy() {
         AppUpdateCoordinator.get(this).removeListener(directUpdateListener);
         if (fallbackUpdateDialog != null) fallbackUpdateDialog.stop();
+        closePaymentPopup();
         mainHandler.removeCallbacks(notificationDestinationDispatch);
         super.onDestroy();
         mainHandler.removeCallbacks(updatePollRunnable);
@@ -515,6 +521,9 @@ public class MainActivity extends BridgeActivity {
         @Override
         public void onPageFinished(WebView view, String url) {
             super.onPageFinished(view, url);
+            // The document root is recreated on every WebView navigation. Reapply the
+            // last native insets so safe-area layout survives the Capacitor page load.
+            syncWebInsets(view, lastSafeInsets, nativeKeyboardOpen);
         }
 
         @Override
@@ -555,15 +564,76 @@ public class MainActivity extends BridgeActivity {
 
         @Override
         public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
-            WebView paymentWindow = new WebView(view.getContext());
+            WebView paymentWindow = new WebView(MainActivity.this);
             WebSettings paymentSettings = paymentWindow.getSettings();
             paymentSettings.setJavaScriptEnabled(true);
             paymentSettings.setDomStorageEnabled(true);
+            paymentSettings.setSupportMultipleWindows(true);
             paymentWindow.setWebViewClient(new PaymentPopupWebViewClient());
+            paymentWindow.setWebChromeClient(new PaymentPopupWebChromeClient(paymentWindow));
             WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
             transport.setWebView(paymentWindow);
             resultMsg.sendToTarget();
+            showPaymentPopup(paymentWindow);
             return true;
+        }
+
+        @Override
+        public void onCloseWindow(WebView window) {
+            if (window == paymentPopupWebView) {
+                closePaymentPopup();
+                return;
+            }
+            super.onCloseWindow(window);
+        }
+    }
+
+    private void showPaymentPopup(WebView paymentWindow) {
+        closePaymentPopup();
+        paymentPopupWebView = paymentWindow;
+        AlertDialog dialog = new AlertDialog.Builder(this, R.style.AutoAiWebDialogTheme)
+            .setView(paymentWindow)
+            .setNegativeButton(android.R.string.cancel, null)
+            .create();
+        paymentPopupDialog = dialog;
+        dialog.setOnDismissListener(ignored -> {
+            if (paymentPopupDialog == dialog) paymentPopupDialog = null;
+            if (paymentPopupWebView == paymentWindow) {
+                paymentPopupWebView = null;
+                paymentWindow.stopLoading();
+                paymentWindow.destroy();
+            }
+        });
+        dialog.show();
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        }
+    }
+
+    private void closePaymentPopup() {
+        AlertDialog dialog = paymentPopupDialog;
+        if (dialog != null) {
+            dialog.dismiss();
+            return;
+        }
+        WebView webView = paymentPopupWebView;
+        paymentPopupWebView = null;
+        if (webView != null) {
+            webView.stopLoading();
+            webView.destroy();
+        }
+    }
+
+    private final class PaymentPopupWebChromeClient extends WebChromeClient {
+        private final WebView paymentWindow;
+
+        PaymentPopupWebChromeClient(WebView paymentWindow) {
+            this.paymentWindow = paymentWindow;
+        }
+
+        @Override
+        public void onCloseWindow(WebView window) {
+            if (window == paymentWindow) closePaymentPopup();
         }
     }
 
@@ -650,16 +720,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void createUpdateNotificationChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
-        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        if (manager == null) return;
-        NotificationChannel channel = new NotificationChannel(
-            UPDATE_NOTIFICATION_CHANNEL_ID,
-            "Auto-AI updates",
-            NotificationManager.IMPORTANCE_HIGH
-        );
-        channel.setDescription("Auto-AI APK update alerts");
-        manager.createNotificationChannel(channel);
+        UpdateNotificationChannel.create(this);
     }
 
     private boolean canPostNotifications() {
@@ -686,7 +747,7 @@ public class MainActivity extends BridgeActivity {
         }
 
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-            ? new Notification.Builder(this, UPDATE_NOTIFICATION_CHANNEL_ID)
+            ? new Notification.Builder(this, UpdateNotificationChannel.ID)
             : new Notification.Builder(this);
         builder
             .setSmallIcon(R.mipmap.ic_launcher)

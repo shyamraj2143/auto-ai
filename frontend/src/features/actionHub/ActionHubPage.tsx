@@ -18,6 +18,7 @@ import { useAlarms } from "../alarms/AlarmContext";
 import { countdownLabel, formatAlarmDate, formatAlarmTime24 } from "../alarms/alarmTime";
 import { relationshipFollowupsApi } from "../relationshipFollowups/relationshipFollowupsApi";
 import type { FollowupSummary } from "../relationshipFollowups/types";
+import { useOnlineStatus } from "../../hooks/useOnlineStatus";
 
 function greeting() {
   const hour = new Date().getHours();
@@ -31,6 +32,12 @@ function timeLabel(value: string | number) {
   const now = new Date();
   const sameDay = date.toDateString() === now.toDateString();
   return sameDay ? `Today, ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function workspaceStatusTone(status: string) {
+  if (status === "Offline" || status === "Unavailable") return "error";
+  if (status === "Checking" || status === "Reconnecting") return "pending";
+  return "ready";
 }
 
 export function ActionHubPage() {
@@ -47,6 +54,7 @@ export function ActionHubPage() {
   const [activityError, setActivityError] = useState("");
   const [quickOpen, setQuickOpen] = useState(false);
   const [quickAction, setQuickAction] = useState<QuickConnectAction>("ai");
+  const online = useOnlineStatus();
   const activityOnly = location.pathname === "/activity";
 
   useEffect(() => {
@@ -101,7 +109,6 @@ export function ActionHubPage() {
   if (!user) return null;
   const safeName = typeof user.name === "string" ? user.name.trim() : "";
   const firstName = safeName.split(/\s+/)[0] || "there";
-  const online = typeof navigator === "undefined" ? true : navigator.onLine;
 
   return (
     <div className="action-hub-page">
@@ -111,7 +118,15 @@ export function ActionHubPage() {
           <div className="hub-activity-page"><div className="hub-welcome hub-activity-welcome"><p>AutoAI workspace</p><h1>Activity</h1><span>Your real recent chats, calls, and active sharing sessions.</span></div><RecentActivity items={recentItems} loading={loadingChats || activityLoading} error={activityError} expanded /></div>
         ) : (
           <>
-            <section className="hub-welcome" aria-labelledby="hub-title"><p>Your AI Control Center</p><h1 id="hub-title">{greeting()}, {firstName}</h1><span>Choose a workspace and get things done.</span></section>
+            <section className="hub-welcome" aria-labelledby="hub-title">
+              <div>
+                <p>Your AI Control Center</p>
+                <h1 id="hub-title">{greeting()}, {firstName}</h1>
+                <span>Choose a workspace and get things done.</span>
+              </div>
+              <button type="button" className="hub-welcome-quick" onClick={() => openQuick("ai")}><Zap /> Quick Connect</button>
+            </section>
+
             <section className="hub-feature-stage" aria-label="Primary AutoAI actions">
               <div className="hub-card-position hub-card-ai"><FeatureCard tone="ai" icon={MessageCircle} title="AI Chat" description="Intelligent conversations that get things done." details="Voice · Images · Files · Models" primaryAction={{ label: "Start Chat", onClick: () => navigate("/chat") }} secondaryAction={chats[0] ? { label: "Continue", onClick: () => navigate(`/chat/${encodeURIComponent(chats[0].id)}`) } : undefined} /></div>
               <div className="hub-card-position hub-card-screen"><FeatureCard tone="screen" icon={MonitorUp} title="Screen Sharing" description="Share, collaborate and solve problems together." details={`${screenShare.canShareScreen ? "Ready to share" : "Join supported"} · ${screenShare.networkQuality === "unknown" ? "secure relay" : `${screenShare.networkQuality} network`}`} primaryAction={{ label: "Share Screen", onClick: () => navigate("/screen-share") }} secondaryAction={{ label: "Join code", onClick: () => openQuick("screen") }} /></div>
@@ -126,8 +141,21 @@ export function ActionHubPage() {
               <article><span><Phone size={16} /> Call history</span><strong>{calls.length}</strong><small>Recent call records</small></article>
               <article><span><AlarmClock size={16} /> Next alarm</span><strong>{nextAlarm ? formatAlarmTime24(nextAlarm.scheduled_at) : "Ready"}</strong><small>{nextAlarm ? formatAlarmDate(nextAlarm.scheduled_at) : "No alarm scheduled"}</small></article>
             </section>
-            <section className="hub-dashboard-lower"><RecentActivity items={recentItems} loading={loadingChats || activityLoading} error={activityError} /><aside className="hub-system-status"><header><span>Workspace Status</span><small>Live app state</small></header>{[["AI Chat", loadingChats ? "Checking" : "Ready"],["Calling Service", activityError ? "Unavailable" : activityLoading ? "Checking" : "Connected"],["Screen Sharing", screenShare.networkQuality === "reconnecting" ? "Reconnecting" : "Operational"],["Network", online ? "Online" : "Offline"]].map(([label, status]) => <div key={label}><span><CheckCircle2 size={15} /> {label}</span><small>{status}<i /></small></div>)}</aside></section>
-            <div className="hub-quick-launch-wrap"><button type="button" className="hub-quick-launch" onClick={() => openQuick("ai")}><Zap /> Quick Connect</button></div>
+
+            <section className="hub-dashboard-lower">
+              <RecentActivity items={recentItems} loading={loadingChats || activityLoading} error={activityError} />
+              <aside className="hub-system-status">
+                <header><span>Workspace Status</span><small>Live app state</small></header>
+                {[
+                  ["AI Chat", loadingChats ? "Checking" : "Ready"],
+                  ["Calling Service", activityError ? "Unavailable" : activityLoading ? "Checking" : "Connected"],
+                  ["Screen Sharing", screenShare.networkQuality === "reconnecting" ? "Reconnecting" : "Operational"],
+                  ["Network", online ? "Online" : "Offline"],
+                ].map(([label, status]) => (
+                  <div key={label}><span><CheckCircle2 size={15} /> {label}</span><small className={`hub-status-${workspaceStatusTone(status)}`}>{status}<i /></small></div>
+                ))}
+              </aside>
+            </section>
           </>
         )}
       </main>
