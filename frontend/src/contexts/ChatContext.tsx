@@ -1,4 +1,5 @@
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { api } from "../api/client";
 import type { Chat, ChatListItem, ChatMode, IntelligenceMode } from "../types";
 import { useAuth } from "./AuthContext";
@@ -15,12 +16,12 @@ type ChatContextValue = {
   createChat: (title?: string, preset?: PresetState) => Promise<Chat>;
   updateChat: (id: string, payload: ChatUpdatePayload) => Promise<void>;
   deleteChat: (id: string) => Promise<void>;
-  setActiveChat: React.Dispatch<React.SetStateAction<Chat | null>>;
+  setActiveChat: Dispatch<SetStateAction<Chat | null>>;
 };
 
 const ChatContext = createContext<ChatContextValue | undefined>(undefined);
 
-export function ChatProvider({ children }: { children: React.ReactNode }) {
+export function ChatProvider({ children }: { children: ReactNode }) {
   const { token } = useAuth();
   const [chats, setChats] = useState<ChatListItem[]>([]);
   const [activeChat, setActiveChat] = useState<Chat | null>(null);
@@ -43,8 +44,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const openChat = useCallback(async (id: string) => {
     if (!token) return;
     const requestId = ++openRequestRef.current;
-    const chat = await api.getChat(token, id);
-    if (requestId === openRequestRef.current) setActiveChat(chat);
+    try {
+      const chat = await api.getChat(token, id);
+      if (requestId === openRequestRef.current) setActiveChat(chat);
+    } catch (error) {
+      console.warn("[Auto-AI Chat] Failed to open chat; keeping workspace usable.", error);
+    }
   }, [token]);
 
   const beginNewChat = useCallback(() => { openRequestRef.current += 1; setActiveChat(null); }, []);
@@ -59,16 +64,24 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const updateChat = useCallback(async (id: string, payload: ChatUpdatePayload) => {
     if (!token) return;
-    const updated = await api.updateChat(token, id, payload);
-    setActiveChat((current) => current?.id === id ? updated : current);
-    await refreshChats();
+    try {
+      const updated = await api.updateChat(token, id, payload);
+      setActiveChat((current) => current?.id === id ? updated : current);
+      await refreshChats();
+    } catch (error) {
+      console.warn("[Auto-AI Chat] Failed to update chat.", error);
+    }
   }, [refreshChats, token]);
 
   const deleteChat = useCallback(async (id: string) => {
     if (!token) return;
-    await api.deleteChat(token, id);
-    setActiveChat((current) => current?.id === id ? null : current);
-    await refreshChats();
+    try {
+      await api.deleteChat(token, id);
+      setActiveChat((current) => current?.id === id ? null : current);
+      await refreshChats();
+    } catch (error) {
+      console.warn("[Auto-AI Chat] Failed to delete chat.", error);
+    }
   }, [refreshChats, token]);
 
   useEffect(() => {
