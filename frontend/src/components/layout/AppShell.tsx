@@ -14,19 +14,11 @@ import "../../features/calls/calls.css";
 import { AlarmProvider } from "../../features/alarms/AlarmContext";
 import { AlarmOverlay } from "../../features/alarms/AlarmOverlay";
 
-function AlarmWorkspaceScope({ enabled, children }: { enabled: boolean; children: ReactNode }) {
+function AlarmWorkspaceScope({ enabled, nativeEnabled, children }: { enabled: boolean; nativeEnabled: boolean; children: ReactNode }) {
   if (!enabled) return <>{children}</>;
-  return <AlarmProvider>{children}<AlarmOverlay /></AlarmProvider>;
+  return <AlarmProvider nativeEnabled={nativeEnabled}>{children}<AlarmOverlay /></AlarmProvider>;
 }
 
-/**
- * Keep the realtime calling runtime out of normal authenticated app startup.
- * CallProvider performs websocket/signaling/native-call initialization as soon as
- * it mounts. Mounting it globally made a post-login native failure capable of
- * taking down the whole Android process even when the user never opened Call Hub.
- * The call runtime is now scoped to the actual Call Hub workspace. Native
- * incoming-call activities remain registered independently in Android.
- */
 function CallWorkspaceScope({ enabled, children }: { enabled: boolean; children: ReactNode }) {
   if (!enabled) return <>{children}</>;
   return <CallProvider>{children}<CallOverlay /></CallProvider>;
@@ -37,16 +29,12 @@ export function AppShell() {
   const navigate = useNavigate();
   const { safeMode, safeModeReason, disableSafeMode } = useMotionMode();
   const consumedDestinationIds = useRef(new Set<string>());
-  const {
-    closeSidebar,
-    expandSidebar,
-    isSidebarCollapsed,
-    isSidebarOpen
-  } = useShell();
+  const { closeSidebar, expandSidebar, isSidebarCollapsed, isSidebarOpen } = useShell();
   const fullCanvasAdmin = location.pathname.startsWith("/admin/live-pages");
   const isAdminRoute = location.pathname.startsWith("/admin");
   const isChatWorkspace = location.pathname.startsWith("/chat");
   const isCallWorkspace = location.pathname.startsWith("/call-hub") || location.pathname.startsWith("/calls");
+  const isAlarmWorkspace = location.pathname.startsWith("/alarms");
 
   useEffect(() => {
     closeSidebar();
@@ -66,9 +54,7 @@ export function AppShell() {
     return () => {
       viewport.removeEventListener("resize", updateKeyboardState);
       viewport.removeEventListener("scroll", updateKeyboardState);
-      if (document.documentElement.dataset.nativeInsets !== "true") {
-        document.documentElement.classList.remove("autoai-keyboard-open");
-      }
+      if (document.documentElement.dataset.nativeInsets !== "true") document.documentElement.classList.remove("autoai-keyboard-open");
     };
   }, []);
 
@@ -101,18 +87,13 @@ export function AppShell() {
 
   const shell = (
     <ChatProvider>
-      <AlarmWorkspaceScope enabled={!isAdminRoute}>
+      <AlarmWorkspaceScope enabled={!isAdminRoute} nativeEnabled={isAlarmWorkspace}>
         <AndroidBackHandler />
         <div className={`app-shell${isSidebarOpen ? " sidebar-open" : ""}${isChatWorkspace ? " chat-app-shell" : ""}`}>
           {!fullCanvasAdmin && <WorkspaceNavigation />}
           {!fullCanvasAdmin && isChatWorkspace && <Sidebar />}
           {!fullCanvasAdmin && isChatWorkspace && isSidebarCollapsed && (
-            <button
-              className="sidebar-restore-button hidden md:inline-flex"
-              onClick={expandSidebar}
-              title="Show chat history"
-              type="button"
-            >
+            <button className="sidebar-restore-button hidden md:inline-flex" onClick={expandSidebar} title="Show chat history" type="button">
               <PanelLeftOpen size={17} />
             </button>
           )}
