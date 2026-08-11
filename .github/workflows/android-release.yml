@@ -69,11 +69,7 @@ jobs:
         run: |
           set -euo pipefail
           missing=()
-          for name in \
-            AUTO_AI_ANDROID_KEYSTORE_BASE64 \
-            AUTO_AI_ANDROID_KEYSTORE_PASSWORD \
-            AUTO_AI_ANDROID_KEY_ALIAS \
-            AUTO_AI_ANDROID_KEY_PASSWORD; do
+          for name in AUTO_AI_ANDROID_KEYSTORE_BASE64 AUTO_AI_ANDROID_KEYSTORE_PASSWORD AUTO_AI_ANDROID_KEY_ALIAS AUTO_AI_ANDROID_KEY_PASSWORD; do
             if [ -z "${!name:-}" ]; then missing+=("$name"); fi
           done
           if [ "${#missing[@]}" -gt 0 ]; then
@@ -109,15 +105,10 @@ jobs:
           set -euo pipefail
           npm ci
           npm ci --prefix frontend
-          AUTO_AI_SKIP_COMPRESSION=1 \
-          VITE_API_URL="$AUTO_AI_API_BASE_URL" \
-          VITE_GOOGLE_WEB_CLIENT_ID="$AUTO_AI_GOOGLE_WEB_CLIENT_ID" \
-          npm run build
-
+          AUTO_AI_SKIP_COMPRESSION=1 VITE_API_URL="$AUTO_AI_API_BASE_URL" VITE_GOOGLE_WEB_CLIENT_ID="$AUTO_AI_GOOGLE_WEB_CLIENT_ID" npm run build
           test -f frontend/dist/index.html
           npx cap sync android
           test -f android/app/src/main/assets/public/index.html
-
           chmod +x android/gradlew
           ./android/gradlew -p android :app:testDebugUnitTest assembleRelease
           test -s android/app/build/outputs/apk/release/app-release.apk
@@ -132,28 +123,19 @@ jobs:
           set -euo pipefail
           apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
           test -n "$apksigner"
-
           "$apksigner" verify --verbose --print-certs output/android/auto-ai.apk | tee output/android/new-signing.txt
           new_cert="$(sed -n -e 's/^Signer #1 certificate SHA-256 digest: //p' -e 's/^V2 Signer: certificate SHA-256 digest: //p' output/android/new-signing.txt | head -1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
           test -n "$new_cert"
-
           mkdir -p output/previous
           previous_cert=""
           if gh release download --repo "$GITHUB_REPOSITORY" --pattern auto-ai.apk --dir output/previous --clobber >/dev/null 2>&1 && [ -s output/previous/auto-ai.apk ]; then
             "$apksigner" verify --verbose --print-certs output/previous/auto-ai.apk | tee output/android/previous-signing.txt
             previous_cert="$(sed -n -e 's/^Signer #1 certificate SHA-256 digest: //p' -e 's/^V2 Signer: certificate SHA-256 digest: //p' output/android/previous-signing.txt | head -1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
           fi
-
           expected_cert="$(printf '%s' "${AUTO_AI_EXPECTED_SIGNING_SHA256:-}" | tr -d ':' | tr '[:upper:]' '[:lower:]')"
           trusted_cert="${previous_cert:-$expected_cert}"
-          if [ -z "$trusted_cert" ]; then
-            echo 'No previous APK or expected signing certificate is available.' >&2
-            exit 1
-          fi
-          if [ "$new_cert" != "$trusted_cert" ]; then
-            echo 'New APK signing certificate does not match the installed release.' >&2
-            exit 1
-          fi
+          if [ -z "$trusted_cert" ]; then echo 'No previous APK or expected signing certificate is available.' >&2; exit 1; fi
+          if [ "$new_cert" != "$trusted_cert" ]; then echo 'New APK signing certificate does not match the installed release.' >&2; exit 1; fi
           echo "Verified compatible signing certificate: ${new_cert:0:16}..."
 
       - name: Publish latest GitHub APK release
@@ -178,13 +160,7 @@ jobs:
             echo
             echo "Direct production Android release from main commit ${GITHUB_SHA}."
           } > "$notes"
-
-          gh release create "$tag" "$apk_path" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Auto-AI Android ${AUTO_AI_ANDROID_VERSION_NAME}" \
-            --notes-file "$notes" \
-            --latest
-
+          gh release create "$tag" "$apk_path" --repo "$GITHUB_REPOSITORY" --title "Auto-AI Android ${AUTO_AI_ANDROID_VERSION_NAME}" --notes-file "$notes" --latest
           asset_url="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[] | select(.name == "auto-ai.apk") | .url')"
           test -n "$asset_url"
           python scripts/verify_release_asset.py --url "$asset_url" --size "$size" --sha256 "$sha256"
@@ -194,26 +170,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/publish_android_release.py \
-            --api-url "$AUTO_AI_API_BASE_URL" \
-            --apk output/android/auto-ai.apk \
-            --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
-            --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
-            --changelog "$AUTO_AI_CHANGELOG" \
-            --release-notes "Direct main release ${GITHUB_SHA}." \
-            --metadata-only \
-            --force-update
+          python scripts/publish_android_release.py --api-url "$AUTO_AI_API_BASE_URL" --apk output/android/auto-ai.apk --version-code "$AUTO_AI_ANDROID_VERSION_CODE" --version-name "$AUTO_AI_ANDROID_VERSION_NAME" --changelog "$AUTO_AI_CHANGELOG" --release-notes "Direct main release ${GITHUB_SHA}." --metadata-only --force-update
 
       - name: Notify installed Android apps
-        if: ${{ env.AUTO_AI_UPDATE_NOTIFY_SECRET != '' }}
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/notify_android_update.py \
-            --api-url "$AUTO_AI_API_BASE_URL" \
-            --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
-            --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
-            --changelog "$AUTO_AI_CHANGELOG"
+          if [ -z "${AUTO_AI_ADMIN_EMAIL:-}" ] || [ -z "${AUTO_AI_ADMIN_PASSWORD:-}" ]; then
+            echo 'Production administrator credentials are missing; cannot dispatch phone update notification.' >&2
+            exit 1
+          fi
+          success=0
+          for attempt in $(seq 1 20); do
+            if python scripts/notify_android_update.py --api-url "$AUTO_AI_API_BASE_URL" --version-code "$AUTO_AI_ANDROID_VERSION_CODE" --version-name "$AUTO_AI_ANDROID_VERSION_NAME" --changelog "AutoAI ${AUTO_AI_ANDROID_VERSION_NAME} is ready to install."; then
+              success=1
+              break
+            fi
+            echo "Phone notification attempt $attempt failed; waiting for the deployed backend..."
+            sleep $((attempt < 6 ? 10 : 30))
+          done
+          test "$success" -eq 1
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -249,18 +225,10 @@ jobs:
               json.dump(payload, handle, indent=2, sort_keys=True)
               handle.write('\n')
           PY
-
           encoded="$(base64 -w0 .release-status/android.json)"
           current_sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.release-status/android.json?ref=main" --jq .sha 2>/dev/null || true)"
           if [ -n "$current_sha" ]; then
-            gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/.release-status/android.json" \
-              -f message='chore: record Android release result [skip ci]' \
-              -f content="$encoded" \
-              -f sha="$current_sha" \
-              -f branch=main >/dev/null
+            gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/.release-status/android.json" -f message='chore: record Android release result [skip ci]' -f content="$encoded" -f sha="$current_sha" -f branch=main >/dev/null
           else
-            gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/.release-status/android.json" \
-              -f message='chore: record Android release result [skip ci]' \
-              -f content="$encoded" \
-              -f branch=main >/dev/null
+            gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/.release-status/android.json" -f message='chore: record Android release result [skip ci]' -f content="$encoded" -f branch=main >/dev/null
           fi
