@@ -8,9 +8,11 @@ on:
       - '.release-status/**'
   workflow_dispatch:
 
+# Never cancel a production release because another main commit arrived.
+# Every main push gets its own versioned APK; release-status bookkeeping is ignored above.
 concurrency:
   group: android-release-main
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -189,9 +191,9 @@ jobs:
 
       - name: Publish APK metadata to backend
         if: ${{ env.AUTO_AI_ADMIN_EMAIL != '' && env.AUTO_AI_ADMIN_PASSWORD != '' }}
-        continue-on-error: true
         shell: bash
         run: |
+          set -euo pipefail
           python scripts/publish_android_release.py \
             --api-url "$AUTO_AI_API_BASE_URL" \
             --apk output/android/auto-ai.apk \
@@ -204,9 +206,9 @@ jobs:
 
       - name: Notify installed Android apps
         if: ${{ env.AUTO_AI_UPDATE_NOTIFY_SECRET != '' }}
-        continue-on-error: true
         shell: bash
         run: |
+          set -euo pipefail
           python scripts/notify_android_update.py \
             --api-url "$AUTO_AI_API_BASE_URL" \
             --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
