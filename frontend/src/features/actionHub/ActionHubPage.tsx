@@ -5,6 +5,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { HubHeader } from "./HubHeader";
 import { QuickConnect, type QuickConnectAction } from "./QuickConnect";
 import "./actionHub.css";
+import "./actionHubStable.css";
 import "./sevaHub.css";
 
 const actions = [
