@@ -19,6 +19,7 @@ import android.os.Looper;
 import android.os.Message;
 import android.provider.Settings;
 import android.util.Rational;
+import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
@@ -70,6 +71,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MainActivity extends BridgeActivity {
+    private static final String TAG = "MainActivity";
     private static final int CONNECT_TIMEOUT_MS = 15000;
     private static final int READ_TIMEOUT_MS = 60000;
     private static final int MAX_DOWNLOAD_ATTEMPTS = 3;
@@ -175,18 +177,26 @@ public class MainActivity extends BridgeActivity {
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
 
-        CallNotificationManager.createChannels(this);
-        AutoAiFirebaseMessagingService.createRelationshipNotificationChannel(this);
-        registerFirebaseMessagingToken();
-        UpdateCheckScheduler.cancelLegacy(this);
-        AppUpdateCoordinator.get(this).addListener(directUpdateListener);
+        runActivityStartupStep("call notification channels", () -> CallNotificationManager.createChannels(this));
+        runActivityStartupStep("relationship notification channel", () -> AutoAiFirebaseMessagingService.createRelationshipNotificationChannel(this));
+        runActivityStartupStep("firebase messaging registration", this::registerFirebaseMessagingToken);
+        runActivityStartupStep("update scheduler", () -> UpdateCheckScheduler.cancelLegacy(this));
+        runActivityStartupStep("update listener", () -> AppUpdateCoordinator.get(this).addListener(directUpdateListener));
         // A cold launch must not reuse the normal cooldown: every successful main
         // deployment publishes a required APK and must be discovered immediately.
-        AppUpdateCoordinator.get(this).check(true);
-        dispatchUpdateIntent(getIntent());
-        syncPushDeviceIfAuthenticated();
-        dispatchIncomingCallIntent(getIntent());
-        dispatchNotificationDestination(getIntent());
+        runActivityStartupStep("update check", () -> AppUpdateCoordinator.get(this).check(true));
+        runActivityStartupStep("update intent", () -> dispatchUpdateIntent(getIntent()));
+        runActivityStartupStep("push device sync", this::syncPushDeviceIfAuthenticated);
+        runActivityStartupStep("incoming call intent", () -> dispatchIncomingCallIntent(getIntent()));
+        runActivityStartupStep("notification destination", () -> dispatchNotificationDestination(getIntent()));
+    }
+
+    private void runActivityStartupStep(String name, Runnable step) {
+        try {
+            step.run();
+        } catch (Throwable error) {
+            Log.e(TAG, "Non-fatal MainActivity startup failure in " + name, error);
+        }
     }
 
     private void syncWebInsets(WebView webView, Insets insets, boolean keyboardOpen) {
@@ -236,9 +246,9 @@ public class MainActivity extends BridgeActivity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        dispatchIncomingCallIntent(intent);
-        dispatchNotificationDestination(intent);
-        dispatchUpdateIntent(intent);
+        runActivityStartupStep("incoming call new intent", () -> dispatchIncomingCallIntent(intent));
+        runActivityStartupStep("notification new intent", () -> dispatchNotificationDestination(intent));
+        runActivityStartupStep("update new intent", () -> dispatchUpdateIntent(intent));
     }
 
     private void dispatchUpdateIntent(Intent intent) {
@@ -328,17 +338,28 @@ public class MainActivity extends BridgeActivity {
     public void onResume() {
         super.onResume();
         directInstallerHandoff.set(false);
-        CallingPermissionCoordinator.invalidateCachedState();
-        AppUpdateCoordinator.get(this).refreshInstallState();
+        runActivityStartupStep("calling permission cache", CallingPermissionCoordinator::invalidateCachedState);
+        runActivityStartupStep("update install state", () -> AppUpdateCoordinator.get(this).refreshInstallState());
         // Re-check whenever the app returns to the foreground so a just-published
         // required release cannot be hidden by a recent successful check.
-        AppUpdateCoordinator.get(this).check(true);
-        syncPushDeviceIfAuthenticated();
-        if (NotificationDeepLink.hasPending(this)) dispatchNotificationDestination(null);
+        runActivityStartupStep("foreground update check", () -> AppUpdateCoordinator.get(this).check(true));
+        runActivityStartupStep("foreground push device sync", this::syncPushDeviceIfAuthenticated);
+        runActivityStartupStep("foreground notification destination", () -> {
+            if (NotificationDeepLink.hasPending(this)) dispatchNotificationDestination(null);
+        });
         mainHandler.postDelayed(this::launchCallingSetupIfRequired, 600L);
     }
 
     private void launchCallingSetupIfRequired() {
+        try {
+            launchCallingSetupIfRequiredUnsafe();
+        } catch (Throwable error) {
+            callingSetupVisible = false;
+            Log.e(TAG, "Non-fatal MainActivity startup failure in calling setup launch", error);
+        }
+    }
+
+    private void launchCallingSetupIfRequiredUnsafe() {
         AppUpdateCoordinator.Snapshot update = AppUpdateCoordinator.get(this).current();
         boolean mandatoryUpdatePending = update.metadata != null && update.metadata.mandatory
             && AppUpdateCoordinator.hasPendingUpdate(update.metadata);
@@ -365,9 +386,9 @@ public class MainActivity extends BridgeActivity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode != 7042) return;
         callingSetupVisible = false;
-        registerFirebaseMessagingToken();
-        syncPushDeviceIfAuthenticated();
-        notifyCallingSetupChanged(CallingPermissionCoordinator.inspect(this));
+        runActivityStartupStep("post-setup firebase messaging registration", this::registerFirebaseMessagingToken);
+        runActivityStartupStep("post-setup push device sync", this::syncPushDeviceIfAuthenticated);
+        runActivityStartupStep("post-setup calling status", () -> notifyCallingSetupChanged(CallingPermissionCoordinator.inspect(this)));
     }
 
     private void notifyCallingSetupChanged(CallingPermissionCoordinator.Snapshot snapshot) {
@@ -376,10 +397,12 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onDestroy() {
-        AppUpdateCoordinator.get(this).removeListener(directUpdateListener);
-        if (fallbackUpdateDialog != null) fallbackUpdateDialog.stop();
-        closePaymentPopup();
-        mainHandler.removeCallbacks(notificationDestinationDispatch);
+        runActivityStartupStep("update listener cleanup", () -> AppUpdateCoordinator.get(this).removeListener(directUpdateListener));
+        runActivityStartupStep("update dialog cleanup", () -> {
+            if (fallbackUpdateDialog != null) fallbackUpdateDialog.stop();
+        });
+        runActivityStartupStep("payment popup cleanup", this::closePaymentPopup);
+        runActivityStartupStep("notification destination cleanup", () -> mainHandler.removeCallbacks(notificationDestinationDispatch));
         super.onDestroy();
         mainHandler.removeCallbacks(updatePollRunnable);
         updateExecutor.shutdownNow();
@@ -434,7 +457,7 @@ public class MainActivity extends BridgeActivity {
     private void registerFirebaseMessagingToken() {
         try {
             FirebaseMessaging.getInstance().register();
-        } catch (Exception ignored) {
+        } catch (Throwable ignored) {
             // Firebase is optional until google-services.json is configured.
         }
     }

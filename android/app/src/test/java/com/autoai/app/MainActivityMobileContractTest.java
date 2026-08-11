@@ -37,6 +37,17 @@ public class MainActivityMobileContractTest {
             .contains("new Notification.Builder(context, UpdateNotificationChannel.ID)"));
     }
 
+    @Test public void optionalStartupIntegrationsCannotCrashMainActivity() throws Exception {
+        String source = source("src/main/java/com/autoai/app/MainActivity.java");
+        assertTrue(source.contains("private void runActivityStartupStep(String name, Runnable step)"));
+        assertTrue(source.contains("catch (Throwable error)"));
+        assertTrue(source.contains("runActivityStartupStep(\"update check\", () -> AppUpdateCoordinator.get(this).check(true));"));
+        assertTrue(source.contains("runActivityStartupStep(\"foreground update check\", () -> AppUpdateCoordinator.get(this).check(true));"));
+        assertTrue(source.contains("launchCallingSetupIfRequiredUnsafe();"));
+        assertTrue(source.contains("Non-fatal MainActivity startup failure in calling setup launch"));
+        assertTrue(source.contains("catch (Throwable ignored)"));
+    }
+
     private static String source(String relative) throws Exception {
         return new String(Files.readAllBytes(Paths.get(relative)), StandardCharsets.UTF_8);
     }
