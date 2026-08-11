@@ -86,7 +86,9 @@ export function ActionHubPage() {
         initialAction={quickAction}
         onClose={() => setQuickOpen(false)}
         onAiCommand={(command) => navigate("/chat", { state: { hubPrompt: command } })}
-        onJoinScreen={(code) => navigate(`/screen-share?join=${encodeURIComponent(code)}`)}
+        onJoinScreen={async (code) => {
+          navigate(`/screen-share?join=${encodeURIComponent(code)}`);
+        }}
         onFindContact={(query, type) => navigate(`/call-hub/search?query=${encodeURIComponent(query)}&type=${encodeURIComponent(type)}`)}
       />
     </div>
