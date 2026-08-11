@@ -29,8 +29,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const persistSession = useCallback(async (session: AuthSession, persistent = true) => {
-    // Persist the auth session, but never let an optional Android secure-storage
-    // implementation prevent the authenticated WebView from becoming usable.
+    // Persist the auth session, but never let optional Android secure-storage
+    // implementation failures prevent the authenticated WebView from becoming usable.
     try {
       await writeStoredSession(session.access_token, session.refresh_token, persistent);
     } catch (error) {
@@ -73,7 +73,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (active) await persistSession(refreshed, stored.persistent);
         }
       } catch (error) {
-        await removeStoredSession();
+        try {
+          await removeStoredSession();
+        } catch (storageError) {
+          console.warn("[Auto-AI Auth] Could not clear invalid stored session.", storageError);
+        }
         if (active) {
           setToken(null);
           setRefreshToken(null);
@@ -89,42 +93,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       active = false;
     };
   }, [persistSession]);
-
-  // IMPORTANT: do not start Android calling setup automatically after login.
-  // This native onboarding can request permissions/start foreground services and
-  // must only run from the calling setup UI. Running it immediately after auth
-  // was able to terminate the Android process on affected devices.
-  useEffect(() => {
-    if (!token || !user) return;
-    let active = true;
-
-    void (async () => {
-      const registration = await callNative.registration().catch((error) => {
-        console.warn("[Auto-AI Auth] Android device registration payload could not be read.", error);
-        return null;
-      });
-      if (!active || !registration?.device_id || registration.platform !== "android") return;
-
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        try {
-          await callApi.registerDevice(token, registration);
-          await callNative.requestNotificationPermission().catch((error) => {
-            console.warn("[Auto-AI Auth] Android notification permission request failed.", error);
-          });
-          return;
-        } catch (error) {
-          console.warn("[Auto-AI Auth] Android device registration failed.", error);
-          if (attempt < 2) {
-            await new Promise((resolve) => window.setTimeout(resolve, 500 * 2 ** attempt));
-          }
-        }
-      }
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, [token, user]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -168,7 +136,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             console.warn("[Auto-AI Auth] Call device token cleanup failed during logout.", error);
           });
         }
-        await removeStoredSession();
+        try {
+          await removeStoredSession();
+        } catch (error) {
+          console.warn("[Auto-AI Auth] Secure session cleanup failed during logout.", error);
+        }
         setToken(null);
         setRefreshToken(null);
         setUser(null);
