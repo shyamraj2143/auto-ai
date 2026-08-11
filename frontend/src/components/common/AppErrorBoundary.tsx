@@ -38,6 +38,10 @@ function isChunkLoadError(error: Error) {
   );
 }
 
+function isWorkspaceRecoveryRoute() {
+  return ["/", "/hub", "/activity"].includes(window.location.pathname);
+}
+
 export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundaryState> {
   state: AppErrorBoundaryState = { error: null, referenceId: "" };
 
@@ -90,9 +94,34 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
     window.location.assign("/hub");
   };
 
+  openRoute = (route: string) => {
+    enableSafeMode("render-recovery");
+    window.location.assign(route);
+  };
+
   render() {
     if (!this.state.error) return this.props.children;
     const chunkError = isChunkLoadError(this.state.error);
+    if (!chunkError && isWorkspaceRecoveryRoute()) {
+      return (
+        <main className="app-recovery-page">
+          <section className="app-recovery-card">
+            <p className="settings-eyebrow">Auto-AI</p>
+            <h1>Action Hub</h1>
+            <p>Your workspace is ready in safe mode.</p>
+            <div className="app-recovery-grid" aria-label="Workspace actions">
+              <button type="button" onClick={() => this.openRoute("/chat")}>AI Chat</button>
+              <button type="button" onClick={() => this.openRoute("/seva")}>AutoAI Seva</button>
+              <button type="button" onClick={() => this.openRoute("/call-hub/calls")}>Calls</button>
+              <button type="button" onClick={() => this.openRoute("/settings")}>Settings</button>
+            </div>
+            <button className="btn-primary app-recovery-primary" type="button" onClick={this.restartInSafeMode}>
+              Open Action Hub
+            </button>
+          </section>
+        </main>
+      );
+    }
     return (
       <main className="app-error-page">
         <section className="app-error-card">

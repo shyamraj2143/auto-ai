@@ -140,6 +140,56 @@ body {
   gap: 10px;
 }
 
+.app-recovery-page {
+  min-height: 100dvh;
+  padding: calc(var(--safe-top) + 18px) max(16px, var(--safe-right)) calc(var(--safe-bottom) + 22px) max(16px, var(--safe-left));
+  background: #f7f5fc;
+  color: #151221;
+}
+
+.app-recovery-card {
+  display: grid;
+  gap: 18px;
+  width: min(100%, 520px);
+  margin: 0 auto;
+  padding-top: min(18vh, 96px);
+}
+
+.app-recovery-card h1 {
+  margin: 0;
+  font-size: clamp(32px, 11vw, 48px);
+  line-height: 1;
+  font-weight: 900;
+}
+
+.app-recovery-card p {
+  margin: 0;
+  color: #6f6a7c;
+}
+
+.app-recovery-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.app-recovery-grid button,
+.app-recovery-primary {
+  min-height: 52px;
+  border: 1px solid rgba(109, 40, 217, 0.14);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #151221;
+  box-shadow: 0 16px 35px rgba(78, 55, 126, 0.1);
+  font-weight: 800;
+}
+
+.app-recovery-primary {
+  width: 100%;
+  color: #ffffff;
+  background: linear-gradient(135deg, #6f46e8, #8b5cf6);
+}
+
 button,
 input,
 textarea,

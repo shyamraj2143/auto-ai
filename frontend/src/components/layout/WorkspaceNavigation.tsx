@@ -35,6 +35,10 @@ const primaryItems = [
 const sevaOperationsItem = { to: "/admin/seva-operations", label: "Seva Operations", icon: BriefcaseBusiness } as const;
 const agentOperationsItem = { to: "/agent/work", label: "Seva Operations", icon: BriefcaseBusiness } as const;
 
+function displayNameOf(value: unknown, fallback = "AutoAI User") {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
 function initials(name: string) {
   return name
     .trim()
@@ -49,6 +53,8 @@ export function WorkspaceNavigation() {
   const { user, logout } = useAuth();
   if (!user) return null;
   const avatar = resolveApiAssetUrl(user.avatar || user.picture);
+  const displayName = displayNameOf(user.name);
+  const displayEmail = displayNameOf(user.email, "");
   const items = user.role === "seva_agent" ? [agentOperationsItem] : isAdminPanelRole(user.role) && user.is_admin
     ? [...primaryItems.slice(0, 3), sevaOperationsItem, ...primaryItems.slice(3)]
     : primaryItems;
@@ -74,12 +80,12 @@ export function WorkspaceNavigation() {
       </nav>
       <div className="autoai-workspace-profile">
         <span className="autoai-workspace-avatar">
-          <span aria-hidden="true">{initials(user.name || user.email)}</span>
+          <span aria-hidden="true">{initials(displayName || displayEmail)}</span>
           {avatar && <img src={avatar} alt="" onError={(event) => { event.currentTarget.style.display = "none"; }} />}
         </span>
         <span>
-          <strong>{user.name || "AutoAI User"}</strong>
-          <small>{user.role === "seva_agent" ? `Agent ID: ${user.username}` : user.email}</small>
+          <strong>{displayName}</strong>
+          <small>{user.role === "seva_agent" ? `Agent ID: ${displayNameOf(user.username, "")}` : displayEmail}</small>
         </span>
         <button type="button" onClick={logout} aria-label="Sign out" title="Sign out">
           <LogOut size={16} />
