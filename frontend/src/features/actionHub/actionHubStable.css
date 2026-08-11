@@ -1,0 +1,46 @@
+.hub-feature-card-stable {
+  display: flex;
+  width: 100%;
+  min-height: 148px;
+  align-items: center;
+  gap: 16px;
+  padding: 22px;
+  color: var(--color-text, #181622);
+  border: 1px solid var(--color-border, #e8e3f2);
+  border-radius: 22px;
+  background: var(--color-surface, #fff);
+  box-shadow: 0 12px 30px rgba(63, 43, 105, .07);
+  text-align: left;
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+.hub-feature-card-stable:hover,
+.hub-feature-card-stable:focus-visible {
+  transform: translateY(-2px);
+  border-color: var(--color-primary, #6f46e8);
+  box-shadow: 0 16px 34px rgba(63, 43, 105, .12);
+  outline: none;
+}
+.hub-feature-icon {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  flex: 0 0 54px;
+  place-items: center;
+  border-radius: 17px;
+  background: var(--color-primary-soft, #f0ebff);
+  color: var(--color-primary, #6f46e8);
+}
+.hub-feature-copy { display: grid; min-width: 0; gap: 7px; flex: 1; }
+.hub-feature-copy strong { font-size: 17px; font-weight: 800; letter-spacing: -.02em; }
+.hub-feature-copy small { color: var(--color-text-secondary, #676172); font-size: 12px; line-height: 1.55; }
+.hub-feature-arrow { flex: 0 0 auto; font-size: 22px; opacity: .55; }
+.hub-stable-shortcuts { min-height: 0; }
+.hub-stable-shortcuts > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 0; border-top: 1px solid var(--color-border, #e8e3f2); }
+.hub-stable-shortcuts button { display: inline-flex; align-items: center; gap: 6px; padding: 8px 11px; border: 1px solid var(--color-border, #e8e3f2); border-radius: 10px; background: var(--color-surface, #fff); color: var(--color-text, #181622); font-size: 12px; font-weight: 700; }
+@media (max-width: 760px) {
+  .hub-main { width: min(100% - 24px, 680px); padding-bottom: calc(92px + var(--safe-bottom, 0px)); }
+  .hub-feature-stage { display: grid; grid-template-columns: 1fr; gap: 12px; }
+  .hub-feature-card-stable { min-height: 118px; padding: 17px; }
+  .hub-feature-icon { width: 48px; height: 48px; flex-basis: 48px; }
+  .hub-feature-copy strong { font-size: 15px; }
+}
