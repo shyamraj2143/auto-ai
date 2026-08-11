@@ -1,11 +1,9 @@
 name: Push Android update notification
 
 on:
-  push:
-    branches:
-      - main
-    paths-ignore:
-      - '.release-status/**'
+  # A notification must only advertise the APK that was actually built,
+  # signed, published and verified. The Android release workflow owns the
+  # main-push trigger; this workflow runs after that release succeeds.
   workflow_run:
     workflows:
       - Android release
@@ -15,7 +13,7 @@ on:
 
 concurrency:
   group: android-update-push-main
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
