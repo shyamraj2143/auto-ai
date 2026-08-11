@@ -1,7 +1,8 @@
 import { AlarmClock, FileCheck2, HeartHandshake, MessageCircle, MessagesSquare, MonitorUp, Phone, Settings, ShieldCheck } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import { useMotionMode } from "../../motion/MotionProvider";
 import { HubHeader } from "./HubHeader";
 import { QuickConnect, type QuickConnectAction } from "./QuickConnect";
 import "./actionHub.css";
@@ -22,6 +23,7 @@ const actions = [
 export function ActionHubPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const { safeMode, disableSafeMode } = useMotionMode();
   const [quickOpen, setQuickOpen] = useState(false);
   const [quickAction, setQuickAction] = useState<QuickConnectAction>("ai");
 
@@ -29,6 +31,12 @@ export function ActionHubPage() {
     setQuickAction(action);
     setQuickOpen(true);
   }, []);
+
+  useEffect(() => {
+    if (!safeMode) return;
+    const timer = window.setTimeout(() => disableSafeMode(), 800);
+    return () => window.clearTimeout(timer);
+  }, [disableSafeMode, safeMode]);
 
   if (!user) return null;
 
