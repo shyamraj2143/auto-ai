@@ -16,10 +16,7 @@ import com.getcapacitor.BridgeWebChromeClient;
 import com.getcapacitor.BridgeWebViewClient;
 import com.getcapacitor.Plugin;
 
-/**
- * Production launcher. It isolates optional native integrations and owns the
- * update check before the React workspace is rendered.
- */
+/** Production launcher: startup-safe native registration + update delivery before React workspace rendering. */
 public final class AutoAiLauncherActivity extends BridgeActivity {
     private static final String TAG = "AutoAiLauncher";
     private AppUpdateCoordinator updateCoordinator;
