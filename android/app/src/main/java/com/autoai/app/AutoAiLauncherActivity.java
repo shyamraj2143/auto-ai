@@ -123,7 +123,7 @@ public final class AutoAiLauncherActivity extends BridgeActivity {
     }
 
     @Override
-    protected void onResume() {
+    public void onResume() {
         super.onResume();
         try {
             installerHandoff = false;
@@ -138,7 +138,7 @@ public final class AutoAiLauncherActivity extends BridgeActivity {
     }
 
     @Override
-    protected void onDestroy() {
+    public void onDestroy() {
         try {
             if (updateCoordinator != null) updateCoordinator.removeListener(updateListener);
         } catch (Throwable error) {
