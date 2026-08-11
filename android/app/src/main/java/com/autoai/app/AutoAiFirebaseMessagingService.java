@@ -1,6 +1,8 @@
 package com.autoai.app;
 
 import android.Manifest;
+import android.app.Activity;
+import android.app.ActivityManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -120,8 +122,6 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         }
         if ("call_accepted".equals(messageType)) {
             if (!CallNotificationManager.acceptRevision(this, callId, callRevision)) return;
-            // Accept is a handoff, not a terminal event. Only remove the ringing
-            // presentation; the foreground service and native media session must live on.
             CallNotificationManager.cancelIncomingPresentation(this, callId);
             return;
         }
@@ -152,7 +152,6 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
             return;
         }
         if ("apk_update".equals(messageType)) {
-            // Push data is routing-only. The coordinator fetches signed release metadata from the API.
             notifyAfterVerifiedUpdateCheck();
             return;
         }
@@ -162,15 +161,9 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         String title = data.get("title");
         String body = data.get("body");
         RemoteMessage.Notification notification = message.getNotification();
-        if ((title == null || title.trim().isEmpty()) && notification != null) {
-            title = notification.getTitle();
-        }
-        if ((body == null || body.trim().isEmpty()) && notification != null) {
-            body = notification.getBody();
-        }
-        if (title == null || title.trim().isEmpty()) {
-            title = "Auto-AI update available";
-        }
+        if ((title == null || title.trim().isEmpty()) && notification != null) title = notification.getTitle();
+        if ((body == null || body.trim().isEmpty()) && notification != null) body = notification.getBody();
+        if (title == null || title.trim().isEmpty()) title = "Auto-AI update available";
         if (body == null || body.trim().isEmpty()) {
             String versionName = data.get("version_name");
             body = versionName == null || versionName.trim().isEmpty()
@@ -182,8 +175,6 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
 
     private void notifyAfterVerifiedUpdateCheck() {
         try {
-            // FCM may reclaim this service after onMessageReceived returns. Keep the
-            // same verified check durable so delivery does not depend on this process.
             UpdateCheckScheduler.schedule(this);
         } catch (RuntimeException error) {
             Log.w(TAG, "Unable to schedule durable pushed APK update check.", error);
@@ -231,8 +222,6 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         void start() {
             mainHandler.postDelayed(timeout, UPDATE_CHECK_LISTENER_TIMEOUT_MS);
             try {
-                // addListener publishes the current snapshot synchronously. Ignore that
-                // stale value until this instance is armed for its own refresh.
                 coordinator.addListener(this);
                 armed.set(true);
                 coordinator.check(true);
@@ -254,12 +243,24 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
                     if (!stop()) return;
                     mainHandler.post(() -> {
                         try {
+                            if (isAppInForeground()) {
+                                Intent updateIntent = new Intent(AutoAiFirebaseMessagingService.this, MainActivity.class)
+                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                                    .putExtra("start_app_update", true)
+                                    .putExtra("open_app_update", true);
+                                startActivity(updateIntent);
+                            } else {
+                                showNotification(versionCode, "AutoAI " + versionName + " update",
+                                    changelog == null || changelog.trim().isEmpty()
+                                        ? "A verified AutoAI update is ready."
+                                        : changelog.trim());
+                            }
+                        } catch (RuntimeException error) {
+                            Log.w(TAG, "Unable to present pushed APK update surface.", error);
                             showNotification(versionCode, "AutoAI " + versionName + " update",
                                 changelog == null || changelog.trim().isEmpty()
                                     ? "A verified AutoAI update is ready."
                                     : changelog.trim());
-                        } catch (RuntimeException error) {
-                            Log.w(TAG, "Unable to show pushed APK update notification.", error);
                         }
                     });
                     return;
@@ -277,6 +278,24 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
             coordinator.removeListener(this);
             return true;
         }
+    }
+
+    private boolean isAppInForeground() {
+        ActivityManager manager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+        if (manager == null) return false;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            for (android.app.ActivityManager.RunningAppProcessInfo process : manager.getRunningAppProcesses()) {
+                if (getPackageName().equals(process.processName)) {
+                    return process.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+                        || process.importance == ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE;
+                }
+            }
+            return false;
+        }
+        for (android.app.ActivityManager.RunningTaskInfo task : manager.getRunningTasks(1)) {
+            if (task.topActivity != null && getPackageName().equals(task.topActivity.getPackageName())) return true;
+        }
+        return false;
     }
 
     @Override
@@ -428,176 +447,108 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
     private void showSocialNotification(Map<String, String> data, RemoteMessage.Notification notification) {
         if (!canPostNotifications()) return;
         createMissedCallNotificationChannel();
-        String type = data.get("type");
-        String entityId = data.get("entity_id");
-        NotificationDeepLink.Destination destination = "follow_request".equals(type)
-            ? NotificationDeepLink.Destination.FOLLOW_REQUEST
-            : NotificationDeepLink.Destination.FOLLOW_ACCEPTED;
-        if (entityId == null || entityId.trim().isEmpty()) return;
+        String actor = data.get("actor_name");
         String title = data.get("title");
         String body = data.get("body");
         if ((title == null || title.trim().isEmpty()) && notification != null) title = notification.getTitle();
         if ((body == null || body.trim().isEmpty()) && notification != null) body = notification.getBody();
-        if (title == null || title.trim().isEmpty()) title = "Auto-AI connection";
-        if (body == null || body.trim().isEmpty()) body = "Open to view details";
-        PendingIntent open = NotificationDeepLink.pendingActivity(this, destination, entityId, null, data.get("event_id"), "open", 0L);
+        if (title == null || title.trim().isEmpty()) title = "Auto-AI social update";
+        if (body == null || body.trim().isEmpty()) body = actor == null ? "You have a new social update." : actor + " sent you a social update.";
+        Intent intent = NotificationDeepLink.activityIntent(this, NotificationDeepLink.Destination.SOCIAL, data.get("user_id"), null, data.get("event_id"), 0L);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, NotificationDeepLink.requestCode("social", data.get("user_id"), "open"), intent, flags);
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-            ? new Notification.Builder(this, SOCIAL_CHANNEL_ID) : new Notification.Builder(this);
-        builder.setSmallIcon(R.mipmap.ic_launcher).setContentTitle(title).setContentText(body)
-            .setStyle(new Notification.BigTextStyle().bigText(body)).setContentIntent(open)
-            .setAutoCancel(true).setVisibility(Notification.VISIBILITY_PRIVATE).setWhen(System.currentTimeMillis());
+            ? new Notification.Builder(this, SOCIAL_CHANNEL_ID)
+            : new Notification.Builder(this);
+        builder.setSmallIcon(R.mipmap.ic_launcher).setContentTitle(title).setContentText(body).setContentIntent(pendingIntent).setAutoCancel(true);
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) builder.setPriority(Notification.PRIORITY_HIGH);
         NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        if (manager != null) manager.notify(NotificationDeepLink.requestCode(type, entityId, "notification"), builder.build());
-    }
-
-    private void createChatNotificationChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
-        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        if (manager == null) return;
-        NotificationChannel channel = new NotificationChannel(
-            CHAT_NOTIFICATION_CHANNEL_ID,
-            "Messages",
-            NotificationManager.IMPORTANCE_HIGH
-        );
-        channel.setDescription("Auto-AI message alerts");
-        manager.createNotificationChannel(channel);
+        if (manager != null) manager.notify(8000 + Math.abs(String.valueOf(data.get("event_id")).hashCode() % 100000), builder.build());
     }
 
     private void showRelationshipNotification(Map<String, String> data, RemoteMessage.Notification notification) {
         if (!canPostNotifications()) return;
         createRelationshipNotificationChannel(this);
         String contactId = data.get("contact_id");
-        if (contactId == null || contactId.trim().isEmpty()) return;
-        String title = notification == null ? null : notification.getTitle();
-        String body = notification == null ? null : notification.getBody();
-        if (title == null || title.trim().isEmpty()) title = "Relationship follow-up";
-        if (body == null || body.trim().isEmpty()) body = "You have a relationship follow-up reminder.";
-        PendingIntent open = NotificationDeepLink.pendingActivity(
-            this,
-            NotificationDeepLink.Destination.RELATIONSHIP_FOLLOWUP,
-            contactId,
-            null,
-            data.get("event_id"),
-            "open",
-            0L
-        );
+        String title = data.get("title");
+        String body = data.get("body");
+        if ((title == null || title.trim().isEmpty()) && notification != null) title = notification.getTitle();
+        if ((body == null || body.trim().isEmpty()) && notification != null) body = notification.getBody();
+        if (title == null || title.trim().isEmpty()) title = "Auto-AI follow-up";
+        if (body == null || body.trim().isEmpty()) body = "You have a relationship follow-up.";
+        Intent intent = NotificationDeepLink.activityIntent(this, NotificationDeepLink.Destination.RELATIONSHIP, contactId, null, data.get("event_id"), 0L);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, NotificationDeepLink.requestCode("relationship", contactId, "open"), intent, flags);
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
             ? new Notification.Builder(this, RELATIONSHIP_CHANNEL_ID)
             : new Notification.Builder(this);
-        builder.setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setStyle(new Notification.BigTextStyle().bigText(body))
-            .setContentIntent(open)
-            .setAutoCancel(true)
-            .setCategory(Notification.CATEGORY_REMINDER)
-            .setVisibility(Notification.VISIBILITY_PRIVATE)
-            .setShowWhen(true)
-            .setWhen(System.currentTimeMillis());
+        builder.setSmallIcon(R.mipmap.ic_launcher).setContentTitle(title).setContentText(body).setContentIntent(pendingIntent).setAutoCancel(true);
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) builder.setPriority(Notification.PRIORITY_HIGH);
         NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        if (manager != null) manager.notify(NotificationDeepLink.requestCode("relationship_followup", contactId, "notification"), builder.build());
+        if (manager != null) manager.notify(9000 + Math.abs(String.valueOf(contactId).hashCode() % 100000), builder.build());
     }
 
     private void showSevaNotification(Map<String, String> data, RemoteMessage.Notification notification) {
         if (!canPostNotifications()) return;
-        String caseRouteId = data.get("case_route_id");
-        if (caseRouteId == null || caseRouteId.trim().isEmpty()) return;
-        String title = notification == null ? data.get("title") : notification.getTitle();
-        String body = notification == null ? data.get("body") : notification.getBody();
-        if (title == null || title.trim().isEmpty()) title = "AutoAI Seva update";
-        if (body == null || body.trim().isEmpty()) body = "Your Seva case has been updated.";
         createSevaNotificationChannel();
-        PendingIntent open = NotificationDeepLink.pendingActivity(
-            this, NotificationDeepLink.Destination.SEVA_CASE, caseRouteId, data.get("secondary_id"),
-            data.get("event_id"), "open", 0L
-        );
+        String applicationId = data.get("application_id");
+        String title = data.get("title");
+        String body = data.get("body");
+        if ((title == null || title.trim().isEmpty()) && notification != null) title = notification.getTitle();
+        if ((body == null || body.trim().isEmpty()) && notification != null) body = notification.getBody();
+        if (title == null || title.trim().isEmpty()) title = "AutoAI Seva update";
+        if (body == null || body.trim().isEmpty()) body = "Your Seva application has an update.";
+        Intent intent = NotificationDeepLink.activityIntent(this, NotificationDeepLink.Destination.SEVA, applicationId, null, data.get("event_id"), 0L);
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, NotificationDeepLink.requestCode("seva", applicationId, "open"), intent, flags);
         Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
             ? new Notification.Builder(this, SEVA_CHANNEL_ID)
             : new Notification.Builder(this);
-        builder.setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setStyle(new Notification.BigTextStyle().bigText(body))
-            .setContentIntent(open)
-            .setAutoCancel(true)
-            .setCategory(Notification.CATEGORY_STATUS)
-            .setVisibility(Notification.VISIBILITY_PRIVATE)
-            .setShowWhen(true)
-            .setWhen(System.currentTimeMillis());
+        builder.setSmallIcon(R.mipmap.ic_launcher).setContentTitle(title).setContentText(body).setContentIntent(pendingIntent).setAutoCancel(true);
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) builder.setPriority(Notification.PRIORITY_HIGH);
         NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        if (manager != null) manager.notify(NotificationDeepLink.requestCode("seva_case_update", caseRouteId, "notification"), builder.build());
+        if (manager != null) manager.notify(9500 + Math.abs(String.valueOf(applicationId).hashCode() % 100000), builder.build());
     }
 
-    private void createSevaNotificationChannel() {
+    private void createChatNotificationChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        if (manager == null) return;
-        NotificationChannel channel = new NotificationChannel(SEVA_CHANNEL_ID, "Seva case updates", NotificationManager.IMPORTANCE_HIGH);
-        channel.setDescription("Assignment, requirement and status updates for AutoAI Seva cases");
-        channel.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
-        manager.createNotificationChannel(channel);
+        if (manager != null) manager.createNotificationChannel(new NotificationChannel(CHAT_NOTIFICATION_CHANNEL_ID, "Messages", NotificationManager.IMPORTANCE_HIGH));
+    }
+
+    static long parseInt(String value) {
+        try { return Long.parseLong(value == null ? "" : value); } catch (Exception ignored) { return 0L; }
+    }
+
+    private long parseLong(String value) {
+        try { return Long.parseLong(value == null ? "" : value); } catch (Exception ignored) { return 0L; }
+    }
+
+    private boolean canPostNotifications() {
+        return Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
     }
 
     public static void createRelationshipNotificationChannel(Context context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-        if (manager == null) return;
-        NotificationChannel channel = new NotificationChannel(
-            RELATIONSHIP_CHANNEL_ID,
-            "Relationship reminders",
-            NotificationManager.IMPORTANCE_HIGH
-        );
-        channel.setDescription("Reminders to follow up with important people");
-        channel.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
-        manager.createNotificationChannel(channel);
+        if (manager != null) manager.createNotificationChannel(new NotificationChannel(RELATIONSHIP_CHANNEL_ID, "Relationship follow-ups", NotificationManager.IMPORTANCE_HIGH));
     }
 
     private void createMissedCallNotificationChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
         NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        if (manager == null) return;
-        NotificationChannel missed = new NotificationChannel(
-            MISSED_CALL_CHANNEL_ID,
-            "Missed calls",
-            NotificationManager.IMPORTANCE_DEFAULT
-        );
-        missed.setDescription("Auto-AI missed call alerts");
-        manager.createNotificationChannel(missed);
-        NotificationChannel social = new NotificationChannel(
-            SOCIAL_CHANNEL_ID,
-            "Social",
-            NotificationManager.IMPORTANCE_DEFAULT
-        );
-        social.setDescription("Auto-AI social and follow alerts");
-        manager.createNotificationChannel(social);
+        if (manager != null) manager.createNotificationChannel(new NotificationChannel(MISSED_CALL_CHANNEL_ID, "Missed calls", NotificationManager.IMPORTANCE_HIGH));
     }
 
-    private boolean canPostNotifications() {
-        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
-            || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+    private void createSevaNotificationChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager != null) manager.createNotificationChannel(new NotificationChannel(SEVA_CHANNEL_ID, "AutoAI Seva", NotificationManager.IMPORTANCE_HIGH));
     }
 
     private int mutablePendingFlags() {
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) flags |= PendingIntent.FLAG_MUTABLE;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) flags |= PendingIntent.FLAG_MUTABLE;
         return flags;
     }
-
-    private int parseInt(String value) {
-        if (value == null) return 0;
-        try {
-            return Integer.parseInt(value.trim());
-        } catch (NumberFormatException ignored) {
-            return 0;
-        }
-    }
-
-    private long parseLong(String value) {
-        if (value == null) return 0L;
-        try { return Long.parseLong(value.trim()); }
-        catch (NumberFormatException ignored) { return 0L; }
-    }
-
 }
