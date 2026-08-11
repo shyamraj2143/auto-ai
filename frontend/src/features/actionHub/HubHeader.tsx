@@ -10,6 +10,10 @@ function userAvatar(user: User) {
   return resolveApiAssetUrl(user.picture || user.avatar);
 }
 
+function userDisplayName(user: User) {
+  return typeof user.name === "string" && user.name.trim() ? user.name.trim() : "AutoAI User";
+}
+
 export function HubHeader({
   user,
   unreadNotifications,
@@ -24,7 +28,8 @@ export function HubHeader({
   onLogout: () => Promise<void>;
 }) {
   const avatar = userAvatar(user);
-  const initial = user.name.trim().slice(0, 1).toUpperCase() || "A";
+  const displayName = userDisplayName(user);
+  const initial = displayName.slice(0, 1).toUpperCase() || "A";
   const [updateState, setUpdateState] = useState<NativeUpdateState | null>(null);
 
   useEffect(() => {
@@ -92,7 +97,7 @@ export function HubHeader({
         </Link>
         <Link className="hub-profile-link" to="/settings?section=general" aria-label="Open profile">
           <span className="hub-avatar">{avatar ? <img src={avatar} alt="" /> : initial}</span>
-          <span className="hub-profile-status"><strong>{user.name}</strong><small><i /> Connected</small></span>
+          <span className="hub-profile-status"><strong>{displayName}</strong><small><i /> Connected</small></span>
         </Link>
         <button className="hub-header-icon hub-logout" type="button" onClick={() => void onLogout()} aria-label="Logout">
           <LogOut size={18} />

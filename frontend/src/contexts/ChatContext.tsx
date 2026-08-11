@@ -21,6 +21,11 @@ type ChatContextValue = {
 
 const ChatContext = createContext<ChatContextValue | undefined>(undefined);
 
+export function normalizeChatList(value: unknown): ChatListItem[] {
+  if (Array.isArray(value)) return value.filter((item): item is ChatListItem => Boolean(item && typeof item === "object" && "id" in item));
+  return [];
+}
+
 export function ChatProvider({ children }: { children: ReactNode }) {
   const { token } = useAuth();
   const [chats, setChats] = useState<ChatListItem[]>([]);
@@ -32,7 +37,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     if (!token) return;
     setLoadingChats(true);
     try {
-      setChats(await api.listChats(token));
+      setChats(normalizeChatList(await api.listChats(token)));
     } catch (error) {
       console.warn("[Auto-AI Chat] Initial chat list refresh failed; keeping workspace usable.", error);
       setChats([]);

@@ -56,6 +56,7 @@ export function ActionHubPage() {
   const [quickAction, setQuickAction] = useState<QuickConnectAction>("ai");
   const online = useOnlineStatus();
   const activityOnly = location.pathname === "/activity";
+  const safeChats = Array.isArray(chats) ? chats : [];
 
   useEffect(() => {
     if (!token) return;
@@ -65,7 +66,7 @@ export function ActionHubPage() {
     void Promise.allSettled([callApi.history(token, 1, 6), socialApi.notifications(token, 1, 1), relationshipFollowupsApi.summary(token)])
       .then(([historyResult, notificationResult, relationshipResult]) => {
         if (!active) return;
-        if (historyResult.status === "fulfilled") setCalls(historyResult.value.items);
+        if (historyResult.status === "fulfilled") setCalls(Array.isArray(historyResult.value.items) ? historyResult.value.items : []);
         else setActivityError("Call activity is temporarily unavailable.");
         if (notificationResult.status === "fulfilled") setSocialUnreadNotifications(notificationResult.value.unread_count);
         if (relationshipResult.status === "fulfilled") setRelationshipSummary(relationshipResult.value);
@@ -93,7 +94,7 @@ export function ActionHubPage() {
 
   const recentItems = useMemo<HubActivityItem[]>(() => {
     const items: HubActivityItem[] = [];
-    const sortedChats = [...chats].sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
+    const sortedChats = [...safeChats].sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
     const chatLimit = activityOnly ? 5 : 1;
     sortedChats.slice(0, chatLimit).forEach((chat) => items.push({ id: `chat-${chat.id}`, tone: "ai", label: "Recent AI chat", title: chat.title || "Untitled conversation", meta: timeLabel(chat.updated_at), onOpen: () => navigate(`/chat/${encodeURIComponent(chat.id)}`) }));
     if (isActiveScreenShareState(screenShare.uiState) && screenShare.session) {
@@ -104,7 +105,7 @@ export function ActionHubPage() {
     calls.slice(0, callLimit).forEach((call) => items.push({ id: `call-${call.id}`, tone: "call", label: `Recent ${call.call_type} call`, title: call.peer?.display_name || "Recent call", meta: `${call.status} · ${timeLabel(call.created_at)}`, onOpen: () => navigate("/calls?view=calls") }));
     if (relationshipSummary && relationshipSummary.unread_due > 0) items.push({ id: "relationship-followups-due", tone: "relationship", label: "Relationship follow-ups", title: `${relationshipSummary.unread_due} ${relationshipSummary.unread_due === 1 ? "reminder" : "reminders"} due`, meta: relationshipSummary.overdue ? `${relationshipSummary.overdue} overdue` : "Due today", onOpen: () => navigate("/relationships") });
     return activityOnly ? items.slice(0, 10) : items.slice(0, 3);
-  }, [activityOnly, calls, chats, navigate, relationshipSummary, screenShare.role, screenShare.session, screenShare.startedAt, screenShare.uiState]);
+  }, [activityOnly, calls, navigate, relationshipSummary, safeChats, screenShare.role, screenShare.session, screenShare.startedAt, screenShare.uiState]);
 
   if (!user) return null;
   const safeName = typeof user.name === "string" ? user.name.trim() : "";
@@ -128,7 +129,7 @@ export function ActionHubPage() {
             </section>
 
             <section className="hub-feature-stage" aria-label="Primary AutoAI actions">
-              <div className="hub-card-position hub-card-ai"><FeatureCard tone="ai" icon={MessageCircle} title="AI Chat" description="Intelligent conversations that get things done." details="Voice · Images · Files · Models" primaryAction={{ label: "Start Chat", onClick: () => navigate("/chat") }} secondaryAction={chats[0] ? { label: "Continue", onClick: () => navigate(`/chat/${encodeURIComponent(chats[0].id)}`) } : undefined} /></div>
+              <div className="hub-card-position hub-card-ai"><FeatureCard tone="ai" icon={MessageCircle} title="AI Chat" description="Intelligent conversations that get things done." details="Voice · Images · Files · Models" primaryAction={{ label: "Start Chat", onClick: () => navigate("/chat") }} secondaryAction={safeChats[0] ? { label: "Continue", onClick: () => navigate(`/chat/${encodeURIComponent(safeChats[0].id)}`) } : undefined} /></div>
               <div className="hub-card-position hub-card-screen"><FeatureCard tone="screen" icon={MonitorUp} title="Screen Sharing" description="Share, collaborate and solve problems together." details={`${screenShare.canShareScreen ? "Ready to share" : "Join supported"} · ${screenShare.networkQuality === "unknown" ? "secure relay" : `${screenShare.networkQuality} network`}`} primaryAction={{ label: "Share Screen", onClick: () => navigate("/screen-share") }} secondaryAction={{ label: "Join code", onClick: () => openQuick("screen") }} /></div>
               <div className="hub-card-position hub-card-call"><FeatureCard tone="call" icon={Phone} title="Audio / Video Call" description="Crystal clear calls with contacts and teams." details="Contacts · Recent calls · Alerts" primaryAction={{ label: "Start Call", onClick: () => navigate("/call-hub/search") }} secondaryAction={{ label: "History", onClick: () => navigate("/call-hub/calls") }} /></div>
               <div className="hub-card-position hub-card-alarm"><FeatureCard tone="alarm" icon={AlarmClock} title="AI Alarm" description="Wake up with a personal reminder in your language." details={nextAlarm ? `${countdownLabel(nextAlarm.scheduled_at)} · ${nextAlarm.title}` : "Calendar · AI voice · Native ringtone"} primaryAction={{ label: "Set Alarm", onClick: () => navigate("/alarms") }} secondaryAction={nextAlarm ? { label: "Manage", onClick: () => navigate("/alarms") } : undefined} /></div>
@@ -136,7 +137,7 @@ export function ActionHubPage() {
               <div className="hub-card-position hub-card-seva"><FeatureCard tone="seva" icon={FileCheck2} title="AutoAI Seva" description="Prepare government-service applications with guided verification." details="Income Certificate · Documents · Receipt · Tracking" primaryAction={{ label: "Open Seva", onClick: () => navigate("/seva") }} secondaryAction={{ label: "My applications", onClick: () => navigate("/seva/applications") }} /></div>
             </section>
             <section className="hub-metric-grid" aria-label="Workspace metrics">
-              <article><span><Activity size={16} /> AI conversations</span><strong>{chats.length}</strong><small>Available chat threads</small></article>
+              <article><span><Activity size={16} /> AI conversations</span><strong>{safeChats.length}</strong><small>Available chat threads</small></article>
               <article><span><MonitorUp size={16} /> Screen sharing</span><strong>{isActiveScreenShareState(screenShare.uiState) ? "Live" : "Ready"}</strong><small>{screenShare.networkQuality === "unknown" ? "Secure relay" : `${screenShare.networkQuality} network`}</small></article>
               <article><span><Phone size={16} /> Call history</span><strong>{calls.length}</strong><small>Recent call records</small></article>
               <article><span><AlarmClock size={16} /> Next alarm</span><strong>{nextAlarm ? formatAlarmTime24(nextAlarm.scheduled_at) : "Ready"}</strong><small>{nextAlarm ? formatAlarmDate(nextAlarm.scheduled_at) : "No alarm scheduled"}</small></article>
