@@ -43,10 +43,14 @@ export function HubHeader({
       void NativeUpdate.getState().then(apply).catch(() => undefined);
       void NativeUpdate.checkForUpdate().then(apply).catch(() => undefined);
     };
-    void NativeUpdate.addListener("stateChanged", apply).then((handle) => {
-      if (active) listener = handle;
-      else void handle.remove();
-    });
+    void NativeUpdate.addListener("stateChanged", apply)
+      .then((handle) => {
+        if (active) listener = handle;
+        else void handle.remove().catch(() => undefined);
+      })
+      .catch((error) => {
+        console.warn("[Auto-AI Update] Native update listener unavailable; continuing without the optional listener.", error);
+      });
     refresh();
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") refresh();
@@ -57,13 +61,17 @@ export function HubHeader({
       active = false;
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      void listener?.remove();
+      void listener?.remove().catch(() => undefined);
     };
   }, []);
 
   const startUpdate = async () => {
     if (updateButtonBusy(updateState)) return;
-    setUpdateState(await NativeUpdate.startDirectUpdate());
+    try {
+      setUpdateState(await NativeUpdate.startDirectUpdate());
+    } catch (error) {
+      console.warn("[Auto-AI Update] Direct update request failed; keeping workspace usable.", error);
+    }
   };
 
   return (
