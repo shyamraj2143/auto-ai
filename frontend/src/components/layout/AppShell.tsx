@@ -24,6 +24,11 @@ function CallWorkspaceScope({ enabled, children }: { enabled: boolean; children:
   return <CallProvider>{children}<CallOverlay /></CallProvider>;
 }
 
+function ChatWorkspaceScope({ enabled, children }: { enabled: boolean; children: ReactNode }) {
+  if (!enabled) return <>{children}</>;
+  return <ChatProvider>{children}</ChatProvider>;
+}
+
 export function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -85,34 +90,37 @@ export function AppShell() {
     return () => window.removeEventListener("auto-ai-destination-consumed", clearConsumedDestination);
   }, []);
 
-  const shell = (
-    <ChatProvider>
-      <AlarmWorkspaceScope enabled={!isAdminRoute} nativeEnabled={isAlarmWorkspace}>
-        <AndroidBackHandler />
-        <div className={`app-shell${isSidebarOpen ? " sidebar-open" : ""}${isChatWorkspace ? " chat-app-shell" : ""}`}>
-          {!fullCanvasAdmin && <WorkspaceNavigation />}
-          {!fullCanvasAdmin && isChatWorkspace && <Sidebar />}
-          {!fullCanvasAdmin && isChatWorkspace && isSidebarCollapsed && (
-            <button className="sidebar-restore-button hidden md:inline-flex" onClick={expandSidebar} title="Show chat history" type="button">
-              <PanelLeftOpen size={17} />
-            </button>
-          )}
-          <main className="flex min-w-0 flex-1 flex-col">
-            {safeMode && (
-              <div className="safe-mode-banner" role="status">
-                <span>Safe Mode active{safeModeReason ? `: ${safeModeReason}` : ""}</span>
-                <button type="button" onClick={disableSafeMode}>Exit Safe Mode</button>
-              </div>
-            )}
-            <div className="route-transition-stage" key={`${location.pathname}${location.search}`}>
-              <Outlet />
-            </div>
-          </main>
-          {!fullCanvasAdmin && <WorkspaceMobileNavigation />}
+  const workspace = (
+    <div className={`app-shell${isSidebarOpen ? " sidebar-open" : ""}${isChatWorkspace ? " chat-app-shell" : ""}`}>
+      {!fullCanvasAdmin && <WorkspaceNavigation />}
+      {!fullCanvasAdmin && isChatWorkspace && <Sidebar />}
+      {!fullCanvasAdmin && isChatWorkspace && isSidebarCollapsed && (
+        <button className="sidebar-restore-button hidden md:inline-flex" onClick={expandSidebar} title="Show chat history" type="button">
+          <PanelLeftOpen size={17} />
+        </button>
+      )}
+      <main className="flex min-w-0 flex-1 flex-col">
+        {safeMode && (
+          <div className="safe-mode-banner" role="status">
+            <span>Safe Mode active{safeModeReason ? `: ${safeModeReason}` : ""}</span>
+            <button type="button" onClick={disableSafeMode}>Exit Safe Mode</button>
+          </div>
+        )}
+        <div className="route-transition-stage" key={`${location.pathname}${location.search}`}>
+          <Outlet />
         </div>
-      </AlarmWorkspaceScope>
-    </ChatProvider>
+      </main>
+      {!fullCanvasAdmin && <WorkspaceMobileNavigation />}
+    </div>
   );
 
-  return <CallWorkspaceScope enabled={isCallWorkspace}>{shell}</CallWorkspaceScope>;
+  const alarmScoped = (
+    <AlarmWorkspaceScope enabled={isAlarmWorkspace && !isAdminRoute} nativeEnabled={isAlarmWorkspace}>
+      <AndroidBackHandler />
+      {workspace}
+    </AlarmWorkspaceScope>
+  );
+
+  const chatScoped = <ChatWorkspaceScope enabled={isChatWorkspace}>{alarmScoped}</ChatWorkspaceScope>;
+  return <CallWorkspaceScope enabled={isCallWorkspace}>{chatScoped}</CallWorkspaceScope>;
 }
