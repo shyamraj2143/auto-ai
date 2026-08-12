@@ -27,15 +27,18 @@ public final class NotificationDeepLink {
     public enum Destination {
         MESSAGE_THREAD, AI_CONVERSATION, INCOMING_CALL, MISSED_CALL, CALL_HISTORY,
         FOLLOW_REQUEST, FOLLOW_ACCEPTED, SOCIAL_ALERT, SCREEN_SHARE_SESSION,
-        APP_UPDATE, SETTINGS_SECTION, PAYMENT_RESULT, RELATIONSHIP_FOLLOWUP, SEVA_CASE
+        APP_UPDATE, SETTINGS_SECTION, PAYMENT_RESULT, RELATIONSHIP_FOLLOWUP, SEVA_CASE,
+        // Legacy aliases kept for compatibility with older FCM notification code.
+        SOCIAL, RELATIONSHIP, SEVA
     }
 
     private NotificationDeepLink() { }
 
     public static Intent activityIntent(Context context, Destination destination, String entityId, String secondaryId, String eventId, long expiresAt) {
+        Destination canonical = canonicalDestination(destination);
         Intent intent = new Intent(context, MainActivity.class)
             .setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            .putExtra(EXTRA_DESTINATION, destination.name())
+            .putExtra(EXTRA_DESTINATION, canonical.name())
             .putExtra(EXTRA_EVENT_ID, clean(eventId) == null ? UUID.randomUUID().toString() : clean(eventId));
         if (clean(entityId) != null) intent.putExtra(EXTRA_ENTITY_ID, clean(entityId));
         if (clean(secondaryId) != null) intent.putExtra(EXTRA_SECONDARY_ID, clean(secondaryId));
@@ -47,7 +50,7 @@ public final class NotificationDeepLink {
         Intent intent = activityIntent(context, destination, entityId, secondaryId, eventId, expiresAt);
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) flags |= PendingIntent.FLAG_IMMUTABLE;
-        return PendingIntent.getActivity(context, requestCode(destination.name(), entityId, action), intent, flags);
+        return PendingIntent.getActivity(context, requestCode(canonicalDestination(destination).name(), entityId, action), intent, flags);
     }
 
     static int requestCode(String type, String entityId, String action) {
@@ -98,6 +101,7 @@ public final class NotificationDeepLink {
         Destination destination;
         try { destination = Destination.valueOf(type == null ? "" : type); }
         catch (IllegalArgumentException invalid) { return null; }
+        destination = canonicalDestination(destination);
         String entityId = first(intent, EXTRA_ENTITY_ID, "entity_id", requiredField(destination));
         if (entityId == null && destination == Destination.MESSAGE_THREAD) entityId = clean(intent.getStringExtra("open_chat_thread_id"));
         if (requiresEntity(destination) && entityId == null) return null;
@@ -129,6 +133,16 @@ public final class NotificationDeepLink {
         if ("relationship_followup".equals(type)) return Destination.RELATIONSHIP_FOLLOWUP.name();
         if ("seva_case_update".equals(type)) return Destination.SEVA_CASE.name();
         return null;
+    }
+
+    private static Destination canonicalDestination(Destination destination) {
+        if (destination == null) return Destination.APP_UPDATE;
+        switch (destination) {
+            case SOCIAL: return Destination.SOCIAL_ALERT;
+            case RELATIONSHIP: return Destination.RELATIONSHIP_FOLLOWUP;
+            case SEVA: return Destination.SEVA_CASE;
+            default: return destination;
+        }
     }
 
     static boolean requiresEntity(Destination destination) {
