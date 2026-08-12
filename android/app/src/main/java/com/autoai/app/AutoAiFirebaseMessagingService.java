@@ -206,7 +206,6 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
             || state == AppUpdateCoordinator.State.IDLE;
     }
 
-    /** One-shot listener for a routing-only FCM update event. */
     private final class UpdateNotificationListener implements AppUpdateCoordinator.Listener {
         private final AppUpdateCoordinator coordinator;
         private final Handler mainHandler;
@@ -516,8 +515,8 @@ public class AutoAiFirebaseMessagingService extends FirebaseMessagingService {
         if (manager != null) manager.createNotificationChannel(new NotificationChannel(CHAT_NOTIFICATION_CHANNEL_ID, "Messages", NotificationManager.IMPORTANCE_HIGH));
     }
 
-    static long parseInt(String value) {
-        try { return Long.parseLong(value == null ? "" : value); } catch (Exception ignored) { return 0L; }
+    static int parseInt(String value) {
+        try { return Integer.parseInt(value == null ? "" : value); } catch (Exception ignored) { return 0; }
     }
 
     private long parseLong(String value) {
