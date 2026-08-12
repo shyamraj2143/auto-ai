@@ -119,7 +119,20 @@ public final class CallingPermissionCoordinator {
         return new Snapshot(status, permissionItems, diagnostics);
     }
 
+    /**
+     * Startup must never auto-launch calling permission onboarding. The previous
+     * implementation was invoked from MainActivity.onResume(), which made the
+     * calling permission/telecom stack run a few hundred milliseconds after login
+     * even when the user never opened Calls. That coupling can terminate the
+     * authenticated workspace on devices with restricted telecom/permission state.
+     * Calling UI can still inspect the snapshot and request onboarding explicitly.
+     */
     public static boolean needsOnboarding(Context context) {
+        return false;
+    }
+
+    /** Explicit/user-initiated callers may use this method to retain the old decision logic. */
+    public static boolean needsOnboardingForUser(Context context) {
         Snapshot snapshot = inspect(context);
         SharedPreferences prefs = preferences(context);
         boolean required = shouldOnboard(
@@ -145,8 +158,6 @@ public final class CallingPermissionCoordinator {
         int currentVersion,
         boolean postUpdate
     ) {
-        // Package updates are only a reason to re-check Android state. They are
-        // never, by themselves, a reason to show permission onboarding again.
         return requiresOnboarding(items) && (completedVersion != currentVersion || postUpdate);
     }
 
@@ -154,8 +165,6 @@ public final class CallingPermissionCoordinator {
         for (String key : USER_PERMISSION_KEYS) {
             ItemState state = items.get(key);
             if (state == null) continue;
-            // Normal battery optimization is advisory. A true Android
-            // background restriction is still actionable for incoming calls.
             if ("backgroundActivity".equals(key) && state == ItemState.LIMITED) continue;
             if (!isReady(state)) return true;
         }
@@ -178,9 +187,7 @@ public final class CallingPermissionCoordinator {
         return batteryAllowlisted ? ItemState.GRANTED : ItemState.LIMITED;
     }
 
-    public static void invalidateCachedState() {
-        // Snapshots are intentionally never cached; every inspection reads current platform state.
-    }
+    public static void invalidateCachedState() {}
 
     public static void completeCurrentVersion(Context context) {
         Snapshot snapshot = inspect(context);
@@ -232,8 +239,6 @@ public final class CallingPermissionCoordinator {
             if (Build.VERSION.SDK_INT >= 33) {
                 info = packageManager.getServiceInfo(service, PackageManager.ComponentInfoFlags.of(0));
             } else {
-                // ComponentInfoFlags was introduced in API 33. Never reference it
-                // on older Android runtimes; the legacy int-flags overload is safe.
                 info = packageManager.getServiceInfo(service, 0);
             }
             if (Build.VERSION.SDK_INT < 29) return true;
