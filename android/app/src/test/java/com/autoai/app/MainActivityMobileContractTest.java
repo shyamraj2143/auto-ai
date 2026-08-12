@@ -39,6 +39,10 @@ public class MainActivityMobileContractTest {
 
     @Test public void optionalStartupIntegrationsCannotCrashMainActivity() throws Exception {
         String source = source("src/main/java/com/autoai/app/MainActivity.java");
+        assertTrue(source.contains("private void safeRegister(String name, Class<? extends Plugin> plugin)"));
+        assertTrue(source.contains("Capacitor startup failed"));
+        assertTrue(source.contains("showRecoveryScreen();"));
+        assertTrue(source.contains("runActivityStartupStep(\"webview setup\", this::configureBridgeWebView);"));
         assertTrue(source.contains("private void runActivityStartupStep(String name, Runnable step)"));
         assertTrue(source.contains("catch (Throwable error)"));
         assertTrue(source.contains("runActivityStartupStep(\"update check\", () -> AppUpdateCoordinator.get(this).check(true));"));
@@ -46,6 +50,20 @@ public class MainActivityMobileContractTest {
         assertTrue(source.contains("launchCallingSetupIfRequiredUnsafe();"));
         assertTrue(source.contains("Non-fatal MainActivity startup failure in calling setup launch"));
         assertTrue(source.contains("catch (Throwable ignored)"));
+    }
+
+    @Test public void launcherUsesFullFeatureMainActivity() throws Exception {
+        String manifest = source("src/main/AndroidManifest.xml");
+        int mainStart = manifest.indexOf("android:name=\".MainActivity\"");
+        int mainEnd = manifest.indexOf("</activity>", mainStart);
+        String mainDeclaration = manifest.substring(mainStart, mainEnd);
+        int launcherStart = manifest.indexOf("android:name=\".AutoAiLauncherActivity\"");
+        int launcherEnd = manifest.indexOf("/>", launcherStart);
+        String launcherDeclaration = manifest.substring(launcherStart, launcherEnd);
+
+        assertTrue(mainDeclaration.contains("android.intent.action.MAIN"));
+        assertTrue(mainDeclaration.contains("android.intent.category.LAUNCHER"));
+        assertTrue(launcherDeclaration.contains("android:exported=\"false\""));
     }
 
     private static String source(String relative) throws Exception {

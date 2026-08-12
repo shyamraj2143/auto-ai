@@ -21,6 +21,28 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+const ANDROID_DEVICE_REGISTRATION_ATTEMPTS = 3;
+
+async function registerAndroidDevice(token: string) {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const registration = await callNative.registration();
+      if (registration.platform !== "android") return;
+      await callNative.requestNotificationPermission().catch((error) => {
+        console.warn("[Auto-AI Auth] Android notification permission request failed.", error);
+      });
+      await callApi.registerDevice(token, registration);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt < ANDROID_DEVICE_REGISTRATION_ATTEMPTS - 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 450 * 2 ** attempt));
+      }
+    }
+  }
+  console.warn("[Auto-AI Auth] Android device registration failed.", lastError);
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
@@ -93,6 +115,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       active = false;
     };
   }, [persistSession]);
+
+  useEffect(() => {
+    if (!token) return;
+    void registerAndroidDevice(token);
+  }, [token]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

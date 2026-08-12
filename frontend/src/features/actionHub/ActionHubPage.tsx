@@ -2,6 +2,7 @@ import { AlarmClock, FileCheck2, HeartHandshake, MessageCircle, MessagesSquare, 
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import { useOnlineStatus } from "../../hooks/useOnlineStatus";
 import { useMotionMode } from "../../motion/MotionProvider";
 import { HubHeader } from "./HubHeader";
 import { QuickConnect, type QuickConnectAction } from "./QuickConnect";
@@ -20,10 +21,17 @@ const actions = [
   { key: "trust", icon: ShieldCheck, title: "Trust Hub", description: "Review permissions, consent and action controls.", path: "/trust-hub", tone: "trust" },
 ] as const;
 
+function workspaceStatusTone(status: string) {
+  if (status === "Offline" || status === "Unavailable") return "error";
+  if (status === "Checking" || status === "Reconnecting") return "pending";
+  return "ready";
+}
+
 export function ActionHubPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { safeMode, disableSafeMode } = useMotionMode();
+  const online = useOnlineStatus();
   const [quickOpen, setQuickOpen] = useState(false);
   const [quickAction, setQuickAction] = useState<QuickConnectAction>("ai");
 
@@ -43,6 +51,11 @@ export function ActionHubPage() {
   const displayName = typeof user.name === "string" && user.name.trim() ? user.name.trim().split(/\s+/)[0] : "there";
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const workspaceStatuses = [
+    ["Network", online ? "Ready" : "Offline"],
+    ["Login", "Ready"],
+    ["Updates", online ? "Checking" : "Unavailable"],
+  ] as const;
 
   return (
     <div className="action-hub-page">
@@ -60,21 +73,35 @@ export function ActionHubPage() {
         <section className="hub-feature-stage" aria-label="AutoAI workspaces">
           {actions.map(({ key, icon: Icon, title, description, path, tone }) => (
             <article key={key} className={`hub-card-position hub-card-${tone}`}>
-              <button className="hub-feature-card-stable" type="button" onClick={() => navigate(path)}>
-                <span className={`hub-feature-icon hub-feature-icon-${tone}`}><Icon size={25} /></span>
-                <span className="hub-feature-copy">
-                  <strong>{title}</strong>
-                  <small>{description}</small>
-                </span>
-                <span className="hub-feature-arrow" aria-hidden="true">→</span>
-              </button>
+              {key === "alarm" ? (
+                <button className="hub-feature-card-stable" type="button" title="AI Alarm" onClick={() => navigate("/alarms")}>
+                  <span className={`hub-feature-icon hub-feature-icon-${tone}`}><Icon size={25} /></span>
+                  <span className="hub-feature-copy">
+                    <strong>{title}</strong>
+                    <small>{description}</small>
+                  </span>
+                  <span className="hub-feature-arrow" aria-hidden="true">→</span>
+                </button>
+              ) : (
+                <button className="hub-feature-card-stable" type="button" onClick={() => navigate(path)}>
+                  <span className={`hub-feature-icon hub-feature-icon-${tone}`}><Icon size={25} /></span>
+                  <span className="hub-feature-copy">
+                    <strong>{title}</strong>
+                    <small>{description}</small>
+                  </span>
+                  <span className="hub-feature-arrow" aria-hidden="true">→</span>
+                </button>
+              )}
             </article>
           ))}
         </section>
 
         <section className="hub-dashboard-lower" aria-label="Workspace shortcuts">
           <div className="hub-system-status hub-stable-shortcuts">
-            <header><span>Quick access</span><small>All workspaces are available</small></header>
+            <header><span>Quick access</span><small>{online ? "All workspaces are available" : "Offline mode"}</small></header>
+            {workspaceStatuses.map(([label, status]) => (
+              <div key={label}><span>{label}</span><small className={`hub-status-${workspaceStatusTone(status)}`}>{status}<i /></small></div>
+            ))}
             <div><span>Settings</span><button type="button" onClick={() => navigate("/settings")}><Settings size={15} /> Open</button></div>
             <div><span>Application history</span><button type="button" onClick={() => navigate("/seva/applications")}><FileCheck2 size={15} /> Seva</button></div>
             <div><span>AI conversations</span><button type="button" onClick={() => navigate("/chat")}><MessageCircle size={15} /> Chat</button></div>

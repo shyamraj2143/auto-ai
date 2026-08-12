@@ -45,6 +45,7 @@ import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebChromeClient;
 import com.getcapacitor.BridgeWebViewClient;
+import com.getcapacitor.Plugin;
 import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.GoogleApiAvailability;
@@ -126,18 +127,41 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        registerPlugin(AutoAiSecureStoragePlugin.class);
-        registerPlugin(AutoAiGoogleAuthPlugin.class);
-        registerPlugin(AutoAiLiveSpeechPlugin.class);
-        registerPlugin(LiveAudioPlugin.class);
-        registerPlugin(LiveVisionPlugin.class);
-        registerPlugin(ScreenCapturePlugin.class);
-        registerPlugin(AutoAiCallsPlugin.class);
-        registerPlugin(AutoAiUpdatePlugin.class);
-        registerPlugin(AutoAiNotificationsPlugin.class);
-        registerPlugin(AutoAiAlarmPlugin.class);
-        registerPlugin(AutoAiServiceCapabilitiesPlugin.class);
-        super.onCreate(savedInstanceState);
+        safeRegister("secure storage", AutoAiSecureStoragePlugin.class);
+        safeRegister("google auth", AutoAiGoogleAuthPlugin.class);
+        safeRegister("live speech", AutoAiLiveSpeechPlugin.class);
+        safeRegister("live audio", LiveAudioPlugin.class);
+        safeRegister("live vision", LiveVisionPlugin.class);
+        safeRegister("screen capture", ScreenCapturePlugin.class);
+        safeRegister("calls", AutoAiCallsPlugin.class);
+        safeRegister("updates", AutoAiUpdatePlugin.class);
+        safeRegister("notifications", AutoAiNotificationsPlugin.class);
+        safeRegister("alarms", AutoAiAlarmPlugin.class);
+        safeRegister("service capabilities", AutoAiServiceCapabilitiesPlugin.class);
+        try {
+            super.onCreate(savedInstanceState);
+        } catch (Throwable error) {
+            Log.e(TAG, "Capacitor startup failed", error);
+            showRecoveryScreen();
+            return;
+        }
+        runActivityStartupStep("webview setup", this::configureBridgeWebView);
+        runActivityStartupStep("call notification channels", () -> CallNotificationManager.createChannels(this));
+        runActivityStartupStep("relationship notification channel", () -> AutoAiFirebaseMessagingService.createRelationshipNotificationChannel(this));
+        runActivityStartupStep("firebase messaging registration", this::registerFirebaseMessagingToken);
+        runActivityStartupStep("update scheduler", () -> UpdateCheckScheduler.cancelLegacy(this));
+        runActivityStartupStep("update listener", () -> AppUpdateCoordinator.get(this).addListener(directUpdateListener));
+        // A cold launch must not reuse the normal cooldown: every successful main
+        // deployment publishes a required APK and must be discovered immediately.
+        runActivityStartupStep("update check", () -> AppUpdateCoordinator.get(this).check(true));
+        runActivityStartupStep("update intent", () -> dispatchUpdateIntent(getIntent()));
+        runActivityStartupStep("push device sync", this::syncPushDeviceIfAuthenticated);
+        runActivityStartupStep("incoming call intent", () -> dispatchIncomingCallIntent(getIntent()));
+        runActivityStartupStep("notification destination", () -> dispatchNotificationDestination(getIntent()));
+    }
+
+    private void configureBridgeWebView() {
+        if (getBridge() == null || getBridge().getWebView() == null) return;
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         getWindow().setStatusBarColor(Color.TRANSPARENT);
         getWindow().setNavigationBarColor(Color.TRANSPARENT);
@@ -176,19 +200,6 @@ public class MainActivity extends BridgeActivity {
         webView.setWebChromeClient(new AutoAiWebChromeClient(getBridge()));
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
-
-        runActivityStartupStep("call notification channels", () -> CallNotificationManager.createChannels(this));
-        runActivityStartupStep("relationship notification channel", () -> AutoAiFirebaseMessagingService.createRelationshipNotificationChannel(this));
-        runActivityStartupStep("firebase messaging registration", this::registerFirebaseMessagingToken);
-        runActivityStartupStep("update scheduler", () -> UpdateCheckScheduler.cancelLegacy(this));
-        runActivityStartupStep("update listener", () -> AppUpdateCoordinator.get(this).addListener(directUpdateListener));
-        // A cold launch must not reuse the normal cooldown: every successful main
-        // deployment publishes a required APK and must be discovered immediately.
-        runActivityStartupStep("update check", () -> AppUpdateCoordinator.get(this).check(true));
-        runActivityStartupStep("update intent", () -> dispatchUpdateIntent(getIntent()));
-        runActivityStartupStep("push device sync", this::syncPushDeviceIfAuthenticated);
-        runActivityStartupStep("incoming call intent", () -> dispatchIncomingCallIntent(getIntent()));
-        runActivityStartupStep("notification destination", () -> dispatchNotificationDestination(getIntent()));
     }
 
     private void runActivityStartupStep(String name, Runnable step) {
@@ -196,6 +207,30 @@ public class MainActivity extends BridgeActivity {
             step.run();
         } catch (Throwable error) {
             Log.e(TAG, "Non-fatal MainActivity startup failure in " + name, error);
+        }
+    }
+
+    private void safeRegister(String name, Class<? extends Plugin> plugin) {
+        try {
+            registerPlugin(plugin);
+        } catch (Throwable error) {
+            Log.e(TAG, "Disabled native integration: " + name, error);
+        }
+    }
+
+    private void showRecoveryScreen() {
+        try {
+            WebView recovery = new WebView(this);
+            recovery.setBackgroundColor(Color.rgb(5, 10, 18));
+            recovery.getSettings().setJavaScriptEnabled(false);
+            setContentView(recovery);
+            String html = "<html><body style='background:#050a12;color:#fff;font-family:sans-serif;padding:28px'>"
+                + "<h2>Auto-AI is recovering</h2>"
+                + "<p>A native integration failed during startup. Your data is not being deleted.</p>"
+                + "<p>Please install the latest update and reopen the app.</p>"
+                + "</body></html>";
+            recovery.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null);
+        } catch (Throwable ignored) {
         }
     }
 
@@ -244,7 +279,11 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     protected void onNewIntent(Intent intent) {
-        super.onNewIntent(intent);
+        try {
+            super.onNewIntent(intent);
+        } catch (Throwable error) {
+            Log.e(TAG, "Non-fatal new intent lifecycle failure", error);
+        }
         setIntent(intent);
         runActivityStartupStep("incoming call new intent", () -> dispatchIncomingCallIntent(intent));
         runActivityStartupStep("notification new intent", () -> dispatchNotificationDestination(intent));
@@ -336,7 +375,11 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onResume() {
-        super.onResume();
+        try {
+            super.onResume();
+        } catch (Throwable error) {
+            Log.e(TAG, "Non-fatal resume lifecycle failure", error);
+        }
         directInstallerHandoff.set(false);
         runActivityStartupStep("calling permission cache", CallingPermissionCoordinator::invalidateCachedState);
         runActivityStartupStep("update install state", () -> AppUpdateCoordinator.get(this).refreshInstallState());
@@ -383,7 +426,11 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
+        try {
+            super.onActivityResult(requestCode, resultCode, data);
+        } catch (Throwable error) {
+            Log.e(TAG, "Non-fatal activity result lifecycle failure", error);
+        }
         if (requestCode != 7042) return;
         callingSetupVisible = false;
         runActivityStartupStep("post-setup firebase messaging registration", this::registerFirebaseMessagingToken);
@@ -403,14 +450,22 @@ public class MainActivity extends BridgeActivity {
         });
         runActivityStartupStep("payment popup cleanup", this::closePaymentPopup);
         runActivityStartupStep("notification destination cleanup", () -> mainHandler.removeCallbacks(notificationDestinationDispatch));
-        super.onDestroy();
+        try {
+            super.onDestroy();
+        } catch (Throwable error) {
+            Log.e(TAG, "Non-fatal destroy lifecycle failure", error);
+        }
         mainHandler.removeCallbacks(updatePollRunnable);
         updateExecutor.shutdownNow();
     }
 
     @Override
     protected void onUserLeaveHint() {
-        super.onUserLeaveHint();
+        try {
+            super.onUserLeaveHint();
+        } catch (Throwable error) {
+            Log.e(TAG, "Non-fatal user leave lifecycle failure", error);
+        }
         enterPictureInPictureForActiveVideoCall();
     }
 

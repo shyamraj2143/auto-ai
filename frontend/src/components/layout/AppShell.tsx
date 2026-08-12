@@ -29,6 +29,23 @@ function ChatWorkspaceScope({ enabled, children }: { enabled: boolean; children:
   return <ChatProvider>{children}</ChatProvider>;
 }
 
+function readLocalStorageValue(key: string) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch (error) {
+    console.warn("[Auto-AI Shell] Unable to read local storage.", error);
+    return null;
+  }
+}
+
+function removeLocalStorageValue(key: string) {
+  try {
+    window.localStorage.removeItem(key);
+  } catch (error) {
+    console.warn("[Auto-AI Shell] Unable to clear local storage.", error);
+  }
+}
+
 export function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -75,7 +92,7 @@ export function AppShell() {
       window.dispatchEvent(new CustomEvent("auto-ai-destination-consumed", { detail: { eventId: destination.eventId } }));
     };
     window.addEventListener("auto-ai-open-destination", openDestination);
-    const pending = window.localStorage.getItem("auto-ai-pending-destination");
+    const pending = readLocalStorageValue("auto-ai-pending-destination");
     if (pending) openDestination(new CustomEvent("auto-ai-open-destination", { detail: pending }));
     return () => window.removeEventListener("auto-ai-open-destination", openDestination);
   }, [navigate]);
@@ -83,8 +100,8 @@ export function AppShell() {
   useEffect(() => {
     const clearConsumedDestination = (event: Event) => {
       const eventId = event instanceof CustomEvent && typeof event.detail?.eventId === "string" ? event.detail.eventId : "";
-      const pending = parseNotificationDestination(window.localStorage.getItem("auto-ai-pending-destination"));
-      if (pending?.eventId === eventId) window.localStorage.removeItem("auto-ai-pending-destination");
+      const pending = parseNotificationDestination(readLocalStorageValue("auto-ai-pending-destination"));
+      if (pending?.eventId === eventId) removeLocalStorageValue("auto-ai-pending-destination");
     };
     window.addEventListener("auto-ai-destination-consumed", clearConsumedDestination);
     return () => window.removeEventListener("auto-ai-destination-consumed", clearConsumedDestination);
