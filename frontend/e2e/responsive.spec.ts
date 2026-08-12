@@ -102,6 +102,18 @@ for (const viewport of viewports) {
 }
 
 for (const viewport of viewports) {
+  test(`Action Hub renders after login at ${viewport.name}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await installAuthenticatedFixtures(page);
+    await openRoute(page, "/hub");
+    await expect(page.locator(".hub-welcome")).toBeVisible();
+    await expect(page.getByRole("button", { name: "AI Chat" })).toBeVisible();
+    await expect(page.getByText("Something went wrong")).toHaveCount(0);
+    await assertNoFunctionalOverflow(page);
+  });
+}
+
+for (const viewport of viewports) {
   for (const surface of [
     { name: "AI Chat", route: "/chat", locator: ".composer-shell" },
     { name: "Messages", route: "/messages", locator: ".um-page" },

@@ -55,9 +55,6 @@ export function AppShell() {
   const fullCanvasAdmin = location.pathname.startsWith("/admin/live-pages");
   const isAdminRoute = location.pathname.startsWith("/admin");
   const isChatWorkspace = location.pathname.startsWith("/chat");
-  const isCallWorkspace = location.pathname.startsWith("/call-hub") || location.pathname.startsWith("/calls");
-  const isAlarmWorkspace = location.pathname.startsWith("/alarms");
-
   useEffect(() => {
     closeSidebar();
   }, [closeSidebar, location.pathname]);
@@ -132,12 +129,12 @@ export function AppShell() {
   );
 
   const alarmScoped = (
-    <AlarmWorkspaceScope enabled={isAlarmWorkspace && !isAdminRoute} nativeEnabled={isAlarmWorkspace}>
+    <AlarmWorkspaceScope enabled={!isAdminRoute} nativeEnabled={!isAdminRoute}>
       <AndroidBackHandler />
       {workspace}
     </AlarmWorkspaceScope>
   );
 
   const chatScoped = <ChatWorkspaceScope enabled={isChatWorkspace}>{alarmScoped}</ChatWorkspaceScope>;
-  return <CallWorkspaceScope enabled={isCallWorkspace}>{chatScoped}</CallWorkspaceScope>;
+  return <CallWorkspaceScope enabled={!isAdminRoute}>{chatScoped}</CallWorkspaceScope>;
 }
