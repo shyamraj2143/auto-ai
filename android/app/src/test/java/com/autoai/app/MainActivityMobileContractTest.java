@@ -52,18 +52,21 @@ public class MainActivityMobileContractTest {
         assertTrue(source.contains("catch (Throwable ignored)"));
     }
 
-    @Test public void launcherUsesFullFeatureMainActivity() throws Exception {
+    @Test public void stableLauncherComponentUsesFullFeatureMainActivity() throws Exception {
         String manifest = source("src/main/AndroidManifest.xml");
         int mainStart = manifest.indexOf("android:name=\".MainActivity\"");
         int mainEnd = manifest.indexOf("</activity>", mainStart);
         String mainDeclaration = manifest.substring(mainStart, mainEnd);
         int launcherStart = manifest.indexOf("android:name=\".AutoAiLauncherActivity\"");
-        int launcherEnd = manifest.indexOf("/>", launcherStart);
+        int launcherEnd = manifest.indexOf("</activity>", launcherStart);
         String launcherDeclaration = manifest.substring(launcherStart, launcherEnd);
+        String launcherSource = source("src/main/java/com/autoai/app/AutoAiLauncherActivity.java");
 
-        assertTrue(mainDeclaration.contains("android.intent.action.MAIN"));
-        assertTrue(mainDeclaration.contains("android.intent.category.LAUNCHER"));
-        assertTrue(launcherDeclaration.contains("android:exported=\"false\""));
+        assertTrue(launcherDeclaration.contains("android.intent.action.MAIN"));
+        assertTrue(launcherDeclaration.contains("android.intent.category.LAUNCHER"));
+        assertTrue(launcherDeclaration.contains("android:exported=\"true\""));
+        assertTrue(launcherSource.contains("extends MainActivity"));
+        assertTrue(mainDeclaration.contains("com.autoai.app.INCOMING_CALL_FALLBACK"));
     }
 
     private static String source(String relative) throws Exception {
