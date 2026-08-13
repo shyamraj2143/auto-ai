@@ -8,7 +8,6 @@ import android.os.Build;
 import android.provider.Settings;
 
 import com.getcapacitor.JSObject;
-import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -30,7 +29,9 @@ public final class AutoAiNotificationsPlugin extends Plugin {
     }
 
     private boolean granted() {
-        return Build.VERSION.SDK_INT < 33 || getPermissionState("notifications") == PermissionState.GRANTED;
+        return Build.VERSION.SDK_INT < 33
+            || getContext().checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                == android.content.pm.PackageManager.PERMISSION_GRANTED;
     }
 
     private JSObject state() {
