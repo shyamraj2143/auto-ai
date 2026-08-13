@@ -14,6 +14,8 @@ import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 
+import androidx.core.app.ActivityCompat;
+
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -28,6 +30,7 @@ import java.util.List;
 
 @CapacitorPlugin(name = "AutoAiAlarm")
 public final class AutoAiAlarmPlugin extends Plugin {
+    private static final int STARTUP_PERMISSION_REQUEST_CODE = 4102;
     private BroadcastReceiver actionReceiver;
 
     @Override public void load() {
@@ -103,14 +106,35 @@ public final class AutoAiAlarmPlugin extends Plugin {
     @PluginMethod public void getStatus(PluginCall call) { call.resolve(status()); }
 
     /**
-     * Runtime permissions are requested centrally by MainActivity on a cold launch.
-     * Capacitor's requestPermissionForAlias/requestPermissionForAliases must not be
-     * used here: this plugin is queried very early in startup on some Capacitor
-     * versions, before its permission group is fully materialized. That API can
-     * dereference a null PermissionState and kill the CapacitorPlugins thread.
-     *
-     * This method therefore only handles special alarm access. Runtime permission
-     * state is read through Android's native permission API below.
+     * Runtime permissions are requested centrally through Android's native API.
+     * Capacitor permission aliases are intentionally not used because this plugin
+     * can be queried before Capacitor has fully materialized its permission state.
+     */
+    @PluginMethod public void requestStartupPermissions(PluginCall call) {
+        if (getActivity() == null || getActivity().isFinishing()) {
+            call.resolve(status());
+            return;
+        }
+        ArrayList<String> missing = new ArrayList<>();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+            && !notificationsGranted()) missing.add(Manifest.permission.POST_NOTIFICATIONS);
+        if (!cameraGranted()) missing.add(Manifest.permission.CAMERA);
+        if (getContext().checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            missing.add(Manifest.permission.RECORD_AUDIO);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+            && getContext().checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            missing.add(Manifest.permission.BLUETOOTH_CONNECT);
+        }
+        if (!missing.isEmpty()) {
+            ActivityCompat.requestPermissions(getActivity(), missing.toArray(new String[0]), STARTUP_PERMISSION_REQUEST_CODE);
+        }
+        call.resolve(status());
+    }
+
+    /**
+     * Handles only special alarm access. Runtime permissions above are requested
+     * through Android directly to avoid Capacitor's nullable PermissionState path.
      */
     @PluginMethod public void requestAlarmAccess(PluginCall call) {
         continueSpecialAccess(call);
