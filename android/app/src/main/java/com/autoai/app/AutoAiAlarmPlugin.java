@@ -16,7 +16,6 @@ import android.speech.tts.UtteranceProgressListener;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
-import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -196,15 +195,17 @@ public final class AutoAiAlarmPlugin extends Plugin {
         return result;
     }
 
+    // Do not use Capacitor's permission-state lookup here. The alarm plugin can be
+    // queried during startup before the permission group is fully registered; in
+    // that case Capacitor can return a null permission state and crash the entire
+    // CapacitorPlugins thread. Android's native permission API is authoritative.
     private boolean notificationsGranted() {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
-            || getContext().checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
-            || getPermissionState("notifications") == PermissionState.GRANTED;
+            || getContext().checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
     }
 
     private boolean cameraGranted() {
-        return getContext().checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-            || getPermissionState("camera") == PermissionState.GRANTED;
+        return getContext().checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
     }
 
     private boolean openExactAlarmAccessIfNeeded() {
