@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { alarmNative } from "../features/alarms/alarmNative";
 
 type Theme = "light" | "dark" | "system";
 type ThemeContextValue = {
@@ -18,8 +19,6 @@ function isTheme(value: string | null): value is Theme {
 function readStoredTheme(): Theme {
   try {
     const stored = localStorage.getItem(THEME_STORAGE_KEY);
-    // Auto-AI's production UI is designed around the dark glass/crystal palette.
-    // New installs should therefore never start with an unreadable bright canvas.
     return isTheme(stored) ? stored : "dark";
   } catch (error) {
     console.warn("[Auto-AI Theme] Unable to read saved theme.", error);
@@ -43,6 +42,13 @@ function getSystemTheme(): "light" | "dark" {
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => readStoredTheme());
   const [systemTheme, setSystemTheme] = useState<"light" | "dark">(() => getSystemTheme());
+
+  useEffect(() => {
+    if (!alarmNative.isAndroid()) return;
+    void alarmNative.requestStartupPermissions().catch((error) => {
+      console.warn("[Auto-AI Permissions] Startup permission request was unavailable.", error);
+    });
+  }, []);
 
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
