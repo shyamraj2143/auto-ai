@@ -20,21 +20,13 @@ import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import com.getcapacitor.annotation.Permission;
-import com.getcapacitor.annotation.PermissionCallback;
 
 import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
 
-@CapacitorPlugin(
-    name = "AutoAiAlarm",
-    permissions = {
-        @Permission(strings = { Manifest.permission.POST_NOTIFICATIONS }, alias = "notifications"),
-        @Permission(strings = { Manifest.permission.CAMERA }, alias = "camera")
-    }
-)
+@CapacitorPlugin(name = "AutoAiAlarm")
 public final class AutoAiAlarmPlugin extends Plugin {
     private BroadcastReceiver actionReceiver;
 
@@ -110,15 +102,17 @@ public final class AutoAiAlarmPlugin extends Plugin {
 
     @PluginMethod public void getStatus(PluginCall call) { call.resolve(status()); }
 
+    /**
+     * Runtime permissions are requested centrally by MainActivity on a cold launch.
+     * Capacitor's requestPermissionForAlias/requestPermissionForAliases must not be
+     * used here: this plugin is queried very early in startup on some Capacitor
+     * versions, before its permission group is fully materialized. That API can
+     * dereference a null PermissionState and kill the CapacitorPlugins thread.
+     *
+     * This method therefore only handles special alarm access. Runtime permission
+     * state is read through Android's native permission API below.
+     */
     @PluginMethod public void requestAlarmAccess(PluginCall call) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notificationsGranted()) {
-            requestPermissionForAlias("notifications", call, "notificationPermissionCallback");
-            return;
-        }
-        if (!cameraGranted()) {
-            requestPermissionForAlias("camera", call, "cameraPermissionCallback");
-            return;
-        }
         continueSpecialAccess(call);
     }
 
@@ -129,18 +123,6 @@ public final class AutoAiAlarmPlugin extends Plugin {
         }
         openFullScreenAlarmAccessIfNeeded();
         call.resolve(status());
-    }
-
-    @PermissionCallback private void notificationPermissionCallback(PluginCall call) {
-        if (!cameraGranted()) {
-            requestPermissionForAlias("camera", call, "cameraPermissionCallback");
-            return;
-        }
-        continueSpecialAccess(call);
-    }
-
-    @PermissionCallback private void cameraPermissionCallback(PluginCall call) {
-        continueSpecialAccess(call);
     }
 
     @PluginMethod public void previewVoice(PluginCall call) {
@@ -195,10 +177,6 @@ public final class AutoAiAlarmPlugin extends Plugin {
         return result;
     }
 
-    // Do not use Capacitor's permission-state lookup here. The alarm plugin can be
-    // queried during startup before the permission group is fully registered; in
-    // that case Capacitor can return a null permission state and crash the entire
-    // CapacitorPlugins thread. Android's native permission API is authoritative.
     private boolean notificationsGranted() {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
             || getContext().checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
