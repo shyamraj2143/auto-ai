@@ -27,6 +27,7 @@ type AutoAiAlarmPlugin = {
   scheduleAlarm(options: { alarm: NativeAlarmPayload }): Promise<AlarmNativeScheduleResult>;
   cancelAlarm(options: { alarmId: string }): Promise<void>;
   getStatus(): Promise<AlarmNativeStatus>;
+  requestStartupPermissions(): Promise<AlarmNativeStatus>;
   requestAlarmAccess(): Promise<AlarmNativeStatus>;
   previewVoice(options: { message: string; language: string; voiceStyle: string }): Promise<void>;
   addListener(eventName: "alarmAction", listener: (event: { alarmId?: string; action?: string }) => void): Promise<PluginListenerHandle>;
@@ -84,6 +85,11 @@ export const alarmNative = {
     : Promise.resolve({ scheduled: false, exact: false, triggerAtEpochMs: 0, method: "browser", reason: "browser_runtime" }),
   cancel: (alarmId: string) => isNativeAlarmRuntime() ? NativeAlarm.cancelAlarm({ alarmId }) : Promise.resolve(),
   status: () => isNativeAlarmRuntime() ? NativeAlarm.getStatus() : Promise.resolve({ ...browserStatus }),
+  requestStartupPermissions: async () => {
+    if (isNativeAlarmRuntime()) return NativeAlarm.requestStartupPermissions();
+    if (typeof Notification !== "undefined" && Notification.permission === "default") await Notification.requestPermission();
+    return { ...browserStatus, notificationsGranted: typeof Notification === "undefined" || Notification.permission === "granted" };
+  },
   requestAccess: async () => {
     if (isNativeAlarmRuntime()) return NativeAlarm.requestAlarmAccess();
     if (typeof Notification !== "undefined" && Notification.permission === "default") await Notification.requestPermission();
