@@ -11,6 +11,7 @@ type ThemeContextValue = {
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 const THEME_STORAGE_KEY = "auto-ai-theme";
+const MOBILE_THEME_MIGRATION_KEY = "auto-ai-mobile-theme-v2";
 
 function isTheme(value: string | null): value is Theme {
   return value === "light" || value === "dark" || value === "system";
@@ -19,6 +20,20 @@ function isTheme(value: string | null): value is Theme {
 function readStoredTheme(): Theme {
   try {
     const stored = localStorage.getItem(THEME_STORAGE_KEY);
+
+    // The mobile UI previously persisted a bright light theme, which makes
+    // the current high-contrast workspace hard to read after an app update.
+    // Migrate that old mobile preference to dark once; future explicit theme
+    // choices made by the user remain respected.
+    if (
+      alarmNative.isAndroid()
+      && stored === "light"
+      && localStorage.getItem(MOBILE_THEME_MIGRATION_KEY) !== "1"
+    ) {
+      localStorage.setItem(MOBILE_THEME_MIGRATION_KEY, "1");
+      return "dark";
+    }
+
     return isTheme(stored) ? stored : "dark";
   } catch (error) {
     console.warn("[Auto-AI Theme] Unable to read saved theme.", error);
@@ -29,6 +44,7 @@ function readStoredTheme(): Theme {
 function writeStoredTheme(theme: Theme) {
   try {
     localStorage.setItem(THEME_STORAGE_KEY, theme);
+    if (alarmNative.isAndroid()) localStorage.setItem(MOBILE_THEME_MIGRATION_KEY, "1");
   } catch (error) {
     console.warn("[Auto-AI Theme] Unable to save theme.", error);
   }
