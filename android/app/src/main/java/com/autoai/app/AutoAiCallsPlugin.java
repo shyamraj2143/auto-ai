@@ -19,7 +19,6 @@ import android.provider.Settings;
 import android.util.Log;
 
 import com.getcapacitor.JSObject;
-import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -125,7 +124,6 @@ public class AutoAiCallsPlugin extends Plugin {
                 });
             });
         } catch (RuntimeException error) {
-            // Firebase is optional in builds without google-services.json.
             Log.w(TAG, "Firebase token lookup skipped.", error);
             call.resolve(result);
         }
@@ -209,20 +207,25 @@ public class AutoAiCallsPlugin extends Plugin {
 
     @PluginMethod
     public void requestNotificationPermission(PluginCall call) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
-            || isGranted("notifications")
-            || isPermanentlyDenied("notifications")
-            || CallingPermissionCoordinator.preferences(getContext()).getBoolean("notification_prompted", false)
-            || permissions().getBoolean(KEY_NOTIFICATIONS_REQUESTED, false)) {
+        try {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+                || isGranted("notifications")
+                || isPermanentlyDenied("notifications")
+                || CallingPermissionCoordinator.preferences(getContext()).getBoolean("notification_prompted", false)
+                || permissions().getBoolean(KEY_NOTIFICATIONS_REQUESTED, false)) {
+                call.resolve(callPermissionsResult(false));
+                return;
+            }
+            getActivity().runOnUiThread(() -> new AlertDialog.Builder(getActivity())
+                .setTitle("Allow call notifications")
+                .setMessage("Auto-AI needs notifications so calls and messages can appear when the app is in the background. If denied, incoming calls and messages may not appear until you open the app.")
+                .setNegativeButton("Not now", (dialog, which) -> call.resolve(callPermissionsResult(false)))
+                .setPositiveButton("Continue", (dialog, which) -> requestPermissionAliases(call, new String[] { "notifications" }, new String[] { KEY_NOTIFICATIONS_REQUESTED }))
+                .show());
+        } catch (RuntimeException error) {
+            Log.e(TAG, "Notification permission flow failed safely.", error);
             call.resolve(callPermissionsResult(false));
-            return;
         }
-        getActivity().runOnUiThread(() -> new AlertDialog.Builder(getActivity())
-            .setTitle("Allow call notifications")
-            .setMessage("Auto-AI needs notifications so calls and messages can appear when the app is in the background. If denied, incoming calls and messages may not appear until you open the app.")
-            .setNegativeButton("Not now", (dialog, which) -> call.resolve(callPermissionsResult(false)))
-            .setPositiveButton("Continue", (dialog, which) -> requestPermissionAliases(call, new String[] { "notifications" }, new String[] { KEY_NOTIFICATIONS_REQUESTED }))
-            .show());
     }
 
     @PluginMethod
@@ -539,7 +542,12 @@ public class AutoAiCallsPlugin extends Plugin {
             return;
         }
         for (String key : requestedKeys) permissions().edit().putBoolean(key, true).apply();
-        requestPermissionForAliases(aliases, call, "permissionCallback");
+        try {
+            requestPermissionForAliases(aliases, call, "permissionCallback");
+        } catch (RuntimeException error) {
+            Log.e(TAG, "Capacitor permission request failed safely.", error);
+            call.resolve(callPermissionsResult(Boolean.TRUE.equals(call.getBoolean("video", false))));
+        }
     }
 
     private JSObject callPermissionsResult(boolean video) {
@@ -567,14 +575,43 @@ public class AutoAiCallsPlugin extends Plugin {
         return result;
     }
 
+    private String permissionName(String alias) {
+        if ("microphone".equals(alias)) return Manifest.permission.RECORD_AUDIO;
+        if ("camera".equals(alias)) return Manifest.permission.CAMERA;
+        if ("notifications".equals(alias)) return Manifest.permission.POST_NOTIFICATIONS;
+        if ("bluetoothConnect".equals(alias)) return Manifest.permission.BLUETOOTH_CONNECT;
+        return null;
+    }
+
+    private boolean androidPermissionGranted(String alias) {
+        String permission = permissionName(alias);
+        if (permission == null) return false;
+        if ("notifications".equals(alias) && Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true;
+        if ("bluetoothConnect".equals(alias) && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true;
+        try {
+            return getContext().checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED;
+        } catch (RuntimeException error) {
+            Log.w(TAG, "Unable to inspect Android permission safely: " + alias, error);
+            return false;
+        }
+    }
+
+    private boolean shouldShowPermissionRationale(String alias) {
+        String permission = permissionName(alias);
+        if (permission == null || getActivity() == null) return false;
+        try {
+            return getActivity().shouldShowRequestPermissionRationale(permission);
+        } catch (RuntimeException error) {
+            return false;
+        }
+    }
+
     private JSObject permissionResult(String alias, String requestedKey, boolean runtimeRequired) {
-        PermissionState state = runtimeRequired ? getPermissionState(alias) : PermissionState.GRANTED;
-        if (state == null) state = PermissionState.PROMPT;
-        boolean granted = !runtimeRequired || state == PermissionState.GRANTED;
+        boolean granted = !runtimeRequired || androidPermissionGranted(alias);
         boolean requested = permissions().getBoolean(requestedKey, false);
-        boolean permanentlyDenied = runtimeRequired && requested && state == PermissionState.DENIED;
+        boolean permanentlyDenied = runtimeRequired && requested && !granted && !shouldShowPermissionRationale(alias);
         JSObject result = new JSObject();
-        result.put("state", granted ? "granted" : state.toString());
+        result.put("state", granted ? "granted" : (permanentlyDenied ? "denied" : "prompt"));
         result.put("granted", granted);
         result.put("permanentlyDenied", permanentlyDenied);
         result.put("canAskAgain", runtimeRequired && !granted && !permanentlyDenied);
@@ -588,8 +625,7 @@ public class AutoAiCallsPlugin extends Plugin {
     }
 
     private boolean isGranted(String alias) {
-        PermissionState state = getPermissionState(alias);
-        return state == PermissionState.GRANTED;
+        return androidPermissionGranted(alias);
     }
 
     private boolean isPermanentlyDenied(String alias) {
