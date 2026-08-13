@@ -1,7 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 type Theme = "light" | "dark" | "system";
-
 type ThemeContextValue = {
   theme: Theme;
   resolvedTheme: "light" | "dark";
@@ -19,10 +18,12 @@ function isTheme(value: string | null): value is Theme {
 function readStoredTheme(): Theme {
   try {
     const stored = localStorage.getItem(THEME_STORAGE_KEY);
-    return isTheme(stored) ? stored : "light";
+    // Auto-AI's production UI is designed around the dark glass/crystal palette.
+    // New installs should therefore never start with an unreadable bright canvas.
+    return isTheme(stored) ? stored : "dark";
   } catch (error) {
     console.warn("[Auto-AI Theme] Unable to read saved theme.", error);
-    return "light";
+    return "dark";
   }
 }
 
@@ -35,7 +36,7 @@ function writeStoredTheme(theme: Theme) {
 }
 
 function getSystemTheme(): "light" | "dark" {
-  if (typeof window.matchMedia !== "function") return "light";
+  if (typeof window.matchMedia !== "function") return "dark";
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
