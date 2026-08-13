@@ -55,6 +55,8 @@ export function AppShell() {
   const fullCanvasAdmin = location.pathname.startsWith("/admin/live-pages");
   const isAdminRoute = location.pathname.startsWith("/admin");
   const isChatWorkspace = location.pathname.startsWith("/chat");
+  const isSettingsWorkspace = location.pathname === "/settings";
+  const needsChatContext = isChatWorkspace || isSettingsWorkspace;
   useEffect(() => {
     closeSidebar();
   }, [closeSidebar, location.pathname]);
@@ -135,6 +137,6 @@ export function AppShell() {
     </AlarmWorkspaceScope>
   );
 
-  const chatScoped = <ChatWorkspaceScope enabled={isChatWorkspace}>{alarmScoped}</ChatWorkspaceScope>;
+  const chatScoped = <ChatWorkspaceScope enabled={needsChatContext}>{alarmScoped}</ChatWorkspaceScope>;
   return <CallWorkspaceScope enabled={!isAdminRoute}>{chatScoped}</CallWorkspaceScope>;
 }
