@@ -1,8 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api, type AuthSession } from "../api/client";
 import { nativeGoogleAuth, readStoredSession, removeStoredSession, writeStoredSession } from "../auth/sessionStorage";
-import { callApi } from "../features/calls/services/callApi";
 import { callNative } from "../features/calls/services/callNative";
+import { callApi } from "../features/calls/services/callApi";
 import type { User } from "../types";
 import { isAdminPanelRole } from "../utils/roles";
 
@@ -25,13 +25,14 @@ const ANDROID_DEVICE_REGISTRATION_ATTEMPTS = 3;
 
 async function registerAndroidDevice(token: string) {
   let lastError: unknown = null;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < ANDROID_DEVICE_REGISTRATION_ATTEMPTS; attempt += 1) {
     try {
       const registration = await callNative.registration();
       if (registration.platform !== "android") return;
-      await callNative.requestNotificationPermission().catch((error) => {
-        console.warn("[Auto-AI Auth] Android notification permission request failed.", error);
-      });
+
+      // Device registration is deliberately non-interactive. Never request a
+      // runtime notification permission as part of authentication/startup.
+      // Calling permissions are requested only from the Calling UX.
       await callApi.registerDevice(token, registration);
       return;
     } catch (error) {
@@ -51,8 +52,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const persistSession = useCallback(async (session: AuthSession, persistent = true) => {
-    // Persist the auth session, but never let optional Android secure-storage
-    // implementation failures prevent the authenticated WebView from becoming usable.
     try {
       await writeStoredSession(session.access_token, session.refresh_token, persistent);
     } catch (error) {
