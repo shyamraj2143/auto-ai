@@ -3,12 +3,12 @@ package com.autoai.app;
 import android.Manifest;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
 
 import com.getcapacitor.JSObject;
-import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -29,17 +29,25 @@ public final class AutoAiNotificationsPlugin extends Plugin {
         return getContext().getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE);
     }
 
+    /**
+     * Use Android's native permission API here instead of Capacitor's
+     * getPermissionState(). The latter can hit a null internal state on some
+     * plugin registration combinations and crash the CapacitorPlugins thread.
+     */
     private boolean granted() {
-        return Build.VERSION.SDK_INT < 33 || getPermissionState("notifications") == PermissionState.GRANTED;
+        return Build.VERSION.SDK_INT < 33
+            || getContext().checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                == PackageManager.PERMISSION_GRANTED;
     }
 
     private JSObject state() {
         boolean prompted = preferences().getBoolean(PROMPTED, false);
+        boolean isGranted = granted();
         JSObject result = new JSObject();
-        result.put("granted", granted());
+        result.put("granted", isGranted);
         result.put("prompted", prompted);
-        result.put("canPrompt", Build.VERSION.SDK_INT >= 33 && !granted() && !prompted);
-        result.put("settingsRequired", Build.VERSION.SDK_INT >= 33 && !granted() && prompted);
+        result.put("canPrompt", Build.VERSION.SDK_INT >= 33 && !isGranted && !prompted);
+        result.put("settingsRequired", Build.VERSION.SDK_INT >= 33 && !isGranted && prompted);
         return result;
     }
 
