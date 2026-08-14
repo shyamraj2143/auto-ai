@@ -11,7 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_FRONTEND_URL = "https://autoai.site.je"
-DEFAULT_BACKEND_URL = "http://localhost:8000"
+DEFAULT_BACKEND_URL = "https://auto-ai-app-download.up.railway.app"
 DEFAULT_RAZORPAY_CHECKOUT_CONFIG_ID = "config_T9uIbVgLBfz7ko"
 DEFAULT_UPLOAD_DIR = str(PROJECT_ROOT / "backend" / "uploads")
 DEFAULT_LIBRARY_STORAGE_DIR = str(PROJECT_ROOT / "backend" / "library_uploads")
@@ -68,8 +68,7 @@ class Settings(BaseSettings):
     FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: SecretStr | None = None
     FIREBASE_SERVICE_ACCOUNT_FILE: str | None = None
     UPDATE_NOTIFY_SECRET: SecretStr | None = Field(
-        default=None,
-        validation_alias=AliasChoices("UPDATE_NOTIFY_SECRET", "AUTO_AI_UPDATE_NOTIFY_SECRET"),
+        default=None, validation_alias=AliasChoices("UPDATE_NOTIFY_SECRET", "AUTO_AI_UPDATE_NOTIFY_SECRET")
     )
 
     CALL_FEATURE_ENABLED: bool = True
@@ -131,10 +130,7 @@ class Settings(BaseSettings):
     GROQ_TRANSCRIPTION_MODEL: str | None = None
     GROQ_REQUEST_TIMEOUT_SECONDS: float = 30.0
 
-    OPENAI_API_KEY: str | None = Field(
-        default=None,
-        validation_alias="AUTO_AI_OPENAI_API_KEY",
-    )
+    OPENAI_API_KEY: str | None = Field(default=None, validation_alias="AUTO_AI_OPENAI_API_KEY")
     OPENAI_MODEL: str = "gpt-4.1-mini"
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
 
@@ -618,124 +614,51 @@ class Settings(BaseSettings):
         return self._normalize_public_url(self.BACKEND_URL, DEFAULT_BACKEND_URL)
 
     @property
-    def razorpay_callback_url(self) -> str:
-        default = f"{self.backend_url}{self.API_V1_STR}/billing/razorpay/callback"
-        return self._normalize_public_url(self.RAZORPAY_CALLBACK_URL, default)
-
-    @property
     def razorpay_success_url(self) -> str:
-        return f"{self.frontend_url}/payment/success"
+        return self._normalize_public_url(self.RAZORPAY_CALLBACK_URL, f"{self.frontend_url}/payment/success")
 
     @property
     def razorpay_failure_url(self) -> str:
-        return self._normalize_public_url(self.RAZORPAY_FAILURE_URL, f"{self.frontend_url}/payment/failed")
-
-    @staticmethod
-    def normalize_upi_id(value: str | None) -> str | None:
-        candidate = (value or "").strip()
-        if not candidate or candidate.lower().startswith("config_"):
-            return None
-        if not re.fullmatch(r"[A-Za-z0-9._-]{2,256}@[A-Za-z][A-Za-z0-9.-]{2,64}", candidate):
-            return None
-        return candidate
+        return self._normalize_public_url(self.RAZORPAY_FAILURE_URL, f"{self.frontend_url}/payment/failure")
 
     @property
-    def razorpay_checkout_config_id(self) -> str | None:
-        for value in (
-            self.RAZORPAY_CHECKOUT_CONFIG_ID,
-            self.RAZORPAY_PAYMENT_CONFIG_ID,
-            self.RAZORPAY_CONFIG_ID,
-            self._project_env_value("RAZORPAY_CHECKOUT_CONFIG_ID"),
-            self._project_env_value("RAZORPAY_PAYMENT_CONFIG_ID"),
-            self._project_env_value("RAZORPAY_CONFIG_ID"),
-        ):
-            candidate = (value or "").strip()
-            if candidate.lower().startswith("config_"):
-                return candidate
-        return None
-
-    def chat_model_for(self, provider: str | None = None) -> str:
-        selected_provider = (provider or self.AI_PROVIDER).lower()
-        if selected_provider == "openai":
-            return self.OPENAI_MODEL
-        if selected_provider == "gemini":
-            return self.GEMINI_MODEL
-        if selected_provider == "bedrock":
-            return self.bedrock_model
-        return self.GROQ_MODEL
-
-    @property
-    def is_production(self) -> bool:
-        return self.ENVIRONMENT.lower() == "production"
-
-    @property
-    def jwt_secret_key(self) -> str:
-        return self.JWT_SECRET_KEY or self.SECRET_KEY
+    def password_reset_email_enabled(self) -> bool:
+        return bool(self.SMTP_HOST and self.smtp_password and self.PASSWORD_RESET_FROM_EMAIL)
 
     @property
     def smtp_password(self) -> str | None:
         return self.SMTP_PASSWORD.get_secret_value() if self.SMTP_PASSWORD else None
 
     @property
-    def password_reset_from_email(self) -> str | None:
-        for value in (self.PASSWORD_RESET_FROM_EMAIL, str(self.ADMIN_EMAIL) if self.ADMIN_EMAIL else None):
-            candidate = (value or "").strip()
-            if candidate:
-                return candidate
-        return None
+    def jwt_secret_key(self) -> str:
+        return self.JWT_SECRET_KEY or self.SECRET_KEY
 
     @property
-    def password_reset_email_enabled(self) -> bool:
-        return bool((self.SMTP_HOST or "").strip() and self.password_reset_from_email)
+    def groq_request_timeout_seconds(self) -> float:
+        return self.GROQ_REQUEST_TIMEOUT_SECONDS
 
     @property
-    def redis_url(self) -> str | None:
-        value = (self.REDIS_URL or "").strip()
-        return value or None
-
-    @property
-    def turn_shared_secret(self) -> str | None:
-        return self.TURN_SHARED_SECRET.get_secret_value() if self.TURN_SHARED_SECRET else None
-
-    @property
-    def turn_provider(self) -> str:
-        return (self.TURN_PROVIDER or "coturn").strip().lower()
-
-    @property
-    def metered_turn_api_key(self) -> str | None:
-        return self.METERED_TURN_API_KEY.get_secret_value() if self.METERED_TURN_API_KEY else None
-
-    @property
-    def metered_domain(self) -> str | None:
-        value = (self.METERED_DOMAIN or "").strip().strip("/")
-        if value.startswith("https://"):
-            value = value.removeprefix("https://").strip("/")
-        elif value.startswith("http://"):
-            value = value.removeprefix("http://").strip("/")
-        return value or None
-
-    @property
-    def metered_turn_configured(self) -> bool:
-        return self.turn_provider == "metered" and bool(self.metered_domain and self.metered_turn_api_key)
+    def is_production(self) -> bool:
+        return self.ENVIRONMENT.strip().lower() == "production"
 
     @property
     def turn_configured(self) -> bool:
-        if self.turn_provider == "metered":
-            return self.metered_turn_configured
-        return bool(self.TURN_SERVER_URLS and self.turn_shared_secret and (self.TURN_REALM or "").strip())
+        return bool(self.TURN_SERVER_URLS)
 
     @property
-    def google_client_ids(self) -> list[str]:
-        values = [self.GOOGLE_CLIENT_ID, self.GOOGLE_WEB_CLIENT_ID, self.GOOGLE_ANDROID_CLIENT_ID]
-        return list(dict.fromkeys(value.strip() for value in values if value and value.strip()))
+    def redis_url(self) -> str | None:
+        return self.REDIS_URL
 
     @property
     def google_web_client_id(self) -> str | None:
-        value = self.GOOGLE_WEB_CLIENT_ID or self.GOOGLE_CLIENT_ID
-        return value.strip() if value and value.strip() else None
+        return self.GOOGLE_WEB_CLIENT_ID or self.GOOGLE_CLIENT_ID
+
+    @property
+    def google_android_client_id(self) -> str | None:
+        return self.GOOGLE_ANDROID_CLIENT_ID or self.GOOGLE_CLIENT_ID
 
 
-@lru_cache
+@lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
 
