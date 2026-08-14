@@ -55,9 +55,13 @@ public class AppUpdateCoordinatorTest {
         assertFalse(AppUpdateCoordinator.downloadedVersionMatches(0, 102351));
     }
 
-    @Test public void updaterAcceptsOnlyTheAutoAiReleasePath() {
+    @Test public void updaterAcceptsOnlyTrustedAutoAiReleasePaths() {
         assertTrue(AppUpdateCoordinator.isTrustedDownloadUrl(
             "https://github.com/shyamraj2143/auto-ai/releases/download/android-101201/auto-ai.apk"));
+        assertTrue(AppUpdateCoordinator.isTrustedDownloadUrl(
+            "https://auto-ai-app-download.up.railway.app/"));
+        assertFalse(AppUpdateCoordinator.isTrustedDownloadUrl(
+            "https://auto-ai-app-download.up.railway.app.evil.example/"));
         assertFalse(AppUpdateCoordinator.isTrustedDownloadUrl(
             "https://github.com/another-owner/auto-ai/releases/download/android-101201/auto-ai.apk"));
         assertFalse(AppUpdateCoordinator.isTrustedDownloadUrl("http://github.com/shyamraj2143/auto-ai.apk"));
