@@ -1,6 +1,9 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+
+PUBLIC_APK_DOWNLOAD_URL = "https://auto-ai-app-download.up.railway.app/"
 
 
 class ApkReleaseRead(BaseModel):
@@ -28,6 +31,15 @@ class ApkReleaseRead(BaseModel):
     release_id: str = ""
     release_notes: list[str] = Field(default_factory=list)
     download_url: str
+
+    @model_validator(mode="after")
+    def use_public_download_host(self) -> "ApkReleaseRead":
+        # Keep release metadata stable while moving the actual APK download to
+        # the dedicated Railway download service. The API remains the source of
+        # truth for release metadata and download counting.
+        self.apk_url = PUBLIC_APK_DOWNLOAD_URL
+        self.download_url = PUBLIC_APK_DOWNLOAD_URL
+        return self
 
 
 class ApkReleaseCreate(BaseModel):
