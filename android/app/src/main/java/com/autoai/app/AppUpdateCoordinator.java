@@ -50,6 +50,7 @@ public final class AppUpdateCoordinator {
         "https://api.github.com/repos/shyamraj2143/auto-ai/releases/latest";
     private static final String GITHUB_RELEASE_DOWNLOAD_PREFIX =
         "/shyamraj2143/auto-ai/releases/download/";
+    private static final String PUBLIC_APK_DOWNLOAD_HOST = "auto-ai-app-download.up.railway.app";
     private static volatile AppUpdateCoordinator instance;
 
     private final Context context;
@@ -414,6 +415,9 @@ public final class AppUpdateCoordinator {
             if (host.equalsIgnoreCase(api.getHost())) {
                 String path = uri.getPath() == null ? "" : uri.getPath();
                 return path.startsWith("/api/download/apk") || path.startsWith("/api/v1/download/apk");
+            }
+            if (PUBLIC_APK_DOWNLOAD_HOST.equalsIgnoreCase(host)) {
+                return uri.getPath() == null || uri.getPath().isEmpty() || "/".equals(uri.getPath());
             }
             String path = uri.getPath() == null ? "" : uri.getPath();
             return "github.com".equals(host)
