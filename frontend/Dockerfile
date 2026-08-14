@@ -5,7 +5,7 @@ COPY frontend/package*.json ./
 RUN npm install
 
 COPY frontend ./
-ARG VITE_API_URL=/api/v1
+ARG VITE_API_URL=https://auto-ai-app-download.up.railway.app/api/v1
 ENV VITE_API_URL=$VITE_API_URL
 RUN npm run build
 
