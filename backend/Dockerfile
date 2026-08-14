@@ -18,6 +18,9 @@ COPY public ./public
 
 WORKDIR /app/backend
 
-EXPOSE 8000
+# Railway injects PORT at runtime. Keep 8000 as the local/default port so the
+# existing docker-compose setup continues to work, while Railway can bind to
+# its assigned port (for example 8080).
+EXPOSE 8000 8080
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
