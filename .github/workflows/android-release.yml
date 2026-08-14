@@ -24,9 +24,8 @@ jobs:
     timeout-minutes: 90
     environment: production
     env:
-      # Use the stable public API gateway instead of a Railway service domain that
-      # can become invalid when the Railway project/service is recreated.
-      AUTO_AI_API_BASE_URL: https://autoai.site.je/api/v1
+      # Current public backend for the newly recreated Railway project.
+      AUTO_AI_API_BASE_URL: https://auto-ai-app-download.up.railway.app/api/v1
       AUTO_AI_ANDROID_KEYSTORE_BASE64: ${{ secrets.AUTO_AI_ANDROID_KEYSTORE_BASE64 }}
       AUTO_AI_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.AUTO_AI_ANDROID_KEYSTORE_PASSWORD }}
       AUTO_AI_ANDROID_KEY_ALIAS: ${{ secrets.AUTO_AI_ANDROID_KEY_ALIAS }}
