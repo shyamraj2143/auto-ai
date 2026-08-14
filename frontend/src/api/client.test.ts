@@ -8,13 +8,13 @@ import {
 
 describe("API URL normalization", () => {
   it("converts a hostname-only production URL to HTTPS", () => {
-    expect(normalizeApiUrl("auto-ai-production-a6ef.up.railway.app/api/v1"))
-      .toBe("https://auto-ai-production-a6ef.up.railway.app/api/v1");
+    expect(normalizeApiUrl("autoai.site.je/api/v1"))
+      .toBe("https://autoai.site.je/api/v1");
   });
 
   it("preserves an absolute HTTPS API URL", () => {
-    expect(normalizeApiUrl("https://auto-ai-production-a6ef.up.railway.app/api/v1"))
-      .toBe("https://auto-ai-production-a6ef.up.railway.app/api/v1");
+    expect(normalizeApiUrl("https://autoai.site.je/api/v1"))
+      .toBe("https://autoai.site.je/api/v1");
   });
 
   it("uses the local backend for an unconfigured localhost preview build", () => {
