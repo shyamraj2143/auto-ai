@@ -13,7 +13,7 @@ from urllib import error, request
 from urllib.parse import urlencode
 
 
-DEFAULT_API_URL = "https://auto-ai-production-a6ef.up.railway.app/api/v1"
+DEFAULT_API_URL = "https://autoai.site.je/api/v1"
 
 
 def api_url(base_url: str, path: str) -> str:
