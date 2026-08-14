@@ -38,13 +38,16 @@ async function latestApk() {
   return cached;
 }
 
+// The public Railway URL is also the APK URL used by the Android updater.
+// Redirect the root directly to the latest signed APK so existing clients
+// following the configured base URL receive an actual APK, never HTML.
 app.get("/", async (_req, res) => {
   try {
     const apk = await latestApk();
     res.setHeader("Cache-Control", "no-store");
-    res.type("html").send(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Auto-AI APK Download</title></head><body style="font-family:system-ui;max-width:620px;margin:60px auto;padding:20px"><h1>Auto-AI Android</h1><p>Latest release: <b>${apk.version}</b></p><p><a href="/apk" style="font-size:18px">Download latest APK</a></p><p style="color:#666">This download service securely proxies the official GitHub release.</p></body></html>`);
-  } catch (error) {
-    res.status(503).json({ status: "unavailable", message: "Latest APK is temporarily unavailable", detail: String(error.message || error) });
+    res.redirect(302, apk.url);
+  } catch (_error) {
+    res.status(503).json({ status: "unavailable", message: "Latest APK is temporarily unavailable" });
   }
 });
 
@@ -54,7 +57,7 @@ app.get("/apk", async (_req, res) => {
   try {
     const apk = await latestApk();
     res.redirect(302, apk.url);
-  } catch (error) {
+  } catch (_error) {
     res.status(503).json({ status: "unavailable", message: "APK is temporarily unavailable" });
   }
 });
@@ -62,7 +65,7 @@ app.get("/apk", async (_req, res) => {
 app.get("/latest", async (_req, res) => {
   try {
     res.json(await latestApk());
-  } catch (error) {
+  } catch (_error) {
     res.status(503).json({ status: "unavailable", message: "Latest APK is temporarily unavailable" });
   }
 });
