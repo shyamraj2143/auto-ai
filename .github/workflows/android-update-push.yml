@@ -26,7 +26,10 @@ jobs:
     timeout-minutes: 30
     environment: production
     env:
-      AUTO_AI_API_BASE_URL: https://autoai.site.je/api/v1
+      # Must match the backend used by the Android release workflow and the
+      # current Railway deployment. The previous value pointed at the retired
+      # autoai.site.je backend, so notification delivery could silently fail.
+      AUTO_AI_API_BASE_URL: https://auto-ai-app-download.up.railway.app/api/v1
       AUTO_AI_ADMIN_EMAIL: ${{ secrets.AUTO_AI_ADMIN_EMAIL }}
       AUTO_AI_ADMIN_PASSWORD: ${{ secrets.AUTO_AI_ADMIN_PASSWORD }}
 
