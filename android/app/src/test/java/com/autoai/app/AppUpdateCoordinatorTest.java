@@ -59,7 +59,7 @@ public class AppUpdateCoordinatorTest {
         assertTrue(AppUpdateCoordinator.isTrustedDownloadUrl(
             "https://github.com/shyamraj2143/auto-ai/releases/download/android-101201/auto-ai.apk"));
         assertTrue(AppUpdateCoordinator.isTrustedDownloadUrl(
-            "https://auto-ai-app-download.up.railway.app/"));
+            "https://auto-ai-app-download.up.railway.app/api/download/apk"));
         assertFalse(AppUpdateCoordinator.isTrustedDownloadUrl(
             "https://auto-ai-app-download.up.railway.app.evil.example/"));
         assertFalse(AppUpdateCoordinator.isTrustedDownloadUrl(
