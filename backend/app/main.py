@@ -173,12 +173,28 @@ def get_cors_origins() -> list[str]:
 
 
 def get_trusted_hosts() -> list[str]:
-    hosts = {"localhost", "127.0.0.1", "testserver"}
+    hosts = {
+        "localhost",
+        "127.0.0.1",
+        "testserver",
+        # Current Railway public backend domain. Keep this fallback so a Railway
+        # deployment cannot fail with "Invalid host header" when Railway's
+        # RAILWAY_PUBLIC_DOMAIN variable is not injected into the container.
+        "auto-ai-app-download.up.railway.app",
+        # Trust Railway generated subdomains as well; useful when Railway rotates
+        # the generated public domain for a new environment/deployment.
+        "*.up.railway.app",
+    }
     hosts.update(host.strip().lower() for host in settings.TRUSTED_HOSTS if host.strip() and host.strip() != "*")
     for configured_url in (settings.frontend_url, settings.backend_url):
         hostname = urlparse(configured_url).hostname
         if hostname:
             hosts.add(hostname.lower())
+    railway_public_domain = str(settings.RAILWAY_PUBLIC_DOMAIN or "").strip().lower()
+    if railway_public_domain:
+        parsed = urlparse(railway_public_domain if "://" in railway_public_domain else f"https://{railway_public_domain}")
+        if parsed.hostname:
+            hosts.add(parsed.hostname.lower())
     return sorted(hosts)
 
 
