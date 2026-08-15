@@ -8,8 +8,6 @@ on:
       - '.release-status/**'
   workflow_dispatch:
 
-# Never cancel a production release because another main commit arrived.
-# Every main push gets its own versioned APK; release-status bookkeeping is ignored above.
 concurrency:
   group: android-release-main
   cancel-in-progress: false
@@ -24,8 +22,8 @@ jobs:
     timeout-minutes: 90
     environment: production
     env:
-      # Current public backend for the newly recreated Railway project.
-      AUTO_AI_API_BASE_URL: https://auto-ai-app-download.up.railway.app/api/v1
+      # Single production backend used by the current app configuration.
+      AUTO_AI_API_BASE_URL: https://auto-ai-backend.onrender.com/api/v1
       AUTO_AI_ANDROID_KEYSTORE_BASE64: ${{ secrets.AUTO_AI_ANDROID_KEYSTORE_BASE64 }}
       AUTO_AI_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.AUTO_AI_ANDROID_KEYSTORE_PASSWORD }}
       AUTO_AI_ANDROID_KEY_ALIAS: ${{ secrets.AUTO_AI_ANDROID_KEY_ALIAS }}
