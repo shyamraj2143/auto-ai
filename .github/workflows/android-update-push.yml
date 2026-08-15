@@ -1,9 +1,6 @@
 name: Push Android update notification
 
 on:
-  # A notification must only advertise the APK that was actually built,
-  # signed, published and verified. The Android release workflow owns the
-  # main-push trigger; this workflow runs after that release succeeds.
   workflow_run:
     workflows:
       - Android release
@@ -26,10 +23,8 @@ jobs:
     timeout-minutes: 30
     environment: production
     env:
-      # Must match the backend used by the Android release workflow and the
-      # current Railway deployment. The previous value pointed at the retired
-      # autoai.site.je backend, so notification delivery could silently fail.
-      AUTO_AI_API_BASE_URL: https://auto-ai-app-download.up.railway.app/api/v1
+      # Keep update notification on the same production backend as the APK.
+      AUTO_AI_API_BASE_URL: https://auto-ai-backend.onrender.com/api/v1
       AUTO_AI_ADMIN_EMAIL: ${{ secrets.AUTO_AI_ADMIN_EMAIL }}
       AUTO_AI_ADMIN_PASSWORD: ${{ secrets.AUTO_AI_ADMIN_PASSWORD }}
 
