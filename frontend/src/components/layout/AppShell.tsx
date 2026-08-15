@@ -21,7 +21,13 @@ function AlarmWorkspaceScope({ enabled, nativeEnabled, children }: { enabled: bo
 
 function CallWorkspaceScope({ enabled, children }: { enabled: boolean; children: ReactNode }) {
   if (!enabled) return <>{children}</>;
-  return <CallProvider>{children}<CallOverlay /></CallProvider>;
+  return (
+    <CallProvider>
+      <AndroidBackHandler />
+      {children}
+      <CallOverlay />
+    </CallProvider>
+  );
 }
 
 function ChatWorkspaceScope({ enabled, children }: { enabled: boolean; children: ReactNode }) {
@@ -132,7 +138,6 @@ export function AppShell() {
 
   const alarmScoped = (
     <AlarmWorkspaceScope enabled={!isAdminRoute} nativeEnabled={!isAdminRoute}>
-      <AndroidBackHandler />
       {workspace}
     </AlarmWorkspaceScope>
   );
