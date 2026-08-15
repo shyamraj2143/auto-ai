@@ -23,34 +23,25 @@ UNSAFE_MARKUP = re.compile(r"<\s*(script|style|iframe|object|embed|form|input|sv
 
 
 def validate_safe_url(value: str) -> str:
-    """Validate and normalize URLs used by CMS content.
-
-    The editor intentionally supports full web URLs, mail/tel links, relative
-    paths, and anchors. A common source of CMS 422s was users entering a bare
-    host such as ``example.com`` instead of ``https://example.com``. Normalize
-    those host-like values here instead of rejecting an otherwise safe URL.
-    """
     value = value.strip()
     if not value:
         return value
     if value.startswith(("/", "#")) and not value.startswith("//"):
         return value
 
-    # Normalize common human-entered hostnames such as example.com/path or
-    # www.example.com before parsing the scheme.
-    if not re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", value) and re.match(
-        r"^(?:www\.)?(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}(?::\d+)?(?:[/?#].*)?$",
-        value,
-    ):
-        value = f"https://{value}"
+    # Normalize common bare hostnames while keeping the validator strict for
+    # dangerous/unsupported schemes and malformed explicit URLs.
+    candidate = value
+    if "://" not in candidate and not candidate.lower().startswith(("mailto:", "tel:")):
+        if re.fullmatch(r"(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}(?::\d+)?(?:/.*)?", candidate):
+            candidate = f"https://{candidate}"
 
-    parsed = urlparse(value)
-    scheme = parsed.scheme.lower()
-    if scheme not in SAFE_URL_SCHEMES:
+    parsed = urlparse(candidate)
+    if parsed.scheme.lower() not in SAFE_URL_SCHEMES:
         raise ValueError("URL must use HTTPS, HTTP, mailto, tel, a relative path or an anchor")
-    if scheme in {"http", "https"} and not parsed.netloc:
+    if parsed.scheme.lower() in {"http", "https"} and not parsed.netloc:
         raise ValueError("HTTP and HTTPS URLs must include a host")
-    return value
+    return candidate
 
 
 def reject_unsafe_markup(value: str) -> str:
@@ -75,7 +66,6 @@ class StrictModel(BaseModel):
 class CmsAiAssistRequest(StrictModel):
     action: CmsAiAction
     text: str = Field(min_length=1, max_length=5000)
-
     _safe_text = field_validator("text")(classmethod(lambda cls, value: reject_unsafe_markup(value)))
 
 
@@ -88,20 +78,14 @@ class SeoFields(StrictModel):
     og_image: str = Field(default="", max_length=500)
     robots_index: bool = True
     sitemap: bool = True
-
-    _safe_canonical = field_validator("canonical_url")(
-        classmethod(lambda cls, value: validate_safe_url(value))
-    )
-    _safe_image = field_validator("og_image")(
-        classmethod(lambda cls, value: validate_safe_url(value))
-    )
+    _safe_canonical = field_validator("canonical_url")(classmethod(lambda cls, value: validate_safe_url(value)))
+    _safe_image = field_validator("og_image")(classmethod(lambda cls, value: validate_safe_url(value)))
 
 
 class ContentButton(StrictModel):
     label: str = Field(min_length=1, max_length=80)
     url: str = Field(min_length=1, max_length=500)
     style: Literal["primary", "secondary"] = "primary"
-
     _safe_url = field_validator("url")(classmethod(lambda cls, value: validate_safe_url(value)))
 
 
@@ -109,21 +93,17 @@ class ContentElementOverride(StrictModel):
     text: str | None = Field(default=None, max_length=5000)
     href: str | None = Field(default=None, max_length=2048)
     hidden: bool = False
-
     @field_validator("text")
     @classmethod
     def safe_text(cls, value: str | None) -> str | None:
         return reject_unsafe_markup(value) if value is not None else None
-
     @field_validator("href")
     @classmethod
     def safe_href(cls, value: str | None) -> str | None:
         return validate_safe_url(value) if value is not None else None
 
 
-def validate_element_override_keys(
-    value: dict[str, ContentElementOverride] | None,
-) -> dict[str, ContentElementOverride] | None:
+def validate_element_override_keys(value: dict[str, ContentElementOverride] | None) -> dict[str, ContentElementOverride] | None:
     if value is None:
         return None
     invalid = [key for key in value if not re.fullmatch(r"[a-z0-9][a-z0-9._:-]{0,119}", key)]
@@ -136,7 +116,6 @@ class ContentBlockInput(StrictModel):
     block_type: BlockType
     content: dict[str, Any] = Field(default_factory=dict)
     is_visible: bool = True
-
     @field_validator("content")
     @classmethod
     def safe_content(cls, content: dict[str, Any]) -> dict[str, Any]:
@@ -155,7 +134,6 @@ class ContentBlockInput(StrictModel):
             if isinstance(value, dict) and len(value) <= 30:
                 return {str(child_key): clean_value(str(child_key), child_value, depth + 1) for child_key, child_value in value.items()}
             raise ValueError(f"Unsupported value for {key}")
-
         safe: dict[str, Any] = {}
         for key, value in content.items():
             if not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", key):
@@ -169,7 +147,6 @@ class ContentBlockUpdate(StrictModel):
     content: dict[str, Any] | None = None
     is_visible: bool | None = None
     expected_page_version: int = Field(ge=1)
-
     @field_validator("content")
     @classmethod
     def safe_content(cls, content: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -192,19 +169,13 @@ class ContentPageCreate(StrictModel):
     buttons: list[ContentButton] = Field(default_factory=list, max_length=8)
     element_overrides: dict[str, "ContentElementOverride"] = Field(default_factory=dict, max_length=500)
     seo: SeoFields = Field(default_factory=SeoFields)
-
     @field_validator("slug")
     @classmethod
     def normalize_slug(cls, value: str) -> str:
         value = value.strip("/")
         return value or "home"
-
-    _safe_heading = field_validator("hero_heading", "hero_description")(
-        classmethod(lambda cls, value: reject_unsafe_markup(value))
-    )
-    _safe_element_keys = field_validator("element_overrides")(
-        classmethod(lambda cls, value: validate_element_override_keys(value))
-    )
+    _safe_heading = field_validator("hero_heading", "hero_description")(classmethod(lambda cls, value: reject_unsafe_markup(value)))
+    _safe_element_keys = field_validator("element_overrides")(classmethod(lambda cls, value: validate_element_override_keys(value)))
 
 
 class ContentPageUpdate(StrictModel):
@@ -216,20 +187,15 @@ class ContentPageUpdate(StrictModel):
     buttons: list[ContentButton] | None = Field(default=None, max_length=8)
     element_overrides: dict[str, "ContentElementOverride"] | None = Field(default=None, max_length=500)
     seo: SeoFields | None = None
-
     @field_validator("slug")
     @classmethod
     def normalize_slug(cls, value: str | None) -> str | None:
         return value.strip("/") or "home" if value is not None else None
-
     @field_validator("hero_heading", "hero_description")
     @classmethod
     def safe_text(cls, value: str | None) -> str | None:
         return reject_unsafe_markup(value) if value is not None else None
-
-    _safe_element_keys = field_validator("element_overrides")(
-        classmethod(lambda cls, value: validate_element_override_keys(value))
-    )
+    _safe_element_keys = field_validator("element_overrides")(classmethod(lambda cls, value: validate_element_override_keys(value)))
 
 
 class ContentDraftBlock(ContentBlockInput):
@@ -248,28 +214,84 @@ class ContentPageDraftUpdate(StrictModel):
     element_overrides: dict[str, ContentElementOverride] = Field(max_length=500)
     seo: SeoFields
     blocks: list[ContentDraftBlock] = Field(max_length=200)
-
     @field_validator("slug")
     @classmethod
     def normalize_slug(cls, value: str) -> str:
         return value.strip("/") or "home"
-
-    _safe_text = field_validator("hero_heading", "hero_description")(
-        classmethod(lambda cls, value: reject_unsafe_markup(value))
-    )
-    _safe_element_keys = field_validator("element_overrides")(
-        classmethod(lambda cls, value: validate_element_override_keys(value))
-    )
+    _safe_text = field_validator("hero_heading", "hero_description")(classmethod(lambda cls, value: reject_unsafe_markup(value)))
+    _safe_element_keys = field_validator("element_overrides")(classmethod(lambda cls, value: validate_element_override_keys(value)))
 
 
 class PublishRequest(StrictModel):
     expected_version: int = Field(ge=1)
     change_summary: str = Field(default="", max_length=255)
     scheduled_at: datetime | None = None
-
     _normalize_time = field_validator("scheduled_at")(classmethod(lambda cls, value: utc_naive(value)))
 
 
 class RestoreRevisionRequest(StrictModel):
     expected_version: int = Field(ge=1)
     change_summary: str = Field(default="Restored previous revision", max_length=255)
+
+
+class TextEntryUpdate(StrictModel):
+    value: str = Field(max_length=5000)
+    expected_version: int = Field(ge=1)
+    _safe_value = field_validator("value")(classmethod(lambda cls, value: reject_unsafe_markup(value)))
+
+
+class TextPublishRequest(StrictModel):
+    expected_version: int = Field(ge=1)
+    change_summary: str = Field(default="Published content", max_length=255)
+
+
+class FaqCreate(StrictModel):
+    question: str = Field(min_length=3, max_length=300)
+    answer: str = Field(min_length=1, max_length=10000)
+    category: str = Field(default="General", min_length=1, max_length=80)
+    enabled: bool = True
+    position: int = Field(default=0, ge=0)
+    _safe_text = field_validator("question", "answer", "category")(classmethod(lambda cls, value: reject_unsafe_markup(value)))
+
+
+class FaqUpdate(StrictModel):
+    expected_version: int = Field(ge=1)
+    question: str | None = Field(default=None, min_length=3, max_length=300)
+    answer: str | None = Field(default=None, min_length=1, max_length=10000)
+    category: str | None = Field(default=None, min_length=1, max_length=80)
+    enabled: bool | None = None
+    position: int | None = Field(default=None, ge=0)
+    @field_validator("question", "answer", "category")
+    @classmethod
+    def safe_text(cls, value: str | None) -> str | None:
+        return reject_unsafe_markup(value) if value is not None else None
+
+
+class AnnouncementCreate(StrictModel):
+    title: str = Field(min_length=1, max_length=160)
+    message: str = Field(min_length=1, max_length=2000)
+    action_text: str = Field(default="", max_length=80)
+    target_url: str = Field(default="", max_length=500)
+    start_at: datetime | None = None
+    end_at: datetime | None = None
+    targets: Literal["website", "android", "both"] = "both"
+    audience: Literal["all", "free", "paid", "admin"] = "all"
+    dismissible: bool = True
+    _safe_text = field_validator("title", "message", "action_text")(classmethod(lambda cls, value: reject_unsafe_markup(value)))
+    _safe_url = field_validator("target_url")(classmethod(lambda cls, value: validate_safe_url(value)))
+    _normalize_times = field_validator("start_at", "end_at")(classmethod(lambda cls, value: utc_naive(value)))
+    @model_validator(mode="after")
+    def valid_window(self):
+        if self.start_at and self.end_at and self.end_at <= self.start_at:
+            raise ValueError("End time must be after start time")
+        return self
+
+
+class AnnouncementUpdate(AnnouncementCreate):
+    expected_version: int = Field(ge=1)
+
+
+class MediaMetadataUpdate(StrictModel):
+    alt_text: str = Field(default="", max_length=300)
+    caption: str = Field(default="", max_length=500)
+    _safe_text = field_validator("alt_text", "caption")(classmethod(lambda cls, value: reject_unsafe_markup(value)))
