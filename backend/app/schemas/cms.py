@@ -23,15 +23,32 @@ UNSAFE_MARKUP = re.compile(r"<\s*(script|style|iframe|object|embed|form|input|sv
 
 
 def validate_safe_url(value: str) -> str:
+    """Validate and normalize URLs used by CMS content.
+
+    The editor intentionally supports full web URLs, mail/tel links, relative
+    paths, and anchors. A common source of CMS 422s was users entering a bare
+    host such as ``example.com`` instead of ``https://example.com``. Normalize
+    those host-like values here instead of rejecting an otherwise safe URL.
+    """
     value = value.strip()
     if not value:
         return value
     if value.startswith(("/", "#")) and not value.startswith("//"):
         return value
+
+    # Normalize common human-entered hostnames such as example.com/path or
+    # www.example.com before parsing the scheme.
+    if not re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", value) and re.match(
+        r"^(?:www\.)?(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}(?::\d+)?(?:[/?#].*)?$",
+        value,
+    ):
+        value = f"https://{value}"
+
     parsed = urlparse(value)
-    if parsed.scheme.lower() not in SAFE_URL_SCHEMES:
+    scheme = parsed.scheme.lower()
+    if scheme not in SAFE_URL_SCHEMES:
         raise ValueError("URL must use HTTPS, HTTP, mailto, tel, a relative path or an anchor")
-    if parsed.scheme.lower() in {"http", "https"} and not parsed.netloc:
+    if scheme in {"http", "https"} and not parsed.netloc:
         raise ValueError("HTTP and HTTPS URLs must include a host")
     return value
 
@@ -256,78 +273,3 @@ class PublishRequest(StrictModel):
 class RestoreRevisionRequest(StrictModel):
     expected_version: int = Field(ge=1)
     change_summary: str = Field(default="Restored previous revision", max_length=255)
-
-
-class TextEntryUpdate(StrictModel):
-    value: str = Field(max_length=5000)
-    expected_version: int = Field(ge=1)
-
-    _safe_value = field_validator("value")(classmethod(lambda cls, value: reject_unsafe_markup(value)))
-
-
-class TextPublishRequest(StrictModel):
-    expected_version: int = Field(ge=1)
-    change_summary: str = Field(default="Published content", max_length=255)
-
-
-class FaqCreate(StrictModel):
-    question: str = Field(min_length=3, max_length=300)
-    answer: str = Field(min_length=1, max_length=10000)
-    category: str = Field(default="General", min_length=1, max_length=80)
-    enabled: bool = True
-    position: int = Field(default=0, ge=0)
-
-    _safe_text = field_validator("question", "answer", "category")(
-        classmethod(lambda cls, value: reject_unsafe_markup(value))
-    )
-
-
-class FaqUpdate(StrictModel):
-    expected_version: int = Field(ge=1)
-    question: str | None = Field(default=None, min_length=3, max_length=300)
-    answer: str | None = Field(default=None, min_length=1, max_length=10000)
-    category: str | None = Field(default=None, min_length=1, max_length=80)
-    enabled: bool | None = None
-    position: int | None = Field(default=None, ge=0)
-
-    @field_validator("question", "answer", "category")
-    @classmethod
-    def safe_text(cls, value: str | None) -> str | None:
-        return reject_unsafe_markup(value) if value is not None else None
-
-
-class AnnouncementCreate(StrictModel):
-    title: str = Field(min_length=1, max_length=160)
-    message: str = Field(min_length=1, max_length=2000)
-    action_text: str = Field(default="", max_length=80)
-    target_url: str = Field(default="", max_length=500)
-    start_at: datetime | None = None
-    end_at: datetime | None = None
-    targets: Literal["website", "android", "both"] = "both"
-    audience: Literal["all", "free", "paid", "admin"] = "all"
-    dismissible: bool = True
-
-    _safe_text = field_validator("title", "message", "action_text")(
-        classmethod(lambda cls, value: reject_unsafe_markup(value))
-    )
-    _safe_url = field_validator("target_url")(classmethod(lambda cls, value: validate_safe_url(value)))
-    _normalize_times = field_validator("start_at", "end_at")(classmethod(lambda cls, value: utc_naive(value)))
-
-    @model_validator(mode="after")
-    def valid_window(self):
-        if self.start_at and self.end_at and self.end_at <= self.start_at:
-            raise ValueError("End time must be after start time")
-        return self
-
-
-class AnnouncementUpdate(AnnouncementCreate):
-    expected_version: int = Field(ge=1)
-
-
-class MediaMetadataUpdate(StrictModel):
-    alt_text: str = Field(default="", max_length=300)
-    caption: str = Field(default="", max_length=500)
-
-    _safe_text = field_validator("alt_text", "caption")(
-        classmethod(lambda cls, value: reject_unsafe_markup(value))
-    )
