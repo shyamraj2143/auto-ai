@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronDown, ChevronUp, Circle, Clock3, Square, TriangleAlert, X } from "lucide-react";
 import clsx from "clsx";
 import type { ChatGeneration, OrchestrationActivityEvent } from "../../types";
+import "./liveModelActivity.css";
 
 const MODE_LABELS: Record<string, string> = {
   instant: "Instant Intelligence",
@@ -58,7 +59,7 @@ export function LiveModelActivity({ generation, running, onCancel }: { generatio
   }, [running]);
 
   return (
-    <section className={clsx("model-activity-panel", !running && "model-activity-complete")} aria-live="polite">
+    <section className={clsx("model-activity-panel", "model-activity-panel-raised", !running && "model-activity-complete")} aria-live="polite">
       <div className="model-activity-header">
         <button className="model-activity-toggle" type="button" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded} aria-controls={`model-activity-${generation.id}`}>
           <span className="model-activity-title">
