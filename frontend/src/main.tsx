@@ -7,6 +7,7 @@ import "./styles/responseCardOverrides.css";
 import "./styles/featureFixes.css";
 import "./styles/runtimeStabilityFixes.css";
 import "./styles/simpleDesign.css";
+import "./styles/nvidiaIntelligenceComposer.css";
 import App from "./App";
 import { beginStartupRecovery } from "./reliability/safeMode";
 import { installFunctionalDialogDiagnostics, installResponsiveDiagnostics } from "./reliability/responsiveDiagnostics";
