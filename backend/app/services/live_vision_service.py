@@ -8,8 +8,9 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.live import VisionFrame
 from app.services.groq_service import groq_service
+from app.services.nvidia_vision_service import nvidia_vision_service
+from app.models.live import VisionFrame
 
 
 logger = logging.getLogger("auto_ai.live.vision")
@@ -54,15 +55,7 @@ class LiveVisionService:
     def is_visual_question(self, text: str) -> bool:
         return bool(VISUAL_TRIGGER_PATTERN.search(text or ""))
 
-    def analyze_frame(
-        self,
-        db: Session,
-        *,
-        session_id: str,
-        user_id: str,
-        image_base64: str,
-        prompt: str = "",
-    ) -> VisualContext:
+    def analyze_frame(self, db: Session, *, session_id: str, user_id: str, image_base64: str, prompt: str = "") -> VisualContext:
         image = self._decode_frame(image_base64)
         vision_prompt = (
             "Privately inspect this live camera frame. Return a concise factual scene summary, "
@@ -72,28 +65,26 @@ class LiveVisionService:
         if prompt.strip():
             vision_prompt += f" The user's current question is: {prompt.strip()}"
         summary = self._analyze_with_fallback(image, vision_prompt).strip()
-        frame = VisionFrame(
-            session_id=session_id,
-            user_id=user_id,
-            image_url="",
-            analysis_summary=summary,
-        )
+        frame = VisionFrame(session_id=session_id, user_id=user_id, image_url="", analysis_summary=summary)
         db.add(frame)
         db.commit()
         db.refresh(frame)
-        return VisualContext(
-            frame_id=frame.id,
-            timestamp=frame.created_at.replace(tzinfo=timezone.utc),
-            summary=summary,
-            confidence=0.85 if summary else 0.0,
-        )
+        return VisualContext(frame_id=frame.id, timestamp=frame.created_at.replace(tzinfo=timezone.utc), summary=summary, confidence=0.85 if summary else 0.0)
 
     def _analyze_with_fallback(self, image: bytes, prompt: str) -> str:
         errors: list[str] = []
+
+        # NVIDIA is the primary multimodal analyzer for camera/image understanding.
+        try:
+            return nvidia_vision_service.analyze_image(image, "live-frame.jpg", prompt, mime_type="image/jpeg")
+        except Exception as exc:
+            errors.append(f"nvidia: {exc}")
+
+        # Existing providers remain fallbacks so a temporary NVIDIA failure does not break live vision.
         try:
             return groq_service.analyze_image(image, "live-frame.jpg", prompt)
-        except Exception as exc:  # provider failures must not end the live session
-            errors.append(str(exc))
+        except Exception as exc:
+            errors.append(f"groq: {exc}")
 
         encoded = base64.b64encode(image).decode("ascii")
         content = [
@@ -107,17 +98,11 @@ class LiveVisionService:
             fallback_providers.append(("gemini", settings.GEMINI_MODEL))
         for provider, model in fallback_providers:
             try:
-                result, _, _ = groq_service.complete(
-                    [{"role": "user", "content": content}],
-                    provider=provider,
-                    model=model,
-                    max_tokens=300,
-                    request_timeout=30,
-                )
+                result, _, _ = groq_service.complete([{"role": "user", "content": content}], provider=provider, model=model, max_tokens=300, request_timeout=30)
                 if result.strip():
                     return result
             except Exception as exc:
-                errors.append(str(exc))
+                errors.append(f"{provider}: {exc}")
         logger.warning("live_vision_provider_failure errors=%s", errors)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Live vision provider is unavailable.")
 
