@@ -1,0 +1,12 @@
+/* Keep the live intelligence panel clear of the composer without changing the chat layout. */
+.model-activity-panel-raised {
+  position: relative;
+  z-index: 30;
+  transform: translateY(-14px);
+}
+
+@media (max-width: 640px) {
+  .model-activity-panel-raised {
+    transform: translateY(-10px);
+  }
+}
