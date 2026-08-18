@@ -1,0 +1,104 @@
+/* Contacts / accepted-conversations layout fix.
+   Keep the existing Call Hub structure, but prevent the identity column from
+   collapsing to a few pixels when action buttons are present. */
+.calls-workspace-content,
+.calls-workspace-content > .calls-tab,
+.calls-list.social-panel {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.calls-list.social-panel {
+  overflow-x: hidden;
+}
+
+.call-user-row {
+  display: flex !important;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 12px;
+}
+
+.call-user-row > .call-avatar,
+.call-user-row > .call-avatar-wrap {
+  flex: 0 0 44px;
+}
+
+.call-user-copy {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  overflow: hidden;
+}
+
+.call-user-copy strong,
+.call-user-copy small {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.call-user-copy strong {
+  line-height: 1.25;
+}
+
+.call-user-copy small {
+  margin-top: 3px;
+  line-height: 1.25;
+}
+
+.call-user-actions {
+  display: flex !important;
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: max-content;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.call-user-actions > button,
+.call-user-menu-wrap > button {
+  flex: 0 0 38px;
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  min-height: 38px;
+  box-sizing: border-box;
+}
+
+.call-user-menu-wrap {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 640px) {
+  .calls-workspace-content {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .call-user-row {
+    gap: 9px;
+  }
+
+  .call-user-actions {
+    gap: 5px;
+  }
+
+  .call-user-actions > button,
+  .call-user-menu-wrap > button {
+    flex-basis: 34px;
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    min-height: 34px;
+  }
+}
