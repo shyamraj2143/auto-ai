@@ -43,10 +43,14 @@ export function LiveModelActivity({ generation, running, onCancel }: { generatio
   const elapsed = `${(elapsedMs / 1000).toFixed(1)}s`;
   const contributed = generation.activity_summary?.models_contributed ?? completed;
   const nvidiaTasks = tasks.filter((task) => (task.provider_display_name || "").toLowerCase().includes("nvidia"));
+  const groqTasks = tasks.filter((task) => (task.provider_display_name || "").toLowerCase().includes("groq"));
   const nvidiaCompleted = nvidiaTasks.filter((task) => task.status === "completed").length;
-  const generatorLabel = nvidiaTasks.length
-    ? `NVIDIA · ${nvidiaCompleted || nvidiaTasks.length} model${(nvidiaCompleted || nvidiaTasks.length) === 1 ? "" : "s"}`
-    : "Available intelligence models";
+  const groqCompleted = groqTasks.filter((task) => task.status === "completed").length;
+  const providerLabels = [
+    groqTasks.length ? `Groq · ${groqCompleted || groqTasks.length}` : "",
+    nvidiaTasks.length ? `NVIDIA · ${nvidiaCompleted || nvidiaTasks.length}` : ""
+  ].filter(Boolean);
+  const generatorLabel = providerLabels.length ? providerLabels.join(" + ") : "Available intelligence models";
 
   useEffect(() => {
     if (!running) return;
@@ -76,7 +80,8 @@ export function LiveModelActivity({ generation, running, onCancel }: { generatio
         {running && <span className="generation-dot" aria-hidden="true" />}
         <span>{running ? stage : `Final response synthesized from ${contributed} successful model${contributed === 1 ? "" : "s"}`}</span>
         {active > 0 && <span>{active} active</span>}
-        {!running && nvidiaCompleted > 0 && <span className="model-contributed-badge">NVIDIA models contributed</span>}
+        {!running && nvidiaCompleted > 0 && <span className="model-contributed-badge">NVIDIA contributed</span>}
+        {!running && groqCompleted > 0 && <span className="model-contributed-badge">Groq contributed</span>}
       </div>
       {expanded && (
         <div id={`model-activity-${generation.id}`} className="model-activity-body">
@@ -99,7 +104,7 @@ export function LiveModelActivity({ generation, running, onCancel }: { generatio
             </article>
           ))}
           {!tasks.length && running && <div className="model-activity-empty">Preparing intelligence tasks…</div>}
-          {!running && generation.activity_summary?.fallback_used && <div className="model-activity-fallback">NVIDIA was unavailable for one or more tasks; available providers completed the remaining work.</div>}
+          {!running && generation.activity_summary?.fallback_used && <div className="model-activity-fallback">One provider was unavailable; the other completed the remaining work.</div>}
           {!running && generation.mode === "deep_research" && <div className="model-activity-sources">Verified sources: {generation.activity_summary?.verified_sources ?? 0}</div>}
         </div>
       )}
