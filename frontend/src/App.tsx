@@ -42,6 +42,7 @@ const PricingPage = lazy(() => import("./components/pricing/PricingPage").then((
 const RegisterPage = lazy(() => import("./components/auth/RegisterPage").then((module) => ({ default: module.RegisterPage })));
 const ResetPasswordPage = lazy(() => import("./components/auth/ResetPasswordPage").then((module) => ({ default: module.ResetPasswordPage })));
 const SettingsPage = lazy(() => import("./components/settings/SettingsPage").then((module) => ({ default: module.SettingsPage })));
+const PersonalModelPage = lazy(() => import("./features/personalModel/PersonalModelPage").then((module) => ({ default: module.PersonalModelPage })));
 const CallsPage = lazy(() => import("./features/calls/CallsPage").then((module) => ({ default: module.CallsPage })));
 const ActiveCallPage = lazy(() => import("./features/calls/ActiveCallPage").then((module) => ({ default: module.ActiveCallPage })));
 const UserMessagesPage = lazy(() => import("./features/userMessages/UserMessagesPage").then((module) => ({ default: module.UserMessagesPage })));
@@ -206,6 +207,7 @@ function AppRoutes() {
               <Route path="/messages/:threadId" element={<UserMessagesPage />} />
               <Route path="/screen-share" element={<ScreenShareWorkspacePage />} />
               <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/personal-model" element={<PersonalModelPage />} />
               <Route path="/calls" element={<Navigate to="/call-hub/search" replace />} />
               <Route path="/calls/active/:callId" element={<ActiveCallPage />} />
               <Route path="/call-hub/:section" element={<CallsPage />} />

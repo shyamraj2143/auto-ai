@@ -85,7 +85,8 @@ const SETTINGS_TABS: Array<{ section: SettingsSection; label: string }> = [
   { section: "calls", label: "Calls" },
   { section: "chat", label: "Messages" },
   { section: "visual", label: "Visual" },
-  { section: "subscription", label: "Billing" }
+  { section: "subscription", label: "Billing" },
+  { section: "personal-model", label: "Personal Model" }
 ];
 
 function SettingsIcon({ icon: Icon, accent = "cyan" }: { icon: LucideIcon; accent?: Accent }) {
