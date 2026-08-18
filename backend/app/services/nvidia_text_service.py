@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
+import threading
+import time
 from typing import Any
 
 import httpx
@@ -19,6 +20,11 @@ NON_CHAT_MARKERS = (
 
 
 class NvidiaTextService:
+    _models_cache: list[str] = []
+    _models_cache_at = 0.0
+    _models_lock = threading.RLock()
+    _models_cache_ttl = 300.0
+
     def _key(self) -> str:
         key = os.getenv("NVIDIA_API_KEY", "").strip()
         if not key:
@@ -36,21 +42,30 @@ class NvidiaTextService:
         value = model_id.lower()
         return not any(marker in value for marker in NON_CHAT_MARKERS)
 
-    def list_models(self) -> list[str]:
-        """Return all currently advertised NVIDIA models that are plausible chat/completion models."""
+    def list_models(self, *, force_refresh: bool = False) -> list[str]:
+        """Return cached response-capable NVIDIA models; refresh at most every 5 minutes."""
+        now = time.monotonic()
+        with self._models_lock:
+            if not force_refresh and self._models_cache and now - self._models_cache_at < self._models_cache_ttl:
+                return list(self._models_cache)
         try:
-            response = httpx.get(f"{self._base_url()}/models", headers=self._headers(), timeout=12)
+            response = httpx.get(f"{self._base_url()}/models", headers=self._headers(), timeout=8)
             response.raise_for_status()
             body = response.json()
             ids = [str(item.get("id")) for item in body.get("data", []) if isinstance(item, dict) and item.get("id")]
-            candidates = [model_id for model_id in ids if self._is_candidate(model_id)]
-            return list(dict.fromkeys(candidates))
+            candidates = list(dict.fromkeys(model_id for model_id in ids if self._is_candidate(model_id)))
+            with self._models_lock:
+                self._models_cache = candidates
+                self._models_cache_at = time.monotonic()
+            return list(candidates)
         except httpx.HTTPError as exc:
             logger.warning("nvidia_model_discovery_failed error=%s", type(exc).__name__)
-            return []
+            with self._models_lock:
+                return list(self._models_cache)
         except (ValueError, TypeError, AttributeError) as exc:
             logger.warning("nvidia_model_discovery_invalid_response error=%s", type(exc).__name__)
-            return []
+            with self._models_lock:
+                return list(self._models_cache)
 
     @staticmethod
     def _normalise_content(content: Any) -> Any:
@@ -96,7 +111,8 @@ class NvidiaTextService:
             detail = response.text[:600]
             try:
                 body = response.json()
-                detail = str(body.get("detail") or body.get("message") or body.get("error", {}).get("message") or detail)
+                error = body.get("error", {}) if isinstance(body, dict) else {}
+                detail = str(body.get("detail") or body.get("message") or (error.get("message") if isinstance(error, dict) else None) or detail)
             except (ValueError, AttributeError):
                 pass
             raise RuntimeError(f"NVIDIA HTTP {response.status_code}: {detail}")
