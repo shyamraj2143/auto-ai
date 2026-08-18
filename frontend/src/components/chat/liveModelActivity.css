@@ -1,12 +1,32 @@
-/* Keep the live intelligence panel clear of the composer without changing the chat layout. */
+/* Keep the live intelligence panel in the chat flow instead of overlapping the thinking card/composer. */
 .model-activity-panel-raised {
   position: relative;
   z-index: 30;
-  transform: translateY(-14px);
+  transform: none;
+  width: min(100%, 760px);
+  margin: 10px auto 14px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.model-activity-panel-raised .model-activity-body {
+  max-height: 220px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.model-activity-panel-raised .model-activity-card {
+  min-width: 0;
 }
 
 @media (max-width: 640px) {
   .model-activity-panel-raised {
-    transform: translateY(-10px);
+    width: 100%;
+    margin: 8px 0 12px;
+  }
+
+  .model-activity-panel-raised .model-activity-body {
+    max-height: 180px;
   }
 }
