@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from threading import Thread
 from urllib.parse import urljoin
 
 from sqlalchemy import event, select
@@ -164,4 +165,4 @@ def _queue_ai_completion_notifications(session: Session, flush_context) -> None:
 def _deliver_ai_completion_notifications(session: Session) -> None:
     queued = set(session.info.pop("auto_ai_completed_generations", set()))
     for generation_id in queued:
-        _send_ai_response_ready(generation_id)
+        Thread(target=_send_ai_response_ready, args=(generation_id,), daemon=True).start()
