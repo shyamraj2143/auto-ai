@@ -22,7 +22,9 @@ from app.schemas.library import (
     LibraryAttachmentRead,
 )
 from app.services.document_service import document_service
+from app.services.groq_service import groq_service
 from app.services.library_storage import library_storage
+from app.services.nvidia_vision_service import nvidia_vision_service
 from app.utils.datetime import utc_now
 
 
@@ -31,6 +33,49 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 DOCUMENT_EXTENSIONS = {".pdf", ".docx", ".txt"}
 CODE_EXTENSIONS = {".py", ".ts", ".tsx", ".js", ".jsx", ".java", ".kt", ".go", ".rs", ".css", ".html", ".json", ".md", ".yaml", ".yml", ".sql"}
 BLOCKED_EXTENSIONS = {".exe", ".dll", ".bat", ".cmd", ".com", ".msi", ".apk", ".jar", ".ps1", ".sh", ".scr"}
+
+IMAGE_ANALYSIS_PROMPT = (
+    "You are Auto-AI's dedicated visual-analysis specialist. Analyze the supplied image itself, not metadata. "
+    "Return factual structured source material for another AI that will write the final answer. "
+    "Identify the image type and overall scene/layout; inspect every visible UI element, object, label, number, "
+    "warning, error, button and important visual state; transcribe readable text exactly; distinguish clearly visible "
+    "facts from uncertain/unreadable details; if it is a screenshot, identify the application/page and explain what "
+    "the visible state indicates. Do not say that the image is unavailable if it is visible. Never invent content."
+)
+
+
+def analyze_image_for_asset(data: bytes, filename: str, mime_type: str) -> tuple[str | None, dict]:
+    """Use the specialist vision model first; text-only models are fallback only."""
+    try:
+        result = nvidia_vision_service.analyze_image(
+            data,
+            filename,
+            IMAGE_ANALYSIS_PROMPT,
+            mime_type=mime_type,
+            max_tokens=3072,
+            timeout=75,
+        )
+        return result[: settings.MAX_DOCUMENT_CONTEXT_CHARS * 4], {
+            "analyzer": "nvidia",
+            "analyzer_model": "NVIDIA_VISION_MODEL",
+            "analysis_type": "vision_ocr_scene_ui",
+        }
+    except Exception as nvidia_error:
+        # Groq remains a resilience fallback, but it is never the primary image analyzer.
+        try:
+            result = groq_service.analyze_image(data, filename, IMAGE_ANALYSIS_PROMPT)
+            return result[: settings.MAX_DOCUMENT_CONTEXT_CHARS * 4], {
+                "analyzer": "groq_fallback",
+                "analysis_type": "vision_ocr_scene_ui",
+                "fallback_reason": type(nvidia_error).__name__,
+            }
+        except Exception as groq_error:
+            return None, {
+                "analyzer": "unavailable",
+                "analysis_type": "vision_ocr_scene_ui",
+                "nvidia_error": type(nvidia_error).__name__,
+                "groq_error": type(groq_error).__name__,
+            }
 
 
 def asset_or_404(db: Session, asset_id: str, user_id: str) -> LibraryAsset:
@@ -113,9 +158,23 @@ async def upload_asset(
         )
     )
     if existing:
+        # Old assets may predate NVIDIA vision extraction. Backfill their image analysis lazily.
+        if existing.file_type == "image" and not existing.extracted_text:
+            existing_data = library_storage.read(existing.storage_key)
+            extracted, vision_meta = analyze_image_for_asset(existing_data, existing.display_name, existing.mime_type)
+            existing.extracted_text = extracted
+            existing.metadata_json = {**(existing.metadata_json or {}), **vision_meta}
+            existing.updated_at = utc_now()
+            db.commit()
+            db.refresh(existing)
         return existing
+
     extension = Path(name).suffix.lower()
     extracted_text, metadata = extracted_content(data, extension, file_type)
+    if file_type == "image":
+        extracted_text, vision_meta = analyze_image_for_asset(data, name, mime_type)
+        metadata = {**metadata, **vision_meta}
+
     storage_key = f"{current_user.id}/{uuid.uuid4().hex}{extension}"
     library_storage.put(storage_key, data, mime_type)
     asset = LibraryAsset(
