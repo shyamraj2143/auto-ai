@@ -1,0 +1,49 @@
+name: Wire Personal Model UI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    if: ${{ !contains(github.event.head_commit.message, '[personal-model-ui]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add Personal Model route
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('frontend/src/App.tsx')
+          s = p.read_text()
+          import_line = 'const PersonalModelPage = lazy(() => import("./features/personalModel/PersonalModelPage").then((module) => ({ default: module.PersonalModelPage })));'
+          if 'features/personalModel/PersonalModelPage' not in s:
+              anchor = 'const SettingsPage = lazy(() => import("./components/settings/SettingsPage").then((module) => ({ default: module.SettingsPage })));'
+              s = s.replace(anchor, anchor + '\n' + import_line)
+          route = '              <Route path="/personal-model" element={<PersonalModelPage />} />'
+          if route not in s:
+              s = s.replace('              <Route path="/settings" element={<SettingsPage />} />', '              <Route path="/settings" element={<SettingsPage />} />\n' + route)
+          p.write_text(s)
+      - name: Add Personal Model entry to settings tabs
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('frontend/src/components/settings/SettingsPage.tsx')
+          s = p.read_text()
+          marker = '{ section: "subscription", label: "Billing" }'
+          if 'Personal Model' not in s and marker in s:
+              s = s.replace(marker, marker + ',\n  { section: "personal-model", label: "Personal Model" }')
+          p.write_text(s)
+      - name: Commit UI wiring
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/App.tsx frontend/src/components/settings/SettingsPage.tsx
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "feat: wire Personal Model UI [personal-model-ui]"
+          git push
