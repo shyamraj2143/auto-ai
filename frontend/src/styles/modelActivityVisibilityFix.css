@@ -1,0 +1,28 @@
+/* Keep the live intelligence panel above the composer/keyboard without moving the composer itself. */
+.model-activity-panel {
+  position: sticky;
+  bottom: 96px;
+  z-index: 80;
+  margin-top: 8px;
+  margin-bottom: 18px;
+  transform: translateY(-18px);
+  isolation: isolate;
+}
+
+.model-activity-panel::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  z-index: -1;
+  border-radius: inherit;
+  background: rgba(5, 7, 13, 0.72);
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .model-activity-panel {
+    bottom: 82px;
+    margin-bottom: 14px;
+    transform: translateY(-14px);
+  }
+}
