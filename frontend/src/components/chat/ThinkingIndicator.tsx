@@ -31,7 +31,7 @@ export function ThinkingIndicator({
     () => thinkingActivitySnapshot(generation?.activity ?? []),
     [generation?.activity]
   );
-  const visibleTask = activity.visibleTasks[0];
+  const visibleTasks = activity.visibleTasks.slice(0, 3);
 
   return (
     <div className="thinking-panel" aria-live="polite">
@@ -63,21 +63,27 @@ export function ThinkingIndicator({
             </motion.p>
           </AnimatePresence>
           <p className="mt-1 text-xs text-slate-300/80">
-            {activity.stage || subtitle || "Crafting a response with the current context."}
+            {activity.stage || subtitle || "Reasoning through the request and comparing available models."}
           </p>
         </div>
       </div>
-      {visibleTask && (
+
+      {visibleTasks.length > 0 && (
         <div className="thinking-live-activity relative z-10">
-          <div className="thinking-live-model">
-            <span className={`thinking-live-status is-${visibleTask.status || "queued"}`}>
-              {visibleTask.status === "working" ? "Working" : "Queued"}
-            </span>
-            <strong>{visibleTask.model_display_name || visibleTask.actual_model_id || "Intelligence model"}</strong>
-            {visibleTask.provider_display_name && <span>{visibleTask.provider_display_name}</span>}
-          </div>
-          <p>{visibleTask.activity_label || visibleTask.role || "Processing your request"}</p>
-          <div className="thinking-live-progress">
+          {visibleTasks.map((task) => (
+            <div className="thinking-live-model" key={task.task_id}>
+              <span className={`thinking-live-status is-${task.status || "queued"}`}>
+                {task.status === "working" ? "Working" : "Queued"}
+              </span>
+              <strong>{task.model_display_name || task.actual_model_id || "Intelligence model"}</strong>
+              {task.provider_display_name && <span>{task.provider_display_name}</span>}
+            </div>
+          ))}
+          <p>
+            {activity.completed} of {activity.tasks.length} model requests completed
+            {activity.working > 0 ? ` · ${activity.working} running in parallel` : ""}
+          </p>
+          <div className="thinking-live-progress" role="progressbar" aria-valuemin={0} aria-valuemax={activity.tasks.length} aria-valuenow={activity.completed}>
             <span
               style={{
                 width: `${activity.tasks.length ? Math.max(4, (activity.completed / activity.tasks.length) * 100) : 4}%`
@@ -85,8 +91,7 @@ export function ThinkingIndicator({
             />
           </div>
           <small>
-            {activity.completed} of {activity.tasks.length} completed
-            {activity.working > 0 ? ` · ${activity.working} working now` : ""}
+            AutoAI is comparing specialist outputs and will synthesize the final answer after the useful responses arrive.
           </small>
         </div>
       )}
