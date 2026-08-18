@@ -15,8 +15,10 @@ logger = logging.getLogger("auto_ai.nvidia_text")
 NON_CHAT_MARKERS = (
     "embed", "rerank", "guard", "safety", "moderation", "moderator", "clip",
     "tts", "speech", "asr", "whisper", "page-elements", "parse", "segmentation",
-    "biomedclip", "esm2", "protein", "image-generation", "diffusion",
+    "biomedclip", "esm2", "protein", "image-generation", "diffusion", "video-super-resolution",
+    "translate", "ocr",
 )
+MAX_FREE_POOL_MODELS = 20
 
 
 class NvidiaTextService:
@@ -43,7 +45,7 @@ class NvidiaTextService:
         return not any(marker in value for marker in NON_CHAT_MARKERS)
 
     def list_models(self, *, force_refresh: bool = False) -> list[str]:
-        """Return cached response-capable NVIDIA models; refresh at most every 5 minutes."""
+        """Return at most 20 response-capable NVIDIA models from the accessible catalog."""
         now = time.monotonic()
         with self._models_lock:
             if not force_refresh and self._models_cache and now - self._models_cache_at < self._models_cache_ttl:
@@ -54,6 +56,9 @@ class NvidiaTextService:
             body = response.json()
             ids = [str(item.get("id")) for item in body.get("data", []) if isinstance(item, dict) and item.get("id")]
             candidates = list(dict.fromkeys(model_id for model_id in ids if self._is_candidate(model_id)))
+            # Keep only the first 20 accessible chat-capable models. Selection inside
+            # this pool is capability-aware and happens per request in task_planner.
+            candidates = candidates[:MAX_FREE_POOL_MODELS]
             with self._models_lock:
                 self._models_cache = candidates
                 self._models_cache_at = time.monotonic()
@@ -69,40 +74,21 @@ class NvidiaTextService:
 
     @staticmethod
     def _normalise_content(content: Any) -> Any:
-        if isinstance(content, list):
-            return content
-        return str(content or "")
+        return content if isinstance(content, list) else str(content or "")
 
-    def complete(
-        self,
-        messages: list[dict[str, Any]],
-        *,
-        model: str,
-        max_tokens: int = 2048,
-        temperature: float = 0.2,
-        request_timeout: float = 60,
-    ) -> tuple[str, dict[str, int], str]:
+    def complete(self, messages: list[dict[str, Any]], *, model: str, max_tokens: int = 2048, temperature: float = 0.2, request_timeout: float = 60) -> tuple[str, dict[str, int], str]:
         payload = {
             "model": model,
-            "messages": [
-                {"role": str(message.get("role", "user")), "content": self._normalise_content(message.get("content"))}
-                for message in messages
-            ],
+            "messages": [{"role": str(message.get("role", "user")), "content": self._normalise_content(message.get("content"))} for message in messages],
             "temperature": temperature,
             "top_p": 0.9,
             "max_tokens": max_tokens,
             "stream": False,
         }
         try:
-            response = httpx.post(
-                f"{self._base_url()}/chat/completions",
-                headers=self._headers(),
-                json=payload,
-                timeout=request_timeout,
-            )
+            response = httpx.post(f"{self._base_url()}/chat/completions", headers=self._headers(), json=payload, timeout=request_timeout)
         except httpx.HTTPError as exc:
             raise RuntimeError(f"NVIDIA network failure: {type(exc).__name__}") from exc
-
         if response.status_code in {401, 403}:
             raise RuntimeError("NVIDIA authentication/permission failure")
         if response.status_code == 429:
@@ -116,7 +102,6 @@ class NvidiaTextService:
             except (ValueError, AttributeError):
                 pass
             raise RuntimeError(f"NVIDIA HTTP {response.status_code}: {detail}")
-
         try:
             body = response.json()
             message = body["choices"][0]["message"]
@@ -128,13 +113,8 @@ class NvidiaTextService:
                 raise ValueError("empty content")
         except (ValueError, KeyError, IndexError, TypeError) as exc:
             raise RuntimeError("NVIDIA returned an invalid/empty completion") from exc
-
         usage_raw = body.get("usage", {}) if isinstance(body, dict) else {}
-        usage = {
-            "prompt_tokens": int(usage_raw.get("prompt_tokens", 0) or 0),
-            "completion_tokens": int(usage_raw.get("completion_tokens", 0) or 0),
-            "total_tokens": int(usage_raw.get("total_tokens", 0) or 0),
-        }
+        usage = {"prompt_tokens": int(usage_raw.get("prompt_tokens", 0) or 0), "completion_tokens": int(usage_raw.get("completion_tokens", 0) or 0), "total_tokens": int(usage_raw.get("total_tokens", 0) or 0)}
         return result, usage, model
 
 
