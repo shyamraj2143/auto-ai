@@ -1,0 +1,46 @@
+/* Small, scoped visual adjustment: keep the composer in the same place and only reduce its vertical footprint. */
+html[data-auto-ai-ui="simple"] .chat-app-shell .composer-card {
+  gap: 2px !important;
+  padding: 5px 8px !important;
+}
+
+html[data-auto-ai-ui="simple"] .chat-app-shell .composer-top-row {
+  min-height: 34px !important;
+  height: 34px !important;
+}
+
+html[data-auto-ai-ui="simple"] .chat-app-shell .composer-plus-button,
+html[data-auto-ai-ui="simple"] .chat-app-shell .composer-pill,
+html[data-auto-ai-ui="simple"] .chat-app-shell .composer-inline-actions > button {
+  min-width: 36px !important;
+  width: 36px !important;
+  height: 36px !important;
+}
+
+html[data-auto-ai-ui="simple"] .chat-app-shell .composer-input-row {
+  min-height: 44px !important;
+  padding-block: 2px !important;
+}
+
+html[data-auto-ai-ui="simple"] .chat-app-shell .composer-textarea {
+  min-height: 40px !important;
+  max-height: 112px !important;
+  padding-block: 8px !important;
+  line-height: 1.35 !important;
+}
+
+html[data-auto-ai-ui="simple"] .chat-app-shell .composer-disclaimer {
+  margin-top: 5px !important;
+}
+
+/* Keep the activity header compact while making the actual generator unmistakable. */
+html[data-auto-ai-ui="simple"] .chat-app-shell .model-activity-title {
+  font-weight: 750;
+}
+
+html[data-auto-ai-ui="simple"] .chat-app-shell .model-activity-complete .model-activity-stage {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
