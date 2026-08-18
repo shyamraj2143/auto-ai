@@ -65,12 +65,10 @@ class ModelRegistry:
             }
             for provider, configured_defaults in provider_defaults.items():
                 available = discovered[provider]
-                if provider == "nvidia":
-                    configured = available[:MAX_PROVIDER_POOL]
+                if provider in {"groq", "nvidia"}:
+                    configured = [*sorted(available), *configured_defaults][:MAX_PROVIDER_POOL]
                 else:
                     configured = [*sorted(available), *configured_defaults] if settings.ORCHESTRATION_INCLUDE_ALL_AVAILABLE_MODELS else configured_defaults
-                if provider == "groq":
-                    configured = list(dict.fromkeys(configured))[:MAX_PROVIDER_POOL]
                 for index, model_id in enumerate(dict.fromkeys(configured)):
                     if not model_id:
                         continue
