@@ -1,4 +1,4 @@
-import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from "react";
+import { type ChangeEvent, type ClipboardEvent, type FormEvent, useEffect, useRef, useState } from "react";
 import { Camera, Check, ChevronDown, Code2, FileImage, FileText, Plus, SendHorizonal, Sparkles, Square, Trash2, X } from "lucide-react";
 import { AnimatePresence, motion } from "../../motion/staticMotion";
 import clsx from "clsx";
@@ -206,7 +206,10 @@ export function Composer({
   const loadedDraftKeyRef = useRef(draftStorageKey);
 
   const uploading = uploadTasks.some((task) => task.status === "uploading" || task.status === "processing");
-  const canSend = Boolean(draft.trim() || imageAttachments.length || selectedLibraryAttachments.length) && !disabled && !sending && !uploading;
+  // A document is already uploaded/selected by the time it reaches the composer.
+  // Allow sending even when the user has not typed an extra prompt yet.
+  const hasAttachment = Boolean(selectedDocuments.length || imageAttachments.length || selectedLibraryAttachments.length);
+  const canSend = Boolean(draft.trim() || hasAttachment) && !disabled && !sending && !uploading;
 
   useEffect(() => {
     imageAttachmentsRef.current = imageAttachments;
@@ -299,20 +302,22 @@ export function Composer({
     const imageFiles: ImageAttachment[] = [];
     const unsupported: string[] = [];
 
-    files.forEach((file) => {
+    files.forEach((file, index) => {
       if (isDocument(file)) {
         documentFiles.push(file);
         return;
       }
       if (isImage(file)) {
+        const filename = file.name || `pasted-image-${Date.now()}-${index}.png`;
+        const normalizedFile = file.name ? file : new File([file], filename, { type: file.type || "image/png", lastModified: Date.now() });
         imageFiles.push({
           id: crypto.randomUUID(),
-          file,
-          previewUrl: URL.createObjectURL(file)
+          file: normalizedFile,
+          previewUrl: URL.createObjectURL(normalizedFile)
         });
         return;
       }
-      unsupported.push(file.name);
+      unsupported.push(file.name || "Unnamed file");
     });
 
     if (imageFiles.length) {
@@ -329,6 +334,15 @@ export function Composer({
     if (unsupported.length) {
       setError(`Unsupported file: ${unsupported.join(", ")}`);
     }
+  }
+
+  function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const clipboardFiles = Array.from(event.clipboardData.files ?? []);
+    if (!clipboardFiles.length) return;
+    const supportedFiles = clipboardFiles.filter((file) => isImage(file) || isDocument(file));
+    if (!supportedFiles.length) return;
+    event.preventDefault();
+    void addFiles(supportedFiles);
   }
 
   async function submit(event?: FormEvent) {
@@ -446,7 +460,7 @@ export function Composer({
       onDrop={(event) => {
         event.preventDefault();
         setDragActive(false);
-        addFiles(Array.from(event.dataTransfer.files));
+        void addFiles(Array.from(event.dataTransfer.files));
       }}
     >
       <div className={clsx("composer-card compact-card crystal-surface", crystalEffects.surfaces && "is-crystal-enabled", dragActive && "composer-card-active")}>
@@ -572,6 +586,7 @@ export function Composer({
             aria-label="Message AutoAI"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
+            onPaste={handlePaste}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
