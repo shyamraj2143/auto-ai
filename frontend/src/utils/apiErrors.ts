@@ -5,11 +5,18 @@ export function loginErrorMessage(error: unknown) {
     if (error.status === 401) return "Email or password is incorrect.";
     if (error.status === 404) return "Login service is temporarily unavailable.";
     if (error.status === 422) return "Login request format is invalid.";
-    if (error.status && error.status >= 500) return "Server error. Please try again.";
-    if (["network_unavailable", "server_unreachable", "cors_blocked", "ssl_certificate_issue"].includes(error.kind)) {
-      return error.kind === "network_unavailable"
-        ? "You are offline. Check mobile data or Wi-Fi and try again."
-        : "Login timed out. Check your connection and try again.";
+    if (error.status && error.status >= 500) return "Auto-AI server error. Please try again.";
+    if (error.kind === "network_unavailable") {
+      return "Internet connection is unavailable. Check mobile data or Wi-Fi and try again.";
+    }
+    if (error.kind === "cors_blocked") {
+      return "Auto-AI server is reachable, but the app connection is blocked. Please retry.";
+    }
+    if (error.kind === "ssl_certificate_issue") {
+      return "Auto-AI server security connection failed. Please retry in a moment.";
+    }
+    if (error.kind === "server_unreachable") {
+      return "Auto-AI server is not responding right now. Your internet is available; please retry shortly.";
     }
   }
   return authErrorMessage(error, "Unable to log in");
