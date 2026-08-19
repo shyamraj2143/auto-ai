@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -7,6 +8,22 @@ from app.db.session import get_db
 
 
 router = APIRouter(tags=["health"])
+
+
+@router.get("/", include_in_schema=False)
+def root():
+    """Keep the public Railway backend URL useful when opened directly.
+
+    The backend is an API service, so the bare host is redirected to the
+    authoritative APK download endpoint instead of returning FastAPI 404.
+    """
+    return RedirectResponse(url=f"{settings.API_V1_STR}/download/apk", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+
+
+@router.get("/download", include_in_schema=False)
+def download_root():
+    """Compatibility shortcut for old/public APK download links."""
+    return RedirectResponse(url=f"{settings.API_V1_STR}/download/apk", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
 
 @router.get("/health")
