@@ -33,6 +33,16 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 DOCUMENT_EXTENSIONS = {".pdf", ".docx", ".txt"}
 CODE_EXTENSIONS = {".py", ".ts", ".tsx", ".js", ".jsx", ".java", ".kt", ".go", ".rs", ".css", ".html", ".json", ".md", ".yaml", ".yml", ".sql"}
 BLOCKED_EXTENSIONS = {".exe", ".dll", ".bat", ".cmd", ".com", ".msi", ".apk", ".jar", ".ps1", ".sh", ".scr"}
+VISION_FAILURE_MARKERS = (
+    "image unavailable",
+    "image is unavailable",
+    "unable to view",
+    "unable to access the image",
+    "image-analysis service",
+    "image analysis service",
+    "re-upload the image",
+    "could not load the image",
+)
 
 IMAGE_ANALYSIS_PROMPT = (
     "You are Auto-AI's dedicated visual-analysis specialist. Analyze the supplied image itself, not metadata. "
@@ -45,7 +55,7 @@ IMAGE_ANALYSIS_PROMPT = (
 
 
 def analyze_image_for_asset(data: bytes, filename: str, mime_type: str) -> tuple[str | None, dict]:
-    """Use the specialist vision model first; text-only models are fallback only."""
+    """Use NVIDIA VLM first and Groq vision only as a resilience fallback."""
     try:
         result = nvidia_vision_service.analyze_image(
             data,
@@ -57,25 +67,51 @@ def analyze_image_for_asset(data: bytes, filename: str, mime_type: str) -> tuple
         )
         return result[: settings.MAX_DOCUMENT_CONTEXT_CHARS * 4], {
             "analyzer": "nvidia",
-            "analyzer_model": "NVIDIA_VISION_MODEL",
+            "analyzer_model": settings.NVIDIA_VISION_MODEL if hasattr(settings, "NVIDIA_VISION_MODEL") else "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
             "analysis_type": "vision_ocr_scene_ui",
+            "vision_status": "ready",
         }
     except Exception as nvidia_error:
-        # Groq remains a resilience fallback, but it is never the primary image analyzer.
         try:
             result = groq_service.analyze_image(data, filename, IMAGE_ANALYSIS_PROMPT)
             return result[: settings.MAX_DOCUMENT_CONTEXT_CHARS * 4], {
                 "analyzer": "groq_fallback",
                 "analysis_type": "vision_ocr_scene_ui",
+                "vision_status": "ready",
                 "fallback_reason": type(nvidia_error).__name__,
             }
         except Exception as groq_error:
             return None, {
                 "analyzer": "unavailable",
                 "analysis_type": "vision_ocr_scene_ui",
+                "vision_status": "failed",
                 "nvidia_error": type(nvidia_error).__name__,
                 "groq_error": type(groq_error).__name__,
             }
+
+
+def _needs_vision_repair(asset: LibraryAsset) -> bool:
+    if asset.file_type != "image":
+        return False
+    if not asset.extracted_text:
+        return True
+    value = asset.extracted_text.lower()
+    return any(marker in value for marker in VISION_FAILURE_MARKERS) or (asset.metadata_json or {}).get("vision_status") == "failed"
+
+
+def _ensure_image_analysis(asset: LibraryAsset) -> None:
+    if not _needs_vision_repair(asset):
+        return
+    try:
+        data = library_storage.read(asset.storage_key)
+    except Exception:
+        return
+    extracted, vision_meta = analyze_image_for_asset(data, asset.display_name, asset.mime_type)
+    if extracted:
+        asset.extracted_text = extracted
+        asset.metadata_json = {**(asset.metadata_json or {}), **vision_meta}
+    else:
+        asset.metadata_json = {**(asset.metadata_json or {}), **vision_meta}
 
 
 def asset_or_404(db: Session, asset_id: str, user_id: str) -> LibraryAsset:
@@ -158,12 +194,8 @@ async def upload_asset(
         )
     )
     if existing:
-        # Old assets may predate NVIDIA vision extraction. Backfill their image analysis lazily.
-        if existing.file_type == "image" and not existing.extracted_text:
-            existing_data = library_storage.read(existing.storage_key)
-            extracted, vision_meta = analyze_image_for_asset(existing_data, existing.display_name, existing.mime_type)
-            existing.extracted_text = extracted
-            existing.metadata_json = {**(existing.metadata_json or {}), **vision_meta}
+        if existing.file_type == "image":
+            _ensure_image_analysis(existing)
             existing.updated_at = utc_now()
             db.commit()
             db.refresh(existing)
@@ -225,7 +257,12 @@ def list_assets(
 
 @router.get("/{asset_id}", response_model=LibraryAssetRead)
 def get_asset(asset_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return asset_or_404(db, asset_id, current_user.id)
+    asset = asset_or_404(db, asset_id, current_user.id)
+    if asset.file_type == "image":
+        _ensure_image_analysis(asset)
+        db.commit()
+        db.refresh(asset)
+    return asset
 
 
 @router.patch("/{asset_id}", response_model=LibraryAssetRead)
@@ -250,6 +287,8 @@ def delete_asset(asset_id: str, current_user: User = Depends(get_current_user), 
 @router.post("/{asset_id}/attach", response_model=LibraryAttachmentRead)
 def attach_asset(asset_id: str, payload: LibraryAttachRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     asset = asset_or_404(db, asset_id, current_user.id)
+    if asset.file_type == "image":
+        _ensure_image_analysis(asset)
     if payload.chat_id:
         chat = db.scalar(select(Chat).where(Chat.id == payload.chat_id, Chat.user_id == current_user.id))
         if not chat:
