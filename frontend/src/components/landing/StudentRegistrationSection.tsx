@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { CheckCircle2, Send, UserRound } from "lucide-react";
 import { useLocation } from "react-router-dom";
+import "./studentRegistrationSection.css";
 
 const ENDPOINT = import.meta.env.VITE_STUDENT_FORM_APPS_SCRIPT_URL as string | undefined;
 
