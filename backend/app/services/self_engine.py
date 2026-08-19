@@ -64,11 +64,7 @@ class SelfDevelopmentEngine:
             try:
                 results = web_search_service.search(topic, limit=5, timeout=10)
                 for result in results:
-                    findings.append({
-                        "topic": topic,
-                        "title": result.get("title", "")[:240],
-                        "url": result.get("url", ""),
-                    })
+                    findings.append({"topic": topic, "title": result.get("title", "")[:240], "url": result.get("url", "")})
             except Exception as exc:
                 logger.warning("self_engine research failed for %s: %s", topic, exc)
 
@@ -102,7 +98,7 @@ class SelfDevelopmentEngine:
         return state
 
     async def run_loop(self, stop_event: asyncio.Event) -> None:
-        interval = max(900, int(settings.SELF_ENGINE_INTERVAL_SECONDS))
+        interval = max(900, int(getattr(settings, "SELF_ENGINE_INTERVAL_SECONDS", 21600)))
         while not stop_event.is_set():
             try:
                 async with self._lock:
@@ -116,7 +112,7 @@ class SelfDevelopmentEngine:
 
     def snapshot(self) -> dict[str, Any]:
         state = self._read_state()
-        state["enabled"] = bool(settings.SELF_ENGINE_ENABLED)
+        state["enabled"] = bool(getattr(settings, "SELF_ENGINE_ENABLED", True))
         state["version"] = self.VERSION
         return state
 
