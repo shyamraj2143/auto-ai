@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 from threading import Thread
 from urllib.parse import urljoin
 
+from redis import Redis
+from redis.exceptions import RedisError
 from sqlalchemy import event, select
 from sqlalchemy.orm import Session
 
@@ -15,6 +17,10 @@ from app.services.device_token_security import decrypt_token
 from app.services.firebase_notifications import firebase_notification_service
 from app.services.user_avatar import public_avatar
 from app.services.notification_destination import with_notification_destination
+
+
+_presence_redis: Redis | None = None
+PRESENCE_KEY_PREFIX = "autoai:app_presence:"
 
 
 def _public_avatar(user: User) -> str:
@@ -87,8 +93,28 @@ def send_chat_message_notifications(db: Session, recipient_id: str, sender: User
     return sent
 
 
+def _is_app_foreground(user_id: str) -> bool:
+    """Best-effort cross-worker foreground check. Missing Redis state means notify."""
+    if not settings.redis_url:
+        return False
+    global _presence_redis
+    try:
+        if _presence_redis is None:
+            _presence_redis = Redis.from_url(
+                settings.redis_url,
+                decode_responses=True,
+                socket_connect_timeout=2,
+                socket_timeout=2,
+                health_check_interval=30,
+            )
+        state = _presence_redis.get(f"{PRESENCE_KEY_PREFIX}{user_id}")
+        return state == "foreground"
+    except (RedisError, OSError, TypeError, ValueError):
+        return False
+
+
 def _send_ai_response_ready(generation_id: str) -> None:
-    """Send a durable FCM notification after a chat generation commits successfully."""
+    """Send a durable FCM notification only when the user is not in the app."""
     try:
         with SessionLocal() as db:
             generation = db.get(ChatGeneration, generation_id)
@@ -100,6 +126,16 @@ def _send_ai_response_ready(generation_id: str) -> None:
             user = db.get(User, generation.user_id)
             if not user or not firebase_notification_service.configured:
                 return
+
+            # The frontend sends a short-lived foreground heartbeat. Do not
+            # interrupt an active app session with a redundant system alert.
+            if _is_app_foreground(user.id):
+                payload["ai_response_notification_suppressed"] = True
+                generation.request_payload = payload
+                db.add(generation)
+                db.commit()
+                return
+
             devices = db.scalars(
                 select(UserDevice).where(
                     UserDevice.user_id == user.id,
@@ -157,7 +193,7 @@ def _queue_ai_completion_notifications(session: Session, flush_context) -> None:
     for obj in session.dirty:
         if isinstance(obj, ChatGeneration) and obj.status == "completed":
             payload = dict(obj.request_payload or {})
-            if not payload.get("ai_response_notification_sent"):
+            if not payload.get("ai_response_notification_sent") and not payload.get("ai_response_notification_suppressed"):
                 queued.add(obj.id)
 
 
