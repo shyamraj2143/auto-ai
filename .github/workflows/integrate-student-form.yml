@@ -1,0 +1,65 @@
+name: Integrate student registration section
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/src/components/landing/StudentRegistrationSection.tsx"
+      - "frontend/src/components/landing/studentRegistrationSection.css"
+      - ".github/workflows/integrate-student-form.yml"
+      - "frontend/src/App.tsx"
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Integrate into landing page runtime
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("frontend/src/App.tsx")
+          text = path.read_text(encoding="utf-8")
+          marker = 'import { StudentRegistrationSection } from "./components/landing/StudentRegistrationSection";'
+          if marker not in text:
+              anchor = 'import { AnnouncementBanner } from "./components/common/AnnouncementBanner";'
+              if anchor not in text:
+                  raise SystemExit("Could not find AnnouncementBanner import")
+              text = text.replace(anchor, anchor + "\n" + marker, 1)
+
+          mount = "                  <StudentRegistrationSection />"
+          if mount not in text:
+              anchor = "                  <AnnouncementBanner />"
+              if anchor not in text:
+                  raise SystemExit("Could not find AnnouncementBanner mount")
+              text = text.replace(anchor, anchor + "\n" + mount, 1)
+
+          path.write_text(text, encoding="utf-8")
+
+      - name: Import registration styles
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path("frontend/src/components/landing/StudentRegistrationSection.tsx")
+          text = path.read_text(encoding="utf-8")
+          marker = 'import "./studentRegistrationSection.css";'
+          if marker not in text:
+              anchor = 'import { useLocation } from "react-router-dom";'
+              if anchor not in text:
+                  raise SystemExit("Could not find useLocation import")
+              text = text.replace(anchor, anchor + "\n" + marker, 1)
+              path.write_text(text, encoding="utf-8")
+
+      - name: Commit integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/App.tsx frontend/src/components/landing/StudentRegistrationSection.tsx
+          git diff --cached --quiet || git commit -m "feat: mount student registration on landing page"
+          git push
