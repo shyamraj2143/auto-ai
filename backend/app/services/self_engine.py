@@ -8,9 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from app.core.config import settings
-from app.db.session import SessionLocal
 from app.services.orchestration.model_registry import model_registry
-from app.services.web_search import web_search_service
+from app.services.web_search_service import web_search_service
 
 logger = logging.getLogger("auto_ai.self_engine")
 
@@ -25,16 +24,15 @@ RESEARCH_TOPICS = (
 class SelfDevelopmentEngine:
     """Bounded autonomous improvement loop.
 
-    It continuously researches public technical changes, refreshes the model registry,
-    records improvement candidates, and adapts routing/profile signals. It deliberately
-    does not execute arbitrary generated source code or deploy unreviewed code changes.
+    It researches public technical changes, refreshes the model registry and records
+    improvement candidates. It never executes arbitrary generated source code or
+    deploys an unreviewed code change.
     """
 
     VERSION = "AutoAI-SelfEngine-v1"
 
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
-        self._last_run: str | None = None
 
     @property
     def state_path(self) -> Path:
@@ -55,44 +53,32 @@ class SelfDevelopmentEngine:
         findings: list[dict[str, Any]] = []
         proposals: list[dict[str, Any]] = []
 
-        # Keep model metadata fresh without waiting for a user request.
         try:
             model_registry.refresh(force=True)
             registry_status = "refreshed"
-        except Exception as exc:  # pragma: no cover - provider/registry dependent
+        except Exception as exc:
             registry_status = f"refresh_failed: {type(exc).__name__}"
             logger.warning("self_engine model registry refresh failed: %s", exc)
 
-        with SessionLocal() as db:
-            for topic in RESEARCH_TOPICS:
-                try:
-                    bundle = web_search_service.execute(
-                        db,
-                        user_id="self-engine",
-                        query=topic,
-                        mode="research",
-                        record_history=False,
-                    )
-                    for source in bundle.sources[:5]:
-                        findings.append({
-                            "topic": topic,
-                            "title": source.title,
-                            "url": source.url,
-                            "source": source.source,
-                            "confidence": source.credibility_score,
-                            "snippet": source.snippet[:700],
-                        })
-                except Exception as exc:  # keep one provider/search failure from stopping the loop
-                    logger.warning("self_engine research failed for %s: %s", topic, exc)
+        for topic in RESEARCH_TOPICS:
+            try:
+                results = web_search_service.search(topic, limit=5, timeout=10)
+                for result in results:
+                    findings.append({
+                        "topic": topic,
+                        "title": result.get("title", "")[:240],
+                        "url": result.get("url", ""),
+                    })
+            except Exception as exc:
+                logger.warning("self_engine research failed for %s: %s", topic, exc)
 
         if findings:
-            domains = sorted({item["source"] for item in findings if item.get("source")})
             proposals.extend([
                 {
-                    "type": "dependency_or_api_review",
+                    "type": "provider_review",
                     "title": "Review current AI provider/model changes",
-                    "reason": f"Self-engine found {len(findings)} current technical sources across {len(domains)} domains.",
-                    "action": "Validate provider model IDs, vision capabilities, limits and fallbacks before changing production routing.",
+                    "reason": f"Self-engine found {len(findings)} current technical sources.",
+                    "action": "Validate model IDs, vision capabilities, limits and fallbacks before changing production routing.",
                     "requires_approval": True,
                 },
                 {
@@ -113,7 +99,6 @@ class SelfDevelopmentEngine:
             "proposals": proposals[:20],
         })
         self._write_state(state)
-        self._last_run = state["last_run_at"]
         return state
 
     async def run_loop(self, stop_event: asyncio.Event) -> None:
