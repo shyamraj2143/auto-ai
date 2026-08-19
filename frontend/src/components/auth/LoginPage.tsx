@@ -127,17 +127,17 @@ export function LoginPage() {
         <h1>{uiText?.["auth.login.title"] || "Welcome back."}</h1>
         <p>Pick up the thread with your chats, documents, memory, and model settings intact.</p>
       </section>
-      <form onSubmit={onSubmit} className="auth-card">
+      <form onSubmit={onSubmit} className="auth-card" autoComplete="on">
         <div className="mb-6">
           <p className="text-xs uppercase text-cyan-200">Login</p>
           <h2 className="mt-2 text-2xl font-semibold text-white">Enter Auto-AI</h2>
         </div>
-        {error && <p className="mb-4 rounded-md border border-red-300/30 bg-red-500/10 px-3 py-2 text-sm text-red-100">{error}</p>}
+        {error && <p className="mb-4 rounded-md border border-red-300/30 bg-red-500/10 px-3 py-2 text-sm text-red-100" role="alert">{error}</p>}
         <GoogleSignInButton disabled={loading} intent="signin" onCredential={handleGoogleCredential} onError={handleGoogleError} />
         <div className="auth-divider"><span>or use email</span></div>
         <label className="mb-3 block">
           <span className="mb-1 block text-sm font-medium text-slate-200">{uiText?.["auth.login.email"] || "Email"}</span>
-          <input className="input-dark" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
+          <input className="input-dark" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username email" inputMode="email" required />
         </label>
         <label className="mb-2 block">
           <span className="mb-1 block text-sm font-medium text-slate-200">{uiText?.["auth.login.password"] || "Password"}</span>
@@ -148,7 +148,7 @@ export function LoginPage() {
             <input type="checkbox" checked={rememberDevice} onChange={(event) => setRememberDevice(event.target.checked)} />
             <span>
               <strong>Keep me signed in securely</strong>
-              <small>Next time, open AutoAI and continue without entering the password again.</small>
+              <small>Auto-AI keeps a revocable encrypted session on this device, so you normally won't need to enter the password again.</small>
             </span>
           </label>
           <button className="auth-link-button" type="button" onClick={toggleForgotPassword}>
@@ -156,7 +156,7 @@ export function LoginPage() {
             Forgot password?
           </button>
         </div>
-        <p className="auth-session-note"><ShieldCheck size={15} />Your password is never saved. AutoAI stores only a revocable session token; Android uses encrypted secure storage.</p>
+        <p className="auth-session-note"><ShieldCheck size={15} />Your password is never sent to Auto-AI for storage. The app stores a revocable session token in Android encrypted storage, and Android/browser password managers can offer to save the password for autofill.</p>
         {forgotOpen && (
           <div className="auth-reset-panel">
             <label className="mb-3 block">
