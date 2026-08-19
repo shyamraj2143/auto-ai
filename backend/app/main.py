@@ -177,12 +177,7 @@ def get_trusted_hosts() -> list[str]:
         "localhost",
         "127.0.0.1",
         "testserver",
-        # Current Railway public backend domain. Keep this fallback so a Railway
-        # deployment cannot fail with "Invalid host header" when Railway's
-        # RAILWAY_PUBLIC_DOMAIN variable is not injected into the container.
         "auto-ai-app-download.up.railway.app",
-        # Trust Railway generated subdomains as well; useful when Railway rotates
-        # the generated public domain for a new environment/deployment.
         "*.up.railway.app",
     }
     hosts.update(host.strip().lower() for host in settings.TRUSTED_HOSTS if host.strip() and host.strip() != "*")
@@ -210,8 +205,6 @@ def create_app() -> FastAPI:
     app.add_middleware(RelationshipPayloadLimitMiddleware)
     app.add_middleware(RequestIdMiddleware)
 
-    # Keep CORS outside the rate limiter so 429 and error responses remain readable
-    # to the configured browser clients instead of surfacing as opaque failures.
     app.add_middleware(InMemoryRateLimitMiddleware)
     app.add_middleware(
         CORSMiddleware,
@@ -265,10 +258,13 @@ def create_app() -> FastAPI:
         logger.info("calling_redis configured=%s", presence_service.configured)
         redis_reachable = await presence_service.check(log_failure=True) if presence_service.configured else False
         if redis_reachable:
-            logger.info("calling_redis reachable=true websocket_ready=%s", settings.CALL_FEATURE_ENABLED)
+            logger.info(
+                "calling_realtime redis_reachable=true call_websocket_ready=%s live_websocket_ready=true calls_rest_available=true",
+                settings.CALL_FEATURE_ENABLED,
+            )
         else:
             logger.warning(
-                "calling_redis reachable=false websocket_ready=false calls_rest_available=true"
+                "calling_realtime redis_reachable=false call_websocket_ready=false live_websocket_ready=true calls_rest_available=true"
             )
         stop_event = asyncio.Event()
         app.state.call_stop_event = stop_event
