@@ -1,0 +1,31 @@
+/* Prevent response audit/status chips from covering the composer on mobile. */
+.response-audit {
+  position: relative !important;
+  inset: auto !important;
+  width: min(100%, 720px) !important;
+  max-width: 100% !important;
+  margin: 8px auto 12px !important;
+  z-index: 3 !important;
+  pointer-events: auto;
+}
+
+.response-audit-trigger {
+  max-width: 100%;
+  min-height: 36px;
+}
+
+.response-audit-log {
+  max-width: 100%;
+  max-height: min(48vh, 420px);
+  overflow: auto;
+}
+
+@media (max-width: 768px) {
+  .response-audit {
+    margin: 6px 0 10px !important;
+  }
+  .response-audit-trigger {
+    width: 100%;
+    min-height: 34px;
+  }
+}

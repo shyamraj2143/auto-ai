@@ -188,7 +188,7 @@ export function ChatPage() {
   const deltaTargetRef = useRef<{ chatId: string; messageId: string } | null>(null);
   const deltaResolversRef = useRef<Array<() => void>>([]);
   const queuedContentRef = useRef<Record<string, string>>({});
-  const generationPollTimerRef = useRef<number | null>(null);
+  const generationPollTimersRef = useRef<Record<string, number>>({});
   const activityStreamControllerRef = useRef<AbortController | null>(null);
   const lastOptionsRef = useRef<ComposerOptions>(DEFAULT_OPTIONS);
   const localRetryRef = useRef<Record<string, LocalRetryRequest>>({});
@@ -313,7 +313,8 @@ export function ChatPage() {
   useEffect(() => {
     return () => {
       if (deltaTimerRef.current) window.cancelAnimationFrame(deltaTimerRef.current);
-      if (generationPollTimerRef.current) window.clearTimeout(generationPollTimerRef.current);
+      Object.values(generationPollTimersRef.current).forEach((timer) => window.clearTimeout(timer));
+      generationPollTimersRef.current = {};
       activityStreamControllerRef.current?.abort();
     };
   }, []);
@@ -477,8 +478,11 @@ export function ChatPage() {
     return status === "pending" || status === "running" || status === "cancel_requested";
   }
 
+  function generationClientId(generation: ChatGeneration) {
+    return clientMessageIdOf(generation.user_message) || clientMessageIdOf(generation.assistant_message);
+  }
+
   function applyGenerationSnapshot(generation: ChatGeneration) {
-    if (!isGenerationForActiveRequest(generation, activeRequestRef.current)) return;
     const running = isRunningGenerationStatus(generation.status);
     const visible =
       activeChatRef.current?.id === generation.chat_id ||
@@ -489,7 +493,7 @@ export function ChatPage() {
     if (generation.status === "completed") {
       setActiveGeneration(null);
       setRequestState("completed");
-      if (activeRequestRef.current?.chatId === generation.chat_id) activeRequestRef.current = null;
+      if (activeRequestRef.current?.chatId === generation.chat_id && activeRequestRef.current.clientMessageId === generationClientId(generation)) activeRequestRef.current = null;
     } else {
       setActiveGeneration(generation);
       setRequestState(
@@ -570,23 +574,27 @@ export function ChatPage() {
     }
   }
 
-  function stopGenerationPolling() {
-    if (generationPollTimerRef.current) {
-      window.clearTimeout(generationPollTimerRef.current);
-      generationPollTimerRef.current = null;
+  function stopGenerationPolling(generationId?: string) {
+    if (generationId) {
+      const timer = generationPollTimersRef.current[generationId];
+      if (timer) window.clearTimeout(timer);
+      delete generationPollTimersRef.current[generationId];
+      return;
     }
+    Object.values(generationPollTimersRef.current).forEach((timer) => window.clearTimeout(timer));
+    generationPollTimersRef.current = {};
   }
 
   function startGenerationPolling(generationId: string) {
-    stopGenerationPolling();
+    stopGenerationPolling(generationId);
     const tick = async () => {
       const keepPolling = await pollGeneration(generationId);
       if (!keepPolling) {
-        stopGenerationPolling();
+        stopGenerationPolling(generationId);
         return;
       }
       const retryDelay = navigator.onLine === false ? 1800 : document.hidden ? 1200 : 280;
-      generationPollTimerRef.current = window.setTimeout(tick, retryDelay);
+      generationPollTimersRef.current[generationId] = window.setTimeout(tick, retryDelay);
     };
     void tick();
   }
@@ -595,8 +603,7 @@ export function ChatPage() {
     if (!token) return;
     try {
       const generations = await api.activeChatGenerations(token);
-      const generation = generations[0];
-      if (!generation) {
+      if (!generations.length) {
         if (activeGenerationRef.current && isRunningGenerationStatus(activeGenerationRef.current.status)) {
           setStreaming(false);
           setSubmittingGeneration(false);
@@ -605,13 +612,13 @@ export function ChatPage() {
           setActiveGeneration(null);
           setRequestState("idle");
         }
-        if (activeChatRef.current?.id) {
-          await openChat(activeChatRef.current.id);
-        }
+        if (activeChatRef.current?.id) await openChat(activeChatRef.current.id);
         return;
       }
-      applyGenerationSnapshot(generation);
-      startGenerationPolling(generation.id);
+      generations.forEach((generation) => {
+        applyGenerationSnapshot(generation);
+        startGenerationPolling(generation.id);
+      });
     } catch (error) {
       console.warn("[Auto-AI Streaming] Unable to recover active generation.", error);
     }
@@ -873,7 +880,31 @@ export function ChatPage() {
 
   async function handleSend(text: string, options: ComposerOptions, imageFiles: File[] = []) {
     const trimmedText = text.trim();
-    if (!token || visibleChatBusy || (!trimmedText && !imageFiles.length && !selectedLibraryAttachments.length)) return false;
+    if (!token || (!trimmedText && !imageFiles.length && !selectedLibraryAttachments.length)) return false;
+
+    const preflightClientMessageId = crypto.randomUUID();
+    const preflightRequestId = crypto.randomUUID();
+    const preflightAssistantId = `local-assistant-${preflightClientMessageId}`;
+    const preflightUserId = `local-user-${preflightClientMessageId}`;
+    activeRequestRef.current = {
+      requestId: preflightRequestId,
+      assistantId: preflightAssistantId,
+      chatId: activeChat?.id,
+      clientMessageId: preflightClientMessageId
+    };
+    const immediateUser: Message = {
+      id: preflightUserId,
+      role: "user",
+      content: trimmedText,
+      message_metadata: { client_message_id: preflightClientMessageId },
+      created_at: nowIso()
+    };
+    const immediateMessages = appendOptimisticMessages(messagesRef.current, [immediateUser]);
+    messagesRef.current = immediateMessages;
+    setMessages(immediateMessages);
+    if (activeChat?.id) syncActiveChatMessages(activeChat.id, immediateMessages);
+    window.requestAnimationFrame(scrollToBottom);
+
     if (trimmedText) {
       try {
         const service = await api.interpretServiceRequest(token, {
@@ -900,6 +931,7 @@ export function ChatPage() {
           }
           void refreshChats().catch(() => undefined);
           window.requestAnimationFrame(scrollToBottom);
+          activeRequestRef.current = null;
           return true;
         }
       } catch (error) {
@@ -918,7 +950,7 @@ export function ChatPage() {
             {id:`local-intent-assistant-${interpreted.event_id}`,role:"assistant",content:interpreted.decision.user_message,message_metadata:{intent:interpreted.intent,intent_event_id:interpreted.event_id,intent_interaction:interpreted.decision.interaction},created_at:createdAt}
           ];
           const next=appendOptimisticMessages(messagesRef.current,intentMessages);
-          messagesRef.current=next;setMessages(next);if(activeChat?.id)syncActiveChatMessages(activeChat.id,next);window.requestAnimationFrame(scrollToBottom);return true;
+          messagesRef.current=next;setMessages(next);if(activeChat?.id)syncActiveChatMessages(activeChat.id,next);window.requestAnimationFrame(scrollToBottom);activeRequestRef.current=null;return true;
         }
       } catch(error) {
         showChatNotice(error instanceof Error?error.message:"Intent analysis failed safely. No action was executed.");
@@ -935,6 +967,7 @@ export function ChatPage() {
       } catch (error) {
         setAssistantResponse({ normalized_user_text: trimmedText, mode: "error", intent: "error", assistant_reply: error instanceof Error ? error.message : "AI Assistant अभी Internet से connect नहीं हो पा रहा है। Existing alarms और manual controls काम करते रहेंगे।", emotion: {}, needs_clarification: false, actions: [], model: "groq" });
       } finally { setAssistantProcessing(false); }
+      activeRequestRef.current = null;
       return true;
     }
     const documentIds = settings.memoryEnabled ? [...selectedDocumentIds] : [];
@@ -958,14 +991,14 @@ export function ChatPage() {
       imageFiles,
       attachments,
       internalContext: null,
-      clientMessageId: crypto.randomUUID(),
-      userMessageId: "",
+      clientMessageId: preflightClientMessageId,
+      userMessageId: preflightUserId,
       documentIds,
       libraryAssetIds: selectedLibraryAttachments.map((item) => item.asset_id),
-      requestId: crypto.randomUUID()
+      requestId: preflightRequestId
     };
-    const assistantId = `local-assistant-${request.clientMessageId}`;
-    const userId = `local-user-${request.clientMessageId}`;
+    const assistantId = preflightAssistantId;
+    const userId = preflightUserId;
     request.userMessageId = userId;
     const pendingMessages = optimisticMessages(request, assistantId);
     lastOptionsRef.current = options;
