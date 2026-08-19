@@ -1,0 +1,156 @@
+/* Mobile chat reliability/geometry overrides. Loaded with the chat activity component. */
+
+.chat-app-shell .chat-workspace > section {
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+.chat-app-shell .chat-workspace .chat-scroll {
+  position: relative !important;
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior-y: contain;
+}
+
+/* The activity panel must participate in normal flex flow. Never float it over messages/composer. */
+.chat-app-shell .chat-workspace .model-activity-panel,
+.chat-app-shell .chat-workspace .model-activity-panel-raised {
+  position: relative !important;
+  inset: auto !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  float: none !important;
+  transform: none !important;
+  flex: 0 0 auto !important;
+  width: min(calc(100% - 24px), 760px) !important;
+  max-width: 760px !important;
+  max-height: min(32dvh, 270px) !important;
+  margin: 6px auto 8px !important;
+  overflow: hidden !important;
+  z-index: 6 !important;
+}
+
+.chat-app-shell .chat-workspace .model-activity-panel .model-activity-body,
+.chat-app-shell .chat-workspace .model-activity-panel-raised .model-activity-body {
+  max-height: min(22dvh, 190px) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain;
+}
+
+.chat-app-shell .chat-workspace .composer-shell {
+  position: relative !important;
+  inset: auto !important;
+  flex: 0 0 auto !important;
+  z-index: 8 !important;
+}
+
+/* Inactive composer = one compact input row. Preset/toolbar appears only after interaction. */
+.chat-app-shell .chat-workspace .composer-shell:not(.composer-shell-active) .compact-toolbar {
+  display: none !important;
+}
+
+.chat-app-shell .chat-workspace .composer-shell:not(.composer-shell-active) .composer-card {
+  min-height: 54px !important;
+  height: 54px !important;
+  padding: 4px 8px !important;
+  gap: 0 !important;
+  border-radius: 18px !important;
+}
+
+.chat-app-shell .chat-workspace .composer-shell:not(.composer-shell-active) .composer-input-row {
+  min-height: 44px !important;
+  height: 44px !important;
+}
+
+.chat-app-shell .chat-workspace .composer-shell:not(.composer-shell-active) .composer-textarea {
+  min-height: 40px !important;
+  height: 40px !important;
+  max-height: 40px !important;
+  padding: 8px 6px !important;
+  overflow: hidden !important;
+}
+
+.chat-app-shell .chat-workspace .composer-shell:not(.composer-shell-active) .composer-inline-actions > button,
+.chat-app-shell .chat-workspace .composer-shell:not(.composer-shell-active) .composer-inline-actions > * {
+  width: 38px !important;
+  min-width: 38px !important;
+  height: 38px !important;
+}
+
+.chat-app-shell .chat-workspace .composer-shell:not(.composer-shell-active) .composer-plus-button,
+.chat-app-shell .chat-workspace .composer-shell:not(.composer-shell-active) .composer-pill {
+  min-width: 38px !important;
+  width: 38px !important;
+  height: 38px !important;
+}
+
+/* Active composer expands just enough to expose the preset selector and attachments. */
+.chat-app-shell .chat-workspace .composer-shell-active .compact-toolbar {
+  display: flex !important;
+}
+
+.chat-app-shell .chat-workspace .composer-shell-active .composer-card {
+  min-height: 92px !important;
+  height: auto !important;
+}
+
+@media (max-width: 640px) {
+  .chat-app-shell .chat-workspace .model-activity-panel,
+  .chat-app-shell .chat-workspace .model-activity-panel-raised {
+    width: calc(100% - 16px) !important;
+    max-height: 30dvh !important;
+    margin: 5px auto 7px !important;
+  }
+
+  .chat-app-shell .chat-workspace .model-activity-panel .model-activity-body,
+  .chat-app-shell .chat-workspace .model-activity-panel-raised .model-activity-body {
+    max-height: 18dvh !important;
+  }
+
+  .chat-app-shell .chat-workspace .composer-shell {
+    padding-top: 4px !important;
+    padding-bottom: max(6px, env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .chat-app-shell .chat-workspace .composer-shell:not(.composer-shell-active) .composer-card {
+    min-height: 50px !important;
+    height: 50px !important;
+    border-radius: 17px !important;
+  }
+
+  .chat-app-shell .chat-workspace .composer-shell:not(.composer-shell-active) .composer-input-row {
+    height: 42px !important;
+    min-height: 42px !important;
+  }
+
+  .chat-app-shell .chat-workspace .composer-shell:not(.composer-shell-active) .composer-textarea {
+    height: 38px !important;
+    min-height: 38px !important;
+    max-height: 38px !important;
+    font-size: 14px !important;
+  }
+
+  .chat-app-shell .chat-workspace .composer-shell-active .composer-card {
+    min-height: 86px !important;
+  }
+}
+
+@media (max-width: 380px) {
+  .chat-app-shell .chat-workspace .model-activity-panel .model-activity-header,
+  .chat-app-shell .chat-workspace .model-activity-panel-raised .model-activity-header {
+    min-height: 48px !important;
+  }
+
+  .chat-app-shell .chat-workspace .composer-shell:not(.composer-shell-active) .composer-card {
+    min-height: 48px !important;
+    height: 48px !important;
+  }
+}
