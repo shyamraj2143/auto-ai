@@ -23,10 +23,9 @@ ROLE_LABELS = {
 MEDIUM_ROLES = ["primary", "technical", "facts", "alternative", "structure", "tone"]
 HIGH_ROLES = ["primary", "technical", "facts", "logic", "alternative", "evidence", "research", "structure", "tone"]
 DEEP_RESEARCH_ROLES = ["research", "evidence", "technical", "facts", "counterpoint", "logic", "citations", "primary", "structure"]
+VISION_ROLES = ["primary", "technical", "facts", "structure", "alternative"]
 
 # These are pool limits, not a requirement to call all 40 models for every request.
-# Selection is capability-aware. Deep Research may use the full 20+20 pool; faster
-# presets use a smaller subset to preserve latency and provider rate limits.
 PROVIDER_COUNTS = {
     IntelligenceMode.INSTANT: (1, 1),
     IntelligenceMode.MEDIUM: (3, 3),
@@ -49,14 +48,14 @@ def _specialist_sort_key(record: ModelRecord, analysis: RequestAnalysis) -> tupl
         fit = 0 if record.supports_vision else 1
     else:
         fit = 0
-    # Lower latency first for general/instant work; quality first for hard tasks.
     latency = record.latency_weight if analysis.complexity != "high" else -record.quality_weight
     return (fit, latency, -record.quality_weight, record.priority)
 
 
 def _provider_specialists(provider: str, mode: IntelligenceMode, analysis: RequestAnalysis, count: int) -> list[ModelRecord]:
     records = model_registry.eligible(mode, provider=provider)
-    records = [record for record in records if provider != "nvidia" or record.actual_model_id]
+    if analysis.intent == "vision":
+        records = [record for record in records if record.supports_vision]
     return sorted(records, key=lambda item: _specialist_sort_key(item, analysis))[: min(count, MAX_PROVIDER_POOL)]
 
 
@@ -99,7 +98,9 @@ class TaskPlanner:
         if not records:
             records = model_registry.eligible(mode)[:2]
 
-        if mode == IntelligenceMode.INSTANT:
+        if analysis.intent == "vision":
+            roles = VISION_ROLES
+        elif mode == IntelligenceMode.INSTANT:
             roles = ["quick"]
         elif mode == IntelligenceMode.MEDIUM:
             roles = MEDIUM_ROLES
@@ -122,6 +123,14 @@ class TaskPlanner:
             if mode == IntelligenceMode.CODING and role_key in {"primary", "technical"}:
                 role = "Coding implementation specialist" if role_key == "primary" else "Code review and security specialist"
                 label = "Preparing the primary implementation" if role_key == "primary" else "Reviewing bugs, security, and corrections"
+            elif analysis.intent == "vision":
+                role, label = {
+                    "primary": ("Visual analysis specialist", "Reading the image and extracting visible details"),
+                    "technical": ("Screenshot/OCR reviewer", "Checking text, UI state, and visual accuracy"),
+                    "facts": ("Visual fact checker", "Cross-checking visible facts and uncertainty"),
+                    "structure": ("Visual response organizer", "Organizing the image findings"),
+                    "alternative": ("Visual interpretation reviewer", "Comparing plausible interpretations"),
+                }[role_key]
             else:
                 role, label = ROLE_LABELS[role_key]
             visual_instruction = (
