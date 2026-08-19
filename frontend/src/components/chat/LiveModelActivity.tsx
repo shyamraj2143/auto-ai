@@ -3,6 +3,7 @@ import { Check, ChevronDown, ChevronUp, Circle, Clock3, Square, TriangleAlert, X
 import clsx from "clsx";
 import type { ChatGeneration, OrchestrationActivityEvent } from "../../types";
 import "./liveModelActivity.css";
+import "./chatMobileFixes.css";
 
 const MODE_LABELS: Record<string, string> = {
   instant: "Instant Intelligence",
