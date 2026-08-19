@@ -179,9 +179,6 @@ class Settings(BaseSettings):
     RESPONSE_CACHE_MAX_ENTRIES: int = 500
     RESPONSE_CACHE_MAX_ITEM_CHARS: int = 100_000
 
-    # Autonomous research/improvement loop. It is intentionally bounded: it may
-    # research, refresh model metadata and create proposals, but never executes
-    # generated source code or deploys changes without review.
     SELF_ENGINE_ENABLED: bool = True
     SELF_ENGINE_INTERVAL_SECONDS: int = Field(default=21600, ge=900, le=604800)
 
@@ -260,9 +257,41 @@ class Settings(BaseSettings):
         return bool(path.is_absolute() and any(part in {"data", "database", "persistent"} for part in path.parts))
 
     @property
+    def frontend_url(self) -> str:
+        """Backward-compatible lowercase URL accessor used by existing services."""
+        return str(self.FRONTEND_URL or DEFAULT_FRONTEND_URL).rstrip("/")
+
+    @property
+    def backend_url(self) -> str:
+        """Return the effective public backend URL, normalised for callers."""
+        configured = (self.BACKEND_URL or "").strip().strip('"').strip("'").rstrip("/")
+        if configured:
+            if not re.match(r"^https?://", configured, re.IGNORECASE):
+                configured = f"https://{configured}"
+            return configured
+        railway_domain = (self.RAILWAY_PUBLIC_DOMAIN or "").strip().strip('"').strip("'").rstrip("/")
+        if railway_domain:
+            if not re.match(r"^https?://", railway_domain, re.IGNORECASE):
+                railway_domain = f"https://{railway_domain}"
+            return railway_domain
+        return DEFAULT_BACKEND_URL
+
+    @property
+    def razorpay_callback_url(self) -> str | None:
+        return self.RAZORPAY_CALLBACK_URL
+
+    @property
+    def razorpay_failure_url(self) -> str | None:
+        return self.RAZORPAY_FAILURE_URL
+
+    @property
     def redis_url(self) -> str | None:
         """Backward-compatible lowercase accessor for Redis URL consumers."""
         return self.REDIS_URL
+
+    @property
+    def turn_configured(self) -> bool:
+        return bool(self.TURN_SERVER_URLS or (self.METERED_DOMAIN and self.METERED_TURN_API_KEY))
 
     @property
     def is_production(self) -> bool:
