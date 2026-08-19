@@ -119,12 +119,34 @@ class ModelRegistry:
 
     @staticmethod
     def _discover_groq() -> set[str]:
-        try:
-            models = groq_service._client().models.list()
-            return {str(item.id) for item in getattr(models, "data", []) if getattr(item, "id", None)}
-        except Exception as exc:
-            logger.warning("model_registry_discovery provider=groq success=false error_type=%s", type(exc).__name__)
+        """Discover Groq models without depending on a specific Groq SDK surface.
+
+        Older/newer Groq SDK releases have differed in their model-listing API.
+        The production registry should not become empty just because that SDK
+        surface changes, so use the stable OpenAI-compatible HTTP endpoint and
+        fall back to the configured model pool when discovery is unavailable.
+        """
+        configured = {item for item in (*settings.ORCHESTRATION_GROQ_MODELS, settings.GROQ_MODEL, settings.GROQ_SEARCH_MODEL, settings.GROQ_VISION_MODEL) if item}
+        api_key = settings.groq_api_key
+        if not api_key:
             return set()
+        try:
+            response = httpx.get(
+                "https://api.groq.com/openai/v1/models",
+                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=8,
+            )
+            response.raise_for_status()
+            body = response.json()
+            discovered = {
+                str(item.get("id"))
+                for item in body.get("data", [])
+                if isinstance(item, dict) and item.get("id")
+            }
+            return discovered or configured
+        except Exception as exc:
+            logger.warning("model_registry_discovery provider=groq success=false error_type=%s fallback=configured", type(exc).__name__)
+            return configured
 
     @staticmethod
     def _discover_nvidia() -> list[str]:
