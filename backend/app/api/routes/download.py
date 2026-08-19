@@ -78,7 +78,13 @@ def download_apk(
     try:
         path = apk_service.validate_release_file(release)
     except HTTPException as error:
-        if error.status_code == status.HTTP_404_NOT_FOUND and github_matches:
+        # Railway/container storage can be replaced while the persistent DB still
+        # contains metadata for the previous APK. In that case a stale local
+        # checksum must not block the canonical GitHub release download.
+        if error.status_code in {
+            status.HTTP_404_NOT_FOUND,
+            status.HTTP_409_CONFLICT,
+        } and github_matches:
             apk_service.record_download(db, release, request, optional_user(request, db))
             db.commit()
             return stream_github_apk(github_release)
