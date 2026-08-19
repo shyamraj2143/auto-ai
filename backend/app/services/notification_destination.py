@@ -43,10 +43,20 @@ def with_notification_destination(data: dict[str, str]) -> dict[str, str]:
     destination = NOTIFICATION_DESTINATION_BY_TYPE.get(notification_type)
     if not destination:
         raise ValueError(f"Unmapped notification type: {notification_type}")
-    entity_field = ENTITY_FIELD_BY_TYPE[notification_type]
-    entity_id = data.get(entity_field, "") if entity_field else ""
-    if entity_field and not entity_id and notification_type != "apk_update":
-        raise ValueError(f"Missing {entity_field} for notification type: {notification_type}")
+
+    # AI completion notifications use the normal chat FCM channel for backward
+    # compatibility, but their destination must be the Auto-AI conversation,
+    # not the social/user-message thread.
+    if notification_type == "chat_message" and str(data.get("event_id", "")).startswith("ai_response:"):
+        destination = "AI_CONVERSATION"
+        entity_id = data.get("thread_id", "")
+    else:
+        entity_field = ENTITY_FIELD_BY_TYPE[notification_type]
+        entity_id = data.get(entity_field, "") if entity_field else ""
+
+    if not entity_id and notification_type != "apk_update":
+        raise ValueError(f"Missing notification entity for type: {notification_type}")
+
     return {
         **data,
         "destination": destination,
