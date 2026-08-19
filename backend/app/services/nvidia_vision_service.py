@@ -13,7 +13,7 @@ logger = logging.getLogger("auto_ai.nvidia_vision")
 
 
 class NvidiaVisionService:
-    """Reliable NVIDIA NIM VLM client with safe preprocessing for local images."""
+    """Reliable NVIDIA NIM VLM client with conservative image preprocessing."""
 
     def _value(self, name: str, default: str) -> str:
         return os.getenv(name, default).strip()
@@ -45,23 +45,28 @@ class NvidiaVisionService:
         }.get(suffix, "image/jpeg")
 
     @staticmethod
-    def _inline_base64_limit_bytes() -> int:
-        # NVIDIA-hosted vision endpoints enforce an inline base64 limit of about
-        # 180,000 characters. Leave headroom for request encoding/implementation
-        # differences instead of sitting exactly on the boundary.
-        chars = int(os.getenv("NVIDIA_INLINE_IMAGE_LIMIT_CHARS", "165000"))
-        return max(64_000, int(chars * 0.75))
+    def _inline_target_bytes() -> int:
+        # NVIDIA documents a roughly 180 KB inline limit for this VLM. Keep a
+        # generous margin so base64 and transport differences cannot push a
+        # request over the service boundary.
+        configured = int(os.getenv("NVIDIA_INLINE_IMAGE_TARGET_BYTES", "115000"))
+        return max(48_000, min(configured, 140_000))
 
     def _prepare_inline_image(self, image: bytes, mime: str) -> tuple[bytes, str]:
-        """Keep screenshots readable while avoiding NVIDIA's hosted inline limit.
+        """Normalize phone screenshots into a small, readable JPEG payload.
 
-        The model supports up to 12 tiles of 512x512. We therefore cap the long
-        edge at 2048px and iteratively JPEG-compress oversized images. This makes
-        ordinary phone screenshots (often 300KB-2MB) work without relying on the
-        NVCF asset-upload path, while retaining the asset path as a final fallback.
+        A large image is never blindly truncated. EXIF orientation is applied,
+        the long edge is capped, and JPEG quality/dimensions are reduced only as
+        needed to stay safely below NVIDIA's inline payload limit.
         """
-        if len(image) <= self._inline_base64_limit_bytes():
-            return image, mime
+        target = self._inline_target_bytes()
+        if len(image) <= target and mime in {"image/jpeg", "image/png", "image/webp"}:
+            try:
+                with Image.open(io.BytesIO(image)) as source:
+                    source.verify()
+                return image, mime
+            except Exception:
+                pass
 
         try:
             with Image.open(io.BytesIO(image)) as source:
@@ -69,31 +74,36 @@ class NvidiaVisionService:
                 if getattr(source, "is_animated", False):
                     source.seek(0)
                 rgb = source.convert("RGB")
-                max_edge = int(os.getenv("NVIDIA_VISION_MAX_EDGE", "2048"))
+                max_edge = int(os.getenv("NVIDIA_VISION_MAX_EDGE", "1600"))
                 if max(rgb.size) > max_edge:
                     scale = max_edge / max(rgb.size)
-                    size = (max(1, round(rgb.width * scale)), max(1, round(rgb.height * scale)))
-                    rgb = rgb.resize(size, Image.Resampling.LANCZOS)
+                    rgb = rgb.resize(
+                        (max(1, round(rgb.width * scale)), max(1, round(rgb.height * scale))),
+                        Image.Resampling.LANCZOS,
+                    )
 
-                target = self._inline_base64_limit_bytes()
                 best: bytes | None = None
-                for quality in (88, 82, 76, 70, 64, 58):
+                for quality in (88, 82, 76, 70, 64, 58, 52):
                     buffer = io.BytesIO()
-                    rgb.save(buffer, format="JPEG", quality=quality, optimize=True, progressive=True)
+                    rgb.save(buffer, format="JPEG", quality=quality, optimize=True, progressive=False)
                     candidate = buffer.getvalue()
                     best = candidate
                     if len(candidate) <= target:
                         return candidate, "image/jpeg"
 
-                # If quality alone is not enough, reduce dimensions gradually.
-                while best and len(best) > target and max(rgb.size) > 1024:
-                    scale = 0.82
-                    size = (max(1, round(rgb.width * scale)), max(1, round(rgb.height * scale)))
-                    rgb = rgb.resize(size, Image.Resampling.LANCZOS)
+                # Screenshots can still contain large flat UI areas after JPEG
+                # compression. Reduce dimensions gradually rather than dropping
+                # text/rows from the image.
+                while best and len(best) > target and max(rgb.size) > 768:
+                    scale = 0.78
+                    rgb = rgb.resize(
+                        (max(1, round(rgb.width * scale)), max(1, round(rgb.height * scale))),
+                        Image.Resampling.LANCZOS,
+                    )
                     buffer = io.BytesIO()
-                    rgb.save(buffer, format="JPEG", quality=76, optimize=True, progressive=True)
+                    rgb.save(buffer, format="JPEG", quality=62, optimize=True, progressive=False)
                     best = buffer.getvalue()
-                if best:
+                if best and len(best) <= target:
                     return best, "image/jpeg"
         except Exception as exc:
             logger.warning("NVIDIA image preprocessing failed error_type=%s", type(exc).__name__)
@@ -101,7 +111,7 @@ class NvidiaVisionService:
         return image, mime
 
     def _upload_large_image(self, image: bytes, mime: str, filename: str, timeout: float) -> str:
-        """NVCF asset fallback for images that cannot be safely reduced inline."""
+        """NVCF asset fallback for an image that cannot be made safely inline."""
         asset_url = self._value("NVIDIA_ASSET_URL", "https://api.nvcf.nvidia.com/v2/nvcf/assets")
         description = f"Auto-AI vision image: {filename[:120]}"
         try:
@@ -142,8 +152,8 @@ class NvidiaVisionService:
 
     def _image_reference(self, image: bytes, mime: str, filename: str, timeout: float) -> tuple[str, int, str]:
         prepared, prepared_mime = self._prepare_inline_image(image, mime)
-        inline_limit = self._inline_base64_limit_bytes()
-        if len(prepared) <= inline_limit:
+        target = self._inline_target_bytes()
+        if len(prepared) <= target:
             encoded = base64.b64encode(prepared).decode("ascii")
             return f"data:{prepared_mime};base64,{encoded}", len(prepared), prepared_mime
         return self._upload_large_image(prepared, prepared_mime, filename, timeout), len(prepared), prepared_mime
@@ -169,17 +179,22 @@ class NvidiaVisionService:
         image_ref, prepared_size, prepared_mime = self._image_reference(image, mime, filename, request_timeout)
         payload: dict[str, Any] = {
             "model": self._value("NVIDIA_VISION_MODEL", "nvidia/llama-3.1-nemotron-nano-vl-8b-v1"),
-            "messages": [{"role": "user", "content": [
-                {"type": "image_url", "image_url": {"url": image_ref}},
-                {"type": "text", "text": prompt},
-            ]}],
-            "temperature": float(os.getenv("NVIDIA_VISION_TEMPERATURE", "0.2")),
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": image_ref}},
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ],
+            "temperature": float(os.getenv("NVIDIA_VISION_TEMPERATURE", "0.15")),
             "top_p": float(os.getenv("NVIDIA_VISION_TOP_P", "0.9")),
             "max_tokens": max_tokens or int(os.getenv("NVIDIA_VISION_MAX_TOKENS", "3072")),
             "stream": False,
         }
         endpoint = f"{self._value('NVIDIA_BASE_URL', 'https://integrate.api.nvidia.com/v1').rstrip('/')}/chat/completions"
-        attempts = max(1, int(os.getenv("NVIDIA_RETRY_ATTEMPTS", "2")))
+        attempts = max(1, int(os.getenv("NVIDIA_RETRY_ATTEMPTS", "3")))
         last_status = 0
         last_body = ""
         for attempt in range(attempts):
@@ -187,17 +202,18 @@ class NvidiaVisionService:
                 response = httpx.post(endpoint, headers=self._headers(), json=payload, timeout=request_timeout)
             except httpx.TimeoutException as exc:
                 if attempt + 1 < attempts:
-                    time.sleep(0.5 * (2 ** attempt))
+                    time.sleep(0.6 * (2 ** attempt))
                     continue
                 raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail="NVIDIA vision request timed out.") from exc
             except httpx.HTTPError as exc:
                 if attempt + 1 < attempts:
-                    time.sleep(0.5 * (2 ** attempt))
+                    time.sleep(0.6 * (2 ** attempt))
                     continue
                 logger.exception("NVIDIA vision network failure")
                 raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="NVIDIA vision service is unreachable.") from exc
+
             last_status = response.status_code
-            last_body = response.text[:1000]
+            last_body = response.text[:1500]
             if response.status_code in {401, 403}:
                 raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="NVIDIA API key was rejected or lacks permission.")
             if response.status_code == 429:
@@ -206,12 +222,18 @@ class NvidiaVisionService:
                     continue
                 raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="NVIDIA vision rate limit reached. Please retry shortly.")
             if self._retryable(response.status_code) and attempt + 1 < attempts:
-                time.sleep(0.5 * (2 ** attempt))
+                time.sleep(0.6 * (2 ** attempt))
                 continue
             break
 
         if last_status >= 400:
-            logger.warning("NVIDIA vision request failed status=%s prepared_bytes=%s mime=%s body=%s", last_status, prepared_size, prepared_mime, last_body)
+            logger.warning(
+                "NVIDIA vision request failed status=%s prepared_bytes=%s mime=%s body=%s",
+                last_status,
+                prepared_size,
+                prepared_mime,
+                last_body,
+            )
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"NVIDIA vision analysis failed (HTTP {last_status}).")
 
         try:
