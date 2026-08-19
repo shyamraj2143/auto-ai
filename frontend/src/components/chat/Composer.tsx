@@ -44,21 +44,7 @@ const DOCUMENT_EXTENSIONS = new Set([
 const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 type ComposerOpenMenu = "attachments" | "mode" | null;
 
-function ModeMenu({
-  value,
-  config,
-  open,
-  onToggle,
-  onClose,
-  onSelect
-}: {
-  value: string;
-  config: IntelligenceConfig | null;
-  open: boolean;
-  onToggle: () => void;
-  onClose: () => void;
-  onSelect: (value: string) => void;
-}) {
+function ModeMenu({ value, config, open, onToggle, onClose, onSelect }: { value: string; config: IntelligenceConfig | null; open: boolean; onToggle: () => void; onClose: () => void; onSelect: (value: string) => void }) {
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const selected = composerModeOption(value);
   const descriptions: Record<string, string> = {
@@ -72,16 +58,7 @@ function ModeMenu({
 
   return (
     <div className="model-menu mode-menu">
-      <button
-        ref={triggerRef}
-        type="button"
-        className="composer-pill composer-mode-pill composer-pill-active"
-        onClick={onToggle}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        aria-controls="composer-mode-popover"
-        title="Choose intelligence preset"
-      >
+      <button ref={triggerRef} type="button" className="composer-pill composer-mode-pill composer-pill-active" onClick={onToggle} aria-expanded={open} aria-haspopup="dialog" aria-controls="composer-mode-popover" title="Choose intelligence preset">
         <Sparkles size={18} />
         <span className="composer-mode-label">{selected.label}</span>
         <ChevronDown size={15} />
@@ -90,32 +67,16 @@ function ModeMenu({
         <div id="composer-mode-popover">
           <div className="composer-popover-header">Intelligence preset</div>
           <div className="composer-popover-list" role="menu">
-          {COMPOSER_MODE_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              role="menuitemradio"
-              aria-checked={option.value === selected.value}
-              aria-disabled={option.value !== "auto" && config?.modes[option.value]?.available === false}
-              disabled={option.value !== "auto" && config?.modes[option.value]?.available === false}
-              className={clsx("composer-popover-option", option.value === selected.value && "composer-popover-option-active")}
-              onClick={() => {
-                onSelect(option.value);
-                onClose();
-              }}
-            >
-              <span>
-                {option.value === "coding" && <Code2 size={16} />}
-                <strong>{option.label}</strong>
-                <small>
-                  {option.value !== "auto" && config?.modes[option.value]?.available === false
-                    ? config.modes[option.value]?.unavailable_reason || "Temporarily unavailable"
-                    : (option.value !== "auto" ? config?.modes[option.value]?.fallback_message : null) || descriptions[option.value] || "Choose this intelligence preset"}
-                </small>
-              </span>
-              {option.value === selected.value && <Check size={14} />}
-            </button>
-          ))}
+            {COMPOSER_MODE_OPTIONS.map((option) => (
+              <button key={option.value} type="button" role="menuitemradio" aria-checked={option.value === selected.value} aria-disabled={option.value !== "auto" && config?.modes[option.value]?.available === false} disabled={option.value !== "auto" && config?.modes[option.value]?.available === false} className={clsx("composer-popover-option", option.value === selected.value && "composer-popover-option-active")} onClick={() => { onSelect(option.value); onClose(); }}>
+                <span>
+                  {option.value === "coding" && <Code2 size={16} />}
+                  <strong>{option.label}</strong>
+                  <small>{option.value !== "auto" && config?.modes[option.value]?.available === false ? config.modes[option.value]?.unavailable_reason || "Temporarily unavailable" : (option.value !== "auto" ? config?.modes[option.value]?.fallback_message : null) || descriptions[option.value] || "Choose this intelligence preset"}</small>
+                </span>
+                {option.value === selected.value && <Check size={14} />}
+              </button>
+            ))}
           </div>
         </div>
       </ComposerPopover>
@@ -128,34 +89,11 @@ function fileExtension(file: File) {
   const index = name.lastIndexOf(".");
   return index >= 0 ? name.slice(index) : "";
 }
-
-function isDocument(file: File) {
-  return DOCUMENT_EXTENSIONS.has(fileExtension(file));
-}
-
-function isImage(file: File) {
-  return file.type.startsWith("image/") || IMAGE_EXTENSIONS.has(fileExtension(file));
-}
+function isDocument(file: File) { return DOCUMENT_EXTENSIONS.has(fileExtension(file)); }
+function isImage(file: File) { return file.type.startsWith("image/") || IMAGE_EXTENSIONS.has(fileExtension(file)); }
 
 export function Composer({
-  disabled,
-  selectedDocuments,
-  selectedLibraryAttachments,
-  uploadTasks,
-  onRemoveDocument,
-  onRemoveLibraryAttachment,
-  onDeleteDocument,
-  onUploadDocuments,
-  onSend,
-  onStop,
-  onOpenLiveMode,
-  focusKey,
-  initialDraft = "",
-  conversationMode,
-  conversationPresetMode,
-  conversationSelectedPreset,
-  conversationManualPresetLocked,
-  onPresetChange
+  disabled, selectedDocuments, selectedLibraryAttachments, uploadTasks, onRemoveDocument, onRemoveLibraryAttachment, onDeleteDocument, onUploadDocuments, onSend, onStop, onOpenLiveMode, focusKey, initialDraft = "", conversationMode, conversationPresetMode, conversationSelectedPreset, conversationManualPresetLocked, onPresetChange
 }: {
   disabled?: boolean;
   selectedDocuments: DocumentItem[];
@@ -174,11 +112,7 @@ export function Composer({
   conversationPresetMode?: "auto" | "manual";
   conversationSelectedPreset?: string;
   conversationManualPresetLocked?: boolean;
-  onPresetChange?: (selection: {
-    presetMode: "auto" | "manual";
-    selectedPreset: IntelligenceMode;
-    manualPresetLocked: boolean;
-  }) => Promise<void> | void;
+  onPresetChange?: (selection: { presetMode: "auto" | "manual"; selectedPreset: IntelligenceMode; manualPresetLocked: boolean }) => Promise<void> | void;
 }) {
   const uiText = usePublishedUiText();
   const { token } = useAuth();
@@ -191,9 +125,7 @@ export function Composer({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const imageAttachmentsRef = useRef<ImageAttachment[]>([]);
   const draftStorageKey = `autoai:chat-draft:${focusKey || "new"}`;
-  const [draft, setDraft] = useState(() => {
-    try { return window.localStorage.getItem(draftStorageKey) || ""; } catch { return ""; }
-  });
+  const [draft, setDraft] = useState(() => { try { return window.localStorage.getItem(draftStorageKey) || ""; } catch { return ""; } });
   const [chatMode, setChatMode] = useState<ChatMode>("instant");
   const [presetMode, setPresetMode] = useState<"auto" | "manual">("auto");
   const [intelligenceConfig, setIntelligenceConfig] = useState<IntelligenceConfig | null>(null);
@@ -205,13 +137,14 @@ export function Composer({
   const [composerActive, setComposerActive] = useState(false);
   const appliedInitialDraftRef = useRef("");
   const loadedDraftKeyRef = useRef(draftStorageKey);
-
   const uploading = uploadTasks.some((task) => task.status === "uploading" || task.status === "processing");
   const hasAttachment = Boolean(selectedDocuments.length || imageAttachments.length || selectedLibraryAttachments.length);
   const canSend = Boolean(draft.trim() || hasAttachment) && !disabled && !sending && !uploading;
 
   useEffect(() => { imageAttachmentsRef.current = imageAttachments; }, [imageAttachments]);
-  useEffect(() => { textareaRef.current?.focus({ preventScroll: true }); }, [focusKey]);
+  // Do not auto-focus on mount. Focusing here made the composer enter its expanded state
+  // before the user interacted with it, especially on Android/WebView.
+  useEffect(() => { textareaRef.current?.blur(); }, [focusKey]);
   useEffect(() => {
     if (loadedDraftKeyRef.current === draftStorageKey) return;
     loadedDraftKeyRef.current = draftStorageKey;
@@ -219,10 +152,7 @@ export function Composer({
   }, [draftStorageKey]);
   useEffect(() => {
     if (loadedDraftKeyRef.current !== draftStorageKey) return;
-    try {
-      if (draft) window.localStorage.setItem(draftStorageKey, draft);
-      else window.localStorage.removeItem(draftStorageKey);
-    } catch { /* Draft persistence is best-effort in restricted WebViews. */ }
+    try { if (draft) window.localStorage.setItem(draftStorageKey, draft); else window.localStorage.removeItem(draftStorageKey); } catch { /* best effort */ }
   }, [draft, draftStorageKey]);
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -237,12 +167,7 @@ export function Composer({
     setDraft((current) => current.trim() ? current : next);
   }, [initialDraft]);
   useEffect(() => {
-    const handleAndroidBack = (event: Event) => {
-      if (imageAttachmentsRef.current.length) {
-        event.preventDefault();
-        clearImageAttachments();
-      }
-    };
+    const handleAndroidBack = (event: Event) => { if (imageAttachmentsRef.current.length) { event.preventDefault(); clearImageAttachments(); } };
     window.addEventListener("auto-ai-android-back", handleAndroidBack);
     return () => window.removeEventListener("auto-ai-android-back", handleAndroidBack);
   }, []);
@@ -250,10 +175,7 @@ export function Composer({
     const close = () => setOpenMenu(null);
     window.addEventListener("popstate", close);
     window.addEventListener("hashchange", close);
-    return () => {
-      window.removeEventListener("popstate", close);
-      window.removeEventListener("hashchange", close);
-    };
+    return () => { window.removeEventListener("popstate", close); window.removeEventListener("hashchange", close); };
   }, []);
   useEffect(() => {
     const preferred = conversationSelectedPreset || conversationMode || "instant";
@@ -264,14 +186,10 @@ export function Composer({
   useEffect(() => {
     if (!token) return;
     let active = true;
-    api.intelligenceConfig(token)
-      .then((config) => { if (active) setIntelligenceConfig(config); })
-      .catch(() => { if (active) setIntelligenceConfig(null); });
+    api.intelligenceConfig(token).then((config) => { if (active) setIntelligenceConfig(config); }).catch(() => { if (active) setIntelligenceConfig(null); });
     return () => { active = false; };
   }, [token]);
-  useEffect(() => () => {
-    imageAttachmentsRef.current.forEach((attachment) => URL.revokeObjectURL(attachment.previewUrl));
-  }, []);
+  useEffect(() => () => { imageAttachmentsRef.current.forEach((attachment) => URL.revokeObjectURL(attachment.previewUrl)); }, []);
 
   async function addFiles(files: File[]) {
     setError("");
@@ -328,14 +246,7 @@ export function Composer({
       }
       const detectedPreset = detectPreset(text, Boolean(files.length || selectedDocuments.length || selectedLibraryAttachments.length));
       const selectedPreset = presetMode === "auto" ? detectedPreset : composerModeOption(chatMode).chatMode as IntelligenceMode;
-      const result = await onSend(text, {
-        chatMode: selectedPreset,
-        presetMode,
-        presetSource: presetMode,
-        selectedPreset,
-        detectedPreset,
-        manualPresetLocked: presetMode === "manual"
-      }, files);
+      const result = await onSend(text, { chatMode: selectedPreset, presetMode, presetSource: presetMode, selectedPreset, detectedPreset, manualPresetLocked: presetMode === "manual" }, files);
       accepted = result !== false;
       if (accepted) {
         submittedAttachments.forEach((attachment) => URL.revokeObjectURL(attachment.previewUrl));
@@ -348,9 +259,7 @@ export function Composer({
       setDraft(text);
       setImageAttachments(submittedAttachments);
       setError(sendError instanceof Error ? sendError.message : "Message was not sent.");
-    } finally {
-      setSending(false);
-    }
+    } finally { setSending(false); }
   }
 
   function removeImage(id: string) {
@@ -385,33 +294,18 @@ export function Composer({
   const selectedModeValue = presetMode === "auto" ? "auto" : composerModeValue("auto", chatMode);
 
   return (
-    <form
-      className={clsx("composer-shell", composerActive && "composer-shell-active")}
-      onSubmit={submit}
-      onDragEnter={(event) => { event.preventDefault(); setDragActive(true); setComposerActive(true); }}
-      onDragOver={(event) => { event.preventDefault(); setDragActive(true); }}
-      onDragLeave={(event) => { event.preventDefault(); if (event.currentTarget === event.target) setDragActive(false); }}
-      onDrop={(event) => { event.preventDefault(); setDragActive(false); setComposerActive(true); void addFiles(Array.from(event.dataTransfer.files)); }}
-    >
+    <form className={clsx("composer-shell", composerActive && "composer-shell-active")} onSubmit={submit} onDragEnter={(event) => { event.preventDefault(); setDragActive(true); setComposerActive(true); }} onDragOver={(event) => { event.preventDefault(); setDragActive(true); }} onDragLeave={(event) => { event.preventDefault(); if (event.currentTarget === event.target) setDragActive(false); }} onDrop={(event) => { event.preventDefault(); setDragActive(false); setComposerActive(true); void addFiles(Array.from(event.dataTransfer.files)); }}>
       <div className={clsx("composer-card compact-card crystal-surface", crystalEffects.surfaces && "is-crystal-enabled", dragActive && "composer-card-active")}>
         <AnimatePresence>
           {(selectedDocuments.length > 0 || selectedLibraryAttachments.length > 0 || uploadTasks.length > 0 || imageAttachments.length > 0 || error) && (
             <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="space-y-2 overflow-hidden composer-attachments-area">
               {error && <div className="composer-error" role="alert">{error}</div>}
               <div className="flex flex-wrap gap-2">
-                {selectedDocuments.map((document) => (
-                  <span key={document.id} className="attachment-chip"><FileText size={14} /><span className="max-w-40 truncate">{document.filename}</span><button type="button" onClick={() => onRemoveDocument(document.id)} title="Remove document"><X size={13} /></button><button type="button" onClick={() => onDeleteDocument(document.id)} title="Delete document"><Trash2 size={13} /></button></span>
-                ))}
-                {selectedLibraryAttachments.map((attachment) => (
-                  <span key={attachment.asset_id} className="attachment-chip">{attachment.type === "image" ? <FileImage size={14} /> : <FileText size={14} />}<span className="max-w-40 truncate">{attachment.filename}</span><button type="button" onClick={() => onRemoveLibraryAttachment(attachment.asset_id)} title="Remove library attachment"><X size={13} /></button></span>
-                ))}
-                {imageAttachments.map((attachment) => (
-                  <span key={attachment.id} className="image-chip"><img src={attachment.previewUrl} alt={`Attached image preview: ${attachment.file.name}`} loading="lazy" decoding="async" /><span className="max-w-32 truncate">{attachment.file.name}</span><button type="button" onClick={() => removeImage(attachment.id)} title="Remove image"><X size={13} /></button></span>
-                ))}
+                {selectedDocuments.map((document) => <span key={document.id} className="attachment-chip"><FileText size={14} /><span className="max-w-40 truncate">{document.filename}</span><button type="button" onClick={() => onRemoveDocument(document.id)} title="Remove document"><X size={13} /></button><button type="button" onClick={() => onDeleteDocument(document.id)} title="Delete document"><Trash2 size={13} /></button></span>)}
+                {selectedLibraryAttachments.map((attachment) => <span key={attachment.asset_id} className="attachment-chip">{attachment.type === "image" ? <FileImage size={14} /> : <FileText size={14} />}<span className="max-w-40 truncate">{attachment.filename}</span><button type="button" onClick={() => onRemoveLibraryAttachment(attachment.asset_id)} title="Remove library attachment"><X size={13} /></button></span>)}
+                {imageAttachments.map((attachment) => <span key={attachment.id} className="image-chip"><img src={attachment.previewUrl} alt={`Attached image preview: ${attachment.file.name}`} loading="lazy" decoding="async" /><span className="max-w-32 truncate">{attachment.file.name}</span><button type="button" onClick={() => removeImage(attachment.id)} title="Remove image"><X size={13} /></button></span>)}
               </div>
-              {uploadTasks.map((task) => (
-                <div key={task.id} className="upload-progress"><div className="mb-1 flex items-center justify-between gap-2 text-xs"><span className="truncate text-slate-200">{task.filename}</span><span className={task.status === "error" ? "text-red-200" : "text-cyan-100"}>{task.status === "error" ? "Failed" : `${task.progress}%`}</span></div><div className="h-1.5 overflow-hidden rounded-full bg-white/10"><span className={clsx("block h-full rounded-full", task.status === "error" ? "bg-red-400" : "bg-cyan-300")} style={{ width: `${Math.max(task.progress, task.status === "processing" ? 92 : 4)}%` }} /></div>{task.error && <p className="mt-1 text-xs text-red-200">{task.error}</p>}</div>
-              ))}
+              {uploadTasks.map((task) => <div key={task.id} className="upload-progress"><div className="mb-1 flex items-center justify-between gap-2 text-xs"><span className="truncate text-slate-200">{task.filename}</span><span className={task.status === "error" ? "text-red-200" : "text-cyan-100"}>{task.status === "error" ? "Failed" : `${task.progress}%`}</span></div><div className="h-1.5 overflow-hidden rounded-full bg-white/10"><span className={clsx("block h-full rounded-full", task.status === "error" ? "bg-red-400" : "bg-cyan-300")} style={{ width: `${Math.max(task.progress, task.status === "processing" ? 92 : 4)}%` }} /></div>{task.error && <p className="mt-1 text-xs text-red-200">{task.error}</p>}</div>)}
             </motion.div>
           )}
         </AnimatePresence>
