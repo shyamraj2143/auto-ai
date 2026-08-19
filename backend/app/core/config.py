@@ -277,6 +277,26 @@ class Settings(BaseSettings):
         return DEFAULT_BACKEND_URL
 
     @property
+    def google_web_client_id(self) -> str | None:
+        """Effective web OAuth client ID used by browser and server-side Google token validation."""
+        return (self.GOOGLE_WEB_CLIENT_ID or self.GOOGLE_CLIENT_ID or "").strip() or None
+
+    @property
+    def google_android_client_id(self) -> str | None:
+        """Effective Android OAuth client ID when one is configured."""
+        return (self.GOOGLE_ANDROID_CLIENT_ID or "").strip() or None
+
+    @property
+    def google_client_ids(self) -> set[str]:
+        """All configured Google OAuth client IDs accepted for ID-token audience validation."""
+        values = {
+            self.GOOGLE_CLIENT_ID,
+            self.GOOGLE_WEB_CLIENT_ID,
+            self.GOOGLE_ANDROID_CLIENT_ID,
+        }
+        return {value.strip() for value in values if value and value.strip()}
+
+    @property
     def razorpay_callback_url(self) -> str | None:
         return self.RAZORPAY_CALLBACK_URL
 
