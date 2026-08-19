@@ -217,12 +217,9 @@ class Settings(BaseSettings):
         """Return the SQLAlchemy URL used by the relational database layer."""
         raw_url = (self.DATABASE_URL or self.MYSQL_URL or "").strip()
         if raw_url:
-            # Railway/Postgres and some older deployments expose postgres://.
-            # SQLAlchemy expects the explicit postgresql:// scheme.
             if raw_url.startswith("postgres://"):
                 return "postgresql://" + raw_url[len("postgres://"):]
             return raw_url
-
         sqlite_path = Path(self.SQLITE_PATH).expanduser()
         if not sqlite_path.is_absolute():
             sqlite_path = PROJECT_ROOT / sqlite_path
@@ -230,7 +227,6 @@ class Settings(BaseSettings):
 
     @property
     def database_backend(self) -> str:
-        """Human-readable database backend selected by the effective SQLAlchemy URL."""
         url = self.sqlalchemy_database_url.lower()
         if url.startswith("postgresql"):
             return "postgresql"
@@ -242,29 +238,31 @@ class Settings(BaseSettings):
 
     @property
     def safe_database_target(self) -> str:
-        """Return a log-safe DB target with credentials removed."""
         url = self.sqlalchemy_database_url
         if url.startswith("sqlite:///"):
-            return url.replace("sqlite://", "sqlite://", 1)
+            return url
         try:
             parsed = urlsplit(url)
             if parsed.hostname:
                 host = parsed.hostname
                 if parsed.port:
                     host = f"{host}:{parsed.port}"
-                path = parsed.path or ""
-                return urlunsplit((parsed.scheme, host, path, "", ""))
+                return urlunsplit((parsed.scheme, host, parsed.path or "", "", ""))
         except ValueError:
             pass
         return "<configured database>"
 
     @property
     def persistent_storage(self) -> bool:
-        """Whether DB state is expected to survive application restarts/deploys."""
         if self.database_backend != "sqlite":
             return True
         path = Path(self.SQLITE_PATH).expanduser()
         return bool(path.is_absolute() and any(part in {"data", "database", "persistent"} for part in path.parts))
+
+    @property
+    def redis_url(self) -> str | None:
+        """Backward-compatible lowercase accessor for Redis URL consumers."""
+        return self.REDIS_URL
 
     @property
     def is_production(self) -> bool:
