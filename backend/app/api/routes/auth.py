@@ -311,11 +311,17 @@ def login(
     response: Response,
     db: Session = Depends(get_db),
 ) -> Token:
+    """Low-latency login path.
+
+    Authentication must not wait for billing/subscription reconciliation. The
+    user record already contains the effective auth state, while subscription
+    synchronization can happen on normal authenticated requests. This keeps
+    login responsive when the billing tables are slow or temporarily degraded.
+    """
     repo = SQLAlchemyUserRepository(db)
     user = repo.get_by_email(normalize_email(str(payload.email)))
     if not user or not user.hashed_password or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Email or password is incorrect.")
-    sync_subscription_status(db, user)
     ensure_user_can_authenticate(user)
     if password_needs_rehash(user.hashed_password):
         user.hashed_password = get_password_hash(payload.password)
