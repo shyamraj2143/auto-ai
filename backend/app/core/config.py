@@ -213,6 +213,60 @@ class Settings(BaseSettings):
     RATE_LIMIT_PASSWORD_RESET_PER_MINUTE: int = 5
 
     @property
+    def sqlalchemy_database_url(self) -> str:
+        """Return the SQLAlchemy URL used by the relational database layer."""
+        raw_url = (self.DATABASE_URL or self.MYSQL_URL or "").strip()
+        if raw_url:
+            # Railway/Postgres and some older deployments expose postgres://.
+            # SQLAlchemy expects the explicit postgresql:// scheme.
+            if raw_url.startswith("postgres://"):
+                return "postgresql://" + raw_url[len("postgres://"):]
+            return raw_url
+
+        sqlite_path = Path(self.SQLITE_PATH).expanduser()
+        if not sqlite_path.is_absolute():
+            sqlite_path = PROJECT_ROOT / sqlite_path
+        return f"sqlite:///{sqlite_path}"
+
+    @property
+    def database_backend(self) -> str:
+        """Human-readable database backend selected by the effective SQLAlchemy URL."""
+        url = self.sqlalchemy_database_url.lower()
+        if url.startswith("postgresql"):
+            return "postgresql"
+        if url.startswith("mysql"):
+            return "mysql"
+        if url.startswith("sqlite"):
+            return "sqlite"
+        return self.DB_BACKEND.lower()
+
+    @property
+    def safe_database_target(self) -> str:
+        """Return a log-safe DB target with credentials removed."""
+        url = self.sqlalchemy_database_url
+        if url.startswith("sqlite:///"):
+            return url.replace("sqlite://", "sqlite://", 1)
+        try:
+            parsed = urlsplit(url)
+            if parsed.hostname:
+                host = parsed.hostname
+                if parsed.port:
+                    host = f"{host}:{parsed.port}"
+                path = parsed.path or ""
+                return urlunsplit((parsed.scheme, host, path, "", ""))
+        except ValueError:
+            pass
+        return "<configured database>"
+
+    @property
+    def persistent_storage(self) -> bool:
+        """Whether DB state is expected to survive application restarts/deploys."""
+        if self.database_backend != "sqlite":
+            return True
+        path = Path(self.SQLITE_PATH).expanduser()
+        return bool(path.is_absolute() and any(part in {"data", "database", "persistent"} for part in path.parts))
+
+    @property
     def is_production(self) -> bool:
         return self.ENVIRONMENT.lower() == "production"
 
