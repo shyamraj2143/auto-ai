@@ -34,6 +34,18 @@ PROVIDER_COUNTS = {
     IntelligenceMode.CODING: (6, 6),
 }
 MAX_PROVIDER_POOL = 20
+VISUAL_EVIDENCE_MARKERS = (
+    "image summary:",
+    "ocr text:",
+    "library image:",
+    "attachments:\n- image:",
+    "vision_ocr_scene_ui",
+)
+
+
+def _has_visual_evidence(messages: list[dict[str, str]]) -> bool:
+    joined = "\n".join(str(message.get("content", "")) for message in messages).lower()
+    return any(marker in joined for marker in VISUAL_EVIDENCE_MARKERS)
 
 
 def _specialist_sort_key(record: ModelRecord, analysis: RequestAnalysis) -> tuple[float, float, float, int]:
@@ -52,17 +64,33 @@ def _specialist_sort_key(record: ModelRecord, analysis: RequestAnalysis) -> tupl
     return (fit, latency, -record.quality_weight, record.priority)
 
 
-def _provider_specialists(provider: str, mode: IntelligenceMode, analysis: RequestAnalysis, count: int) -> list[ModelRecord]:
+def _provider_specialists(
+    provider: str,
+    mode: IntelligenceMode,
+    analysis: RequestAnalysis,
+    count: int,
+    *,
+    visual_evidence: bool = False,
+) -> list[ModelRecord]:
     records = model_registry.eligible(mode, provider=provider)
-    if analysis.intent == "vision":
+    # If the image has already been converted into verified visual/OCR evidence by
+    # the dedicated VLM, every healthy text/chat model can safely review that evidence.
+    # Only require native vision capability when raw visual input has no usable
+    # extracted evidence yet.
+    if analysis.intent == "vision" and not visual_evidence:
         records = [record for record in records if record.supports_vision]
-    return sorted(records, key=lambda item: _specialist_sort_key(item, analysis))[: min(count, MAX_PROVIDER_POOL)]
+    return sorted(records, key=lambda item: _specialist_sort_key(record=item, analysis=analysis))[: min(count, MAX_PROVIDER_POOL)]
 
 
-def _fast_workers(mode: IntelligenceMode, analysis: RequestAnalysis) -> list[ModelRecord]:
+def _fast_workers(
+    mode: IntelligenceMode,
+    analysis: RequestAnalysis,
+    *,
+    visual_evidence: bool = False,
+) -> list[ModelRecord]:
     groq_count, nvidia_count = PROVIDER_COUNTS.get(mode, (2, 2))
-    groq = _provider_specialists("groq", mode, analysis, groq_count)
-    nvidia = _provider_specialists("nvidia", mode, analysis, nvidia_count)
+    groq = _provider_specialists("groq", mode, analysis, groq_count, visual_evidence=visual_evidence)
+    nvidia = _provider_specialists("nvidia", mode, analysis, nvidia_count, visual_evidence=visual_evidence)
     selected: list[ModelRecord] = []
     seen: set[tuple[str, str]] = set()
     for record in [*groq, *nvidia]:
@@ -85,7 +113,8 @@ class TaskPlanner:
         max_models: int | None = None,
     ) -> list[ModelTask]:
         del providers, requested_models, max_models
-        records = _fast_workers(mode, analysis)
+        visual_evidence = _has_visual_evidence(messages)
+        records = _fast_workers(mode, analysis, visual_evidence=visual_evidence)
 
         if mode == IntelligenceMode.CODING and not records:
             all_records = model_registry.refresh()
@@ -111,11 +140,10 @@ class TaskPlanner:
         else:
             roles = ["primary", "technical", "facts", "logic"]
 
-        has_visual_context = any(
-            "image summary:" in str(message.get("content", "")).lower()
-            or "vision_ocr_scene_ui" in str(message.get("content", "")).lower()
-            for message in messages
-        )
+        if visual_evidence:
+            # These models are no longer asked to decode pixels. They all receive the
+            # same trusted VLM/OCR evidence and independently reason over it.
+            roles = MEDIUM_ROLES if mode == IntelligenceMode.MEDIUM else HIGH_ROLES if mode == IntelligenceMode.HIGH else DEEP_RESEARCH_ROLES if mode == IntelligenceMode.DEEP_RESEARCH else ["primary", "technical", "facts", "structure", "alternative", "logic"]
 
         tasks: list[ModelTask] = []
         for index, record in enumerate(records):
@@ -123,7 +151,7 @@ class TaskPlanner:
             if mode == IntelligenceMode.CODING and role_key in {"primary", "technical"}:
                 role = "Coding implementation specialist" if role_key == "primary" else "Code review and security specialist"
                 label = "Preparing the primary implementation" if role_key == "primary" else "Reviewing bugs, security, and corrections"
-            elif analysis.intent == "vision":
+            elif analysis.intent == "vision" and not visual_evidence:
                 role, label = {
                     "primary": ("Visual analysis specialist", "Reading the image and extracting visible details"),
                     "technical": ("Screenshot/OCR reviewer", "Checking text, UI state, and visual accuracy"),
@@ -134,9 +162,10 @@ class TaskPlanner:
             else:
                 role, label = ROLE_LABELS[role_key]
             visual_instruction = (
-                " The turn contains image-derived evidence from the dedicated vision pipeline. Treat it as source evidence; "
-                "do not claim the image is unavailable and do not invent visual details."
-                if has_visual_context else ""
+                " The turn contains verified image-derived evidence from Auto-AI's dedicated vision pipeline. "
+                "Use that evidence as source material. You are reviewing/interpreting the extracted visual facts, not claiming to directly see pixels. "
+                "Do not say the image is unavailable when visual evidence is present and do not invent details."
+                if visual_evidence else ""
             )
             role_prompt = {
                 "role": "system",
