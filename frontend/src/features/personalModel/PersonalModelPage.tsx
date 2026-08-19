@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { readStoredSession } from "../../auth/sessionStorage";
+import { API_BASE_URL } from "../../api/client";
 
 type Snapshot = {
   model_name: string; status: string; enabled: boolean; training_samples: number; memory_count: number;
@@ -10,16 +11,14 @@ type Snapshot = {
   memories?: Array<{ id: string; category: string; key: string; value: string; confidence: number }>;
 };
 
-const API_BASE = (window.__AUTO_AI_API_URL__ || "https://autoai.site.je/api/v1").replace(/\/$/, "");
-
 async function request(path: string, options: RequestInit = {}) {
   const session = await readStoredSession();
   const headers = new Headers(options.headers);
-  headers.set("Content-Type", "application/json");
+  if (options.body) headers.set("Content-Type", "application/json");
   if (session.accessToken) headers.set("Authorization", `Bearer ${session.accessToken}`);
-  const response = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  const response = await fetch(`${API_BASE_URL.replace(/\/$/, "")}${path}`, { ...options, headers });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.detail || "Personal Model request failed");
+  if (!response.ok) throw new Error(body.detail || `Personal Model request failed (${response.status})`);
   return body;
 }
 
@@ -28,8 +27,13 @@ export function PersonalModelPage() {
   const [training, setTraining] = useState(false);
   const [error, setError] = useState("");
 
-  const load = async () => setData(await request("/human/personal-model"));
-  useEffect(() => { load().catch((e) => setError(e instanceof Error ? e.message : "Unable to load Personal Model")); }, []);
+  const load = async () => {
+    setError("");
+    try { setData(await request("/human/personal-model")); }
+    catch (e) { setError(e instanceof Error ? e.message : "Unable to connect to the Personal Model service"); }
+  };
+
+  useEffect(() => { void load(); }, []);
 
   const train = async () => {
     setTraining(true); setError("");
@@ -38,7 +42,16 @@ export function PersonalModelPage() {
     finally { setTraining(false); }
   };
 
-  if (!data) return <div className="min-h-full p-6 text-sm text-slate-300">{error || "Loading Personal Model…"}</div>;
+  if (!data) return (
+    <main className="min-h-full overflow-y-auto p-4 md:p-8">
+      <div className="mx-auto max-w-3xl rounded-2xl border border-white/10 bg-white/[0.03] p-6 text-sm text-slate-300">
+        <p className="text-xs uppercase tracking-[0.2em] text-violet-300">AutoAI Personal Model</p>
+        <h1 className="mt-2 text-xl font-semibold text-white">Unable to load your private learning layer</h1>
+        <p className="mt-2 text-slate-400">{error || "Connecting…"}</p>
+        {error && <button onClick={() => void load()} className="mt-4 rounded-xl border border-violet-400/40 bg-violet-500/15 px-4 py-2 text-sm text-violet-100">Retry</button>}
+      </div>
+    </main>
+  );
 
   return (
     <main className="min-h-full overflow-y-auto p-4 md:p-8">
@@ -48,9 +61,9 @@ export function PersonalModelPage() {
             <div>
               <p className="text-xs uppercase tracking-[0.2em] text-violet-300">AutoAI Personal Model</p>
               <h1 className="mt-1 text-2xl font-semibold text-white">Your private AI learning layer</h1>
-              <p className="mt-2 max-w-2xl text-sm text-slate-400">AutoAI learns your preferences, useful memories and response feedback without mixing your private data with other users.</p>
+              <p className="mt-2 max-w-2xl text-sm text-slate-400">AutoAI continuously adapts to your saved memories, conversation patterns and explicit feedback without mixing your private data with other users.</p>
             </div>
-            <button onClick={train} disabled={training || !data.enabled} className="rounded-xl border border-violet-400/40 bg-violet-500/15 px-4 py-2 text-sm font-medium text-violet-100 disabled:opacity-40">{training ? "Training…" : "Train / Update Model"}</button>
+            <button onClick={() => void train()} disabled={training || !data.enabled} className="rounded-xl border border-violet-400/40 bg-violet-500/15 px-4 py-2 text-sm font-medium text-violet-100 disabled:opacity-40">{training ? "Updating…" : "Train / Update Model"}</button>
           </div>
           {error && <p className="mt-3 text-sm text-rose-300">{error}</p>}
         </header>
