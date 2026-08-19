@@ -1,5 +1,4 @@
 from pathlib import Path
-import re
 
 ROOT = Path(__file__).resolve().parents[1]
 CHAT = ROOT / "frontend" / "src" / "components" / "chat" / "ChatPage.tsx"
@@ -8,7 +7,7 @@ MAIN = ROOT / "frontend" / "src" / "main.tsx"
 
 text = CHAT.read_text(encoding="utf-8")
 
-# 1) Keep every generation poll alive instead of cancelling the previous request.
+# Keep every generation poll alive instead of cancelling the previous request.
 text = text.replace(
     '  const generationPollTimerRef = useRef<number | null>(null);',
     '  const generationPollTimersRef = useRef<Record<string, number>>({});',
@@ -68,14 +67,14 @@ if old_poll not in text:
     raise SystemExit("polling block not found")
 text = text.replace(old_poll, new_poll, 1)
 
-# 2) Do not reject a second send while another generation is running.
+# Allow another send while an earlier generation is running.
 old_guard = '    if (!token || visibleChatBusy || (!trimmedText && !imageFiles.length && !selectedLibraryAttachments.length)) return false;'
 new_guard = '    if (!token || (!trimmedText && !imageFiles.length && !selectedLibraryAttachments.length)) return false;'
 if old_guard not in text:
     raise SystemExit("send guard not found")
 text = text.replace(old_guard, new_guard, 1)
 
-# 3) Make the user bubble optimistic before slow service/intent preflight calls.
+# Show the user bubble immediately, before service/intent preflight calls.
 anchor = '''  async function handleSend(text: string, options: ComposerOptions, imageFiles: File[] = []) {
     const trimmedText = text.trim();
     if (!token || (!trimmedText && !imageFiles.length && !selectedLibraryAttachments.length)) return false;
@@ -114,8 +113,7 @@ if anchor not in text:
     raise SystemExit("handleSend anchor not found")
 text = text.replace(anchor, replacement, 1)
 
-# 4) Reuse the same client/user IDs for the eventual generation so the server response
-#    upserts the already-visible bubble instead of creating a duplicate.
+# Reuse the same client/user IDs so the server response upserts the visible bubble.
 old_request_ids = '''      clientMessageId: crypto.randomUUID(),
       userMessageId: "",
       documentIds,
@@ -140,23 +138,7 @@ if old_request_ids not in text:
     raise SystemExit("request id block not found")
 text = text.replace(old_request_ids, new_request_ids, 1)
 
-# The request object is now created after the preflight branches, so avoid replacing
-# the already-visible user message with a second local copy before generation starts.
-old_local_append = '''    const nextLocalMessages = appendOptimisticMessages(messagesRef.current, pendingMessages);
-    messagesRef.current = nextLocalMessages;
-    setMessages(nextLocalMessages);
-    if (activeChat?.id) syncActiveChatMessages(activeChat.id, nextLocalMessages);
-'''
-new_local_append = '''    const nextLocalMessages = appendOptimisticMessages(messagesRef.current, pendingMessages);
-    messagesRef.current = nextLocalMessages;
-    setMessages(nextLocalMessages);
-    if (activeChat?.id) syncActiveChatMessages(activeChat.id, nextLocalMessages);
-'''
-# Keep this explicit replacement as a safety assertion; the upsert is intentionally retained.
-if old_local_append not in text:
-    raise SystemExit("local append block not found")
-
-# Clear the preflight request when a non-generation path handled the message.
+# Clear preflight tracking when a non-generation path handled the input.
 text = text.replace(
     '          window.requestAnimationFrame(scrollToBottom);\n          return true;\n        }\n      } catch (error) {',
     '          window.requestAnimationFrame(scrollToBottom);\n          activeRequestRef.current = null;\n          return true;\n        }\n      } catch (error) {',
@@ -173,20 +155,12 @@ text = text.replace(
     1,
 )
 
-# 5) A generation snapshot is valid even when another request is currently active.
+# Do not gate a completed generation behind another active request.
 old_snapshot_guard = '    if (!isGenerationForActiveRequest(generation, activeRequestRef.current)) return;\n'
 if old_snapshot_guard not in text:
     raise SystemExit("generation guard not found")
 text = text.replace(old_snapshot_guard, '', 1)
 
-# Do not let completion of request A clear the tracking identity of request B.
-text = text.replace(
-    '      if (activeRequestRef.current?.chatId === generation.chat_id) activeRequestRef.current = null;',
-    '      if (activeRequestRef.current?.chatId === generation.chat_id && activeRequestRef.current.clientMessageId === generationClientMessageId(generation)) activeRequestRef.current = null;',
-    1,
-)
-
-# Add the generation client id helper locally without changing shared state APIs.
 needle = '  function applyGenerationSnapshot(generation: ChatGeneration) {\n'
 insert = '''  function generationClientId(generation: ChatGeneration) {
     return clientMessageIdOf(generation.user_message) || clientMessageIdOf(generation.assistant_message);
@@ -196,9 +170,13 @@ insert = '''  function generationClientId(generation: ChatGeneration) {
 if needle not in text:
     raise SystemExit("snapshot function not found")
 text = text.replace(needle, insert + needle, 1)
-text = text.replace('generationClientMessageId(generation)', 'generationClientId(generation)', 1)
+text = text.replace(
+    '      if (activeRequestRef.current?.chatId === generation.chat_id) activeRequestRef.current = null;',
+    '      if (activeRequestRef.current?.chatId === generation.chat_id && activeRequestRef.current.clientMessageId === generationClientId(generation)) activeRequestRef.current = null;',
+    1,
+)
 
-# Recover every active generation after app resume, not just the newest one.
+# Recover all active generations after app resume.
 old_recover = '''      const generation = generations[0];
       if (!generation) {
         if (activeGenerationRef.current && isRunningGenerationStatus(activeGenerationRef.current.status)) {
@@ -238,9 +216,28 @@ if old_recover not in text:
     raise SystemExit("recovery block not found")
 text = text.replace(old_recover, new_recover, 1)
 
+# Remove the now-unused import from ChatPage.
+text = text.replace('  isGenerationForActiveRequest,\n', '')
+
 CHAT.write_text(text, encoding="utf-8")
 
-CSS.write_text('''/* Prevent response audit/status chips from covering the composer on mobile. */\n.response-audit {\n  position: relative !important;\n  inset: auto !important;\n  width: min(100%, 720px) !important;\n  max-width: 100% !important;\n  margin: 8px auto 12px !important;\n  z-index: 3 !important;\n  pointer-events: auto;\n}\n\n.response-audit-trigger {\n  max-width: 100%;\n  min-height: 36px;\n}\n\n.response-audit-log {\n  max-width: 100%;\n  max-height: min(48vh, 420px);\n  overflow: auto;\n}\n\n@media (max-width: 768px) {\n  .response-audit {\n    margin: 6px 0 10px !important;\n  }\n  .response-audit-trigger {\n    width: 100%;\n    min-height: 34px;\n  }\n}\n''', encoding="utf-8")
+CSS.write_text('''/* Keep response-audit UI in normal document flow so it never covers the composer. */
+.response-audit {
+  position: relative !important;
+  inset: auto !important;
+  width: min(100%, 720px) !important;
+  max-width: 100% !important;
+  margin: 8px auto 12px !important;
+  z-index: 3 !important;
+  pointer-events: auto;
+}
+.response-audit-trigger { max-width: 100%; min-height: 36px; }
+.response-audit-log { max-width: 100%; max-height: min(48vh, 420px); overflow: auto; }
+@media (max-width: 768px) {
+  .response-audit { margin: 6px 0 10px !important; }
+  .response-audit-trigger { width: 100%; min-height: 34px; }
+}
+''', encoding="utf-8")
 
 main = MAIN.read_text(encoding="utf-8")
 import_line = 'import "./styles/chatResponseLayoutFix.css";\n'
