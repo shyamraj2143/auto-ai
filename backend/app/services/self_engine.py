@@ -7,8 +7,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import select
+
 from app.core.config import settings
+from app.db.session import SessionLocal
+from app.models.user import User
 from app.services.orchestration.model_registry import model_registry
+from app.services.personal_model_service import personal_model_service
 from app.services.web_search_service import web_search_service
 
 logger = logging.getLogger("auto_ai.self_engine")
@@ -24,9 +29,9 @@ RESEARCH_TOPICS = (
 class SelfDevelopmentEngine:
     """Bounded autonomous improvement loop.
 
-    It researches public technical changes, refreshes the model registry and records
-    improvement candidates. It never executes arbitrary generated source code or
-    deploys an unreviewed code change.
+    It researches public technical changes, refreshes the model registry and updates
+    each opted-in user's private adapter. It never executes arbitrary generated source
+    code or deploys an unreviewed code change.
     """
 
     VERSION = "AutoAI-SelfEngine-v1"
@@ -42,11 +47,28 @@ class SelfDevelopmentEngine:
         try:
             return json.loads(self.state_path.read_text(encoding="utf-8"))
         except (FileNotFoundError, OSError, json.JSONDecodeError):
-            return {"version": self.VERSION, "runs": 0, "findings": [], "proposals": []}
+            return {"version": self.VERSION, "runs": 0, "findings": [], "proposals": [], "users_learned": 0}
 
     def _write_state(self, state: dict[str, Any]) -> None:
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         self.state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def _learn_opted_in_users(self) -> int:
+        learned = 0
+        with SessionLocal() as db:
+            users = db.scalars(
+                select(User).where(
+                    User.memory_enabled.is_(True),
+                    User.feedback_learning_enabled.is_(True),
+                )
+            ).all()
+            for user in users:
+                try:
+                    personal_model_service.train(db, user=user)
+                    learned += 1
+                except Exception as exc:
+                    logger.warning("self_engine user learning failed user=%s error=%s", user.id, type(exc).__name__)
+        return learned
 
     def run_once(self) -> dict[str, Any]:
         state = self._read_state()
@@ -59,6 +81,8 @@ class SelfDevelopmentEngine:
         except Exception as exc:
             registry_status = f"refresh_failed: {type(exc).__name__}"
             logger.warning("self_engine model registry refresh failed: %s", exc)
+
+        users_learned = self._learn_opted_in_users()
 
         for topic in RESEARCH_TOPICS:
             try:
@@ -91,6 +115,7 @@ class SelfDevelopmentEngine:
             "runs": int(state.get("runs", 0)) + 1,
             "last_run_at": datetime.now(timezone.utc).isoformat(),
             "registry_status": registry_status,
+            "users_learned": users_learned,
             "findings": findings[:40],
             "proposals": proposals[:20],
         })
