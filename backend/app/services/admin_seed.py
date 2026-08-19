@@ -1,8 +1,9 @@
+import os
+
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.core.security import get_password_hash
 from app.models.user import User
 from app.services.admin_control import (
@@ -20,9 +21,12 @@ def _clean(value: str | None) -> str | None:
 
 
 def create_admin_from_env(db: Session) -> User | None:
-    email = _clean(str(settings.ADMIN_EMAIL) if settings.ADMIN_EMAIL else None)
-    password = settings.ADMIN_PASSWORD.get_secret_value() if settings.ADMIN_PASSWORD else None
-    name = _clean(settings.ADMIN_NAME)
+    # Read bootstrap credentials directly from the process environment.
+    # This keeps ADMIN_* variables working even when Settings uses extra="ignore".
+    email = _clean(os.getenv("ADMIN_EMAIL"))
+    password = _clean(os.getenv("ADMIN_PASSWORD"))
+    name = _clean(os.getenv("ADMIN_NAME"))
+
     values = {
         "ADMIN_EMAIL": email,
         "ADMIN_PASSWORD": password,
@@ -33,7 +37,9 @@ def create_admin_from_env(db: Session) -> User | None:
 
     missing = [key for key, value in values.items() if not value]
     if missing:
-        raise RuntimeError(f"Missing required admin bootstrap environment variables: {', '.join(missing)}")
+        raise RuntimeError(
+            f"Missing required admin bootstrap environment variables: {', '.join(missing)}"
+        )
 
     assert email is not None
     assert password is not None
