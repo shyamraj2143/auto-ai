@@ -13,6 +13,7 @@ import { parseNotificationDestination, routeForNotificationDestination } from ".
 import "../../features/calls/calls.css";
 import { AlarmProvider } from "../../features/alarms/AlarmContext";
 import { AlarmOverlay } from "../../features/alarms/AlarmOverlay";
+import { NetworkStatusMonitor } from "../common/NetworkStatusMonitor";
 
 function AlarmWorkspaceScope({ enabled, nativeEnabled, children }: { enabled: boolean; nativeEnabled: boolean; children: ReactNode }) {
   if (!enabled) return <>{children}</>;
@@ -133,6 +134,7 @@ export function AppShell() {
         </div>
       </main>
       {!fullCanvasAdmin && <WorkspaceMobileNavigation />}
+      <NetworkStatusMonitor />
     </div>
   );
 
