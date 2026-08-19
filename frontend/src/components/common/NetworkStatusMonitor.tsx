@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, CloudOff, RefreshCw, Wifi, WifiOff } from "lucide-react";
+import { AlertTriangle, CloudOff, RefreshCw, Wifi, WifiOff } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 
 type NetworkState = "checking" | "good" | "slow" | "poor" | "offline" | "backend_unreachable";
@@ -44,11 +44,7 @@ async function timedFetch(url: string, options: RequestInit = {}) {
   const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const started = performance.now();
   try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-      cache: "no-store",
-    });
+    const response = await fetch(url, { ...options, signal: controller.signal, cache: "no-store" });
     return { ok: response.ok || response.type === "opaque", latencyMs: Math.round(performance.now() - started) };
   } finally {
     window.clearTimeout(timer);
@@ -125,14 +121,7 @@ function statusDetail(diagnostics: Diagnostics) {
 
 export function NetworkStatusMonitor() {
   const { token } = useAuth();
-  const [diagnostics, setDiagnostics] = useState<Diagnostics>({
-    state: "checking",
-    latencyMs: null,
-    downlinkMbps: null,
-    effectiveType: null,
-    backendReachable: null,
-    checkedAt: 0,
-  });
+  const [diagnostics, setDiagnostics] = useState<Diagnostics>({ state: "checking", latencyMs: null, downlinkMbps: null, effectiveType: null, backendReachable: null, checkedAt: 0 });
   const [retrying, setRetrying] = useState(false);
 
   const publishPresence = useCallback(async (state: "foreground" | "background") => {
@@ -160,9 +149,7 @@ export function NetworkStatusMonitor() {
 
   useEffect(() => {
     void publishPresence(document.hidden ? "background" : "foreground");
-    const timer = window.setInterval(() => {
-      void publishPresence(document.hidden ? "background" : "foreground");
-    }, PRESENCE_INTERVAL_MS);
+    const timer = window.setInterval(() => void publishPresence(document.hidden ? "background" : "foreground"), PRESENCE_INTERVAL_MS);
     const onVisibility = () => void publishPresence(document.hidden ? "background" : "foreground");
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
@@ -191,44 +178,16 @@ export function NetworkStatusMonitor() {
   const visible = diagnostics.state !== "good" && diagnostics.state !== "checking";
   const Icon = diagnostics.state === "offline" ? WifiOff : diagnostics.state === "backend_unreachable" ? CloudOff : AlertTriangle;
   const detail = useMemo(() => statusDetail(diagnostics), [diagnostics]);
-
   if (!visible) return null;
 
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      style={{
-        position: "fixed",
-        top: "calc(env(safe-area-inset-top, 0px) + 62px)",
-        left: 12,
-        right: 12,
-        zIndex: 120,
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "10px 12px",
-        borderRadius: 14,
-        border: "1px solid rgba(255,255,255,.16)",
-        background: "rgba(11,18,32,.94)",
-        backdropFilter: "blur(14px)",
-        boxShadow: "0 10px 30px rgba(0,0,0,.28)",
-        color: "#eef2ff",
-        fontSize: 12,
-      }}
-    >
+    <div role="status" aria-live="polite" style={{ position: "fixed", top: "calc(env(safe-area-inset-top, 0px) + 62px)", left: 12, right: 12, zIndex: 120, display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 14, border: "1px solid rgba(255,255,255,.16)", background: "rgba(11,18,32,.94)", backdropFilter: "blur(14px)", boxShadow: "0 10px 30px rgba(0,0,0,.28)", color: "#eef2ff", fontSize: 12 }}>
       <Icon size={17} aria-hidden="true" />
       <div style={{ minWidth: 0, flex: 1 }}>
         <div style={{ fontWeight: 700 }}>{statusText(diagnostics)}</div>
         {detail && <div style={{ opacity: .68, marginTop: 2 }}>{detail}</div>}
       </div>
-      <button
-        type="button"
-        onClick={() => void refresh()}
-        disabled={retrying}
-        aria-label="Check network again"
-        style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: 10, border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.06)", color: "inherit" }}
-      >
+      <button type="button" onClick={() => void refresh()} disabled={retrying} aria-label="Check network again" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, borderRadius: 10, border: "1px solid rgba(255,255,255,.14)", background: "rgba(255,255,255,.06)", color: "inherit" }}>
         {retrying ? <RefreshCw size={15} className="animate-spin" /> : <Wifi size={15} />}
       </button>
     </div>
