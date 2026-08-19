@@ -28,7 +28,6 @@ public final class NotificationDeepLink {
         MESSAGE_THREAD, AI_CONVERSATION, INCOMING_CALL, MISSED_CALL, CALL_HISTORY,
         FOLLOW_REQUEST, FOLLOW_ACCEPTED, SOCIAL_ALERT, SCREEN_SHARE_SESSION,
         APP_UPDATE, SETTINGS_SECTION, PAYMENT_RESULT, RELATIONSHIP_FOLLOWUP, SEVA_CASE,
-        // Legacy aliases kept for compatibility with older FCM notification code.
         SOCIAL, RELATIONSHIP, SEVA
     }
 
@@ -36,6 +35,9 @@ public final class NotificationDeepLink {
 
     public static Intent activityIntent(Context context, Destination destination, String entityId, String secondaryId, String eventId, long expiresAt) {
         Destination canonical = canonicalDestination(destination);
+        if (canonical == Destination.MESSAGE_THREAD && eventId != null && eventId.startsWith("ai_response:")) {
+            canonical = Destination.AI_CONVERSATION;
+        }
         Intent intent = new Intent(context, MainActivity.class)
             .setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP)
             .putExtra(EXTRA_DESTINATION, canonical.name())
