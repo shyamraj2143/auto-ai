@@ -3,6 +3,8 @@ import logging
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from redis import Redis
+from redis.exceptions import RedisError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -28,6 +30,8 @@ from app.services.firebase_notifications import firebase_notification_service
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 logger = logging.getLogger(__name__)
 ADMIN_ROLES = {"admin", "super_admin", "administrator"}
+PRESENCE_TTL_SECONDS = 45
+_presence_redis: Redis | None = None
 
 
 def notification_preferences(db: Session, user_id: str) -> UserNotificationPreference:
@@ -57,6 +61,35 @@ def update_notification_preferences(payload: NotificationPreferenceUpdate, curre
     return record
 
 
+@router.post("/presence")
+def update_app_presence(payload: dict, current_user: User = Depends(get_current_user)):
+    """Record short-lived foreground/background state used to suppress redundant AI push notifications."""
+    state = str(payload.get("state") or "").strip().lower()
+    if state not in {"foreground", "background"}:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid presence state.")
+    if not settings.redis_url:
+        return {"ok": True, "stored": False, "state": state}
+    global _presence_redis
+    try:
+        if _presence_redis is None:
+            _presence_redis = Redis.from_url(
+                settings.redis_url,
+                decode_responses=True,
+                socket_connect_timeout=2,
+                socket_timeout=2,
+                health_check_interval=30,
+            )
+        _presence_redis.set(
+            f"autoai:app_presence:{current_user.id}",
+            state,
+            ex=PRESENCE_TTL_SECONDS,
+        )
+        return {"ok": True, "stored": True, "state": state, "ttl_seconds": PRESENCE_TTL_SECONDS}
+    except (RedisError, OSError, TypeError, ValueError) as exc:
+        logger.warning("app_presence_store_failed user_id=%s error=%s", current_user.id, type(exc).__name__)
+        return {"ok": True, "stored": False, "state": state}
+
+
 def notify_secret_value() -> str:
     return settings.UPDATE_NOTIFY_SECRET.get_secret_value() if settings.UPDATE_NOTIFY_SECRET else ""
 
@@ -73,8 +106,6 @@ def authorize_apk_update_notification(request: Request, db: Session) -> str:
     if configured_secret:
         if provided_secret and hmac.compare_digest(provided_secret, configured_secret):
             return "notification_secret"
-        # Preserve compatibility with older release scripts that supplied the
-        # notification secret as a bearer token.
         if bearer_token and hmac.compare_digest(bearer_token, configured_secret):
             return "notification_secret"
 
