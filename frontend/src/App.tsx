@@ -11,7 +11,6 @@ import { MotionProvider } from "./motion/MotionProvider";
 import { consumeSafeRootRedirect, markStartupStable } from "./reliability/safeMode";
 import { AppSettingsProvider } from "./contexts/AppSettingsContext";
 import { AnnouncementBanner } from "./components/common/AnnouncementBanner";
-import { StudentRegistrationSection } from "./components/landing/StudentRegistrationSection";
 import { isAdminPanelRole } from "./utils/roles";
 import { ApiClientError } from "./api/client";
 import { sevaApi } from "./features/autoaiSeva/sevaApi";
@@ -266,7 +265,6 @@ export default function App() {
                 <ScreenShareProvider>
                   <SeoManager />
                   <AnnouncementBanner />
-                  <StudentRegistrationSection />
                   <StartupRecoveryMarker />
                   <AppRoutes />
                   <ScreenShareOverlay />
