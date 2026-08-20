@@ -8,6 +8,7 @@ on:
     paths:
       - "scripts/apply_user_requested_feature_fixes.py"
       - "scripts/fix_requested_feature_contract_test.py"
+      - "scripts/remove_bedrock.py"
       - ".github/workflows/apply-requested-feature-fixes.yml"
       - ".github/feature-fix-trigger.txt"
   pull_request:
@@ -16,6 +17,7 @@ on:
     paths:
       - "scripts/apply_user_requested_feature_fixes.py"
       - "scripts/fix_requested_feature_contract_test.py"
+      - "scripts/remove_bedrock.py"
       - ".github/workflows/apply-requested-feature-fixes.yml"
       - ".github/feature-fix-trigger.txt"
 
@@ -42,6 +44,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Remove Bedrock integration
+        run: python scripts/remove_bedrock.py
 
       - name: Apply targeted patch
         shell: bash
@@ -91,6 +96,9 @@ jobs:
         run: |
           python -m compileall -q backend/app/services/live_context.py
           python -m compileall -q backend/app/api/routes/ai.py
+          python -m compileall -q backend/app/services/groq_service.py
+          python -m compileall -q backend/app/services/orchestration/model_registry.py
+          python -m compileall -q backend/app/services/orchestration/preset_policy.py
 
       - name: Run response-language backend tests
         env:
@@ -105,6 +113,10 @@ jobs:
           grep -q 'ss-dock-compact' frontend/src/features/screenShare/ScreenShareOverlay.tsx
           grep -q 'AutoAI app details' frontend/src/components/settings/SettingsPage.tsx
           grep -q 'autoai-response-' backend/app/services/live_context.py
+          if grep -RniE 'bedrock|BEDROCK_|allow_bedrock_fallback|aws4-hmac-sha256' backend frontend scripts .env.example README.md docs 2>/dev/null; then
+            echo "Bedrock references remain."
+            exit 1
+          fi
           git diff --check
 
       - name: Commit verified changes to source branch
@@ -117,18 +129,6 @@ jobs:
           target_branch="${GITHUB_HEAD_REF:-main}"
           git config user.name "AutoAI Fix Bot"
           git config user.email "actions@users.noreply.github.com"
-          git add \
-            frontend/src/contexts/AppSettingsContext.tsx \
-            frontend/src/components/chat/ChatPage.tsx \
-            frontend/src/components/settings/SettingsPage.tsx \
-            frontend/src/features/screenShare/ScreenShareProvider.tsx \
-            frontend/src/features/screenShare/ScreenShareWorkspacePage.tsx \
-            frontend/src/features/screenShare/ScreenShareOverlay.tsx \
-            frontend/src/styles/featureFixes.css \
-            frontend/src/main.tsx \
-            frontend/src/reliability/requestedFeatureFixes.contract.test.ts \
-            backend/app/services/live_context.py \
-            backend/app/api/routes/ai.py \
-            backend/tests/test_response_language_context.py
-          git commit -m "fix: improve chat settings sharing and mobile messaging"
+          git add -A
+          git commit -m "refactor: remove Bedrock integration"
           git push origin HEAD:"$target_branch"
