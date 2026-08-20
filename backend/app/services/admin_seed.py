@@ -1,3 +1,4 @@
+import logging
 import os
 
 from sqlalchemy import func, select
@@ -14,6 +15,8 @@ from app.services.admin_control import (
     recalculate_token_balance,
 )
 
+logger = logging.getLogger("auto_ai.admin_seed")
+
 
 def _clean(value: str | None) -> str | None:
     stripped = value.strip() if value else ""
@@ -21,8 +24,12 @@ def _clean(value: str | None) -> str | None:
 
 
 def create_admin_from_env(db: Session) -> User | None:
-    # Read bootstrap credentials directly from the process environment.
-    # This keeps ADMIN_* variables working even when Settings uses extra="ignore".
+    """Optionally bootstrap an admin without ever preventing API startup.
+
+    Railway environments can contain only part of the ADMIN_* configuration.
+    Admin bootstrap is optional, so incomplete credentials must be skipped rather
+    than crashing FastAPI's startup lifecycle and making the healthcheck fail.
+    """
     email = _clean(os.getenv("ADMIN_EMAIL"))
     password = _clean(os.getenv("ADMIN_PASSWORD"))
     name = _clean(os.getenv("ADMIN_NAME"))
@@ -32,14 +39,17 @@ def create_admin_from_env(db: Session) -> User | None:
         "ADMIN_PASSWORD": password,
         "ADMIN_NAME": name,
     }
-    if not any(values.values()):
+    configured = [key for key, value in values.items() if value]
+    if not configured:
         return None
 
     missing = [key for key, value in values.items() if not value]
     if missing:
-        raise RuntimeError(
-            f"Missing required admin bootstrap environment variables: {', '.join(missing)}"
+        logger.warning(
+            "Skipping optional admin bootstrap because these variables are missing: %s",
+            ", ".join(missing),
         )
+        return None
 
     assert email is not None
     assert password is not None
@@ -50,7 +60,10 @@ def create_admin_from_env(db: Session) -> User | None:
     if existing:
         if existing.role in {"admin", "super_admin"}:
             return existing
-        raise RuntimeError("ADMIN_EMAIL belongs to a non-admin user; refusing to promote or overwrite it.")
+        logger.error(
+            "Skipping admin bootstrap: ADMIN_EMAIL belongs to a non-admin user."
+        )
+        return None
 
     user = User(
         email=normalized_email,
@@ -83,7 +96,12 @@ def create_admin_from_env(db: Session) -> User | None:
         existing = db.scalar(select(User).where(func.lower(User.email) == normalized_email))
         if existing and existing.role in {"admin", "super_admin"}:
             return existing
-        raise
+        logger.exception("Admin bootstrap encountered a database integrity error; continuing startup.")
+        return None
+    except Exception:
+        db.rollback()
+        logger.exception("Admin bootstrap failed; continuing API startup without admin bootstrap.")
+        return None
 
     db.refresh(user)
     return user
