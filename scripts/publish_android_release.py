@@ -7,6 +7,7 @@ import json
 import mimetypes
 import os
 import sys
+import time
 import uuid
 from pathlib import Path
 from urllib import error, request
@@ -27,7 +28,7 @@ def read_http_error(exc: error.HTTPError) -> str:
         return exc.reason
 
 
-def post_json(url: str, payload: dict[str, object], token: str | None = None) -> dict[str, object]:
+def post_json(url: str, payload: dict[str, object], token: str | None = None, timeout: float = 60) -> dict[str, object]:
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json; charset=utf-8",
@@ -40,8 +41,63 @@ def post_json(url: str, payload: dict[str, object], token: str | None = None) ->
         headers=headers,
         method="POST",
     )
-    with request.urlopen(req, timeout=60) as response:
+    with request.urlopen(req, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def get_json(url: str, timeout: float = 10) -> dict[str, object]:
+    req = request.Request(url, headers={"Accept": "application/json"}, method="GET")
+    with request.urlopen(req, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def wait_for_backend(base_url: str, attempts: int = 20, delay_seconds: int = 10) -> None:
+    """Wait for Railway deployment and database readiness before publishing release metadata."""
+    health_url = api_url(base_url, "/health")
+    ready_url = api_url(base_url, "/ready")
+    last_error = "backend did not become ready"
+    for attempt in range(1, attempts + 1):
+        try:
+            health = get_json(health_url, timeout=10)
+            if str(health.get("status", "")).lower() != "ok":
+                last_error = f"health status={health.get('status')}"
+            else:
+                ready = get_json(ready_url, timeout=10)
+                if str(ready.get("status", "")).lower() == "ready":
+                    print(f"Backend is healthy and database is ready (attempt {attempt}).")
+                    return
+                last_error = f"readiness status={ready.get('status')}"
+        except error.HTTPError as exc:
+            last_error = f"HTTP {exc.code}: {read_http_error(exc)}"
+        except Exception as exc:
+            last_error = f"{type(exc).__name__}: {exc}"
+        print(f"Backend readiness attempt {attempt}/{attempts} failed: {last_error}", file=sys.stderr)
+        if attempt < attempts:
+            time.sleep(delay_seconds)
+    raise RuntimeError(f"Production backend did not become ready: {last_error}")
+
+
+def login_with_retry(base_url: str, email: str, password: str, attempts: int = 6, delay_seconds: int = 10) -> str:
+    last_error = "login failed"
+    for attempt in range(1, attempts + 1):
+        try:
+            login = post_json(
+                api_url(base_url, "/auth/login"),
+                {"email": email, "password": password},
+                timeout=30,
+            )
+            token = str(login.get("access_token") or "")
+            if token:
+                return token
+            last_error = "login response did not contain access_token"
+        except error.HTTPError as exc:
+            last_error = f"HTTP {exc.code}: {read_http_error(exc)}"
+        except Exception as exc:
+            last_error = f"{type(exc).__name__}: {exc}"
+        print(f"Admin login attempt {attempt}/{attempts} failed: {last_error}", file=sys.stderr)
+        if attempt < attempts:
+            time.sleep(delay_seconds)
+    raise RuntimeError(f"Production admin login failed after retries: {last_error}")
 
 
 def multipart_body(fields: dict[str, str], file_field: str, file_path: Path) -> tuple[bytes, str]:
@@ -119,6 +175,7 @@ def publish_metadata(
             "force_update": force_update,
         },
         token,
+        timeout=60,
     )
 
 
@@ -166,11 +223,8 @@ def main() -> int:
         return 2
 
     try:
-        login = post_json(
-            api_url(api_base, "/auth/login"),
-            {"email": admin_email, "password": admin_password},
-        )
-        token = str(login["access_token"])
+        wait_for_backend(api_base)
+        token = login_with_retry(api_base, admin_email, admin_password)
         release_notes = args.release_notes.strip() or args.changelog.strip() or f"Version {args.version_name}"
         changelog = args.changelog.strip() or release_notes
         if args.metadata_only:
