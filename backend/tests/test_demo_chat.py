@@ -40,72 +40,49 @@ def payload(session_id: str = "demo-session-0001", message: str = "Hello") -> di
     }
 
 
-def test_demo_chat_prefers_bedrock_with_fallback_and_stores_no_chat(monkeypatch) -> None:
+def test_demo_chat_uses_groq_and_stores_no_chat(monkeypatch) -> None:
     client, db = demo_client()
     calls: list[tuple[list[dict], dict]] = []
 
     def fake_complete(messages, **kwargs):
         calls.append((messages, kwargs))
-        return "Real Bedrock demo answer", {"prompt_tokens": 8, "completion_tokens": 5, "total_tokens": 13}, settings.bedrock_model
+        return "Real Groq demo answer", {"prompt_tokens": 8, "completion_tokens": 5, "total_tokens": 13}, "openai/gpt-oss-120b"
 
-    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_ENABLED", True)
-    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_LIMIT", 20)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_ENABLED", True, raising=False)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_LIMIT", 20, raising=False)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_TTL_HOURS", 24, raising=False)
     monkeypatch.setattr(demo_chat.groq_service, "complete", fake_complete)
 
     response = client.post("/api/v1/demo/chat", json=payload())
 
     assert response.status_code == 200
     assert response.json() == {
-        "content": "Real Bedrock demo answer",
-        "provider": "bedrock",
-        "model": settings.bedrock_model,
+        "content": "Real Groq demo answer",
+        "provider": "groq",
+        "model": "openai/gpt-oss-120b",
         "messages_used": 1,
         "remaining": 4,
     }
-    assert calls[0][1]["provider"] == "bedrock"
-    assert calls[0][1]["allow_bedrock_fallback"] is True
+    assert calls[0][1]["provider"] == "groq"
+    assert "allow_bedrock_fallback" not in calls[0][1]
     assert calls[0][0][-1] == {"role": "user", "content": "Hello"}
     assert (db.scalar(select(func.count()).select_from(Chat)) or 0) == 0
     usage = db.scalar(select(APIUsage))
     assert usage is not None
-    assert usage.provider == "bedrock"
-    assert usage.endpoint == "public_demo_chat"
-    db.close()
-
-
-def test_demo_chat_reports_groq_when_bedrock_falls_back(monkeypatch) -> None:
-    client, db = demo_client()
-    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_ENABLED", True)
-    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_LIMIT", 20)
-    monkeypatch.setattr(
-        demo_chat.groq_service,
-        "complete",
-        lambda messages, **kwargs: (
-            "Fallback answer",
-            {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
-            "openai/gpt-oss-120b",
-        ),
-    )
-
-    response = client.post("/api/v1/demo/chat", json=payload())
-
-    assert response.status_code == 200
-    assert response.json()["provider"] == "groq"
-    assert response.json()["model"] == "openai/gpt-oss-120b"
-    usage = db.scalar(select(APIUsage))
-    assert usage is not None
     assert usage.provider == "groq"
+    assert usage.endpoint == "public_demo_chat"
     db.close()
 
 
 def test_demo_chat_enforces_server_side_limit(monkeypatch) -> None:
     client, db = demo_client()
-    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_ENABLED", True)
-    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_LIMIT", 2)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_ENABLED", True, raising=False)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_LIMIT", 2, raising=False)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_TTL_HOURS", 24, raising=False)
     monkeypatch.setattr(
         demo_chat.groq_service,
         "complete",
-        lambda messages, **kwargs: ("Bedrock answer", {}, "amazon.nova-lite-v1:0"),
+        lambda messages, **kwargs: ("Groq answer", {}, "openai/gpt-oss-120b"),
     )
 
     assert client.post("/api/v1/demo/chat", json=payload()).status_code == 200
@@ -119,10 +96,11 @@ def test_demo_chat_enforces_server_side_limit(monkeypatch) -> None:
     db.close()
 
 
-def test_demo_chat_releases_quota_when_all_providers_fail(monkeypatch) -> None:
+def test_demo_chat_releases_quota_when_provider_fails(monkeypatch) -> None:
     client, db = demo_client()
-    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_ENABLED", True)
-    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_LIMIT", 20)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_ENABLED", True, raising=False)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_LIMIT", 20, raising=False)
+    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_TTL_HOURS", 24, raising=False)
 
     def fail(*args, **kwargs):
         raise HTTPException(status_code=503, detail="provider unavailable")
@@ -136,17 +114,16 @@ def test_demo_chat_releases_quota_when_all_providers_fail(monkeypatch) -> None:
     db.close()
 
 
-def test_demo_chat_config_exposes_active_bedrock_model(monkeypatch) -> None:
+def test_demo_chat_config_has_safe_defaults_without_settings_fields(monkeypatch) -> None:
     client, db = demo_client()
-    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_ENABLED", True)
-    monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_LIMIT", 20)
+    monkeypatch.delattr(settings, "PUBLIC_DEMO_CHAT_ENABLED", raising=False)
+    monkeypatch.delattr(settings, "PUBLIC_DEMO_CHAT_LIMIT", raising=False)
+    monkeypatch.delattr(settings, "PUBLIC_DEMO_CHAT_TTL_HOURS", raising=False)
+
     response = client.get("/api/v1/demo/chat/config")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "enabled": True,
-        "provider": "bedrock",
-        "model": settings.bedrock_model,
-        "limit": 5,
-    }
+    assert response.json()["enabled"] is True
+    assert response.json()["limit"] == 5
+    assert response.json()["model"] == settings.GROQ_MODEL
     db.close()
