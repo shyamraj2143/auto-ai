@@ -181,6 +181,24 @@ class Settings(BaseSettings):
     def groq_api_key(self) -> str | None:
         return (self.GROQ_API_KEY or self.AUTO_AI_GROQ_API_KEY or "").strip() or None
 
+    def chat_model_for(self, provider: str | None = None) -> str:
+        """Return the configured default chat model for an AI provider.
+
+        Chat creation uses this method when the client does not explicitly
+        select a model. Keep the resolver centralized so provider defaults
+        cannot drift between chat persistence and the provider service.
+        """
+        selected = (provider or self.AI_PROVIDER or "groq").strip().lower()
+        defaults = {
+            "groq": self.GROQ_MODEL,
+            "openai": self.OPENAI_MODEL,
+            "gemini": self.GEMINI_MODEL,
+        }
+        model = defaults.get(selected)
+        if not model:
+            raise ValueError(f"Unsupported AI provider: {selected}")
+        return model
+
     @property
     def sqlalchemy_database_url(self) -> str:
         raw_url = (self.DATABASE_URL or self.MYSQL_URL or "").strip()
