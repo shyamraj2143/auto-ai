@@ -9,7 +9,6 @@
       - text: New chat
     - navigation [ref=e34]:
       - generic [ref=e35]:
-        - button "hi from bedrock test" [ref=e36] [cursor=pointer]
         - button "Rename chat" [ref=e37] [cursor=pointer]:
           - img [ref=e38]
         - button "Delete chat" [ref=e41] [cursor=pointer]:
@@ -42,7 +41,6 @@
             - combobox "AI provider" [ref=e87]:
               - option "OpenAI"
               - option "Groq"
-              - option "Bedrock" [selected]
             - combobox "AI model" [ref=e88]:
               - option "Ministral 3 3B" [selected]
               - option "Ministral 3 8B"

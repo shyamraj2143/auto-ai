@@ -19,7 +19,6 @@ class DemoChatRequest(BaseModel):
 
 class DemoChatResponse(BaseModel):
     content: str
-    provider: Literal["bedrock", "groq", "openai"] = "bedrock"
     model: str
     messages_used: int
     remaining: int
@@ -27,6 +26,5 @@ class DemoChatResponse(BaseModel):
 
 class DemoChatConfig(BaseModel):
     enabled: bool
-    provider: Literal["bedrock", "groq", "openai"] = "bedrock"
     model: str
     limit: int

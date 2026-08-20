@@ -38,7 +38,6 @@ async function installAuthenticatedFixtures(page: Page) {
     if (path.endsWith("/ai/research-models")) return json(route, {
       providers: {
         groq: { enabled: true, models: ["llama-3.3-70b-versatile", "openai/gpt-oss-120b"] },
-        bedrock: { enabled: true, models: ["amazon.nova-pro-v1:0"] },
         openai: { enabled: true, models: ["gpt-5"] },
         gemini: { enabled: true, models: ["gemini-2.5-pro"] },
       },

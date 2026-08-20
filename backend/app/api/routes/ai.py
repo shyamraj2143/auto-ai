@@ -348,7 +348,6 @@ def deep_research_payload(metadata: dict | None) -> dict:
 
 
 def model_payload(provider: str, model: str) -> dict:
-    provider_name = {"groq": "Groq", "bedrock": "AWS Bedrock", "openai": "OpenAI", "gemini": "Gemini"}.get(provider, provider)
     return {"model": {"provider": provider, "provider_label": provider_name, "model": model}}
 
 
@@ -362,7 +361,6 @@ def is_model_identity_question(message: str) -> bool:
 
 
 def model_identity_answer(provider: str, model: str) -> str:
-    provider_name = {"groq": "Groq", "bedrock": "AWS Bedrock", "openai": "OpenAI", "gemini": "Gemini"}[provider]
     return f"I am Auto-AI. This response is using {provider_name} / {model}."
 
 
@@ -473,13 +471,11 @@ def runtime_identity_prompt(provider: str | None, model: str | None, *, mode: st
     if mode in {"deep_research", "multi_model"}:
         return (
             "Runtime identity: You are Auto-AI using Deep Research / Multi-Model mode. "
-            "If the user asks which model is being used, say this mode consults the selected Groq, Bedrock, OpenAI, and Gemini research models and synthesizes one answer. "
             "Do not claim to be ChatGPT, GPT-4, or any other unrelated model."
         )
 
     selected_provider = groq_service.selected_provider(provider)
     selected_model = groq_service.selected_model(model, provider=selected_provider, web_search=False)
-    provider_name = {"groq": "Groq", "bedrock": "AWS Bedrock", "openai": "OpenAI", "gemini": "Gemini"}[selected_provider]
     return (
         f"Runtime identity: You are Auto-AI using provider {provider_name} with model id {selected_model} for this request. "
         f"If the user asks your model name or architecture, answer exactly with {provider_name} / {selected_model}. "
@@ -883,7 +879,6 @@ def run_chat_generation(generation_id: str) -> None:
                     providers=payload.providers,
                     requested_models=[
                         *payload.groq_models,
-                        *payload.bedrock_models,
                         *payload.openai_models,
                         *payload.gemini_models,
                     ],
@@ -948,8 +943,7 @@ def run_chat_generation(generation_id: str) -> None:
                 model=selected_model,
                 provider=selected_provider,
                 web_search=False,
-                allow_bedrock_fallback=True,
-            )
+                            )
             for chunk in stream:
                 now = time.monotonic()
                 if now - last_cancel_check_at >= 0.25:
@@ -1075,9 +1069,7 @@ def intelligence_config(
     records = model_registry.refresh()
     healthy = [record for record in records if record.enabled and record.health_status == "healthy"]
     groq = [record for record in healthy if record.provider == "groq"]
-    bedrock = [record for record in healthy if record.provider == "bedrock"]
     coding_available, coding_reason = coding_configuration_status(records)
-    groq_coding_model, bedrock_coding_model = coding_model_ids(records)
 
     def mode_config(
         mode: str,
@@ -1104,22 +1096,17 @@ def intelligence_config(
             "medium": mode_config("medium", bool(groq), "Balanced parallel intelligence"),
             "high": mode_config(
                 "high",
-                bool(groq or bedrock),
                 "Advanced multi-provider reasoning",
-                fallback_message=None if bedrock else "Continuing with available intelligence models.",
             ),
             "deep_research": mode_config(
                 "deep_research",
-                bool(groq or bedrock) and bool(settings.TAVILY_API_KEY or settings.SERPER_API_KEY),
                 "Source-backed comprehensive research",
             ),
             "coding": mode_config(
                 "coding",
                 coding_available,
-                "Groq Qwen implements while Amazon Bedrock Qwen Coder reviews and corrects.",
                 provider_reason=coding_reason,
                 fallback_message=(
-                    f"Groq: {groq_coding_model} · Bedrock: {bedrock_coding_model}"
                     if coding_available
                     else None
                 ),
@@ -1127,7 +1114,6 @@ def intelligence_config(
         },
         "models": [
             {
-                "provider": "AWS Bedrock" if record.provider == "bedrock" else record.provider.title(),
                 "display_name": record.friendly_name,
                 "healthy": record.health_status == "healthy",
                 "supported_modes": sorted(mode.value for mode in record.supported_modes),
@@ -1547,8 +1533,7 @@ def chat(
             model=selected_model,
             provider=selected_provider,
             web_search=False,
-            allow_bedrock_fallback=True,
-        )
+                    )
         cache_status = "miss" if search_bundle is None and payload.mode == "normal" else "bypass"
         if cache_status == "miss":
             response_cache.set(cache_key, {"content": content, "usage": usage, "model": selected_model})
@@ -1852,8 +1837,7 @@ def stream_chat(
                     model=selected_model,
                     provider=selected_provider,
                     web_search=False,
-                    allow_bedrock_fallback=True,
-                )
+                                    )
                 for chunk in stream:
                     delta = groq_service.extract_stream_delta(chunk)
                     chunk_usage = groq_service.extract_usage(chunk)

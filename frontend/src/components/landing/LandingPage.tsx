@@ -246,10 +246,8 @@ function useOnlineStatus() {
   return online;
 }
 
-function demoProviderLabel(provider: "bedrock" | "groq" | "openai") {
   if (provider === "groq") return "Groq";
   if (provider === "openai") return "OpenAI";
-  return "Bedrock";
 }
 
 export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
@@ -274,8 +272,6 @@ export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
   const [demoTurns, setDemoTurns] = useState(0);
   const [demoLimit, setDemoLimit] = useState(DEMO_CHAT_LIMIT);
   const [demoEnabled, setDemoEnabled] = useState(true);
-  const [demoProvider, setDemoProvider] = useState<"bedrock" | "groq" | "openai">("bedrock");
-  const [demoModel, setDemoModel] = useState("Amazon Bedrock");
   const [demoError, setDemoError] = useState<string | null>(null);
   const [demoSessionId] = useState(readOrCreateDemoSessionId);
   const [pendingDemoMode, setPendingDemoMode] = useState<PreviewMode | null>(null);
@@ -662,7 +658,6 @@ export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
               <span className="prism-preview-brand" style={elementStyle("preview.brand")} {...editableElementProps("preview.brand", "text", "Preview Brand", elementText("preview.brand", "Auto-AI"))}><LogoIcon /> {elementText("preview.brand", "Auto-AI")}</span>
               <div className="prism-preview-statuses">
                 <PrismStatusChip tone="active"><span style={elementStyle("preview.remaining")}>{demoRemaining} demo chats left</span></PrismStatusChip>
-                <PrismStatusChip className="prism-bedrock-chip" tone="success" icon={<span className="prism-live-dot" />}>
                   <span style={elementStyle("preview.provider")}>{demoProviderLabel(demoProvider)}</span> <span style={elementStyle("preview.model")}>{demoModel}</span>
                 </PrismStatusChip>
               </div>
@@ -675,7 +670,6 @@ export function LandingPage({ editor }: { editor?: LandingPageEditorSession }) {
               <div className="prism-preview-thread">
                 <div className="prism-preview-context">
                   <BrainCircuit size={16} />
-                  <span style={elementStyle("preview.context")} {...editableElementProps("preview.context", "text", "Preview Context", elementText("preview.context", "Bedrock context"))}>{elementText("preview.context", "Bedrock context")}</span>
                   <small style={elementStyle("preview.storage")} {...editableElementProps("preview.storage", "text", "Storage Status", elementText("preview.storage", "No chat stored"))}>{elementText("preview.storage", "No chat stored")}</small>
                 </div>
                 <div className="prism-preview-messages" ref={demoMessagesRef} aria-live="polite">

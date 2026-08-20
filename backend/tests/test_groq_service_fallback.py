@@ -48,7 +48,6 @@ def test_groq_complete_tries_stable_fallback_after_selected_model_failure(monkey
     assert model == "openai/gpt-oss-120b"
 
 
-def test_bedrock_uses_openai_when_bedrock_and_groq_fail(monkeypatch):
     service = GroqService()
 
     def unavailable(detail):
@@ -56,8 +55,6 @@ def test_bedrock_uses_openai_when_bedrock_and_groq_fail(monkeypatch):
             raise HTTPException(status_code=503, detail=detail)
         return fail
 
-    monkeypatch.setattr(service, "_complete_bedrock_mantle", unavailable("bedrock unavailable"))
-    monkeypatch.setattr(service, "_complete_bedrock_runtime", unavailable("runtime unavailable"))
     monkeypatch.setattr(service, "_complete_groq", unavailable("groq unavailable"))
     monkeypatch.setattr(settings, "OPENAI_API_KEY", "configured")
     monkeypatch.setattr(
@@ -66,9 +63,7 @@ def test_bedrock_uses_openai_when_bedrock_and_groq_fail(monkeypatch):
         lambda *args, **kwargs: ("OpenAI fallback", {"total_tokens": 2}, kwargs["model"]),
     )
 
-    content, usage, model = service._complete_bedrock(
         [{"role": "user", "content": "Hi"}],
-        model=settings.bedrock_model,
         allow_fallback=True,
     )
 

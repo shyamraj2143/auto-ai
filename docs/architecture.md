@@ -46,7 +46,6 @@ The public API surface is exposed under `/api/v1/human`. Full details are in `do
 
 ## AI Provider Integration
 
-Auto-AI can use OpenAI, Groq, or Amazon Bedrock-compatible chat completions. The active chat provider is selected with `AI_PROVIDER`.
 
 - OpenAI chat completions with `gpt-4.1-mini`
 - Groq chat completions with `openai/gpt-oss-120b`

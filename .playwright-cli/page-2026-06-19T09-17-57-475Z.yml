@@ -9,7 +9,6 @@
       - text: New chat
     - navigation [ref=e34]:
       - generic [ref=e107]:
-        - 'button "Bedrock UI test. Reply exactly: fixed" [ref=e108] [cursor=pointer]'
         - button "Rename chat" [ref=e109] [cursor=pointer]:
           - img [ref=e110]
         - button "Delete chat" [ref=e113] [cursor=pointer]:
@@ -21,7 +20,6 @@
         - button "Delete chat" [ref=e41] [cursor=pointer]:
           - img [ref=e42]
       - generic [ref=e45]:
-        - button "hi from bedrock test" [ref=e46] [cursor=pointer]
         - button "Rename chat" [ref=e47] [cursor=pointer]:
           - img [ref=e48]
         - button "Delete chat" [ref=e51] [cursor=pointer]:
@@ -41,7 +39,6 @@
         - article [ref=e117]:
           - img [ref=e119]
           - generic [ref=e122]:
-            - paragraph [ref=e124]: "Bedrock UI test. Reply exactly: fixed"
             - button "Copy message" [ref=e126] [cursor=pointer]:
               - img [ref=e127]
         - article [ref=e130]:
@@ -66,7 +63,6 @@
             - combobox "AI provider" [ref=e97]:
               - option "OpenAI"
               - option "Groq"
-              - option "Bedrock" [selected]
             - combobox "AI model" [ref=e98]:
               - option "GPT-OSS 120B" [selected]
               - option "GPT-OSS 20B"

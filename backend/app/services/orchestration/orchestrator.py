@@ -67,10 +67,9 @@ class IntelligenceOrchestrator:
         task_providers = {task.model.provider for task in tasks}
         provider_fallback_used = (
             canonical == IntelligenceMode.HIGH
-            and "bedrock" not in task_providers
         ) or (
             canonical == IntelligenceMode.CODING
-            and (len(tasks) < 2 or task_providers != {"groq", "bedrock"})
+            and (len(tasks) < 2 or task_providers != {"groq"})
         )
         if provider_fallback_used:
             emit(
@@ -129,7 +128,6 @@ class IntelligenceOrchestrator:
                 "model.completed",
                 {
                     "task_id": result.task.task_id,
-                    "provider_display_name": "AWS Bedrock" if result.task.model.provider == "bedrock" else result.task.model.provider.title(),
                     "model_display_name": result.task.model.friendly_name,
                     "actual_model_id": result.task.model.actual_model_id,
                     "role": result.task.role,
@@ -197,8 +195,6 @@ class IntelligenceOrchestrator:
                     {
                         "provider": result.task.model.provider,
                         "provider_display_name": (
-                            "AWS Bedrock"
-                            if result.task.model.provider == "bedrock"
                             else result.task.model.provider.title()
                         ),
                         "display_name": result.task.model.friendly_name,

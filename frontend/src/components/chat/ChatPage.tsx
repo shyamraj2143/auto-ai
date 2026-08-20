@@ -82,7 +82,6 @@ function responseModelFallback(model?: string | null): ResponseModelInfo | null 
     };
   }
   if (/^(amazon|anthropic)\./.test(model)) {
-    return { provider: "bedrock", provider_label: "AWS Bedrock", model };
   }
   return { provider: "groq", provider_label: "Groq", model };
 }

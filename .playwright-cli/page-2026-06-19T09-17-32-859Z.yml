@@ -15,7 +15,6 @@
         - button "Delete chat" [ref=e41] [cursor=pointer]:
           - img [ref=e42]
       - generic [ref=e45]:
-        - button "hi from bedrock test" [ref=e46] [cursor=pointer]
         - button "Rename chat" [ref=e47] [cursor=pointer]:
           - img [ref=e48]
         - button "Delete chat" [ref=e51] [cursor=pointer]:
@@ -48,7 +47,6 @@
             - combobox "AI provider" [ref=e97]:
               - option "OpenAI"
               - option "Groq"
-              - option "Bedrock" [selected]
             - combobox "AI model" [ref=e98]:
               - option "GPT-OSS 120B" [selected]
               - option "GPT-OSS 20B"

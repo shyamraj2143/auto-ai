@@ -40,13 +40,11 @@ def payload(session_id: str = "demo-session-0001", message: str = "Hello") -> di
     }
 
 
-def test_demo_chat_prefers_bedrock_with_fallback_and_stores_no_chat(monkeypatch) -> None:
     client, db = demo_client()
     calls: list[tuple[list[dict], dict]] = []
 
     def fake_complete(messages, **kwargs):
         calls.append((messages, kwargs))
-        return "Real Bedrock demo answer", {"prompt_tokens": 8, "completion_tokens": 5, "total_tokens": 13}, settings.bedrock_model
 
     monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_ENABLED", True)
     monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_LIMIT", 20)
@@ -56,24 +54,17 @@ def test_demo_chat_prefers_bedrock_with_fallback_and_stores_no_chat(monkeypatch)
 
     assert response.status_code == 200
     assert response.json() == {
-        "content": "Real Bedrock demo answer",
-        "provider": "bedrock",
-        "model": settings.bedrock_model,
         "messages_used": 1,
         "remaining": 4,
     }
-    assert calls[0][1]["provider"] == "bedrock"
-    assert calls[0][1]["allow_bedrock_fallback"] is True
     assert calls[0][0][-1] == {"role": "user", "content": "Hello"}
     assert (db.scalar(select(func.count()).select_from(Chat)) or 0) == 0
     usage = db.scalar(select(APIUsage))
     assert usage is not None
-    assert usage.provider == "bedrock"
     assert usage.endpoint == "public_demo_chat"
     db.close()
 
 
-def test_demo_chat_reports_groq_when_bedrock_falls_back(monkeypatch) -> None:
     client, db = demo_client()
     monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_ENABLED", True)
     monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_LIMIT", 20)
@@ -105,7 +96,6 @@ def test_demo_chat_enforces_server_side_limit(monkeypatch) -> None:
     monkeypatch.setattr(
         demo_chat.groq_service,
         "complete",
-        lambda messages, **kwargs: ("Bedrock answer", {}, "amazon.nova-lite-v1:0"),
     )
 
     assert client.post("/api/v1/demo/chat", json=payload()).status_code == 200
@@ -136,7 +126,6 @@ def test_demo_chat_releases_quota_when_all_providers_fail(monkeypatch) -> None:
     db.close()
 
 
-def test_demo_chat_config_exposes_active_bedrock_model(monkeypatch) -> None:
     client, db = demo_client()
     monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_ENABLED", True)
     monkeypatch.setattr(settings, "PUBLIC_DEMO_CHAT_LIMIT", 20)
@@ -145,8 +134,6 @@ def test_demo_chat_config_exposes_active_bedrock_model(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json() == {
         "enabled": True,
-        "provider": "bedrock",
-        "model": settings.bedrock_model,
         "limit": 5,
     }
     db.close()

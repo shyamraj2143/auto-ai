@@ -274,7 +274,6 @@ def regenerate_session_message(
         all_models=payload.all_models,
         timeout_seconds=payload.timeout_seconds,
         groq_models=payload.groq_models,
-        bedrock_models=payload.bedrock_models,
         openai_models=payload.openai_models,
         gemini_models=payload.gemini_models,
         final_judge_model=payload.final_judge_model,

@@ -964,7 +964,6 @@ export function AdminDashboard() {
 
               <div className="mt-6 grid gap-4 xl:grid-cols-2">
                 <section className="rounded-lg border border-white/10 bg-white/[0.045] p-4">
-                  <SectionTitle title="Usage by provider" subtitle="Groq, Bedrock, OpenAI, Gemini totals" />
                   <div className="space-y-3">
                     {(analytics?.usage_by_provider ?? usage?.providers ?? []).map((item) => (
                       <div key={item.provider} className="flex items-center justify-between border-b border-white/10 pb-2 text-sm">

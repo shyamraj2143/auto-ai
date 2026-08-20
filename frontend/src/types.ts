@@ -35,8 +35,6 @@ export type UserRole = "user" | "admin" | "super_admin" | "administrator" | "con
 export type SearchMode = "off" | "auto" | "web" | "news" | "research" | "deep";
 export type IntelligenceMode = "instant" | "medium" | "high" | "deep_research" | "coding";
 export type ChatMode = IntelligenceMode | "normal" | "multi_model";
-export type AiProvider = "openai" | "groq" | "bedrock" | "gemini";
-export type ResearchProvider = "groq" | "bedrock" | "openai" | "gemini";
 
 export type ResearchProviderModels = {
   enabled: boolean;
@@ -325,7 +323,6 @@ export type ChatRequest = {
   all_models?: boolean;
   timeout_seconds?: number;
   groq_models?: string[];
-  bedrock_models?: string[];
   final_judge_model?: string | null;
   openai_models?: string[];
   gemini_models?: string[];

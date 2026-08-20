@@ -113,7 +113,6 @@ export type DemoChatMessage = {
 
 export type DemoChatResult = {
   content: string;
-  provider: "bedrock" | "groq" | "openai";
   model: string;
   messages_used: number;
   remaining: number;
@@ -121,7 +120,6 @@ export type DemoChatResult = {
 
 export type DemoChatConfig = {
   enabled: boolean;
-  provider: "bedrock" | "groq" | "openai";
   model: string;
   limit: number;
 };

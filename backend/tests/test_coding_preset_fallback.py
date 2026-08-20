@@ -34,14 +34,12 @@ def record(model_id: str, provider: str = "groq", quality: float = 1.0) -> Model
     )
 
 
-def test_coding_uses_two_groq_models_when_bedrock_is_unavailable(monkeypatch):
     records = [
         record("qwen/qwen3-32b", quality=1.2),
         record("openai/gpt-oss-120b", quality=1.4),
         record("llama-3.3-70b-versatile", quality=1.1),
     ]
     monkeypatch.setattr(settings, "ORCHESTRATION_GROQ_CODING_MODEL", None)
-    monkeypatch.setattr(settings, "ORCHESTRATION_BEDROCK_CODING_MODEL", None)
     monkeypatch.setattr(
         "app.services.orchestration.task_planner.model_registry.refresh",
         lambda: records,
@@ -73,19 +71,17 @@ def test_coding_uses_two_groq_models_when_bedrock_is_unavailable(monkeypatch):
     ]
 
 
-def test_coding_prefers_cross_provider_pair_when_bedrock_is_healthy(monkeypatch):
     records = [
         record("qwen/qwen3-32b", "groq", quality=1.2),
         record("openai/gpt-oss-120b", "groq", quality=1.4),
-        record("amazon.nova-pro-v1:0", "bedrock", quality=1.4),
+        record("amazon.nova-pro-v1:0", quality=1.4),
     ]
     monkeypatch.setattr(settings, "ORCHESTRATION_GROQ_CODING_MODEL", None)
-    monkeypatch.setattr(settings, "ORCHESTRATION_BEDROCK_CODING_MODEL", None)
 
     selected = coding_task_records(records)
     assert [(item.provider, item.actual_model_id) for item in selected] == [
         ("groq", "qwen/qwen3-32b"),
-        ("bedrock", "amazon.nova-pro-v1:0"),
+        ("amazon.nova-pro-v1:0"),
     ]
     assert coding_configuration_status(records) == (True, None)
     assert coding_fallback_used(records) is False

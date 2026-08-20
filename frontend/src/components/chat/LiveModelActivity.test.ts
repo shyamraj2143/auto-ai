@@ -51,7 +51,6 @@ describe("live model activity", () => {
         ...event(3, "model.completed", "completed"),
         task_id: "task-2",
         model_display_name: "Claude 3.7 Sonnet",
-        provider_display_name: "Amazon Bedrock"
       },
       event(4, "stage.started", undefined, { task_id: undefined, stage: "Comparing model findings" })
     ]);

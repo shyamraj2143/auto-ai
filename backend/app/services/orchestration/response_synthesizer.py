@@ -84,7 +84,6 @@ class ResponseSynthesizer:
 
         for preferred in sorted(results, key=lambda item: item.task.model.quality_weight, reverse=True):
             try:
-                content, usage, selected = groq_service.complete(messages, provider=preferred.task.model.provider, model=preferred.task.model.actual_model_id, max_tokens=max_tokens, request_timeout=preferred.task.model.timeout_seconds, allow_bedrock_fallback=False)
                 if content.strip():
                     suffix = " + web search" if search_context else ""
                     return content.strip(), usage, f"{preferred.task.model.provider}/{selected}{suffix}"

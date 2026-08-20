@@ -84,8 +84,7 @@ class LiveConversationService:
             web_search=False,
             max_tokens=240,
             request_timeout=45,
-            allow_bedrock_fallback=True,
-        )
+                    )
         response = response.strip()
         if not response:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Live response was empty.")

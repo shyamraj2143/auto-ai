@@ -8,8 +8,8 @@ from app.schemas.feedback import MessageFeedbackRead
 from app.utils.datetime import to_rfc3339_utc
 
 
-ProviderName = Literal["openai", "groq", "bedrock", "gemini"]
-ResearchProviderName = Literal["groq", "bedrock", "openai", "gemini"]
+ProviderName = Literal["openai", "groq", "gemini"]
+ResearchProviderName = Literal["groq", "openai", "gemini"]
 IntelligenceMode = Literal["instant", "medium", "high", "deep_research", "coding", "normal", "multi_model"]
 PresetMode = Literal["auto", "manual"]
 
@@ -112,12 +112,11 @@ class ChatRequest(BaseModel):
     selected_preset: IntelligenceMode | None = Field(default=None, alias="selectedPreset")
     detected_preset: IntelligenceMode | None = Field(default=None, alias="detectedPreset")
     manual_preset_locked: bool = Field(default=False, alias="manualPresetLocked")
-    providers: list[ResearchProviderName] = Field(default_factory=lambda: ["groq", "bedrock"])
+    providers: list[ResearchProviderName] = Field(default_factory=lambda: ["groq"])
     max_models: int | None = Field(default=None, ge=1)
     all_models: bool = False
     timeout_seconds: int | None = Field(default=None, ge=5, le=120)
     groq_models: list[str] = Field(default_factory=list)
-    bedrock_models: list[str] = Field(default_factory=list)
     openai_models: list[str] = Field(default_factory=list)
     gemini_models: list[str] = Field(default_factory=list)
     final_judge_model: str | None = Field(default=None, max_length=160)
@@ -194,12 +193,11 @@ class CodeAssistResponse(BaseModel):
 class ChatRegenerateRequest(BaseModel):
     message_id: str | None = None
     mode: IntelligenceMode = "instant"
-    providers: list[ResearchProviderName] = Field(default_factory=lambda: ["groq", "bedrock"])
+    providers: list[ResearchProviderName] = Field(default_factory=lambda: ["groq"])
     max_models: int | None = Field(default=None, ge=1)
     all_models: bool = False
     timeout_seconds: int | None = Field(default=None, ge=5, le=120)
     groq_models: list[str] = Field(default_factory=list)
-    bedrock_models: list[str] = Field(default_factory=list)
     openai_models: list[str] = Field(default_factory=list)
     gemini_models: list[str] = Field(default_factory=list)
     final_judge_model: str | None = Field(default=None, max_length=160)

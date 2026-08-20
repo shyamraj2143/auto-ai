@@ -180,8 +180,7 @@ def live_message(
         model=selected_model,
         provider=selected_provider,
         web_search=False,
-        allow_bedrock_fallback=True,
-    )
+            )
     response_text = content.strip()
     message = LiveMessage(
         session_id=session.id,

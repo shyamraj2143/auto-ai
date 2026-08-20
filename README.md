@@ -38,7 +38,6 @@ Conversation behavior can adapt to user tone, emotion, memory and relationship c
 
 ### ⚡ Multi-Model Workspace
 
-OpenAI, Groq and Amazon Bedrock providers operate behind one assistant surface with model selection and unified streaming behavior.
 
 </td>
 <td width="33%" valign="top">
@@ -78,7 +77,6 @@ Authentication, usage statistics, system monitoring, persistent data safeguards,
 
 | Capability | User experience | Engineering foundation |
 |---|---|---|
-| **AI Chat** | Streaming, Markdown, syntax highlighting and model selection | Unified provider abstraction across OpenAI, Groq and Bedrock |
 | **Knowledge** | Upload, summarize and chat with documents | Persistent document pipeline and message context |
 | **Memory** | Long-term personalization with user visibility and control | User-owned memory APIs and adaptive conversation engines |
 | **Voice** | Browser speech input and assistant playback | Groq transcription plus browser TTS |
@@ -98,10 +96,8 @@ flowchart TB
     ORCH --> ROUTER{Provider Router}
     ROUTER --> OPENAI[OpenAI]
     ROUTER --> GROQ[Groq]
-    ROUTER --> BEDROCK[Amazon Bedrock]
     OPENAI --> STREAM[Unified Response Stream]
     GROQ --> STREAM
-    BEDROCK --> STREAM
     CONTEXT --> STREAM
     MEMORY --> STREAM
     TOOLS --> STREAM
@@ -110,7 +106,6 @@ flowchart TB
 
 ### Intelligence features
 
-- Selectable OpenAI, Groq and Amazon Bedrock providers
 - Streaming responses through one chat flow
 - Groq Compound-powered web search mode
 - Configurable image-analysis and audio-transcription models
@@ -159,7 +154,6 @@ flowchart LR
 |---|---|
 | **Frontend** | React, TypeScript, Tailwind CSS, Markdown, browser media APIs |
 | **Backend** | Python 3.12+, FastAPI, SQLAlchemy, JWT, realtime services |
-| **AI** | OpenAI, Groq, Amazon Bedrock |
 | **Communication** | WebRTC, Redis, STUN/TURN, Firebase Cloud Messaging |
 | **Data** | SQLite locally; managed SQL or mounted-volume SQLite in production |
 | **Delivery** | Docker, GitHub Actions and Railway-compatible deployment |
@@ -253,7 +247,6 @@ docker compose up --build
 
 | Variable | Purpose |
 |---|---|
-| `AI_PROVIDER` | `openai`, `groq` or `bedrock` |
 | `AUTO_AI_OPENAI_API_KEY` | OpenAI credential |
 | `OPENAI_MODEL` | Default OpenAI model |
 | `GROQ_API_KEY` | Groq credential |
@@ -261,11 +254,6 @@ docker compose up --build
 | `GROQ_SEARCH_MODEL` | Search-capable Groq model |
 | `GROQ_VISION_MODEL` | Vision model |
 | `GROQ_AUDIO_MODEL` | Transcription model |
-| `BEDROCK_API_KEY` | Bedrock credential |
-| `BEDROCK_REGION` | Bedrock region |
-| `BEDROCK_MODEL` | Bedrock model |
-| `BEDROCK_ENDPOINT_MODE` | `mantle`, `runtime` or `auto` |
-| `BEDROCK_AUTH_MODE` | `auto`, `api_key` or `aws` |
 
 </details>
 

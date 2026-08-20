@@ -30,8 +30,7 @@ class ProviderAdapter:
                 model=model,
                 max_tokens=max_tokens,
                 request_timeout=task.model.timeout_seconds,
-                allow_bedrock_fallback=False,
-            )
+                            )
         if selected != model or not content.strip():
             raise RuntimeError("Provider returned an invalid model response.")
         return ModelResult(task=task, status=TaskStatus.COMPLETED, content=content.strip(), usage=usage)

@@ -67,7 +67,6 @@ export const PROVIDER_MODELS: Record<AiProvider, Array<{ value: string; label: s
     { value: "qwen/qwen3-32b", label: "Qwen 3 32B" },
     { value: "meta-llama/llama-4-scout-17b-16e-instruct", label: "Llama 4 Scout" }
   ],
-  bedrock: [
     { value: "amazon.nova-lite-v1:0", label: "Nova Lite" },
     { value: "amazon.nova-pro-v1:0", label: "Nova Pro" },
     { value: "anthropic.claude-3-haiku-20240307-v1:0", label: "Claude 3 Haiku" },
@@ -112,7 +111,6 @@ const RESPONSE_LANGUAGE_VALUES = new Set<ResponseLanguage>(["auto", "en", "hi"])
 function normalizeSettings(payload: unknown): AppSettings {
   if (!payload || typeof payload !== "object") return DEFAULT_SETTINGS;
   const raw = payload as Partial<AppSettings>;
-  const provider = raw.defaultProvider === "openai" || raw.defaultProvider === "groq" || raw.defaultProvider === "bedrock" || raw.defaultProvider === "gemini"
     ? raw.defaultProvider
     : DEFAULT_SETTINGS.defaultProvider;
   const validModels = PROVIDER_MODELS[provider].map((item) => item.value);

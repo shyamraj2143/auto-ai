@@ -36,7 +36,6 @@
             - combobox "AI provider" [ref=e99]:
               - option "OpenAI"
               - option "Groq"
-              - option "Bedrock" [selected]
             - combobox "AI model" [ref=e100]:
               - option "Ministral 3 3B" [selected]
               - option "Ministral 3 8B"

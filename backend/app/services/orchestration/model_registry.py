@@ -53,13 +53,12 @@ class ModelRegistry:
         with self._lock:
             if not force and self._records and monotonic() - self._refreshed_at < settings.ORCHESTRATION_HEALTH_TTL_SECONDS:
                 return list(self._records.values())
-            discovered = {"groq": self._discover_groq(), "nvidia": self._discover_nvidia(), "bedrock": self._discover_bedrock(), "openai": self._discover_openai_compatible("openai"), "gemini": self._discover_openai_compatible("gemini")}
+            discovered = {"groq": self._discover_groq(), "nvidia": self._discover_nvidia(), "openai": self._discover_openai_compatible("openai"), "gemini": self._discover_openai_compatible("gemini")}
             now = datetime.now(timezone.utc)
             records: dict[tuple[str, str], ModelRecord] = {}
             provider_defaults = {
                 "groq": [*settings.ORCHESTRATION_GROQ_MODELS, settings.ORCHESTRATION_GROQ_CODING_MODEL],
                 "nvidia": discovered["nvidia"][:MAX_PROVIDER_POOL],
-                "bedrock": [*settings.ORCHESTRATION_BEDROCK_MODELS, settings.ORCHESTRATION_BEDROCK_CODING_MODEL],
                 "openai": [settings.OPENAI_MODEL, *settings.OPENAI_RESEARCH_MODELS],
                 "gemini": [settings.GEMINI_MODEL, *settings.GEMINI_RESEARCH_MODELS],
             }
@@ -96,7 +95,7 @@ class ModelRegistry:
                         latency_weight=0.6 if any(token in value for token in ("instant", "8b", "20b", "mini", "flash")) else 1.0,
                         quality_weight=quality,
                         timeout_seconds=float(settings.DEEP_RESEARCH_PER_MODEL_TIMEOUT_SECONDS),
-                        required_region=settings.bedrock_region if provider == "bedrock" else None,
+                        required_region=None,
                         health_status="healthy" if is_available else "unavailable",
                         last_health_check=now,
                     )
@@ -155,21 +154,6 @@ class ModelRegistry:
         except Exception as exc:
             logger.warning("model_registry_discovery provider=nvidia success=false error_type=%s", type(exc).__name__)
             return []
-
-    @staticmethod
-    def _discover_bedrock() -> set[str]:
-        if not (settings.bedrock_api_key or (settings.aws_access_key_id and settings.aws_secret_access_key)):
-            return set()
-        if settings.bedrock_endpoint_mode.lower() != "mantle":
-            return {model_id for model_id in (settings.BEDROCK_MODEL, *settings.BEDROCK_RESEARCH_MODELS, *settings.ORCHESTRATION_BEDROCK_MODELS, settings.ORCHESTRATION_BEDROCK_CODING_MODEL) if model_id}
-        try:
-            response = httpx.get(f"{settings.bedrock_mantle_base_url}/models", headers=groq_service._bedrock_mantle_headers(), timeout=8)
-            response.raise_for_status()
-            body = response.json()
-            return {str(item.get("id")) for item in body.get("data", []) if isinstance(item, dict) and item.get("id")}
-        except Exception as exc:
-            logger.warning("model_registry_discovery provider=bedrock success=false error_type=%s", type(exc).__name__)
-            return set()
 
     @staticmethod
     def _discover_openai_compatible(provider: str) -> set[str]:

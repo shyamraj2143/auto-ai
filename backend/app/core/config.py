@@ -107,7 +107,6 @@ class Settings(BaseSettings):
     GROQ_SEARCH_MODEL: str = "groq/compound-mini"
     GROQ_VISION_MODEL: str = "meta-llama/llama-4-scout-17b-16e-instruct"
     ALARM_GROQ_VISION_MODEL: str = "qwen/qwen3.6-27b"
-    BEDROCK_VISION_MODEL: str = "qwen.qwen3-vl-235b-a22b-instruct"
     GROQ_AUDIO_MODEL: str = "whisper-large-v3-turbo"
     GROQ_ALARM_MODEL: str | None = None
     GROQ_ALARM_TRANSCRIPTION_MODEL: str | None = None
@@ -122,13 +121,6 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str | None = None
     GEMINI_MODEL: str = "gemini-2.5-flash"
     GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai"
-    BEDROCK_API_KEY: str | None = None
-    BEDROCK_REGION: str = "us-east-1"
-    BEDROCK_MODEL: str = "openai.gpt-oss-120b"
-    BEDROCK_BASE_URL: str | None = None
-    BEDROCK_AUTH_MODE: str = "auto"
-    BEDROCK_ENDPOINT_MODE: str = "mantle"
-    BEDROCK_MANTLE_BASE_URL: str | None = None
     AWS_ACCESS_KEY_ID: str | None = None
     AWS_SECRET_ACCESS_KEY: str | None = None
     AWS_SESSION_TOKEN: str | None = None
@@ -140,7 +132,6 @@ class Settings(BaseSettings):
     DOCUMENT_OCR_MAX_PAGES: int = 12
 
     GROQ_RESEARCH_MODELS: list[str] = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "openai/gpt-oss-120b"]
-    BEDROCK_RESEARCH_MODELS: list[str] = ["amazon.nova-pro-v1:0", "amazon.nova-lite-v1:0", "anthropic.claude-3-haiku-20240307-v1:0"]
     OPENAI_RESEARCH_MODELS: list[str] = ["gpt-4.1-mini", "gpt-4o-mini", "gpt-4.1"]
     GEMINI_RESEARCH_MODELS: list[str] = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"]
     DEEP_RESEARCH_DEFAULT_MAX_MODELS: int = 100
@@ -153,10 +144,8 @@ class Settings(BaseSettings):
     DEEP_RESEARCH_JUDGE_PROVIDER: str = "groq"
     DEEP_RESEARCH_JUDGE_MODEL: str | None = None
     ORCHESTRATION_GROQ_MODELS: list[str] = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "qwen/qwen3-32b", "meta-llama/llama-4-scout-17b-16e-instruct"]
-    ORCHESTRATION_BEDROCK_MODELS: list[str] = ["amazon.nova-pro-v1:0", "amazon.nova-lite-v1:0", "anthropic.claude-3-haiku-20240307-v1:0"]
     ORCHESTRATION_INSTANT_FALLBACKS: list[str] = ["openai/gpt-oss-20b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
     ORCHESTRATION_GROQ_CODING_MODEL: str | None = None
-    ORCHESTRATION_BEDROCK_CODING_MODEL: str | None = None
     ORCHESTRATION_INCLUDE_ALL_AVAILABLE_MODELS: bool = True
     ORCHESTRATION_MAX_PARALLEL: int = 9
     ORCHESTRATION_MAX_RETRIES: int = 1

@@ -30,7 +30,6 @@ type AuditRow = {
 
 function providerName(model: OrchestrationModelAudit) {
   if (model.provider_display_name) return model.provider_display_name;
-  if (model.provider === "bedrock") return "AWS Bedrock";
   if (model.provider) return model.provider.charAt(0).toUpperCase() + model.provider.slice(1);
   return "AutoAI";
 }

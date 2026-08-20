@@ -45,7 +45,6 @@ PLAN_CATALOG: dict[str, dict[str, int | str | list[str]]] = {
         "token_quota": 300000,
         "daily_message_limit": 600,
         "upload_limit_mb": 100,
-        "model_access": ["Groq", "OpenAI", "Bedrock", "Deep Research"],
         "priority_speed": "High",
         "features": ["Deep research", "Multi-model routing", "Larger uploads"],
     },
@@ -292,8 +291,6 @@ def infer_provider_from_model(model: str) -> str:
     value = (model or "").lower()
     if "gemini" in value:
         return "Gemini"
-    if value.startswith(("amazon.", "anthropic.")) or "/bedrock" in value:
-        return "Bedrock"
     if value.startswith("gpt-") or value.startswith("o3") or value.startswith("o4"):
         return "OpenAI"
     return "Groq"

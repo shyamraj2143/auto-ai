@@ -17,15 +17,15 @@ class PresetPolicy:
 PRESET_POLICIES = {
     IntelligenceMode.INSTANT: PresetPolicy(IntelligenceMode.INSTANT, frozenset({"groq"}), exact_model_count=1),
     IntelligenceMode.MEDIUM: PresetPolicy(IntelligenceMode.MEDIUM, frozenset({"groq"})),
-    IntelligenceMode.HIGH: PresetPolicy(IntelligenceMode.HIGH, frozenset({"groq", "bedrock"})),
+    IntelligenceMode.HIGH: PresetPolicy(IntelligenceMode.HIGH, frozenset({"groq"})),
     IntelligenceMode.DEEP_RESEARCH: PresetPolicy(
         IntelligenceMode.DEEP_RESEARCH,
-        frozenset({"groq", "bedrock"}),
+        frozenset({"groq"}),
         requires_web_research=True,
     ),
     IntelligenceMode.CODING: PresetPolicy(
         IntelligenceMode.CODING,
-        frozenset({"groq", "bedrock"}),
+        frozenset({"groq"}),
         exact_model_count=2,
     ),
 }
@@ -47,11 +47,7 @@ def _healthy_chat_records(records: list[ModelRecord]) -> list[ModelRecord]:
 
 
 def _configured_coding_model(provider: str) -> str | None:
-    return (
-        settings.ORCHESTRATION_GROQ_CODING_MODEL
-        if provider == "groq"
-        else settings.ORCHESTRATION_BEDROCK_CODING_MODEL
-    )
+    return settings.ORCHESTRATION_GROQ_CODING_MODEL if provider == "groq" else None
 
 
 def _coding_rank(record: ModelRecord, configured_model: str | None) -> tuple[int, int, float, float, int]:
@@ -76,79 +72,32 @@ def _coding_rank(record: ModelRecord, configured_model: str | None) -> tuple[int
 
 
 def coding_model_records(records: list[ModelRecord]) -> tuple[ModelRecord | None, ModelRecord | None]:
-    """Return the best healthy model for each preferred coding provider.
-
-    Qwen Coder remains the first choice, but a provider's strongest healthy
-    text-chat model is accepted as a runtime fallback. This prevents the entire
-    preset from being disabled just because one specifically named model is not
-    listed by the provider discovery endpoint.
-    """
-
     healthy = _healthy_chat_records(records)
-    selected: list[ModelRecord | None] = []
-    for provider in ("groq", "bedrock"):
-        candidates = [record for record in healthy if record.provider == provider]
-        configured = _configured_coding_model(provider)
-        candidates.sort(key=lambda record: _coding_rank(record, configured))
-        selected.append(candidates[0] if candidates else None)
-    return selected[0], selected[1]
+    candidates = [record for record in healthy if record.provider == "groq"]
+    candidates.sort(key=lambda record: _coding_rank(record, _configured_coding_model("groq")))
+    first = candidates[0] if candidates else None
+    second = next((record for record in candidates[1:] if record.actual_model_id != (first.actual_model_id if first else None)), None)
+    return first, second
 
 
 def coding_task_records(records: list[ModelRecord]) -> list[ModelRecord]:
-    """Select two distinct healthy coding workers with graceful provider fallback.
-
-    The ideal pair is Groq + Bedrock. When Bedrock is unavailable, two distinct
-    Groq models are used for implementation and review. The same rule works in
-    reverse for a Bedrock-only deployment. Requiring two workers preserves the
-    coding preset's implementation-plus-review contract.
-    """
-
-    healthy = _healthy_chat_records(records)
-    groq_model, bedrock_model = coding_model_records(records)
-    selected = [record for record in (groq_model, bedrock_model) if record is not None]
-    selected_keys = {(record.provider, record.actual_model_id) for record in selected}
-    selected_providers = {record.provider for record in selected}
-
-    remaining = [
-        record
-        for record in healthy
-        if (record.provider, record.actual_model_id) not in selected_keys
-    ]
-    remaining.sort(
-        key=lambda record: (
-            0 if record.provider not in selected_providers else 1,
-            *_coding_rank(record, _configured_coding_model(record.provider)),
-        )
-    )
-    for record in remaining:
-        if len(selected) >= 2:
-            break
-        selected.append(record)
-        selected_providers.add(record.provider)
-    return selected[:2]
+    healthy = [record for record in _healthy_chat_records(records) if record.provider == "groq"]
+    healthy.sort(key=lambda record: _coding_rank(record, _configured_coding_model("groq")))
+    return healthy[:2]
 
 
 def coding_configuration_status(records: list[ModelRecord]) -> tuple[bool, str | None]:
     selected = coding_task_records(records)
     if len(selected) >= 2:
         return True, None
-
-    groq_model, bedrock_model = coding_model_records(records)
-    if not groq_model:
-        return False, "No healthy Groq text-chat model is available for coding."
-    if not bedrock_model:
-        return False, "No healthy Amazon Bedrock Qwen model is available for coding."
-    return False, "Coding requires two distinct healthy text-chat models."
+    return False, "Coding requires two distinct healthy Groq text-chat models."
 
 
 def coding_model_ids(records: list[ModelRecord]) -> tuple[str | None, str | None]:
-    groq_model, bedrock_model = coding_model_records(records)
-    return (
-        groq_model.actual_model_id if groq_model else None,
-        bedrock_model.actual_model_id if bedrock_model else None,
-    )
+    first, second = coding_model_records(records)
+    return (first.actual_model_id if first else None, second.actual_model_id if second else None)
 
 
 def coding_fallback_used(records: list[ModelRecord]) -> bool:
     selected = coding_task_records(records)
-    return len(selected) < 2 or {record.provider for record in selected} != {"groq", "bedrock"}
+    return len(selected) < 2

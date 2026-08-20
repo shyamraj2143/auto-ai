@@ -27,7 +27,6 @@ def health():
     """Minimal liveness endpoint used by Railway.
 
     Keep this endpoint independent of AI providers, credentials, databases,
-    and optional integrations. A disabled provider such as AWS Bedrock must
     never be able to make the deployment unhealthy.
     """
     return {

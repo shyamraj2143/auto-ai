@@ -168,7 +168,6 @@ class ParallelExecutor:
     def _payload(task: ModelTask, status: TaskStatus) -> dict:
         return {
             "task_id": task.task_id,
-            "provider_display_name": "AWS Bedrock" if task.model.provider == "bedrock" else task.model.provider.title(),
             "model_display_name": task.model.friendly_name,
             "actual_model_id": task.model.actual_model_id,
             "role": task.role,

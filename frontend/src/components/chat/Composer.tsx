@@ -53,7 +53,6 @@ function ModeMenu({ value, config, open, onToggle, onClose, onSelect }: { value:
     medium: "Balanced parallel intelligence",
     high: "Advanced multi-provider reasoning",
     deep_research: "Source-backed comprehensive research",
-    coding: "Groq Qwen implements while Bedrock Qwen Coder reviews and corrects."
   };
 
   return (

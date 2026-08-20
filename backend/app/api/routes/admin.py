@@ -1453,7 +1453,7 @@ def deployment_system_status(_: User = Depends(get_current_admin), db: Session =
     db.execute(select(func.count(User.id)))
     records = model_registry.refresh()
     providers = {}
-    for provider in ("groq", "bedrock", "openai", "gemini"):
+    for provider in ("groq", "openai", "gemini"):
         provider_records = [record for record in records if record.provider == provider]
         providers[provider] = {
             "configured": any(record.enabled for record in provider_records),

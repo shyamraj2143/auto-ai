@@ -342,7 +342,6 @@ def test_alarm_awake_service_requires_strict_json_and_groq_only(monkeypatch: pyt
     assert decision.awake is True
     assert decision.confidence == .88
     assert captured["provider"] == "groq"
-    assert captured["allow_bedrock_fallback"] is False
 
     with pytest.raises(HTTPException) as invalid:
         AlarmAwakeService.parse_json("The person seems awake")

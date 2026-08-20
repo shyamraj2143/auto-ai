@@ -9,7 +9,6 @@
       - text: New chat
     - navigation [ref=e56]:
       - generic [ref=e109]:
-        - button "hi from bedrock test" [ref=e110] [cursor=pointer]
         - button "Rename chat" [ref=e111] [cursor=pointer]:
           - img [ref=e112]
         - button "Delete chat" [ref=e115] [cursor=pointer]:
@@ -29,13 +28,11 @@
         - article [ref=e119]:
           - img [ref=e121]
           - generic [ref=e124]:
-            - paragraph [ref=e126]: hi from bedrock test
             - button "Copy message" [ref=e128] [cursor=pointer]:
               - img [ref=e129]
         - article [ref=e132]:
           - img [ref=e134]
           - generic [ref=e137]:
-            - paragraph [ref=e139]: "400: Bedrock request failed: Operation not allowed. The BEDROCK_API_KEY is valid, but it is not allowed to invoke Bedrock runtime models. Create or update a key with InvokeModel/Converse permission, then retry."
             - generic [ref=e140]:
               - button "Copy message" [ref=e141] [cursor=pointer]:
                 - img [ref=e142]
@@ -50,7 +47,6 @@
         - article [ref=e163]:
           - img [ref=e165]
           - generic [ref=e168]:
-            - paragraph [ref=e170]: "400: Bedrock request failed: Operation not allowed. The BEDROCK_API_KEY is valid, but it is not allowed to invoke Bedrock runtime models. Create or update a key with InvokeModel/Converse permission, then retry."
             - generic [ref=e171]:
               - button "Copy message" [ref=e172] [cursor=pointer]:
                 - img [ref=e173]
@@ -69,7 +65,6 @@
             - combobox "AI provider" [ref=e99]:
               - option "OpenAI"
               - option "Groq"
-              - option "Bedrock" [selected]
             - combobox "AI model" [ref=e100]:
               - option "Ministral 3 3B" [selected]
               - option "Ministral 3 8B"

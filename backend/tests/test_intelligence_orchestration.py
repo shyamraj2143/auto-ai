@@ -38,11 +38,9 @@ def test_registry_includes_all_available_chat_models_and_excludes_incompatible(m
     registry = ModelRegistry()
     monkeypatch.setattr(settings, "ORCHESTRATION_INCLUDE_ALL_AVAILABLE_MODELS", True)
     monkeypatch.setattr(registry, "_discover_groq", lambda: {"groq-chat-a", "audio-whisper"})
-    monkeypatch.setattr(registry, "_discover_bedrock", lambda: {"bedrock-chat-a", "mistral.voxtral-audio"})
     registry.refresh(force=True)
     assert {(item.provider, item.actual_model_id) for item in registry.eligible(IntelligenceMode.HIGH)} == {
         ("groq", "groq-chat-a"),
-        ("bedrock", "bedrock-chat-a"),
     }
 
 
@@ -184,8 +182,7 @@ def test_medium_plans_every_healthy_configured_groq_model(monkeypatch):
     assert len({item.role for item in planned}) == 6
 
 
-def test_high_combines_actual_groq_and_bedrock_tasks(monkeypatch):
-    tasks = [task("groq-high", "groq"), task("nova-high", "bedrock")]
+    tasks = [task("groq-high", "groq"), task("nova-high")]
     monkeypatch.setattr(task_planner, "plan", lambda *_args, **_kwargs: tasks)
     monkeypatch.setattr(
         provider_adapter,
@@ -197,13 +194,12 @@ def test_high_combines_actual_groq_and_bedrock_tasks(monkeypatch):
     install_synthesis_stub(monkeypatch)
     result = run("high", [])
     providers = {item["provider"] for item in result.metadata["models_consulted"]}
-    assert providers == {"groq", "bedrock"}
+    assert providers == {"groq"}
 
 
 def test_high_plans_every_healthy_model_without_six_model_cap(monkeypatch):
     records = [
         *[record(f"groq-{index}", "groq") for index in range(6)],
-        *[record(f"bedrock-{index}", "bedrock") for index in range(3)],
     ]
     monkeypatch.setattr(
         "app.services.orchestration.task_planner.model_registry.eligible",
@@ -215,12 +211,11 @@ def test_high_plans_every_healthy_model_without_six_model_cap(monkeypatch):
         MESSAGES,
     )
     assert len(planned) == 9
-    assert {item.model.provider for item in planned} == {"groq", "bedrock"}
+    assert {item.model.provider for item in planned} == {"groq"}
 
 
 def test_coding_plans_exact_configured_qwen_coder_pair(monkeypatch):
     groq_id = "qwen/qwen-coder-test"
-    bedrock_id = "qwen.qwen-coder-test"
     records = [
         ModelRecord(
             **{
@@ -230,14 +225,12 @@ def test_coding_plans_exact_configured_qwen_coder_pair(monkeypatch):
         ),
         ModelRecord(
             **{
-                **record(bedrock_id, "bedrock").__dict__,
                 "capabilities": frozenset({"text", "chat", "coding"}),
             }
         ),
         record("unrelated-model", "groq"),
     ]
     monkeypatch.setattr(settings, "ORCHESTRATION_GROQ_CODING_MODEL", groq_id)
-    monkeypatch.setattr(settings, "ORCHESTRATION_BEDROCK_CODING_MODEL", bedrock_id)
     monkeypatch.setattr(
         "app.services.orchestration.task_planner.model_registry.refresh",
         lambda: records,
@@ -253,7 +246,6 @@ def test_coding_plans_exact_configured_qwen_coder_pair(monkeypatch):
     )
     assert [(item.model.provider, item.model.actual_model_id) for item in planned] == [
         ("groq", groq_id),
-        ("bedrock", bedrock_id),
     ]
 
 
@@ -273,19 +265,18 @@ def test_coding_uses_healthy_qwen_pair_when_exact_models_are_not_configured(monk
         ),
         ModelRecord(
             **{
-                **record("qwen.qwen3-coder-30b-a3b-instruct", "bedrock", quality=2.0).__dict__,
+                **record("qwen.qwen3-coder-30b-a3b-instruct", quality=2.0).__dict__,
                 "capabilities": frozenset({"text", "chat", "coding"}),
             }
         ),
         ModelRecord(
             **{
-                **record("qwen.qwen3-coder-480b-a35b-instruct", "bedrock").__dict__,
+                **record("qwen.qwen3-coder-480b-a35b-instruct").__dict__,
                 "capabilities": frozenset({"text", "chat", "coding"}),
             }
         ),
     ]
     monkeypatch.setattr(settings, "ORCHESTRATION_GROQ_CODING_MODEL", None)
-    monkeypatch.setattr(settings, "ORCHESTRATION_BEDROCK_CODING_MODEL", None)
     monkeypatch.setattr(
         "app.services.orchestration.task_planner.model_registry.refresh",
         lambda: records,
@@ -307,7 +298,7 @@ def test_coding_uses_healthy_qwen_pair_when_exact_models_are_not_configured(monk
     )
     assert [(item.model.provider, item.model.actual_model_id) for item in planned] == [
         ("groq", "qwen/qwen3.6-27b"),
-        ("bedrock", "qwen.qwen3-coder-480b-a35b-instruct"),
+        ("qwen.qwen3-coder-480b-a35b-instruct"),
     ]
     assert [item.role for item in planned] == [
         "Coding implementation specialist",
@@ -326,7 +317,6 @@ def test_coding_stays_unavailable_without_qwen_on_both_providers():
     ]
     available, reason = coding_configuration_status(groq_only)
     assert available is False
-    assert reason == "No healthy Amazon Bedrock Qwen model is available for coding."
 
 
 def test_deep_research_requires_verified_web_context():
