@@ -12,23 +12,26 @@ router = APIRouter(tags=["health"])
 
 @router.get("/", include_in_schema=False)
 def root():
-    """Stable 200 response for the Railway public service URL.
+    """Compatibility entry point for old APK download links.
 
-    Railway health checks must not receive a redirect to the APK endpoint.
-    Keep the root endpoint dependency-free and return a small API response;
-    the actual APK download remains available at /api/v1/download/apk.
+    The dedicated /health endpoint remains the Railway liveness endpoint.
+    The public root is intentionally download-friendly so an old or cached
+    client that still points at the service root receives the latest APK
+    instead of the JSON service banner.
     """
-    return {
-        "status": "ok",
-        "service": settings.PROJECT_NAME,
-        "download_url": f"{settings.API_V1_STR}/download/apk",
-    }
+    return RedirectResponse(
+        url=f"{settings.API_V1_STR}/download/apk",
+        status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+    )
 
 
 @router.get("/download", include_in_schema=False)
 def download_root():
     """Compatibility shortcut for old/public APK download links."""
-    return RedirectResponse(url=f"{settings.API_V1_STR}/download/apk", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    return RedirectResponse(
+        url=f"{settings.API_V1_STR}/download/apk",
+        status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+    )
 
 
 @router.get("/health")
