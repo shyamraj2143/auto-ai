@@ -12,8 +12,17 @@ router = APIRouter(tags=["health"])
 
 @router.get("/", include_in_schema=False)
 def root():
-    """Keep the public Railway backend URL useful when opened directly."""
-    return RedirectResponse(url=f"{settings.API_V1_STR}/download/apk", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    """Stable 200 response for the Railway public service URL.
+
+    Railway health checks must not receive a redirect to the APK endpoint.
+    Keep the root endpoint dependency-free and return a small API response;
+    the actual APK download remains available at /api/v1/download/apk.
+    """
+    return {
+        "status": "ok",
+        "service": settings.PROJECT_NAME,
+        "download_url": f"{settings.API_V1_STR}/download/apk",
+    }
 
 
 @router.get("/download", include_in_schema=False)
