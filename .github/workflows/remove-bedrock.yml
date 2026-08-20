@@ -1,0 +1,144 @@
+name: Remove Bedrock integration
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Remove Bedrock integration
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path('.')
+          text_ext = {'.py', '.ts', '.tsx', '.js', '.jsx', '.json', '.md', '.yml', '.yaml', '.txt', '.env', '.example', '.toml', '.ini', '.xml'}
+
+          def read(p):
+              try:
+                  return p.read_text(encoding='utf-8')
+              except (UnicodeDecodeError, OSError):
+                  return None
+
+          def write(p, s):
+              p.write_text(s, encoding='utf-8')
+
+          # Files that are exclusively Bedrock tests/config artifacts are no longer valid.
+          for p in list(root.rglob('*')):
+              if not p.is_file() or '.git' in p.parts:
+                  continue
+              if 'bedrock' in p.name.lower() and p.name != 'remove-bedrock.yml':
+                  p.unlink()
+
+          # Rewrite the provider service structurally: remove all Bedrock runtime/auth code.
+          p = root / 'backend/app/services/groq_service.py'
+          s = read(p)
+          if s is not None:
+              s = re.sub(r'(?ms)^\s+@staticmethod\n    def _bedrock_common_headers\(.*?(?=^    def _complete_openai)', '\n', s)
+              s = re.sub(r'(?ms)^    def _complete_bedrock_mantle\(.*?(?=^    def _stream_openai)', '', s)
+              s = re.sub(r'(?ms)^    def _stream_bedrock_mantle\(.*?(?=^    def _complete_groq)', '', s)
+              s = re.sub(r'(?ms)^    def _complete_bedrock\(.*?(?=^    def _stream_openai)', '', s)
+              # The previous expression is intentionally followed by a second pass for the
+              # stream section because the runtime helpers may sit between the two methods.
+              s = re.sub(r'(?ms)^    def _complete_bedrock_runtime\(.*?(?=^    def _complete_bedrock\()', '', s)
+              s = re.sub(r'(?ms)^    def _stream_bedrock_runtime\(.*?(?=^    def _stream_bedrock\()', '', s)
+              s = re.sub(r'(?ms)^    def _stream_bedrock\(.*?(?=^    def _complete_groq)', '', s)
+              s = s.replace('import datetime as dt\n', '').replace('import hashlib\n', '').replace('import hmac\n', '').replace('from urllib.parse import quote\n', '')
+              s = s.replace('if selected_provider not in {"openai", "groq", "bedrock", "gemini"}:', 'if selected_provider not in {"openai", "groq", "gemini"}:')
+              s = re.sub(r'\n        if selected_provider == "bedrock":\n            return model or settings\.bedrock_model\n', '\n', s)
+              s = s.replace('switch to OpenAI/Bedrock/Gemini', 'switch to OpenAI/Gemini')
+              s = re.sub(r',\n\s*allow_bedrock_fallback: bool = True', '', s)
+              s = re.sub(r'\n\s*if selected_provider == "bedrock":\n(?:.*\n){1,12}?\s*return self\._complete_bedrock\([^\n]*(?:\n.*?)*?\n\s*\)\n', '\n', s)
+              s = re.sub(r'\n\s*if selected_provider == "bedrock":\n(?:.*\n){1,12}?\s*return self\._stream_bedrock\([^\n]*(?:\n.*?)*?\n\s*\)\n', '\n', s)
+              # Remove the old Bedrock vision fallback block.
+              s = re.sub(r'(?ms)\n        if settings\.BEDROCK_VISION_MODEL:.*?(?=\n        raise HTTPException\()', '', s)
+              s = s.replace('            if "bedrock_delta" in chunk:\n                return GroqService._content_to_text(chunk.get("bedrock_delta"))\n', '')
+              write(p, s)
+
+          # Remove Bedrock-specific settings while preserving unrelated AWS/S3 settings.
+          p = root / 'backend/app/core/config.py'
+          s = read(p)
+          if s is not None:
+              s = '\n'.join(line for line in s.splitlines() if 'BEDROCK_' not in line and 'bedrock_' not in line and 'ORCHESTRATION_BEDROCK' not in line)
+              write(p, s + '\n')
+
+          # Remove Bedrock from the model registry while retaining Groq/NVIDIA/OpenAI/Gemini.
+          p = root / 'backend/app/services/orchestration/model_registry.py'
+          s = read(p)
+          if s is not None:
+              s = re.sub(r'(?ms)^\s*"bedrock": \[[^\n]*\],\n', '', s)
+              s = s.replace('"groq": self._discover_groq(), "nvidia": self._discover_nvidia(), "bedrock": self._discover_bedrock(), "openai":', '"groq": self._discover_groq(), "nvidia": self._discover_nvidia(), "openai":')
+              s = re.sub(r',\s*"bedrock": \{[^\n]*\}', '', s)
+              s = s.replace('required_region=settings.bedrock_region if provider == "bedrock" else None,', 'required_region=None,')
+              s = re.sub(r'(?ms)^    @staticmethod\n    def _discover_bedrock\(\).*?(?=^    @staticmethod\n    def _discover_openai_compatible)', '', s)
+              s = s.replace('provider in {"groq", "nvidia", "openai", "gemini"}', 'provider in {"groq", "nvidia", "openai", "gemini"}')
+              write(p, s)
+
+          # Coding/high/deep-research policies now use non-Bedrock providers only.
+          p = root / 'backend/app/services/orchestration/preset_policy.py'
+          s = read(p)
+          if s is not None:
+              s = s.replace('frozenset({"groq", "bedrock"})', 'frozenset({"groq"})')
+              s = re.sub(r'(?ms)^def _configured_coding_model\(.*?(?=^def _coding_rank)', 'def _configured_coding_model(provider: str) -> str | None:\n    return settings.ORCHESTRATION_GROQ_CODING_MODEL if provider == "groq" else None\n\n\n', s)
+              s = re.sub(r'(?ms)^def coding_model_records\(.*?(?=^def coding_task_records)', '''def coding_model_records(records: list[ModelRecord]) -> tuple[ModelRecord | None, ModelRecord | None]:\n    healthy = _healthy_chat_records(records)\n    candidates = [record for record in healthy if record.provider == "groq"]\n    candidates.sort(key=lambda record: _coding_rank(record, _configured_coding_model("groq")))\n    first = candidates[0] if candidates else None\n    second = next((record for record in candidates[1:] if record.actual_model_id != (first.actual_model_id if first else None)), None)\n    return first, second\n\n\n''', s)
+              s = re.sub(r'(?ms)^def coding_task_records\(.*?(?=^def coding_configuration_status)', '''def coding_task_records(records: list[ModelRecord]) -> list[ModelRecord]:\n    healthy = [record for record in _healthy_chat_records(records) if record.provider == "groq"]\n    healthy.sort(key=lambda record: _coding_rank(record, _configured_coding_model("groq")))\n    return healthy[:2]\n\n\n''', s)
+              s = re.sub(r'(?ms)^def coding_configuration_status\(.*?(?=^def coding_model_ids)', '''def coding_configuration_status(records: list[ModelRecord]) -> tuple[bool, str | None]:\n    selected = coding_task_records(records)\n    if len(selected) >= 2:\n        return True, None\n    return False, "Coding requires two distinct healthy Groq text-chat models."\n\n\n''', s)
+              s = re.sub(r'(?ms)^def coding_model_ids\(.*?(?=^def coding_fallback_used)', '''def coding_model_ids(records: list[ModelRecord]) -> tuple[str | None, str | None]:\n    first, second = coding_model_records(records)\n    return (first.actual_model_id if first else None, second.actual_model_id if second else None)\n\n\n''', s)
+              s = re.sub(r'(?ms)^def coding_fallback_used\(.*?\n\s*return .*\n', 'def coding_fallback_used(records: list[ModelRecord]) -> bool:\n    selected = coding_task_records(records)\n    return len(selected) < 2\n', s)
+              write(p, s)
+
+          # Generic cleanup for remaining source/docs/config references.
+          token_replacements = {
+              'allow_bedrock_fallback=False,\n': '',
+              'allow_bedrock_fallback=True,\n': '',
+              'allow_fallback=allow_bedrock_fallback,\n': '',
+              'allow_bedrock_fallback: bool = True,\n': '',
+              'allow_bedrock_fallback: bool = False,\n': '',
+              '"bedrock", ': '',
+              ', "bedrock"': '',
+              '"bedrock": ': '',
+              'provider="bedrock"': 'provider="groq"',
+          }
+          for p in root.rglob('*'):
+              if not p.is_file() or '.git' in p.parts or p.name == 'remove-bedrock.yml':
+                  continue
+              if p.suffix.lower() not in text_ext and p.name not in {'.env.example'}:
+                  continue
+              s = read(p)
+              if s is None or ('bedrock' not in s.lower() and 'BEDROCK' not in s):
+                  continue
+              original = s
+              for old, new in token_replacements.items():
+                  s = s.replace(old, new)
+              # Remove standalone comments/documentation lines mentioning Bedrock.
+              s = '\n'.join(line for line in s.splitlines() if 'bedrock' not in line.lower() or p.name in {'groq_service.py','config.py','model_registry.py','preset_policy.py'})
+              if s != original:
+                  write(p, s + ('\n' if original.endswith('\n') else ''))
+
+          # Remove this temporary workflow so the cleanup commit cannot trigger another run.
+          wf = root / '.github/workflows/remove-bedrock.yml'
+          if wf.exists():
+              wf.unlink()
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes required."
+            exit 0
+          fi
+          git commit -m "refactor: remove Bedrock integration"
+          git push origin HEAD:main
