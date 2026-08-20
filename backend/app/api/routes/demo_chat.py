@@ -69,7 +69,7 @@ def reserve_demo_message(db: Session, session_id: str) -> tuple[DemoChatSession,
     if record and record.messages_used >= limit:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"The {limit}-message Bedrock demo limit has been reached. Sign in to continue chatting.",
+            detail=f"The {limit}-message demo limit has been reached. Sign in to continue chatting.",
         )
 
     if record is None:
@@ -99,10 +99,10 @@ def release_demo_message(db: Session, session_id: str) -> None:
 
 
 def demo_provider_for_model(model: str) -> str:
-    if model == settings.bedrock_model:
-        return "bedrock"
     if model == settings.OPENAI_MODEL:
         return "openai"
+    if model == settings.GEMINI_MODEL:
+        return "gemini"
     return "groq"
 
 
@@ -110,7 +110,7 @@ def demo_provider_for_model(model: str) -> str:
 def demo_chat_config() -> DemoChatConfig:
     return DemoChatConfig(
         enabled=settings.PUBLIC_DEMO_CHAT_ENABLED,
-        model=settings.bedrock_model,
+        model=settings.GROQ_MODEL,
         limit=public_demo_chat_limit(),
     )
 
@@ -134,14 +134,17 @@ def demo_chat(payload: DemoChatRequest, db: Session = Depends(get_db)) -> DemoCh
     ]
 
     try:
+        # AWS Bedrock is intentionally disabled. The public demo must use the
+        # configured primary provider so a deactivated AWS account can never
+        # turn a normal demo request into a server error.
         content, usage, selected_model = groq_service.complete(
             messages,
-            provider="bedrock",
-            model=settings.bedrock_model,
+            provider="groq",
+            model=settings.GROQ_MODEL,
             temperature=0.45,
             max_tokens=240,
             request_timeout=35,
-            allow_bedrock_fallback=True,
+            allow_bedrock_fallback=False,
         )
     except Exception as exc:
         release_demo_message(db, payload.session_id)
