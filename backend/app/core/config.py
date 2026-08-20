@@ -1,11 +1,9 @@
 from functools import lru_cache
-import ipaddress
 from pathlib import Path
 import re
-from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from pydantic import AliasChoices, AnyHttpUrl, EmailStr, Field, SecretStr, ValidationInfo, field_validator, model_validator
+from pydantic import AliasChoices, AnyHttpUrl, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -180,6 +178,10 @@ class Settings(BaseSettings):
     RATE_LIMIT_PASSWORD_RESET_PER_MINUTE: int = 5
 
     @property
+    def groq_api_key(self) -> str | None:
+        return (self.GROQ_API_KEY or self.AUTO_AI_GROQ_API_KEY or "").strip() or None
+
+    @property
     def sqlalchemy_database_url(self) -> str:
         raw_url = (self.DATABASE_URL or self.MYSQL_URL or "").strip()
         if raw_url:
@@ -218,7 +220,6 @@ class Settings(BaseSettings):
 
     @property
     def frontend_url(self) -> str: return str(self.FRONTEND_URL or DEFAULT_FRONTEND_URL).rstrip("/")
-
     @property
     def backend_url(self) -> str:
         configured = (self.BACKEND_URL or "").strip().strip('"').strip("'").rstrip("/")
@@ -230,7 +231,6 @@ class Settings(BaseSettings):
             if not re.match(r"^https?://", railway_domain, re.IGNORECASE): railway_domain = f"https://{railway_domain}"
             return railway_domain
         return DEFAULT_BACKEND_URL
-
     @property
     def google_web_client_id(self) -> str | None: return (self.GOOGLE_WEB_CLIENT_ID or self.GOOGLE_CLIENT_ID or "").strip() or None
     @property
@@ -250,5 +250,4 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings: return Settings()
-
 settings = get_settings()
