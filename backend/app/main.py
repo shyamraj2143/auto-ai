@@ -152,9 +152,10 @@ def create_app():
         logger.info("payment_urls FRONTEND_URL=%s BACKEND_URL=%s RAZORPAY_FAILURE_URL=%s", settings.frontend_url, settings.backend_url, settings.razorpay_failure_url)
         for directory in (settings.UPLOAD_DIR, Path(settings.UPLOAD_DIR, "profile"), settings.LIBRARY_STORAGE_DIR, settings.APK_STORAGE_DIR, settings.FORM_SERVICE_STORAGE_DIR):
             Path(directory).mkdir(parents=True, exist_ok=True)
-        # Do not perform database connections or schema migrations in the
-        # Uvicorn lifespan critical path. Railway must receive /health as soon
-        # as the HTTP server binds to its assigned PORT.
+        # Keep the liveness path independent from all external services.
+        # Database work is already deferred; Redis must be deferred as well.
+        # A broken/missing Redis instance must never prevent Uvicorn from
+        # binding Railway's assigned PORT and answering /health.
         app.state.database_bootstrap_task = asyncio.create_task(asyncio.to_thread(_bootstrap_database))
         if settings.CALL_FEATURE_ENABLED:
             if not settings.redis_url: logger.warning("calling_configuration Redis is not configured; Calls remains isolated from unrelated app features.")
@@ -162,13 +163,24 @@ def create_app():
             if settings.is_production and not settings.FIREBASE_PROJECT_ID: logger.warning("calling_configuration Firebase is not configured; killed Android apps cannot receive calls.")
     @app.on_event("startup")
     async def start_call_workers():
-        logger.info("calling_redis configured=%s", presence_service.configured); redis_reachable = await presence_service.check(log_failure=True) if presence_service.configured else False
-        if redis_reachable: logger.info("calling_realtime redis_reachable=true call_websocket_ready=%s live_websocket_ready=true calls_rest_available=true", settings.CALL_FEATURE_ENABLED)
-        else: logger.warning("calling_realtime redis_reachable=false call_websocket_ready=false live_websocket_ready=true calls_rest_available=true")
         stop_event = asyncio.Event(); app.state.call_stop_event = stop_event; app.state.call_timeout_task = asyncio.create_task(call_timeout_worker(stop_event)); registry_stop_event = asyncio.Event(); app.state.registry_stop_event = registry_stop_event
+        async def check_realtime_after_startup():
+            if presence_service.configured:
+                try:
+                    redis_reachable = await asyncio.wait_for(presence_service.check(log_failure=True), timeout=3.0)
+                except (asyncio.TimeoutError, Exception) as exc:
+                    logger.warning("calling_realtime redis_check_deferred_failed error=%s", type(exc).__name__)
+                    redis_reachable = False
+            else:
+                redis_reachable = False
+            logger.info("calling_realtime redis_reachable=%s call_websocket_ready=%s live_websocket_ready=true calls_rest_available=%s", redis_reachable, bool(redis_reachable and settings.CALL_FEATURE_ENABLED), settings.CALL_FEATURE_ENABLED)
+        asyncio.create_task(check_realtime_after_startup())
         async def registry_worker():
             while not registry_stop_event.is_set():
-                await asyncio.to_thread(model_registry.refresh, force=True)
+                try:
+                    await asyncio.to_thread(model_registry.refresh, force=True)
+                except Exception:
+                    logger.exception("model_registry_refresh_failed")
                 try: await asyncio.wait_for(registry_stop_event.wait(), timeout=max(30, settings.ORCHESTRATION_HEALTH_TTL_SECONDS))
                 except TimeoutError: continue
         app.state.registry_task = asyncio.create_task(registry_worker())
