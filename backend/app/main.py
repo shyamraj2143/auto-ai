@@ -14,8 +14,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app.api.routes import admin, ai, alarms, assistant_actions, auth, calls, chat_sessions, chats, cms, demo_chat, device_monitoring, documents, download, form_services, health, human, intent_engine, library, live, live_websocket, memory, notifications, payments, relationship_followups, screen_share, search, service_applications, social, trust_hub, user_data, user_messages, users, voice
 from app.core.config import settings
 from app.core.rate_limit import InMemoryRateLimitMiddleware
-from app.db.base import Base
-from app.db.session import SessionLocal, engine, init_db
+from app.db.session import SessionLocal, init_db
 from app.services.admin_seed import create_admin_from_env
 from app.services.apk_service import apk_service
 from app.services.call_service import call_timeout_worker
@@ -125,7 +124,6 @@ def get_trusted_hosts() -> list[str]:
 
 
 def _bootstrap_database() -> None:
-    """Run migrations/seeds outside the FastAPI startup critical path."""
     try:
         init_db()
         with SessionLocal() as db:
@@ -154,11 +152,9 @@ def create_app():
         logger.info("payment_urls FRONTEND_URL=%s BACKEND_URL=%s RAZORPAY_FAILURE_URL=%s", settings.frontend_url, settings.backend_url, settings.razorpay_failure_url)
         for directory in (settings.UPLOAD_DIR, Path(settings.UPLOAD_DIR, "profile"), settings.LIBRARY_STORAGE_DIR, settings.APK_STORAGE_DIR, settings.FORM_SERVICE_STORAGE_DIR):
             Path(directory).mkdir(parents=True, exist_ok=True)
-        try:
-            from app import models  # noqa: F401
-            Base.metadata.create_all(bind=engine)
-        except Exception:
-            logger.exception("base database table creation failed; deferred bootstrap will retry")
+        # Do not perform database connections or schema migrations in the
+        # Uvicorn lifespan critical path. Railway must receive /health as soon
+        # as the HTTP server binds to its assigned PORT.
         app.state.database_bootstrap_task = asyncio.create_task(asyncio.to_thread(_bootstrap_database))
         if settings.CALL_FEATURE_ENABLED:
             if not settings.redis_url: logger.warning("calling_configuration Redis is not configured; Calls remains isolated from unrelated app features.")
