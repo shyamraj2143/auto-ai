@@ -1,2 +1,3 @@
 Apply and verify the July 31 requested AI Chat, Settings, Screen Share, and mobile Messages fixes.
 Admin files must remain untouched.
+Trigger final provider cleanup verification.
