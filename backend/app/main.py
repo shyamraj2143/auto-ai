@@ -14,7 +14,8 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app.api.routes import admin, ai, alarms, assistant_actions, auth, calls, chat_sessions, chats, cms, demo_chat, device_monitoring, documents, download, form_services, health, human, intent_engine, library, live, live_websocket, memory, notifications, payments, relationship_followups, screen_share, search, service_applications, social, trust_hub, user_data, user_messages, users, voice
 from app.core.config import settings
 from app.core.rate_limit import InMemoryRateLimitMiddleware
-from app.db.session import SessionLocal, init_db
+from app.db.base import Base
+from app.db.session import SessionLocal, engine, init_db
 from app.services.admin_seed import create_admin_from_env
 from app.services.apk_service import apk_service
 from app.services.call_service import call_timeout_worker
@@ -111,8 +112,6 @@ def get_cors_origins() -> list[str]:
 
 
 def get_trusted_hosts() -> list[str]:
-    # Railway's deployment healthcheck originates from this hostname, not the public service hostname.
-    # Keep the service domain(s) and explicitly allow Railway's healthcheck host.
     hosts = {"localhost", "127.0.0.1", "testserver", "healthcheck.railway.app", "auto-ai-app-download.up.railway.app", "*.up.railway.app"}
     hosts.update(host.strip().lower() for host in settings.TRUSTED_HOSTS if host.strip() and host.strip() != "*")
     for configured_url in (settings.frontend_url, settings.backend_url):
@@ -125,6 +124,22 @@ def get_trusted_hosts() -> list[str]:
     return sorted(hosts)
 
 
+def _bootstrap_database() -> None:
+    """Run migrations/seeds outside the FastAPI startup critical path."""
+    try:
+        init_db()
+        with SessionLocal() as db:
+            ensure_service_registry(db)
+            ensure_autoai_seva_demo(db)
+            cleanup_expired_form_service_data(db)
+            create_admin_from_env(db)
+            apk_service.sync_filesystem_release(db)
+            ensure_cms_defaults(db)
+        logger.info("database_bootstrap completed successfully")
+    except Exception:
+        logger.exception("database_bootstrap failed; HTTP service remains available")
+
+
 def create_app():
     app = FastAPI(title=settings.PROJECT_NAME, version="1.0.0", description="Production-ready AI assistant backend powered by Groq.")
     app.add_middleware(NormalizeRequestPathMiddleware); app.add_middleware(RequestBodyLimitMiddleware); app.add_middleware(RelationshipPayloadLimitMiddleware); app.add_middleware(RequestIdMiddleware); app.add_middleware(InMemoryRateLimitMiddleware)
@@ -135,16 +150,20 @@ def create_app():
     async def realtime_unavailable_handler(request: Request, exc: RealtimeUnavailable):
         del request; return JSONResponse(status_code=503, content={"detail": str(exc)})
     @app.on_event("startup")
-    def on_startup():
+    async def on_startup():
         logger.info("payment_urls FRONTEND_URL=%s BACKEND_URL=%s RAZORPAY_FAILURE_URL=%s", settings.frontend_url, settings.backend_url, settings.razorpay_failure_url)
+        for directory in (settings.UPLOAD_DIR, Path(settings.UPLOAD_DIR, "profile"), settings.LIBRARY_STORAGE_DIR, settings.APK_STORAGE_DIR, settings.FORM_SERVICE_STORAGE_DIR):
+            Path(directory).mkdir(parents=True, exist_ok=True)
+        try:
+            from app import models  # noqa: F401
+            Base.metadata.create_all(bind=engine)
+        except Exception:
+            logger.exception("base database table creation failed; deferred bootstrap will retry")
+        app.state.database_bootstrap_task = asyncio.create_task(asyncio.to_thread(_bootstrap_database))
         if settings.CALL_FEATURE_ENABLED:
             if not settings.redis_url: logger.warning("calling_configuration Redis is not configured; Calls remains isolated from unrelated app features.")
             if settings.is_production and not settings.turn_configured: logger.warning("calling_configuration TURN is not configured; production calls are not relay-ready.")
             if settings.is_production and not settings.FIREBASE_PROJECT_ID: logger.warning("calling_configuration Firebase is not configured; killed Android apps cannot receive calls.")
-        Path(settings.UPLOAD_DIR).mkdir(parents=True, exist_ok=True); Path(settings.UPLOAD_DIR, "profile").mkdir(parents=True, exist_ok=True); Path(settings.LIBRARY_STORAGE_DIR).mkdir(parents=True, exist_ok=True); Path(settings.APK_STORAGE_DIR).mkdir(parents=True, exist_ok=True); Path(settings.FORM_SERVICE_STORAGE_DIR).mkdir(parents=True, exist_ok=True)
-        init_db()
-        with SessionLocal() as db:
-            ensure_service_registry(db); ensure_autoai_seva_demo(db); cleanup_expired_form_service_data(db); create_admin_from_env(db); apk_service.sync_filesystem_release(db); ensure_cms_defaults(db)
     @app.on_event("startup")
     async def start_call_workers():
         logger.info("calling_redis configured=%s", presence_service.configured); redis_reachable = await presence_service.check(log_failure=True) if presence_service.configured else False
@@ -161,10 +180,12 @@ def create_app():
             relationship_stop_event = asyncio.Event(); app.state.relationship_stop_event = relationship_stop_event; app.state.relationship_worker_task = asyncio.create_task(relationship_followup_worker(relationship_stop_event))
     @app.on_event("shutdown")
     async def stop_call_workers():
+        bootstrap_task = getattr(app.state, "database_bootstrap_task", None)
+        if bootstrap_task: bootstrap_task.cancel()
         for attr in ("call_stop_event", "registry_stop_event", "relationship_stop_event"):
             event = getattr(app.state, attr, None)
             if event: event.set()
-        for attr in ("call_timeout_task", "registry_task", "relationship_worker_task"):
+        for attr in ("call_timeout_task", "registry_task", "relationship_worker_task", "database_bootstrap_task"):
             task = getattr(app.state, attr, None)
             if task: await asyncio.gather(task, return_exceptions=True)
         await presence_service.close()
