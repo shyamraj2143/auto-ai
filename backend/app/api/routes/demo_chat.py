@@ -44,13 +44,15 @@ def anonymous_session_hash(session_id: str) -> str:
 
 
 def public_demo_chat_limit() -> int:
-    return min(PUBLIC_DEMO_CHAT_LIMIT_CAP, max(1, settings.PUBLIC_DEMO_CHAT_LIMIT))
+    configured_limit = getattr(settings, "PUBLIC_DEMO_CHAT_LIMIT", 5)
+    return min(PUBLIC_DEMO_CHAT_LIMIT_CAP, max(1, int(configured_limit)))
 
 
 def reserve_demo_message(db: Session, session_id: str) -> tuple[DemoChatSession, int]:
     now = utc_now_naive()
     limit = public_demo_chat_limit()
-    expires_at = now + timedelta(hours=max(1, settings.PUBLIC_DEMO_CHAT_TTL_HOURS))
+    configured_ttl_hours = getattr(settings, "PUBLIC_DEMO_CHAT_TTL_HOURS", 24)
+    expires_at = now + timedelta(hours=max(1, int(configured_ttl_hours)))
     record = db.scalar(
         select(DemoChatSession)
         .where(DemoChatSession.session_id == session_id)
@@ -108,8 +110,9 @@ def demo_provider_for_model(model: str) -> str:
 
 @router.get("/chat/config", response_model=DemoChatConfig)
 def demo_chat_config() -> DemoChatConfig:
+    enabled = getattr(settings, "PUBLIC_DEMO_CHAT_ENABLED", True)
     return DemoChatConfig(
-        enabled=settings.PUBLIC_DEMO_CHAT_ENABLED,
+        enabled=bool(enabled),
         model=settings.GROQ_MODEL,
         limit=public_demo_chat_limit(),
     )
@@ -118,7 +121,7 @@ def demo_chat_config() -> DemoChatConfig:
 @router.post("/chat", response_model=DemoChatResponse)
 def demo_chat(payload: DemoChatRequest, db: Session = Depends(get_db)) -> DemoChatResponse:
     request_id = str(uuid.uuid4())
-    if not settings.PUBLIC_DEMO_CHAT_ENABLED:
+    if not bool(getattr(settings, "PUBLIC_DEMO_CHAT_ENABLED", True)):
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"The public demo is temporarily unavailable. Request ID: {request_id}")
 
     record, remaining = reserve_demo_message(db, payload.session_id)
