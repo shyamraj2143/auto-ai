@@ -24,7 +24,7 @@ jobs:
     environment: production
     env:
       # Keep update notification on the same production backend as the APK.
-      AUTO_AI_API_BASE_URL: https://auto-ai-backend.onrender.com/api/v1
+      AUTO_AI_API_BASE_URL: https://auto-ai-app-download.up.railway.app/api/v1
       AUTO_AI_ADMIN_EMAIL: ${{ secrets.AUTO_AI_ADMIN_EMAIL }}
       AUTO_AI_ADMIN_PASSWORD: ${{ secrets.AUTO_AI_ADMIN_PASSWORD }}
 
@@ -63,6 +63,21 @@ jobs:
           echo "AUTO_AI_ANDROID_VERSION_NAME=$version_name" >> "$GITHUB_ENV"
           echo "AUTO_AI_ANDROID_RELEASE_TAG=$release_tag" >> "$GITHUB_ENV"
           echo "Resolved $release_tag ($version_name / $version_code)."
+
+      - name: Wait for production backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 20); do
+            if curl -fsS --max-time 10 "$AUTO_AI_API_BASE_URL/health" >/dev/null; then
+              echo 'Production backend is healthy.'
+              exit 0
+            fi
+            echo "Backend not ready; retry $attempt/20."
+            sleep 15
+          done
+          echo 'Production backend did not become healthy in time.' >&2
+          exit 1
 
       - name: Dispatch update notification through administrator authentication
         shell: bash
