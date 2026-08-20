@@ -171,7 +171,7 @@ class Settings(BaseSettings):
     MAX_UPLOAD_MB: int = 20
     ALLOWED_DOCUMENT_EXTENSIONS: set[str] = {".pdf", ".txt", ".docx"}
     ALLOWED_IMAGE_EXTENSIONS: set[str] = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
-    ALLOWED_AUDIO_EXTENSIONS: set[str] = [".flac", ".mp3", ".m4a", ".mpeg", ".mpga", ".ogg", ".wav", ".webm"]
+    ALLOWED_AUDIO_EXTENSIONS: set[str] = {".flac", ".mp3", ".m4a", ".mpeg", ".mpga", ".ogg", ".wav", ".webm"}
     RATE_LIMIT_PER_MINUTE: int = 90
     RATE_LIMIT_LOGIN_PER_MINUTE: int = 8
     RATE_LIMIT_REGISTER_PER_MINUTE: int = 5
