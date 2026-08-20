@@ -46,7 +46,9 @@ jobs:
           python-version: "3.12"
 
       - name: Remove Bedrock integration
-        run: python scripts/remove_bedrock.py
+        run: |
+          python scripts/remove_bedrock.py
+          rm -f scripts/remove_bedrock.py
 
       - name: Apply targeted patch
         shell: bash
