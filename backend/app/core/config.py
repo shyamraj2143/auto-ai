@@ -171,23 +171,23 @@ class Settings(BaseSettings):
     MAX_UPLOAD_MB: int = 20
     ALLOWED_DOCUMENT_EXTENSIONS: set[str] = {".pdf", ".txt", ".docx"}
     ALLOWED_IMAGE_EXTENSIONS: set[str] = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
-    ALLOWED_AUDIO_EXTENSIONS: set[str] = {".flac", ".mp3", ".m4a", ".mpeg", ".mpga", ".ogg", ".wav", ".webm"}
+    ALLOWED_AUDIO_EXTENSIONS: set[str] = [".flac", ".mp3", ".m4a", ".mpeg", ".mpga", ".ogg", ".wav", ".webm"]
     RATE_LIMIT_PER_MINUTE: int = 90
     RATE_LIMIT_LOGIN_PER_MINUTE: int = 8
     RATE_LIMIT_REGISTER_PER_MINUTE: int = 5
     RATE_LIMIT_PASSWORD_RESET_PER_MINUTE: int = 5
+    RATE_LIMIT_AI_PER_MINUTE: int = 30
+    RATE_LIMIT_PAYMENT_PER_MINUTE: int = 12
+    RATE_LIMIT_ADMIN_PER_MINUTE: int = 30
+    RATE_LIMIT_RESTORE_PER_MINUTE: int = 3
+    RATE_LIMIT_UPLOAD_PER_MINUTE: int = 12
 
     @property
     def groq_api_key(self) -> str | None:
         return (self.GROQ_API_KEY or self.AUTO_AI_GROQ_API_KEY or "").strip() or None
 
     def chat_model_for(self, provider: str | None = None) -> str:
-        """Return the configured default chat model for an AI provider.
-
-        Chat creation uses this method when the client does not explicitly
-        select a model. Keep the resolver centralized so provider defaults
-        cannot drift between chat persistence and the provider service.
-        """
+        """Return the configured default chat model for an AI provider."""
         selected = (provider or self.AI_PROVIDER or "groq").strip().lower()
         defaults = {
             "groq": self.GROQ_MODEL,
