@@ -137,9 +137,8 @@ def demo_chat(payload: DemoChatRequest, db: Session = Depends(get_db)) -> DemoCh
     ]
 
     try:
-        # AWS Bedrock is intentionally disabled. The public demo must use the
-        # configured primary provider so a deactivated AWS account can never
-        # turn a normal demo request into a server error.
+        # AWS Bedrock is intentionally disabled. The public demo uses the
+        # configured Groq provider directly, matching GroqService.complete().
         content, usage, selected_model = groq_service.complete(
             messages,
             provider="groq",
@@ -147,7 +146,6 @@ def demo_chat(payload: DemoChatRequest, db: Session = Depends(get_db)) -> DemoCh
             temperature=0.45,
             max_tokens=240,
             request_timeout=35,
-            allow_bedrock_fallback=False,
         )
     except Exception as exc:
         release_demo_message(db, payload.session_id)
