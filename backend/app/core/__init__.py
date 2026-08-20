@@ -33,11 +33,4 @@ for _name in _PAYMENT_PLAIN_FIELDS:
 for _name in _PAYMENT_SECRET_FIELDS:
     _install_missing_payment_setting(_name, True)
 
-# Populate the already-created singleton as well. This matters because config.py
-# creates `settings` before this package initializer finishes.
-for _name in _PAYMENT_PLAIN_FIELDS | _PAYMENT_SECRET_FIELDS:
-    if not hasattr(settings, _name):
-        value = os.getenv(_name)
-        setattr(settings, _name, SecretStr(value) if _name in _PAYMENT_SECRET_FIELDS and value else (value or None))
-
 __all__ = ["Settings", "settings"]
