@@ -13,7 +13,9 @@ from app.services.apk_service import ApkService
 
 GITHUB_REPO = os.getenv("AUTO_AI_GITHUB_APK_REPO", "shyamraj2143/auto-ai").strip()
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-GITHUB_DOWNLOAD_URL = "/api/download/apk/github/latest"
+# The FastAPI application is mounted under /api/v1. Keep generated download
+# URLs aligned with the public API prefix so QR codes and metadata links work.
+GITHUB_DOWNLOAD_URL = "/api/v1/download/apk/github/latest"
 GITHUB_CACHE_TTL_SECONDS = 60
 GITHUB_RELEASES_REQUIRE_UPDATE = True
 
