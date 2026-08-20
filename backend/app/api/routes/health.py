@@ -12,11 +12,7 @@ router = APIRouter(tags=["health"])
 
 @router.get("/", include_in_schema=False)
 def root():
-    """Keep the public Railway backend URL useful when opened directly.
-
-    The backend is an API service, so the bare host is redirected to the
-    authoritative APK download endpoint instead of returning FastAPI 404.
-    """
+    """Keep the public Railway backend URL useful when opened directly."""
     return RedirectResponse(url=f"{settings.API_V1_STR}/download/apk", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
 
@@ -28,15 +24,18 @@ def download_root():
 
 @router.get("/health")
 def health():
+    """Lightweight health endpoint used by Railway.
+
+    This endpoint must never depend on an optional AI provider. AWS Bedrock
+    was deactivated for this deployment, so it is intentionally not queried
+    here. The health check only reports providers that are still supported by
+    the running app.
+    """
     provider = settings.AI_PROVIDER.lower()
-    bedrock_configured = bool(
-        settings.bedrock_api_key
-        or (settings.aws_access_key_id and settings.aws_secret_access_key)
-    )
     configured = {
         "openai": bool(settings.OPENAI_API_KEY),
         "groq": bool(settings.groq_api_key),
-        "bedrock": bedrock_configured,
+        "gemini": bool(settings.GEMINI_API_KEY),
     }
     return {
         "status": "ok",
@@ -47,7 +46,6 @@ def health():
         "ai_configured": configured.get(provider, False),
         "groq_configured": bool(settings.groq_api_key),
         "openai_configured": bool(settings.OPENAI_API_KEY),
-        "bedrock_configured": bedrock_configured,
         "gemini_configured": bool(settings.GEMINI_API_KEY),
         "commit_sha": settings.RAILWAY_GIT_COMMIT_SHA,
         "deployment_id": settings.RAILWAY_DEPLOYMENT_ID,
