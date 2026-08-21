@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from time import perf_counter
 
 from fastapi import HTTPException, status
@@ -51,7 +52,7 @@ def _direct_fallback(messages: list[dict[str, str]], tasks: list) -> tuple[str, 
         seen.add(key)
         if provider == "groq" and not settings.groq_api_key:
             continue
-        if provider == "nvidia" and not __import__("os").getenv("NVIDIA_API_KEY", "").strip():
+        if provider == "nvidia" and not os.getenv("NVIDIA_API_KEY", "").strip():
             continue
         try:
             if provider == "nvidia":
@@ -113,32 +114,9 @@ class IntelligenceOrchestrator:
                 raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="No healthy Groq/NVIDIA intelligence model is available for Deep Research.")
             emit("orchestration.fallback", {"mode": canonical.value, "stage": "Using direct Groq/NVIDIA provider fallback", "fallback_used": True})
             content, usage, provider, model = _direct_fallback(messages, [])
-            emit("model.completed", {
-                "task_id": "direct-fallback",
-                "provider_display_name": provider.title(),
-                "model_display_name": model,
-                "actual_model_id": model,
-                "role": "Direct provider fallback",
-                "activity_label": "Generating the response with an available Groq/NVIDIA provider",
-                "status": "completed",
-                "contributed_to_final_answer": True,
-            })
+            emit("model.completed", {"task_id": "direct-fallback", "provider_display_name": provider.title(), "model_display_name": model, "actual_model_id": model, "role": "Direct provider fallback", "activity_label": "Generating the response with an available Groq/NVIDIA provider", "status": "completed", "contributed_to_final_answer": True})
             elapsed_ms = int((perf_counter() - started) * 1000)
-            return OrchestrationResult(
-                content=content,
-                usage=usage,
-                selected_model=f"{provider}/{model}",
-                metadata={
-                    "mode": canonical.value,
-                    "models_attempted": 1,
-                    "models_completed": 1,
-                    "models_contributed": 1,
-                    "models_consulted": [{"provider": provider, "provider_display_name": provider.title(), "display_name": model, "actual_model_id": model, "role": "Direct provider fallback", "activity_label": "Generating the response with an available Groq/NVIDIA provider", "status": "completed", "contributed": True}],
-                    "verified_sources": 0,
-                    "duration_ms": elapsed_ms,
-                    "fallback_used": True,
-                },
-            )
+            return OrchestrationResult(content=content, usage=usage, selected_model=f"{provider}/{model}", metadata={"mode": canonical.value, "models_attempted": 1, "models_completed": 1, "models_contributed": 1, "models_consulted": [{"provider": provider, "provider_display_name": provider.title(), "display_name": model, "actual_model_id": model, "role": "Direct provider fallback", "activity_label": "Generating the response with an available Groq/NVIDIA provider", "status": "completed", "contributed": True}], "verified_sources": 0, "duration_ms": elapsed_ms, "fallback_used": True})
 
         task_providers = {task.model.provider for task in tasks}
         preferred_provider = settings.AI_PROVIDER
@@ -151,24 +129,12 @@ class IntelligenceOrchestrator:
         if canonical == IntelligenceMode.INSTANT:
             results = []
             for task in tasks:
-                attempt = parallel_executor.execute(
-                    [task],
-                    emit=emit,
-                    cancelled=cancelled,
-                    max_tokens=min(analysis.token_budget, settings.ORCHESTRATION_MAX_OUTPUT_TOKENS),
-                    total_timeout=min(analysis.latency_budget_seconds, settings.ORCHESTRATION_TOTAL_TIMEOUT_SECONDS),
-                )
+                attempt = parallel_executor.execute([task], emit=emit, cancelled=cancelled, max_tokens=min(analysis.token_budget, settings.ORCHESTRATION_MAX_OUTPUT_TOKENS), total_timeout=min(analysis.latency_budget_seconds, settings.ORCHESTRATION_TOTAL_TIMEOUT_SECONDS))
                 results.extend(attempt)
                 if any(item.status == TaskStatus.COMPLETED and item.content for item in attempt):
                     break
         else:
-            results = parallel_executor.execute(
-                tasks,
-                emit=emit,
-                cancelled=cancelled,
-                max_tokens=min(analysis.token_budget, settings.ORCHESTRATION_MAX_OUTPUT_TOKENS),
-                total_timeout=min(analysis.latency_budget_seconds, settings.ORCHESTRATION_TOTAL_TIMEOUT_SECONDS),
-            )
+            results = parallel_executor.execute(tasks, emit=emit, cancelled=cancelled, max_tokens=min(analysis.token_budget, settings.ORCHESTRATION_MAX_OUTPUT_TOKENS), total_timeout=min(analysis.latency_budget_seconds, settings.ORCHESTRATION_TOTAL_TIMEOUT_SECONDS))
         if cancelled():
             emit("orchestration.cancelled", {"mode": canonical.value, "stage": "Generation cancelled"})
             raise HTTPException(status_code=499, detail="Generation cancelled.")
@@ -180,37 +146,7 @@ class IntelligenceOrchestrator:
                 content, usage, provider, model = _direct_fallback(messages, tasks)
                 emit("model.completed", {"task_id": "direct-fallback", "provider_display_name": provider.title(), "model_display_name": model, "actual_model_id": model, "role": "Direct provider fallback", "activity_label": "Generating the response with an available Groq/NVIDIA provider", "status": "completed", "contributed_to_final_answer": True})
                 elapsed_ms = int((perf_counter() - started) * 1000)
-                return OrchestrationResult(
-                    content=content,
-                    usage=usage,
-                    selected_model=f"{provider}/{model}",
-                    metadata={
-                        "mode": canonical.value,
-                        "models_attempted": len(results) + 1,
-                        "models_completed": 1,
-                        "models_contributed": 1,
-                        "models_consulted": [
-                            *[{
-                                "provider": result.task.model.provider,
-                                "provider_display_name": result.task.model.provider.title(),
-                                "display_name": result.task.model.friendly_name,
-                                "actual_model_id": result.task.model.actual_model_id,
-                                "role": result.task.role,
-                                "activity_label": result.task.activity_label,
-                                "status": result.status.value,
-                                "latency_ms": result.duration_ms,
-                                "started_at": result.started_at,
-                                "completed_at": result.completed_at,
-                                "failure_reason": result.error_classification,
-                                "contributed": False,
-                            } for result in results],
-                            {"provider": provider, "provider_display_name": provider.title(), "display_name": model, "actual_model_id": model, "role": "Direct provider fallback", "activity_label": "Generating the response with an available Groq/NVIDIA provider", "status": "completed", "contributed": True},
-                        ],
-                        "verified_sources": 0,
-                        "duration_ms": elapsed_ms,
-                        "fallback_used": True,
-                    },
-                )
+                return OrchestrationResult(content=content, usage=usage, selected_model=f"{provider}/{model}", metadata={"mode": canonical.value, "models_attempted": len(results) + 1, "models_completed": 1, "models_contributed": 1, "models_consulted": [*[{"provider": result.task.model.provider, "provider_display_name": result.task.model.provider.title(), "display_name": result.task.model.friendly_name, "actual_model_id": result.task.model.actual_model_id, "role": result.task.role, "activity_label": result.task.activity_label, "status": result.status.value, "latency_ms": result.duration_ms, "started_at": result.started_at, "completed_at": result.completed_at, "failure_reason": result.error_classification, "contributed": False} for result in results], {"provider": provider, "provider_display_name": provider.title(), "display_name": model, "actual_model_id": model, "role": "Direct provider fallback", "activity_label": "Generating the response with an available Groq/NVIDIA provider", "status": "completed", "contributed": True}], "verified_sources": 0, "duration_ms": elapsed_ms, "fallback_used": True})
             detail = "Available Groq/NVIDIA intelligence models could not complete Deep Research."
             if failure_reasons:
                 detail += f" Provider errors: {', '.join(dict.fromkeys(failure_reasons))}."
@@ -242,21 +178,7 @@ class IntelligenceOrchestrator:
         usages = [result.usage for result in successes] + [synthesis_usage]
         usage = {key: sum(int(item.get(key, 0) or 0) for item in usages) for key in ("prompt_tokens", "completion_tokens", "total_tokens")}
         logger.info("orchestration_completed mode=%s models_attempted=%s models_succeeded=%s total_latency_ms=%s fallback_used=%s verified_sources=%s total_tokens=%s", canonical.value, len(results), len(successes), elapsed_ms, fallback_used, verified_citations, usage["total_tokens"])
-        return OrchestrationResult(
-            content=content,
-            usage=usage,
-            selected_model=f"orchestration:{selected_model}",
-            metadata={
-                "mode": canonical.value,
-                "models_attempted": len(results),
-                "models_completed": len(successes),
-                "models_contributed": len(successes),
-                "models_consulted": [{"provider": result.task.model.provider, "provider_display_name": result.task.model.provider.title(), "display_name": result.task.model.friendly_name, "actual_model_id": result.task.model.actual_model_id, "role": result.task.role, "activity_label": result.task.activity_label, "status": result.status.value, "latency_ms": result.duration_ms, "started_at": result.started_at, "completed_at": result.completed_at, "failure_reason": result.error_classification, "contributed": result.contributed} for result in results],
-                "verified_sources": verified_citations,
-                "duration_ms": elapsed_ms,
-                "fallback_used": fallback_used,
-            },
-        )
+        return OrchestrationResult(content=content, usage=usage, selected_model=f"orchestration:{selected_model}", metadata={"mode": canonical.value, "models_attempted": len(results), "models_completed": len(successes), "models_contributed": len(successes), "models_consulted": [{"provider": result.task.model.provider, "provider_display_name": result.task.model.provider.title(), "display_name": result.task.model.friendly_name, "actual_model_id": result.task.model.actual_model_id, "role": result.task.role, "activity_label": result.task.activity_label, "status": result.status.value, "latency_ms": result.duration_ms, "started_at": result.started_at, "completed_at": result.completed_at, "failure_reason": result.error_classification, "contributed": result.contributed} for result in results], "verified_sources": verified_citations, "duration_ms": elapsed_ms, "fallback_used": fallback_used})
 
 
 intelligence_orchestrator = IntelligenceOrchestrator()
