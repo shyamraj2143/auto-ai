@@ -15,19 +15,26 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Fix production API endpoint
+      - name: Enforce same-origin production API endpoint
         run: |
           python - <<'PY'
           from pathlib import Path
           p = Path('frontend/src/api/client.ts')
           s = p.read_text()
-          old = 'const PUBLIC_API_BASE_URL = "https://autoai.site.je/api/v1";'
-          new = 'const PUBLIC_API_BASE_URL = "https://auto-ai-app-download.up.railway.app/api/v1";'
-          if old not in s:
-              print('Production API endpoint already fixed or source differs; no change needed.')
+          marker = 'const PUBLIC_API_BASE_URL = '
+          start = s.find(marker)
+          if start < 0:
+              raise SystemExit('PUBLIC_API_BASE_URL declaration not found')
+          end = s.find(';', start)
+          if end < 0:
+              raise SystemExit('PUBLIC_API_BASE_URL declaration is malformed')
+          desired = 'const PUBLIC_API_BASE_URL = "https://autoai.site.je/api/v1";'
+          current = s[start:end + 1]
+          if current != desired:
+              p.write_text(s[:start] + desired + s[end + 1:])
+              print(f'Updated PUBLIC_API_BASE_URL: {current} -> {desired}')
           else:
-              p.write_text(s.replace(old, new, 1))
-              print('Updated production API endpoint.')
+              print('PUBLIC_API_BASE_URL already uses same-origin production API.')
           PY
       - name: Commit and push fix
         run: |
@@ -38,5 +45,5 @@ jobs:
             echo 'No changes to commit.'
             exit 0
           fi
-          git commit -m 'fix: use Railway backend API for production mobile login'
+          git commit -m 'fix: use same-origin API proxy in production'
           git push
