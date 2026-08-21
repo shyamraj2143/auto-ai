@@ -4,7 +4,6 @@ import { ArrowRight, Check, CreditCard, ExternalLink, Loader2 } from "lucide-rea
 import { api } from "../../api/client";
 import { useAuth } from "../../contexts/AuthContext";
 import type { BillingPlan, PaidPricingPlanName, PaymentConfig } from "../../types";
-import { createRazorpayCheckoutOptions, loadRazorpayCheckout } from "../../utils/razorpay";
 import { isMobileAppRuntime } from "../../utils/runtime";
 import { normalizeUpiId } from "../../utils/upi";
 import { LogoIcon } from "../brand/LogoIcon";
@@ -31,8 +30,6 @@ export function PricingPage() {
   const mobileApp = isMobileAppRuntime();
   const cmsPage = usePublishedPage("pricing");
 
-  const razorpayKeyId = paymentConfig?.key_id || "";
-  const razorpayReady = paymentConfig?.razorpay_ready ?? false;
   const upiId = normalizeUpiId(paymentConfig?.upi_id || import.meta.env.VITE_UPI_ID || "");
   const upiPayeeName = paymentConfig?.upi_payee_name || import.meta.env.VITE_UPI_PAYEE_NAME || "Auto-AI";
 
@@ -44,10 +41,11 @@ export function PricingPage() {
         setPaymentConfig(config);
         setPlans(nextPlans);
       })
-      .catch(() => {
+      .catch((err) => {
         if (!active) return;
         setPaymentConfig(null);
         setPlans([]);
+        setError(err instanceof Error ? err.message : "Unable to load payment configuration.");
       });
     return () => {
       active = false;
@@ -60,71 +58,36 @@ export function PricingPage() {
       navigate("/login");
       return;
     }
-    if (!razorpayKeyId) {
-      setError("Razorpay public key is missing. Set RAZORPAY_KEY_ID in backend environment.");
+    if (!paymentConfig?.key_id) {
+      setError("Razorpay public key is missing. Configure RAZORPAY_KEY_ID on the backend.");
       return;
     }
-    if (!razorpayReady) {
-      setError("Razorpay payment is not fully configured on the backend.");
+    if (!paymentConfig.razorpay_ready) {
+      setError("Razorpay is not fully configured. Configure RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET on the backend.");
       return;
     }
+
     const paidPlan = plan.id as PaidPricingPlanName;
     setBusyPlan(paidPlan);
     setError("");
     setMessage("");
+
     try {
+      // Create the server-side order first. Do not call Razorpay.open() after
+      // this async operation: mobile browsers can block programmatic popups.
       const session = await api.createPaymentSession(token, {
         plan_id: paidPlan,
         amount: plan.price_paise,
         currency: plan.currency,
         receipt: `auto-ai-${paidPlan}-${Date.now()}`.slice(0, 40)
       });
-      await loadRazorpayCheckout();
-      if (!window.Razorpay) throw new Error("Razorpay checkout failed to load. Check internet connection and try again.");
-      const checkout = new window.Razorpay(createRazorpayCheckoutOptions({
-        key: session.key_id || razorpayKeyId,
-        amount: session.amount,
-        currency: session.currency,
-        name: "Auto-AI",
-        description: `${plan.label} plan`,
-        orderId: session.razorpay_order_id,
-        prefill: {
-          name: user.name,
-          email: user.email,
-          contact: user.mobile || ""
-        },
-        onDismiss: () => {
-          void api.cancelPaymentSession(token, session.session_id).catch(() => undefined);
-          setBusyPlan(null);
-          setError("Payment cancelled.");
-        },
-        onSuccess: (response) => {
-          void api.verifyRazorpayPayment(token, {
-            razorpay_payment_id: response.razorpay_payment_id,
-            razorpay_order_id: response.razorpay_order_id,
-            razorpay_signature: response.razorpay_signature
-          })
-            .then((result) => {
-              setMessage(result.message || paymentInstruction);
-              setError("");
-            })
-            .catch((err) => {
-              setError(err instanceof Error ? err.message : "Payment verification failed.");
-            })
-            .finally(() => setBusyPlan(null));
-        }
-      }));
-      checkout.on("payment.failed", (response) => {
-        void api.cancelPaymentSession(token, session.session_id).catch(() => undefined);
-        setBusyPlan(null);
-        const description = response.error?.description || response.error?.reason || "Payment failed.";
-        setError(description.toLowerCase().includes("api key") && description.toLowerCase().includes("expired")
-          ? "Razorpay API key has expired. Update the Razorpay env keys and rebuild the app."
-          : description);
-      });
-      checkout.open();
+
+      // Move to a dedicated checkout screen. That screen preloads checkout.js
+      // and opens Razorpay directly from a real user click, which is reliable
+      // on Chrome, mobile browsers and WebViews.
+      navigate(`/payment/checkout?session_id=${encodeURIComponent(session.session_id)}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to start payment.");
+      setError(err instanceof Error ? err.message : "Unable to create payment session.");
       setBusyPlan(null);
     }
   }
