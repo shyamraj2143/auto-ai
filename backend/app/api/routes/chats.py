@@ -38,8 +38,11 @@ def create_chat(
         user_id=current_user.id,
         title=payload.title or "New chat",
         system_prompt=payload.system_prompt,
-        model=payload.model or settings.default_chat_model,
+        model=payload.model or settings.chat_model_for(settings.AI_PROVIDER),
         mode=payload.mode,
+        preset_mode=payload.preset_mode,
+        selected_preset=payload.selected_preset,
+        manual_preset_locked=payload.manual_preset_locked,
     )
     db.add(chat)
     db.flush()
