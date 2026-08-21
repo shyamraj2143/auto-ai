@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+import logging
+
 from sqlalchemy import delete, text
 from sqlalchemy.orm import Session
 
@@ -5,6 +9,9 @@ from app.models.chat import Chat
 from app.models.chat_message import ChatMessage
 from app.models.chat_session import ChatSession
 from app.models.message import Message
+
+
+logger = logging.getLogger("auto_ai.chat_storage")
 
 
 def model_from_metadata(message: Message, fallback: str | None = None) -> str | None:
@@ -18,17 +25,27 @@ def model_from_metadata(message: Message, fallback: str | None = None) -> str | 
 
 
 def sync_chat_session(db: Session, chat: Chat) -> None:
-    db.merge(
-        ChatSession(
-            id=chat.id,
-            user_id=chat.user_id,
-            title=chat.title,
-            model=chat.model,
-            mode=chat.mode or "normal",
-            created_at=chat.created_at,
-            updated_at=chat.updated_at,
-        )
-    )
+    """Best-effort sync to the legacy chat_sessions table.
+
+    The primary chats table is authoritative. A stale/missing secondary table
+    must never turn a successful chat create/update into HTTP 500.
+    """
+    try:
+        with db.begin_nested():
+            db.merge(
+                ChatSession(
+                    id=chat.id,
+                    user_id=chat.user_id,
+                    title=chat.title,
+                    model=chat.model,
+                    mode=chat.mode or "normal",
+                    created_at=chat.created_at,
+                    updated_at=chat.updated_at,
+                )
+            )
+            db.flush()
+    except Exception as exc:
+        logger.warning("chat_session_sync_skipped error_type=%s", type(exc).__name__)
 
 
 def sync_chat_message(db: Session, message: Message, *, user_id: str | None = None, model: str | None = None) -> None:
@@ -40,18 +57,23 @@ def sync_chat_message(db: Session, message: Message, *, user_id: str | None = No
     if not resolved_user_id:
         return
 
-    db.merge(
-        ChatMessage(
-            id=message.id,
-            session_id=message.chat_id,
-            user_id=resolved_user_id,
-            role=message.role,
-            content=message.content,
-            model=model_from_metadata(message, model),
-            token_count=message.token_count or 0,
-            created_at=message.created_at,
-        )
-    )
+    try:
+        with db.begin_nested():
+            db.merge(
+                ChatMessage(
+                    id=message.id,
+                    session_id=message.chat_id,
+                    user_id=resolved_user_id,
+                    role=message.role,
+                    content=message.content,
+                    model=model_from_metadata(message, model),
+                    token_count=message.token_count or 0,
+                    created_at=message.created_at,
+                )
+            )
+            db.flush()
+    except Exception as exc:
+        logger.warning("chat_message_sync_skipped error_type=%s", type(exc).__name__)
 
 
 def sync_chat_history(db: Session, chat: Chat) -> None:
@@ -61,12 +83,18 @@ def sync_chat_history(db: Session, chat: Chat) -> None:
 
 
 def delete_chat_storage(db: Session, chat_id: str) -> None:
-    db.execute(delete(ChatMessage).where(ChatMessage.session_id == chat_id))
-    db.execute(delete(ChatSession).where(ChatSession.id == chat_id))
+    try:
+        db.execute(delete(ChatMessage).where(ChatMessage.session_id == chat_id))
+        db.execute(delete(ChatSession).where(ChatSession.id == chat_id))
+    except Exception as exc:
+        logger.warning("chat_storage_delete_skipped error_type=%s", type(exc).__name__)
 
 
 def clear_chat_message_storage(db: Session, chat_id: str) -> None:
-    db.execute(delete(ChatMessage).where(ChatMessage.session_id == chat_id))
+    try:
+        db.execute(delete(ChatMessage).where(ChatMessage.session_id == chat_id))
+    except Exception as exc:
+        logger.warning("chat_message_storage_clear_skipped error_type=%s", type(exc).__name__)
 
 
 def backfill_chat_storage_tables(connection, quote) -> None:
