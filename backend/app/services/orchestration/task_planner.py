@@ -25,9 +25,8 @@ HIGH_ROLES = ["primary", "technical", "facts", "logic", "alternative", "evidence
 DEEP_RESEARCH_ROLES = ["research", "evidence", "technical", "facts", "counterpoint", "logic", "citations", "primary", "structure"]
 VISION_ROLES = ["primary", "technical", "facts", "structure", "alternative"]
 
-# Two Groq candidates are planned for Instant. The executor stops after the
-# first success, so the second candidate is a real fallback and costs nothing
-# when the primary model works.
+# Instant uses two Groq candidates and one NVIDIA candidate. The executor tries
+# the planned candidates in order and stops after the first successful response.
 PROVIDER_COUNTS = {
     IntelligenceMode.INSTANT: (2, 1),
     IntelligenceMode.MEDIUM: (3, 3),
@@ -86,12 +85,12 @@ def _fast_workers(
     *,
     visual_evidence: bool = False,
 ) -> list[ModelRecord]:
-    groq_count, openai_count = PROVIDER_COUNTS.get(mode, (2, 2))
+    groq_count, nvidia_count = PROVIDER_COUNTS.get(mode, (2, 2))
     groq = _provider_specialists("groq", mode, analysis, groq_count, visual_evidence=visual_evidence)
-    openai = _provider_specialists("openai", mode, analysis, openai_count, visual_evidence=visual_evidence)
+    nvidia = _provider_specialists("nvidia", mode, analysis, nvidia_count, visual_evidence=visual_evidence)
     selected: list[ModelRecord] = []
     seen: set[tuple[str, str]] = set()
-    for record in [*groq, *openai]:
+    for record in [*groq, *nvidia]:
         key = (record.provider, record.actual_model_id)
         if key not in seen:
             seen.add(key)
