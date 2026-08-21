@@ -1,9 +1,9 @@
 {
-  "release_tag": "android-406121",
-  "run_id": "32447127945",
-  "source_commit": "77021653eaf5a31d977d090b5bbb360f043cbe88",
+  "release_tag": "android-406141",
+  "run_id": "32447338550",
+  "source_commit": "988137883c95e4b5116cecefd3e39af902cbe5bd",
   "status": "success",
-  "updated_at": "2026-08-21T04:29:36.060036+00:00",
-  "version_code": "406121",
-  "version_name": "1.0.406121"
+  "updated_at": "2026-08-21T04:33:35.844416+00:00",
+  "version_code": "406141",
+  "version_name": "1.0.406141"
 }
