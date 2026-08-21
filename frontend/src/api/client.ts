@@ -71,7 +71,7 @@ declare global {
   }
 }
 
-const PUBLIC_API_BASE_URL = "https://auto-ai-app-download.up.railway.app/api/v1";
+const PUBLIC_API_BASE_URL = "https://autoai.site.je/api/v1";
 const API_V1_PREFIX = "/api/v1";
 const DEFAULT_API_TIMEOUT_MS = 8000;
 const API_DIAGNOSTIC_TIMEOUT_MS = 2500;
