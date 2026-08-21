@@ -1,0 +1,30 @@
+.hub-internet-check-button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 13px;
+  flex: 0 0 auto;
+  color: #f7f2ff;
+  border: 1px solid rgba(153, 93, 255, .75);
+  border-radius: 999px;
+  background: linear-gradient(135deg, #6d35d9, #8b45ee 58%, #5b39df);
+  box-shadow: 0 7px 20px rgba(111, 70, 232, .28);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  transition: transform .16s ease, filter .16s ease, box-shadow .16s ease;
+}
+.hub-internet-check-button:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 25px rgba(111, 70, 232, .35);
+}
+.hub-internet-check-button:active { transform: translateY(0); }
+.hub-internet-check-button svg { color: #e9d8ff; }
+
+@media (max-width: 900px) {
+  .hub-internet-check-button span { display: none; }
+  .hub-internet-check-button { width: 40px; min-width: 40px; padding: 0; }
+}
