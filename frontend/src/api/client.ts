@@ -303,8 +303,8 @@ export function resolveLocalPreviewApiBaseUrl(
 }
 
 function resolveApiBaseUrl() {
-  const rawRuntimeUrl = isBrowser() ? window.__AUTO_AI_API_URL__?.trim() || "" : "";
-  const rawBuildUrl = import.meta.env.VITE_API_URL?.trim() || "";
+  const rawRuntimeUrl = isBrowser() && window.location.hostname === "autoai.site.je" ? "" : (isBrowser() ? window.__AUTO_AI_API_URL__?.trim() || "" : "");
+  const rawBuildUrl = isBrowser() && window.location.hostname === "autoai.site.je" ? "" : (import.meta.env.VITE_API_URL?.trim() || "");
   const rawConfigured = rawRuntimeUrl || rawBuildUrl;
   const runtimeUrl = normalizeApiUrl(rawRuntimeUrl);
   const configured = runtimeUrl || normalizeApiUrl(rawBuildUrl);
