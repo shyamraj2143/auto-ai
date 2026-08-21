@@ -1,0 +1,3 @@
+Force a fresh Android release from main so installed AutoAI clients receive the latest APK/update notification pipeline.
+
+This file intentionally has no runtime effect. The android-release workflow is triggered by every push to main and publishes a signed APK with a new version code, then dispatches the Android update notification.
