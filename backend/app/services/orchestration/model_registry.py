@@ -70,7 +70,22 @@ class ModelRegistry:
     def eligible(self, mode: IntelligenceMode, *, provider: str | None = None) -> list[ModelRecord]:
         records = self.refresh()
         allowed = {provider} if provider else set(PRESET_POLICIES[mode].providers)
-        return sorted((r for r in records if r.enabled and r.health_status == "healthy" and {"text", "chat"}.issubset(r.capabilities) and mode in r.supported_modes and r.provider in allowed), key=lambda r: (r.priority, r.latency_weight - r.quality_weight))
+        candidates = [
+            r for r in records
+            if r.enabled
+            and r.health_status in {"healthy", "degraded"}
+            and {"text", "chat"}.issubset(r.capabilities)
+            and mode in r.supported_modes
+            and r.provider in allowed
+        ]
+        return sorted(
+            candidates,
+            key=lambda r: (
+                0 if r.health_status == "healthy" else 1,
+                r.priority,
+                r.latency_weight - r.quality_weight,
+            ),
+        )
 
     def mark_result(self, provider: str, model_id: str, *, success: bool) -> None:
         with self._lock:
