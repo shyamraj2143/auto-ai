@@ -39,9 +39,6 @@ class ResponseSynthesizer:
                     pass
             raise RuntimeError("No model result is available.")
 
-        # If the model candidates explicitly signal that they do not know the answer,
-        # fetch external evidence before synthesis. This is intentionally conditional
-        # so ordinary chat does not pay a web-search latency penalty.
         uncertainty_count = sum(bool(UNKNOWN_PATTERNS.search(result.content or "")) for result in results)
         search_context = ""
         if uncertainty_count >= max(1, (len(results) + 1) // 2):
@@ -84,7 +81,7 @@ class ResponseSynthesizer:
 
         for preferred in sorted(results, key=lambda item: item.task.model.quality_weight, reverse=True):
             try:
-                content, usage, selected = groq_service.complete(messages, provider=preferred.task.model.provider, model=preferred.task.model.actual_model_id, max_tokens=max_tokens, request_timeout=preferred.task.model.timeout_seconds, allow_bedrock_fallback=False)
+                content, usage, selected = groq_service.complete(messages, provider=preferred.task.model.provider, model=preferred.task.model.actual_model_id, max_tokens=max_tokens, request_timeout=preferred.task.model.timeout_seconds)
                 if content.strip():
                     suffix = " + web search" if search_context else ""
                     return content.strip(), usage, f"{preferred.task.model.provider}/{selected}{suffix}"
