@@ -31,6 +31,7 @@ from app.schemas.chat import (
 from app.schemas.feedback import MessageFeedbackRead, MessageFeedbackWrite
 from app.services.feedback_service import message_feedback_service
 from app.services.chat_storage import (
+    clear_chat_message_storage,
     delete_chat_storage,
     sync_chat_history,
     sync_chat_message,
@@ -79,7 +80,7 @@ def create_session(
         user_id=current_user.id,
         title=payload.title or "New chat",
         system_prompt=payload.system_prompt,
-        model=payload.model or settings.default_chat_model,
+        model=payload.model or settings.chat_model_for(settings.AI_PROVIDER),
         mode=payload.mode,
         preset_mode=payload.preset_mode,
         selected_preset=payload.selected_preset,
