@@ -6,6 +6,7 @@ from time import perf_counter
 from fastapi import HTTPException, status
 
 from app.core.config import settings
+from app.services.groq_service import groq_service
 from app.services.orchestration.citation_verifier import citation_verifier
 from app.services.orchestration.parallel_executor import parallel_executor
 from app.services.orchestration.request_analyzer import request_analyzer
@@ -14,6 +15,62 @@ from app.services.orchestration.schemas import ActivityCallback, CancelCallback,
 from app.services.orchestration.task_planner import task_planner
 
 logger = logging.getLogger("auto_ai.orchestration")
+
+
+def _direct_fallback(messages: list[dict[str, str]], tasks: list) -> tuple[str, dict[str, int], str, str]:
+    """Return a usable answer when orchestration cannot produce a successful result.
+
+    This is deliberately provider/model based rather than a second orchestration path:
+    a user-facing chat must not fail just because the multi-model planner/executor failed.
+    """
+    candidates: list[tuple[str, str]] = []
+    for task in tasks:
+        provider = task.model.provider
+        model = task.model.actual_model_id
+        if model:
+            candidates.append((provider, model))
+
+    candidates.extend(
+        [
+            ("groq", settings.GROQ_MODEL),
+            ("groq", "openai/gpt-oss-20b"),
+            ("groq", "llama-3.3-70b-versatile"),
+            ("groq", "llama-3.1-8b-instant"),
+            ("openai", settings.OPENAI_MODEL),
+        ]
+    )
+
+    seen: set[tuple[str, str]] = set()
+    errors: list[str] = []
+    for provider, model in candidates:
+        key = (provider, model)
+        if key in seen or not model:
+            continue
+        seen.add(key)
+        if provider == "groq" and not settings.groq_api_key:
+            continue
+        if provider == "openai" and not settings.OPENAI_API_KEY:
+            continue
+        try:
+            content, usage, selected = groq_service.complete(
+                messages,
+                provider=provider,
+                model=model,
+                max_tokens=settings.ORCHESTRATION_MAX_OUTPUT_TOKENS,
+                request_timeout=settings.DEEP_RESEARCH_PER_MODEL_TIMEOUT_SECONDS,
+            )
+            if content and content.strip():
+                return content.strip(), usage, provider, selected
+        except Exception as exc:
+            if isinstance(exc, HTTPException):
+                errors.append(f"{provider}/{model}:{exc.status_code}")
+            else:
+                errors.append(f"{provider}/{model}:{type(exc).__name__}")
+
+    detail = "All configured AI providers failed."
+    if errors:
+        detail += f" Attempts: {', '.join(errors[:8])}."
+    raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail)
 
 
 class IntelligenceOrchestrator:
@@ -40,8 +97,47 @@ class IntelligenceOrchestrator:
         analysis = request_analyzer.analyze(user_message, canonical)
         emit("request.analysis.completed", {"mode": canonical.value, "stage": "Identifying the required expertise", "intent": analysis.intent})
         tasks = task_planner.plan(canonical, analysis, messages, providers=providers, requested_models=requested_models, max_models=max_models)
+
         if not tasks:
-            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="No healthy Groq/OpenAI intelligence model is configured. Check GROQ_API_KEY or AUTO_AI_OPENAI_API_KEY.")
+            if canonical == IntelligenceMode.DEEP_RESEARCH:
+                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="No healthy intelligence model is available for Deep Research.")
+            emit("orchestration.fallback", {"mode": canonical.value, "stage": "Using direct provider fallback", "fallback_used": True})
+            content, usage, provider, model = _direct_fallback(messages, [])
+            emit("model.completed", {
+                "task_id": "direct-fallback",
+                "provider_display_name": provider.title(),
+                "model_display_name": model,
+                "actual_model_id": model,
+                "role": "Direct provider fallback",
+                "activity_label": "Generating the response with an available provider",
+                "status": "completed",
+                "contributed_to_final_answer": True,
+            })
+            elapsed_ms = int((perf_counter() - started) * 1000)
+            return OrchestrationResult(
+                content=content,
+                usage=usage,
+                selected_model=f"{provider}/{model}",
+                metadata={
+                    "mode": canonical.value,
+                    "models_attempted": 1,
+                    "models_completed": 1,
+                    "models_contributed": 1,
+                    "models_consulted": [{
+                        "provider": provider,
+                        "provider_display_name": provider.title(),
+                        "display_name": model,
+                        "actual_model_id": model,
+                        "role": "Direct provider fallback",
+                        "activity_label": "Generating the response with an available provider",
+                        "status": "completed",
+                        "contributed": True,
+                    }],
+                    "verified_sources": 0,
+                    "duration_ms": elapsed_ms,
+                    "fallback_used": True,
+                },
+            )
 
         task_providers = {task.model.provider for task in tasks}
         preferred_provider = settings.AI_PROVIDER
@@ -78,7 +174,61 @@ class IntelligenceOrchestrator:
         successes = [result for result in results if result.status == TaskStatus.COMPLETED and result.content]
         if not successes:
             failure_reasons = [result.error_classification for result in results if result.error_classification]
-            detail = "Available intelligence models could not complete the request."
+            if canonical != IntelligenceMode.DEEP_RESEARCH:
+                emit("orchestration.fallback", {"mode": canonical.value, "stage": "Model workers failed; using direct provider fallback", "failure_reasons": failure_reasons, "fallback_used": True})
+                content, usage, provider, model = _direct_fallback(messages, tasks)
+                emit("model.completed", {
+                    "task_id": "direct-fallback",
+                    "provider_display_name": provider.title(),
+                    "model_display_name": model,
+                    "actual_model_id": model,
+                    "role": "Direct provider fallback",
+                    "activity_label": "Generating the response with an available provider",
+                    "status": "completed",
+                    "contributed_to_final_answer": True,
+                })
+                elapsed_ms = int((perf_counter() - started) * 1000)
+                return OrchestrationResult(
+                    content=content,
+                    usage=usage,
+                    selected_model=f"{provider}/{model}",
+                    metadata={
+                        "mode": canonical.value,
+                        "models_attempted": len(results) + 1,
+                        "models_completed": 1,
+                        "models_contributed": 1,
+                        "models_consulted": [
+                            *[{
+                                "provider": result.task.model.provider,
+                                "provider_display_name": result.task.model.provider.title(),
+                                "display_name": result.task.model.friendly_name,
+                                "actual_model_id": result.task.model.actual_model_id,
+                                "role": result.task.role,
+                                "activity_label": result.task.activity_label,
+                                "status": result.status.value,
+                                "latency_ms": result.duration_ms,
+                                "started_at": result.started_at,
+                                "completed_at": result.completed_at,
+                                "failure_reason": result.error_classification,
+                                "contributed": False,
+                            } for result in results],
+                            {
+                                "provider": provider,
+                                "provider_display_name": provider.title(),
+                                "display_name": model,
+                                "actual_model_id": model,
+                                "role": "Direct provider fallback",
+                                "activity_label": "Generating the response with an available provider",
+                                "status": "completed",
+                                "contributed": True,
+                            },
+                        ],
+                        "verified_sources": 0,
+                        "duration_ms": elapsed_ms,
+                        "fallback_used": True,
+                    },
+                )
+            detail = "Available intelligence models could not complete Deep Research."
             if failure_reasons:
                 detail += f" Provider errors: {', '.join(dict.fromkeys(failure_reasons))}."
             emit("orchestration.failed", {"mode": canonical.value, "stage": "Generation could not complete", "failure_reasons": failure_reasons})
