@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { CreditCard, Loader2, XCircle } from "lucide-react";
 import { api } from "../../api/client";
@@ -13,79 +13,106 @@ function planLabel(planId?: string | null) {
 export function PaymentCheckoutPage() {
   const location = useLocation();
   const navigate = useNavigate();
-  const openedRef = useRef(false);
   const [session, setSession] = useState<PaymentSession | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [checkoutReady, setCheckoutReady] = useState(false);
+  const [opening, setOpening] = useState(false);
   const sessionId = new URLSearchParams(location.search).get("session_id") || "";
 
   useEffect(() => {
     let active = true;
 
-    async function startCheckout() {
+    async function prepareCheckout() {
       if (!sessionId) {
         setError("Payment session is missing.");
         setLoading(false);
         return;
       }
+
       try {
         const nextSession = await api.paymentSession(sessionId);
         if (!active) return;
         setSession(nextSession);
+
         if (nextSession.status === "paid") {
           navigate(`/payment/success?order_id=${encodeURIComponent(nextSession.razorpay_order_id)}`, { replace: true });
           return;
         }
-        if (openedRef.current) return;
-        openedRef.current = true;
+
+        // Preload checkout.js while the page is preparing. The actual
+        // Razorpay.open() call happens only from the button click below.
         await loadRazorpayCheckout();
+        if (!active) return;
         if (!window.Razorpay) throw new Error("Razorpay checkout failed to load.");
-        const checkout = new window.Razorpay(createRazorpayCheckoutOptions({
-          key: nextSession.key_id,
-          amount: nextSession.amount,
-          currency: nextSession.currency,
-          name: "Auto-AI",
-          description: planLabel(nextSession.plan_id),
-          orderId: nextSession.razorpay_order_id,
-          prefill: {
-            name: nextSession.user_name || "",
-            email: nextSession.user_email || "",
-            contact: ""
-          },
-          onDismiss: () => {
-            navigate(`/payment/failed?order_id=${encodeURIComponent(nextSession.razorpay_order_id)}`, { replace: true });
-          },
-          onSuccess: (response) => {
-            void api.verifyRazorpayPayment(null, {
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_signature: response.razorpay_signature
-            })
-              .then(() => {
-                navigate(`/payment/success?payment_id=${encodeURIComponent(response.razorpay_payment_id)}`, { replace: true });
-              })
-              .catch(() => {
-                navigate(`/payment/failed?order_id=${encodeURIComponent(response.razorpay_order_id)}`, { replace: true });
-              });
-          }
-        }));
-        checkout.on("payment.failed", () => {
-          navigate(`/payment/failed?order_id=${encodeURIComponent(nextSession.razorpay_order_id)}`, { replace: true });
-        });
-        checkout.open();
+        setCheckoutReady(true);
       } catch (err) {
         if (!active) return;
-        setError(err instanceof Error ? err.message : "Unable to open payment checkout.");
+        setError(err instanceof Error ? err.message : "Unable to prepare payment checkout.");
       } finally {
         if (active) setLoading(false);
       }
     }
 
-    void startCheckout();
+    void prepareCheckout();
     return () => {
       active = false;
     };
   }, [navigate, sessionId]);
+
+  function openCheckout() {
+    if (!session || !checkoutReady || !window.Razorpay || opening) return;
+
+    setOpening(true);
+    setError("");
+
+    try {
+      const checkout = new window.Razorpay(createRazorpayCheckoutOptions({
+        key: session.key_id,
+        amount: session.amount,
+        currency: session.currency,
+        name: "Auto-AI",
+        description: planLabel(session.plan_id),
+        orderId: session.razorpay_order_id,
+        prefill: {
+          name: session.user_name || "",
+          email: session.user_email || "",
+          contact: ""
+        },
+        onDismiss: () => {
+          setOpening(false);
+          navigate(`/payment/failed?order_id=${encodeURIComponent(session.razorpay_order_id)}`, { replace: true });
+        },
+        onSuccess: (response) => {
+          void api.verifyRazorpayPayment(null, {
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_signature: response.razorpay_signature
+          })
+            .then(() => {
+              navigate(`/payment/success?payment_id=${encodeURIComponent(response.razorpay_payment_id)}`, { replace: true });
+            })
+            .catch((err) => {
+              setOpening(false);
+              setError(err instanceof Error ? err.message : "Payment verification failed.");
+            });
+        }
+      }));
+
+      checkout.on("payment.failed", (response) => {
+        setOpening(false);
+        const description = response.error?.description || response.error?.reason || "Payment failed.";
+        setError(description);
+      });
+
+      // This is intentionally synchronous with the user's click. Razorpay
+      // documents that popup checkout should be opened from a user action.
+      checkout.open();
+    } catch (err) {
+      setOpening(false);
+      setError(err instanceof Error ? err.message : "Unable to open Razorpay checkout.");
+    }
+  }
 
   return (
     <div className="landing-page pricing-page">
@@ -95,19 +122,32 @@ export function PaymentCheckoutPage() {
             {error ? <XCircle size={14} /> : <CreditCard size={14} />}
             Payment
           </p>
-          <h1>{error ? "Payment Could Not Open" : "Opening Secure Checkout"}</h1>
+          <h1>{error ? "Payment Could Not Open" : "Secure Checkout"}</h1>
           <p className="pricing-subtitle">
-            {error || "Razorpay checkout will open for your saved Auto-AI payment session."}
+            {error || (loading ? "Preparing your secure Razorpay checkout..." : "Your payment session is ready. Continue to Razorpay to pay securely.")}
           </p>
         </div>
-        {!error && (
+
+        {session && !error && (
           <div className="payment-alert payment-alert-success">
-            {loading ? <Loader2 className="spin-icon" size={16} /> : <CreditCard size={16} />}
-            {session ? `${planLabel(session.plan_id)} / ${(session.amount / 100).toFixed(2)} ${session.currency}` : "Preparing payment..."}
+            {planLabel(session.plan_id)} / {(session.amount / 100).toFixed(2)} {session.currency}
           </div>
         )}
+
         {error && <div className="payment-alert payment-alert-error">{error}</div>}
+
         <div className="pricing-actions">
+          {!error && (
+            <button
+              className="btn-primary"
+              type="button"
+              disabled={loading || !session || !checkoutReady || opening}
+              onClick={openCheckout}
+            >
+              {loading || opening ? <Loader2 className="spin-icon" size={16} /> : <CreditCard size={16} />}
+              {opening ? "Opening Razorpay..." : loading ? "Preparing Checkout..." : checkoutReady ? "Open Secure Payment" : "Loading Payment..."}
+            </button>
+          )}
           <Link className="btn-secondary" to="/pricing">Back to Pricing</Link>
         </div>
       </main>
