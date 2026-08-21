@@ -13,7 +13,6 @@ import { parseNotificationDestination, routeForNotificationDestination } from ".
 import "../../features/calls/calls.css";
 import { AlarmProvider } from "../../features/alarms/AlarmContext";
 import { AlarmOverlay } from "../../features/alarms/AlarmOverlay";
-import { NetworkStatusMonitor } from "../common/NetworkStatusMonitor";
 
 function AlarmWorkspaceScope({ enabled, nativeEnabled, children }: { enabled: boolean; nativeEnabled: boolean; children: ReactNode }) {
   if (!enabled) return <>{children}</>;
@@ -64,7 +63,6 @@ export function AppShell() {
   const isChatWorkspace = location.pathname.startsWith("/chat");
   const isSettingsWorkspace = location.pathname === "/settings";
   const needsChatContext = isChatWorkspace || isSettingsWorkspace;
-  const isDashboard = location.pathname === "/hub";
   useEffect(() => {
     closeSidebar();
   }, [closeSidebar, location.pathname]);
@@ -135,7 +133,6 @@ export function AppShell() {
         </div>
       </main>
       {!fullCanvasAdmin && <WorkspaceMobileNavigation />}
-      {isDashboard && <NetworkStatusMonitor />}
     </div>
   );
 
