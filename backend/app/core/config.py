@@ -118,9 +118,6 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str | None = Field(default=None, validation_alias="AUTO_AI_OPENAI_API_KEY")
     OPENAI_MODEL: str = "gpt-4.1-mini"
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
-    GEMINI_API_KEY: str | None = None
-    GEMINI_MODEL: str = "gemini-2.5-flash"
-    GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai"
     AWS_ACCESS_KEY_ID: str | None = None
     AWS_SECRET_ACCESS_KEY: str | None = None
     AWS_SESSION_TOKEN: str | None = None
@@ -131,7 +128,6 @@ class Settings(BaseSettings):
     DOCUMENT_OCR_MAX_PAGES: int = 12
     GROQ_RESEARCH_MODELS: list[str] = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "openai/gpt-oss-120b"]
     OPENAI_RESEARCH_MODELS: list[str] = ["gpt-4.1-mini", "gpt-4o-mini", "gpt-4.1"]
-    GEMINI_RESEARCH_MODELS: list[str] = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"]
     DEEP_RESEARCH_DEFAULT_MAX_MODELS: int = 100
     DEEP_RESEARCH_MAX_MODELS: int = 100
     DEEP_RESEARCH_MAX_INPUT_TOKENS: int = 6000
@@ -208,7 +204,6 @@ class Settings(BaseSettings):
         defaults = {
             "groq": self.GROQ_MODEL,
             "openai": self.OPENAI_MODEL,
-            "gemini": self.GEMINI_MODEL,
         }
         model = defaults.get(selected)
         if not model:
