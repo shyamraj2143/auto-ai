@@ -56,20 +56,9 @@ def _direct_fallback(messages: list[dict[str, str]], tasks: list) -> tuple[str, 
             continue
         try:
             if provider == "nvidia":
-                content, usage, selected = nvidia_text_service.complete(
-                    messages,
-                    model=model,
-                    max_tokens=settings.ORCHESTRATION_MAX_OUTPUT_TOKENS,
-                    request_timeout=settings.DEEP_RESEARCH_PER_MODEL_TIMEOUT_SECONDS,
-                )
+                content, usage, selected = nvidia_text_service.complete(messages, model=model, max_tokens=settings.ORCHESTRATION_MAX_OUTPUT_TOKENS, request_timeout=settings.DEEP_RESEARCH_PER_MODEL_TIMEOUT_SECONDS)
             else:
-                content, usage, selected = groq_service.complete(
-                    messages,
-                    provider="groq",
-                    model=model,
-                    max_tokens=settings.ORCHESTRATION_MAX_OUTPUT_TOKENS,
-                    request_timeout=settings.DEEP_RESEARCH_PER_MODEL_TIMEOUT_SECONDS,
-                )
+                content, usage, selected = groq_service.complete(messages, provider="groq", model=model, max_tokens=settings.ORCHESTRATION_MAX_OUTPUT_TOKENS, request_timeout=settings.DEEP_RESEARCH_PER_MODEL_TIMEOUT_SECONDS)
             if content and content.strip():
                 return content.strip(), usage, provider, selected
         except Exception as exc:
@@ -85,19 +74,7 @@ def _direct_fallback(messages: list[dict[str, str]], tasks: list) -> tuple[str, 
 
 
 class IntelligenceOrchestrator:
-    def run(
-        self,
-        messages: list[dict[str, str]],
-        *,
-        mode: str,
-        emit: ActivityCallback,
-        cancelled: CancelCallback,
-        evidence: list[dict] | None = None,
-        providers: list[str] | None = None,
-        requested_models: list[str] | None = None,
-        max_models: int | None = None,
-        stream_content: SynthesisCallback | None = None,
-    ) -> OrchestrationResult:
+    def run(self, messages: list[dict[str, str]], *, mode: str, emit: ActivityCallback, cancelled: CancelCallback, evidence: list[dict] | None = None, providers: list[str] | None = None, requested_models: list[str] | None = None, max_models: int | None = None, stream_content: SynthesisCallback | None = None) -> OrchestrationResult:
         started = perf_counter()
         canonical = IntelligenceMode.canonical(mode)
         if canonical == IntelligenceMode.DEEP_RESEARCH and not evidence:
@@ -126,15 +103,10 @@ class IntelligenceOrchestrator:
         for task in tasks:
             emit("task.created", {"mode": canonical.value, "task_id": task.task_id, "role": task.role})
 
-        if canonical == IntelligenceMode.INSTANT:
-            results = []
-            for task in tasks:
-                attempt = parallel_executor.execute([task], emit=emit, cancelled=cancelled, max_tokens=min(analysis.token_budget, settings.ORCHESTRATION_MAX_OUTPUT_TOKENS), total_timeout=min(analysis.latency_budget_seconds, settings.ORCHESTRATION_TOTAL_TIMEOUT_SECONDS))
-                results.extend(attempt)
-                if any(item.status == TaskStatus.COMPLETED and item.content for item in attempt):
-                    break
-        else:
-            results = parallel_executor.execute(tasks, emit=emit, cancelled=cancelled, max_tokens=min(analysis.token_budget, settings.ORCHESTRATION_MAX_OUTPUT_TOKENS), total_timeout=min(analysis.latency_budget_seconds, settings.ORCHESTRATION_TOTAL_TIMEOUT_SECONDS))
+        # Instant deliberately executes both providers. This guarantees that the
+        # fast path actually consults Groq and NVIDIA instead of silently using one.
+        results = parallel_executor.execute(tasks, emit=emit, cancelled=cancelled, max_tokens=min(analysis.token_budget, settings.ORCHESTRATION_MAX_OUTPUT_TOKENS), total_timeout=min(analysis.latency_budget_seconds, settings.ORCHESTRATION_TOTAL_TIMEOUT_SECONDS))
+
         if cancelled():
             emit("orchestration.cancelled", {"mode": canonical.value, "stage": "Generation cancelled"})
             raise HTTPException(status_code=499, detail="Generation cancelled.")
