@@ -25,7 +25,6 @@ HIGH_ROLES = ["primary", "technical", "facts", "logic", "alternative", "evidence
 DEEP_RESEARCH_ROLES = ["research", "evidence", "technical", "facts", "counterpoint", "logic", "citations", "primary", "structure"]
 VISION_ROLES = ["primary", "technical", "facts", "structure", "alternative"]
 
-# These are pool limits, not a requirement to call all 40 models for every request.
 PROVIDER_COUNTS = {
     IntelligenceMode.INSTANT: (1, 1),
     IntelligenceMode.MEDIUM: (3, 3),
@@ -73,10 +72,6 @@ def _provider_specialists(
     visual_evidence: bool = False,
 ) -> list[ModelRecord]:
     records = model_registry.eligible(mode, provider=provider)
-    # If the image has already been converted into verified visual/OCR evidence by
-    # the dedicated VLM, every healthy text/chat model can safely review that evidence.
-    # Only require native vision capability when raw visual input has no usable
-    # extracted evidence yet.
     if analysis.intent == "vision" and not visual_evidence:
         records = [record for record in records if record.supports_vision]
     return sorted(records, key=lambda item: _specialist_sort_key(record=item, analysis=analysis))[: min(count, MAX_PROVIDER_POOL)]
@@ -88,12 +83,14 @@ def _fast_workers(
     *,
     visual_evidence: bool = False,
 ) -> list[ModelRecord]:
-    groq_count, nvidia_count = PROVIDER_COUNTS.get(mode, (2, 2))
+    # Groq is the preferred provider. OpenAI is a real fallback, not a dead
+    # provider entry, so orchestration still works when Groq is unavailable.
+    groq_count, openai_count = PROVIDER_COUNTS.get(mode, (2, 2))
     groq = _provider_specialists("groq", mode, analysis, groq_count, visual_evidence=visual_evidence)
-    nvidia = _provider_specialists("nvidia", mode, analysis, nvidia_count, visual_evidence=visual_evidence)
+    openai = _provider_specialists("openai", mode, analysis, openai_count, visual_evidence=visual_evidence)
     selected: list[ModelRecord] = []
     seen: set[tuple[str, str]] = set()
-    for record in [*groq, *nvidia]:
+    for record in [*groq, *openai]:
         key = (record.provider, record.actual_model_id)
         if key not in seen:
             seen.add(key)
@@ -141,8 +138,6 @@ class TaskPlanner:
             roles = ["primary", "technical", "facts", "logic"]
 
         if visual_evidence:
-            # These models are no longer asked to decode pixels. They all receive the
-            # same trusted VLM/OCR evidence and independently reason over it.
             roles = MEDIUM_ROLES if mode == IntelligenceMode.MEDIUM else HIGH_ROLES if mode == IntelligenceMode.HIGH else DEEP_RESEARCH_ROLES if mode == IntelligenceMode.DEEP_RESEARCH else ["primary", "technical", "facts", "structure", "alternative", "logic"]
 
         tasks: list[ModelTask] = []
