@@ -64,6 +64,7 @@ export function AppShell() {
   const isChatWorkspace = location.pathname.startsWith("/chat");
   const isSettingsWorkspace = location.pathname === "/settings";
   const needsChatContext = isChatWorkspace || isSettingsWorkspace;
+  const isDashboard = location.pathname === "/hub";
   useEffect(() => {
     closeSidebar();
   }, [closeSidebar, location.pathname]);
@@ -134,7 +135,7 @@ export function AppShell() {
         </div>
       </main>
       {!fullCanvasAdmin && <WorkspaceMobileNavigation />}
-      <NetworkStatusMonitor />
+      {isDashboard && <NetworkStatusMonitor />}
     </div>
   );
 
