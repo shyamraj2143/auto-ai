@@ -25,8 +25,11 @@ HIGH_ROLES = ["primary", "technical", "facts", "logic", "alternative", "evidence
 DEEP_RESEARCH_ROLES = ["research", "evidence", "technical", "facts", "counterpoint", "logic", "citations", "primary", "structure"]
 VISION_ROLES = ["primary", "technical", "facts", "structure", "alternative"]
 
+# Two Groq candidates are planned for Instant. The executor stops after the
+# first success, so the second candidate is a real fallback and costs nothing
+# when the primary model works.
 PROVIDER_COUNTS = {
-    IntelligenceMode.INSTANT: (1, 1),
+    IntelligenceMode.INSTANT: (2, 1),
     IntelligenceMode.MEDIUM: (3, 3),
     IntelligenceMode.HIGH: (8, 8),
     IntelligenceMode.DEEP_RESEARCH: (20, 20),
@@ -83,8 +86,6 @@ def _fast_workers(
     *,
     visual_evidence: bool = False,
 ) -> list[ModelRecord]:
-    # Groq is the preferred provider. OpenAI is a real fallback, not a dead
-    # provider entry, so orchestration still works when Groq is unavailable.
     groq_count, openai_count = PROVIDER_COUNTS.get(mode, (2, 2))
     groq = _provider_specialists("groq", mode, analysis, groq_count, visual_evidence=visual_evidence)
     openai = _provider_specialists("openai", mode, analysis, openai_count, visual_evidence=visual_evidence)
