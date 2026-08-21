@@ -6,6 +6,7 @@ import type { User } from "../../types";
 import { LogoIcon } from "../../components/brand/LogoIcon";
 import { isNativeAndroid, NativeUpdate, shouldShowUpdate, updateButtonBusy, updateButtonLabel, type NativeUpdateState } from "./nativeUpdate";
 import { InternetCheck } from "./InternetCheck";
+import "./internetCheck.css";
 
 function userAvatar(user: User) {
   return resolveApiAssetUrl(user.picture || user.avatar);
