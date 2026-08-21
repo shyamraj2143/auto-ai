@@ -126,7 +126,7 @@ class GroqService:
         try: return self._client().chat.completions.create(model=model, messages=messages, temperature=settings.GROQ_TEMPERATURE if temperature is None else temperature, max_tokens=settings.GROQ_MAX_TOKENS, stream=True)
         except GroqError as exc: self._handle_groq_error(exc)
 
-    def complete(self, messages, *, model=None, provider=None, web_search=False, temperature=None, max_tokens=None, request_timeout=None):
+    def complete(self, messages, *, model=None, provider=None, web_search=False, temperature=None, max_tokens=None, request_timeout=None, allow_bedrock_fallback=False):
         selected_provider = self.selected_provider(provider); selected_model = self.selected_model(model, provider=selected_provider, web_search=web_search)
         if selected_provider == "openai": return self._complete_openai_compatible("OpenAI", settings.OPENAI_BASE_URL, self._openai_headers(), messages, model=selected_model, max_tokens=max_tokens, request_timeout=request_timeout)
         if selected_provider == "gemini": return self._complete_openai_compatible("Gemini", settings.GEMINI_BASE_URL, self._gemini_headers(), messages, model=selected_model, max_tokens=max_tokens, request_timeout=request_timeout)
@@ -138,10 +138,10 @@ class GroqService:
                 if exc.status_code in {401,403}: raise
         raise last_error or HTTPException(status_code=503, detail="No Groq chat model is available.")
 
-    def stream(self, messages, *, model=None, provider=None, web_search=False, temperature=None):
+    def stream(self, messages, *, model=None, provider=None, web_search=False, temperature=None, allow_bedrock_fallback=False):
         selected_provider = self.selected_provider(provider); selected_model = self.selected_model(model, provider=selected_provider, web_search=web_search)
-        if selected_provider == "openai": return self._stream_openai_compatible("OpenAI", settings.OPENAI_BASE_URL, self._openai_headers(), messages, model=selected_model)
-        if selected_provider == "gemini": return self._stream_openai_compatible("Gemini", settings.GEMINI_BASE_URL, self._gemini_headers(), messages, model=selected_model)
+        if selected_provider == "openai": return self._stream_openai_compatible("OpenAI", settings.OPENAI_BASE_URL, settings.OPENAI_API_KEY, messages, model=selected_model)
+        if selected_provider == "gemini": return self._stream_openai_compatible("Gemini", settings.GEMINI_BASE_URL, settings.GEMINI_API_KEY, messages, model=selected_model)
         def iterator():
             last_error = None
             for candidate in list(dict.fromkeys([selected_model, settings.GROQ_MODEL, "llama-3.3-70b-versatile", "llama-3.1-8b-instant"])):
