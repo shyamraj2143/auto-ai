@@ -1,21 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, Clock3, Download, Loader2, RefreshCw, Server, Signal, Upload, Wifi, WifiOff, X } from "lucide-react";
+import { API_BASE_URL } from "../../api/client";
 
-const API_BASE = "https://autoai.site.je/api/v1";
 const SPEED_BASE = "https://speed.cloudflare.com";
 const REQUEST_TIMEOUT_MS = 8000;
+const DOWNLOAD_BYTES = 4_000_000;
+const UPLOAD_BYTES = 1_000_000;
 
 type Phase = "idle" | "checking" | "results";
 type StepState = "pending" | "running" | "done" | "failed";
-
-type Steps = {
-  connection: StepState;
-  download: StepState;
-  upload: StepState;
-  latency: StepState;
-  server: StepState;
-};
-
+type Steps = { connection: StepState; download: StepState; upload: StepState; latency: StepState; server: StepState };
 type Result = {
   connected: boolean;
   downloadMbps: number | null;
@@ -24,21 +18,15 @@ type Result = {
   jitterMs: number | null;
   network: string;
   serverReachable: boolean;
+  serverHealthy: boolean;
+  serverStatus: number | null;
   serverLatencyMs: number | null;
   checkedAt: Date;
 };
 
-const initialSteps: Steps = {
-  connection: "pending",
-  download: "pending",
-  upload: "pending",
-  latency: "pending",
-  server: "pending",
-};
+const initialSteps: Steps = { connection: "pending", download: "pending", upload: "pending", latency: "pending", server: "pending" };
 
-function sleep(ms: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
+function sleep(ms: number) { return new Promise((resolve) => window.setTimeout(resolve, ms)); }
 
 async function fetchWithTimeout(url: string, options: RequestInit = {}, signal?: AbortSignal) {
   const controller = new AbortController();
@@ -47,12 +35,7 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, signal?:
   signal?.addEventListener("abort", abort, { once: true });
   const started = performance.now();
   try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-      cache: "no-store",
-      credentials: "omit",
-    });
+    const response = await fetch(url, { ...options, signal: controller.signal, cache: "no-store", credentials: "omit" });
     return { response, elapsedMs: Math.max(1, performance.now() - started) };
   } finally {
     window.clearTimeout(timer);
@@ -60,11 +43,17 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, signal?:
   }
 }
 
+function getConnectionInfo() {
+  const connection = (navigator as Navigator & { connection?: { effectiveType?: string; downlink?: number; rtt?: number } }).connection;
+  return {
+    type: connection?.effectiveType?.toUpperCase() || (navigator.onLine ? "ONLINE" : "OFFLINE"),
+    downlink: typeof connection?.downlink === "number" ? connection.downlink : null,
+  };
+}
+
 function networkLabel() {
-  const connection = (navigator as Navigator & { connection?: { effectiveType?: string; downlink?: number } }).connection;
-  const type = connection?.effectiveType?.toUpperCase() || "ONLINE";
-  const downlink = typeof connection?.downlink === "number" ? ` • ${connection.downlink.toFixed(1)} Mbps est.` : "";
-  return `${type}${downlink}`;
+  const info = getConnectionInfo();
+  return `${info.type}${info.downlink !== null ? ` • ${info.downlink.toFixed(1)} Mbps est.` : ""}`;
 }
 
 function round(value: number | null, digits = 0) {
@@ -97,11 +86,12 @@ function StatusIcon({ state }: { state: StepState }) {
 }
 
 function StepRow({ icon, label, state }: { icon: React.ReactNode; label: string; state: StepState }) {
+  const color = state === "done" ? "#35e77a" : state === "failed" ? "#ff5b78" : "#aeb8cc";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 14, minHeight: 48, padding: "0 4px", borderBottom: "1px solid rgba(255,255,255,.07)", color: "#eef2ff" }}>
-      <span style={{ width: 22, display: "grid", placeItems: "center", color: state === "done" ? "#35e77a" : state === "failed" ? "#ff5b78" : "#aeb8cc" }}>{icon}</span>
+      <span style={{ width: 22, display: "grid", placeItems: "center", color }}>{icon}</span>
       <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{label}</span>
-      <span style={{ color: state === "done" ? "#35e77a" : state === "failed" ? "#ff5b78" : "#aeb8cc" }}><StatusIcon state={state} /></span>
+      <span style={{ color }}><StatusIcon state={state} /></span>
     </div>
   );
 }
@@ -143,6 +133,8 @@ export function InternetCheck() {
 
     let internetConnected = false;
     let serverReachable = false;
+    let serverHealthy = false;
+    let serverStatus: number | null = null;
     let serverLatencyMs: number | null = null;
     let downloadMbps: number | null = null;
     let uploadMbps: number | null = null;
@@ -160,19 +152,20 @@ export function InternetCheck() {
       setStep("download", "running");
       try {
         const started = performance.now();
-        const response = await fetch(`${SPEED_BASE}/__down?bytes=4000000&measId=${Date.now()}`, { cache: "no-store", credentials: "omit", signal: controller.signal });
+        const response = await fetch(`${SPEED_BASE}/__down?bytes=${DOWNLOAD_BYTES}&measId=${Date.now()}`, { cache: "no-store", credentials: "omit", signal: controller.signal });
         const buffer = await response.arrayBuffer();
         const seconds = Math.max((performance.now() - started) / 1000, 0.05);
         if (!response.ok || !buffer.byteLength) throw new Error("download_failed");
         downloadMbps = round((buffer.byteLength * 8) / seconds / 1_000_000, 1);
         setStep("download", "done");
       } catch {
+        if (controller.signal.aborted) throw new Error("aborted");
         setStep("download", "failed");
       }
 
       setStep("upload", "running");
       try {
-        const payload = new Uint8Array(1_000_000);
+        const payload = new Uint8Array(UPLOAD_BYTES);
         const started = performance.now();
         const response = await fetch(`${SPEED_BASE}/__up?measId=${Date.now()}`, { method: "POST", body: payload, cache: "no-store", credentials: "omit", signal: controller.signal });
         const seconds = Math.max((performance.now() - started) / 1000, 0.05);
@@ -180,6 +173,7 @@ export function InternetCheck() {
         uploadMbps = round((payload.byteLength * 8) / seconds / 1_000_000, 1);
         setStep("upload", "done");
       } catch {
+        if (controller.signal.aborted) throw new Error("aborted");
         setStep("upload", "failed");
       }
 
@@ -197,36 +191,32 @@ export function InternetCheck() {
         jitterMs = round(diffs.length ? diffs.reduce((sum, value) => sum + value, 0) / diffs.length : 0);
         setStep("latency", "done");
       } catch {
+        if (controller.signal.aborted) throw new Error("aborted");
         setStep("latency", "failed");
       }
 
       setStep("server", "running");
       try {
-        const health = await fetchWithTimeout(`${API_BASE}/health`, { method: "GET" }, controller.signal);
-        serverReachable = health.response.ok;
+        // Use the exact runtime API origin used by the rest of Auto-AI.
+        // Any HTTP response proves the server is reachable; only 2xx is healthy.
+        const health = await fetchWithTimeout(`${API_BASE_URL}/health`, { method: "GET" }, controller.signal);
+        serverReachable = true;
+        serverStatus = health.response.status;
         serverLatencyMs = Math.round(health.elapsedMs);
-        setStep("server", serverReachable ? "done" : "failed");
+        serverHealthy = health.response.ok;
+        setStep("server", "done");
       } catch {
+        if (controller.signal.aborted) throw new Error("aborted");
         setStep("server", "failed");
       }
 
       if (controller.signal.aborted) return;
-      setResult({
-        connected: internetConnected,
-        downloadMbps,
-        uploadMbps,
-        latencyMs,
-        jitterMs,
-        network: networkLabel(),
-        serverReachable,
-        serverLatencyMs,
-        checkedAt: new Date(),
-      });
+      setResult({ connected: internetConnected, downloadMbps, uploadMbps, latencyMs, jitterMs, network: networkLabel(), serverReachable, serverHealthy, serverStatus, serverLatencyMs, checkedAt: new Date() });
       setPhase("results");
     } catch {
       if (!controller.signal.aborted) {
         setStep("connection", "failed");
-        setResult({ connected: false, downloadMbps, uploadMbps, latencyMs, jitterMs, network: networkLabel(), serverReachable, serverLatencyMs, checkedAt: new Date() });
+        setResult({ connected: false, downloadMbps, uploadMbps, latencyMs, jitterMs, network: networkLabel(), serverReachable, serverHealthy, serverStatus, serverLatencyMs, checkedAt: new Date() });
         setPhase("results");
       }
     } finally {
@@ -234,86 +224,89 @@ export function InternetCheck() {
     }
   }, [setStep]);
 
-  const openCheck = () => {
-    setOpen(true);
-    void runTest();
-  };
+  const openCheck = () => { setOpen(true); void runTest(); };
+  const close = () => { cancel(); setOpen(false); };
 
-  const close = () => {
-    cancel();
-    setOpen(false);
-  };
+  useEffect(() => {
+    if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [open]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  const serverText = !result?.serverReachable ? "Unreachable" : result.serverHealthy ? "Healthy" : `Reachable (${result.serverStatus ?? "HTTP"})`;
 
   return (
     <>
       <button type="button" className="hub-internet-check-button" onClick={openCheck} aria-label="Open Internet Check">
-        <Wifi size={17} />
-        <span>Internet Check</span>
+        <Wifi size={17} /><span>Internet Check</span>
       </button>
 
       {open && (
-        <div role="dialog" aria-modal="true" aria-labelledby="internet-check-title" style={{ position: "fixed", inset: 0, zIndex: 200, display: "grid", placeItems: "center", padding: 18, background: "rgba(2,7,16,.72)", backdropFilter: "blur(8px)" }}>
-          <div style={{ width: "min(100%, 520px)", maxHeight: "calc(100dvh - 36px)", overflow: "auto", color: "#eef2ff", border: "1px solid rgba(174,122,255,.42)", borderRadius: 24, background: "linear-gradient(145deg,#101b2d,#0b1423)", boxShadow: "0 30px 90px rgba(0,0,0,.55)" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 22px 12px" }}>
-              <h2 id="internet-check-title" style={{ margin: 0, fontSize: 19, fontWeight: 800 }}>Internet Check</h2>
-              <button type="button" onClick={close} aria-label="Close Internet Check" style={{ display: "grid", width: 38, height: 38, placeItems: "center", color: "#dbe2f0", border: 0, borderRadius: 12, background: "rgba(255,255,255,.05)" }}><X size={20} /></button>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="internet-check-title"
+          style={{ position: "fixed", inset: 0, zIndex: 9999, width: "100%", height: "100dvh", minHeight: "100svh", overflowY: "auto", overscrollBehavior: "contain", display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", padding: "max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left))", background: "rgba(2,7,16,.78)", backdropFilter: "blur(8px)" }}
+          onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}
+        >
+          <div style={{ width: "min(100%, 520px)", maxHeight: "calc(100svh - max(32px, env(safe-area-inset-top) + env(safe-area-inset-bottom) + 32px))", overflowY: "auto", overscrollBehavior: "contain", boxSizing: "border-box", color: "#eef2ff", border: "1px solid rgba(174,122,255,.42)", borderRadius: 24, background: "linear-gradient(145deg,#101b2d,#0b1423)", boxShadow: "0 30px 90px rgba(0,0,0,.55)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "18px 20px 12px", position: "sticky", top: 0, zIndex: 2, background: "linear-gradient(180deg,#101b2d 72%,rgba(16,27,45,0))" }}>
+              <div><h2 id="internet-check-title" style={{ margin: 0, fontSize: 19, fontWeight: 800 }}>Internet Check</h2><span style={{ display: "block", marginTop: 4, color: "#8f9bb0", fontSize: 11 }}>Live connection diagnostics</span></div>
+              <button type="button" onClick={close} aria-label="Close Internet Check" style={{ flex: "0 0 auto", display: "grid", width: 38, height: 38, placeItems: "center", color: "#dbe2f0", border: 0, borderRadius: 12, background: "rgba(255,255,255,.05)" }}><X size={20} /></button>
             </div>
 
             {phase === "checking" && (
-              <div style={{ padding: "8px 22px 22px" }}>
-                <div style={{ display: "grid", placeItems: "center", padding: "10px 0 20px" }}>
-                  <div style={{ width: 128, height: 128, display: "grid", placeItems: "center", borderRadius: "50%", border: "1px solid rgba(165,95,255,.35)", boxShadow: "0 0 0 14px rgba(139,73,230,.06),0 0 0 28px rgba(139,73,230,.035)" }}>
-                    <Wifi size={44} color="#d38cff" />
-                  </div>
-                  <strong style={{ marginTop: 20, fontSize: 17 }}>Checking your internet connection...</strong>
-                  <span style={{ marginTop: 7, color: "#98a5bc", fontSize: 12 }}>Please wait while we test your connection</span>
+              <div style={{ padding: "4px 20px 20px" }}>
+                <div style={{ display: "grid", placeItems: "center", padding: "8px 0 18px", textAlign: "center" }}>
+                  <div style={{ width: 104, height: 104, display: "grid", placeItems: "center", borderRadius: "50%", border: "1px solid rgba(165,95,255,.35)", boxShadow: "0 0 0 14px rgba(139,73,230,.06),0 0 0 28px rgba(139,73,230,.035)" }}><Wifi size={38} color="#d38cff" /></div>
+                  <strong style={{ marginTop: 16, fontSize: 16 }}>Checking your internet connection...</strong>
+                  <span style={{ marginTop: 6, color: "#98a5bc", fontSize: 12 }}>Real-time speed, latency and server test</span>
                 </div>
                 <div style={{ overflow: "hidden", border: "1px solid rgba(255,255,255,.08)", borderRadius: 16, background: "rgba(255,255,255,.025)" }}>
                   <StepRow icon={<Wifi size={16} />} label="Checking Connection" state={steps.connection} />
                   <StepRow icon={<Download size={16} />} label="Measuring Download Speed" state={steps.download} />
                   <StepRow icon={<Upload size={16} />} label="Measuring Upload Speed" state={steps.upload} />
                   <StepRow icon={<Clock3 size={16} />} label="Measuring Latency & Jitter" state={steps.latency} />
-                  <StepRow icon={<Server size={16} />} label="Checking Server Connection" state={steps.server} />
+                  <StepRow icon={<Server size={16} />} label="Checking Auto-AI Server" state={steps.server} />
                 </div>
-                <button type="button" onClick={close} style={{ width: "100%", minHeight: 48, marginTop: 18, color: "#d8b8ff", border: "1px solid rgba(174,122,255,.3)", borderRadius: 14, background: "rgba(125,70,222,.16)", fontWeight: 800 }}>Cancel</button>
+                <button type="button" onClick={close} style={{ width: "100%", minHeight: 46, marginTop: 16, color: "#d8b8ff", border: "1px solid rgba(174,122,255,.3)", borderRadius: 14, background: "rgba(125,70,222,.16)", fontWeight: 800 }}>Cancel</button>
               </div>
             )}
 
             {phase === "results" && result && (
-              <div style={{ padding: "8px 22px 22px" }}>
-                <div style={{ display: "grid", placeItems: "center", padding: "8px 0 20px", textAlign: "center" }}>
-                  <div style={{ width: 72, height: 72, display: "grid", placeItems: "center", borderRadius: "50%", border: `2px solid ${result.connected ? "#35e77a" : "#ff5b78"}`, color: result.connected ? "#35e77a" : "#ff5b78", boxShadow: `0 0 30px ${result.connected ? "rgba(53,231,122,.16)" : "rgba(255,91,120,.16)"}` }}>
-                    {result.connected ? <Wifi size={34} /> : <WifiOff size={34} />}
-                  </div>
-                  <strong style={{ marginTop: 14, color: result.connected ? "#35e77a" : "#ff5b78", fontSize: 18 }}>{result.connected ? "Internet Connected" : "Internet Unavailable"}</strong>
-                  <span style={{ marginTop: 6, color: "#aab4c8", fontSize: 12 }}>{result.connected ? result.serverReachable ? "Your connection is stable and Auto-AI server is reachable." : "Internet is available, but Auto-AI server is unreachable." : "Check your network connection and try again."}</span>
+              <div style={{ padding: "4px 20px 20px" }}>
+                <div style={{ display: "grid", placeItems: "center", padding: "6px 0 18px", textAlign: "center" }}>
+                  <div style={{ width: 64, height: 64, display: "grid", placeItems: "center", borderRadius: "50%", border: `2px solid ${result.connected ? "#35e77a" : "#ff5b78"}`, color: result.connected ? "#35e77a" : "#ff5b78", boxShadow: `0 0 30px ${result.connected ? "rgba(53,231,122,.16)" : "rgba(255,91,120,.16)"}` }}>{result.connected ? <Wifi size={30} /> : <WifiOff size={30} />}</div>
+                  <strong style={{ marginTop: 12, fontSize: 17 }}>{result.connected ? "Internet connection is working" : "Internet connection failed"}</strong>
+                  <span style={{ marginTop: 5, color: "#98a5bc", fontSize: 11 }}>{result.network} • checked {result.checkedAt.toLocaleTimeString()}</span>
                 </div>
 
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
                   <Metric icon={<Download size={14} />} label="Download" value={result.downloadMbps === null ? "—" : String(result.downloadMbps)} unit="Mbps" quality={speedLabel(result.downloadMbps)} />
                   <Metric icon={<Upload size={14} />} label="Upload" value={result.uploadMbps === null ? "—" : String(result.uploadMbps)} unit="Mbps" quality={speedLabel(result.uploadMbps)} />
                 </div>
-                <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
                   <Metric icon={<Clock3 size={14} />} label="Latency" value={result.latencyMs === null ? "—" : String(result.latencyMs)} unit="ms" quality={latencyLabel(result.latencyMs)} />
-                  <Metric icon={<Signal size={14} />} label="Jitter" value={result.jitterMs === null ? "—" : String(result.jitterMs)} unit="ms" quality={latencyLabel(result.jitterMs)} />
+                  <Metric icon={<Signal size={14} />} label="Jitter" value={result.jitterMs === null ? "—" : String(result.jitterMs)} unit="ms" quality={result.jitterMs !== null && result.jitterMs <= 20 ? "Excellent" : result.jitterMs !== null && result.jitterMs <= 50 ? "Good" : "High"} />
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8, marginTop: 10 }}>
-                  <div style={{ padding: 12, borderRadius: 14, background: "rgba(255,255,255,.035)", textAlign: "center" }}><small style={{ color: "#8f9bb1" }}>Network</small><strong style={{ display: "block", marginTop: 4, fontSize: 12 }}>{result.network}</strong></div>
-                  <div style={{ padding: 12, borderRadius: 14, background: "rgba(255,255,255,.035)", textAlign: "center" }}><small style={{ color: "#8f9bb1" }}>Server</small><strong style={{ display: "block", marginTop: 4, fontSize: 12, color: result.serverReachable ? "#35e77a" : "#ff5b78" }}>{result.serverReachable ? "AutoAI Server" : "Unreachable"}</strong></div>
-                  <div style={{ padding: 12, borderRadius: 14, background: "rgba(255,255,255,.035)", textAlign: "center" }}><small style={{ color: "#8f9bb1" }}>Time</small><strong style={{ display: "block", marginTop: 4, fontSize: 12 }}>{result.checkedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</strong></div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+                  <div style={{ padding: "13px 8px", borderRadius: 15, background: "rgba(255,255,255,.035)", textAlign: "center" }}><small style={{ color: "#8f9bb0" }}>Network</small><strong style={{ display: "block", marginTop: 5, fontSize: 12 }}>{result.network}</strong></div>
+                  <div style={{ padding: "13px 8px", borderRadius: 15, background: "rgba(255,255,255,.035)", textAlign: "center" }}><small style={{ color: "#8f9bb0" }}>Server</small><strong style={{ display: "block", marginTop: 5, fontSize: 12, color: result.serverReachable ? "#35e77a" : "#ff5b78" }}>{serverText}</strong></div>
+                  <div style={{ padding: "13px 8px", borderRadius: 15, background: "rgba(255,255,255,.035)", textAlign: "center" }}><small style={{ color: "#8f9bb0" }}>Server RTT</small><strong style={{ display: "block", marginTop: 5, fontSize: 12 }}>{result.serverLatencyMs === null ? "—" : `${result.serverLatencyMs} ms`}</strong></div>
                 </div>
 
-                <div style={{ marginTop: 12, padding: 14, borderRadius: 15, border: "1px solid rgba(53,231,122,.12)", background: "rgba(53,231,122,.045)" }}>
-                  <strong style={{ display: "block", color: result.connected && result.serverReachable ? "#35e77a" : "#ffb45b", fontSize: 13 }}>{result.connected && result.serverReachable ? "Good Connection" : result.connected ? "Server Connection Issue" : "No Internet Connection"}</strong>
-                  <span style={{ display: "block", marginTop: 4, color: "#aab4c8", fontSize: 11, lineHeight: 1.5 }}>{result.connected && result.serverReachable ? "You can browse, stream, chat and make calls." : result.connected ? "Your internet works, but Auto-AI server is currently not reachable." : "Reconnect to the internet and run the check again."}</span>
+                <div style={{ padding: "13px 15px", border: `1px solid ${result.serverReachable ? "rgba(53,231,122,.22)" : "rgba(255,91,120,.22)"}`, borderRadius: 16, background: result.serverReachable ? "rgba(0,110,80,.10)" : "rgba(110,20,45,.10)" }}>
+                  <strong style={{ color: result.serverReachable ? "#ffd080" : "#ff9aab", fontSize: 13 }}>{result.serverReachable ? (result.serverHealthy ? "Server Connection Healthy" : "Server Responded") : "Server Connection Issue"}</strong>
+                  <div style={{ marginTop: 5, color: "#aeb8cc", fontSize: 12, lineHeight: 1.45 }}>{result.serverReachable ? `Auto-AI API responded${result.serverLatencyMs !== null ? ` in ${result.serverLatencyMs} ms.` : "."}` : "Internet works, but the Auto-AI API did not respond within the timeout."}</div>
                 </div>
 
-                <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
-                  <button type="button" onClick={() => void runTest()} style={{ flex: 1, minHeight: 48, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, color: "#d8b8ff", border: "1px solid rgba(174,122,255,.38)", borderRadius: 14, background: "rgba(125,70,222,.12)", fontWeight: 800 }}><RefreshCw size={16} /> Check Again</button>
-                  <button type="button" onClick={close} style={{ flex: 1, minHeight: 48, color: "#fff", border: 0, borderRadius: 14, background: "linear-gradient(135deg,#7f43e8,#5f35ca)", fontWeight: 800 }}>Close</button>
+                <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
+                  <button type="button" onClick={() => void runTest()} style={{ flex: 1, minHeight: 48, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, color: "#d8b8ff", border: "1px solid rgba(174,122,255,.38)", borderRadius: 14, background: "rgba(125,70,222,.13)", fontWeight: 800 }}><RefreshCw size={17} /> Check Again</button>
+                  <button type="button" onClick={close} style={{ flex: 1, minHeight: 48, color: "#fff", border: 0, borderRadius: 14, background: "linear-gradient(135deg,#7b35e8,#8e3df0)", fontWeight: 800 }}>Close</button>
                 </div>
               </div>
             )}
