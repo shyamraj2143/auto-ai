@@ -29,12 +29,20 @@ jobs:
           if end < 0:
               raise SystemExit('PUBLIC_API_BASE_URL declaration is malformed')
           desired = 'const PUBLIC_API_BASE_URL = "https://autoai.site.je/api/v1";'
-          current = s[start:end + 1]
-          if current != desired:
-              p.write_text(s[:start] + desired + s[end + 1:])
-              print(f'Updated PUBLIC_API_BASE_URL: {current} -> {desired}')
-          else:
-              print('PUBLIC_API_BASE_URL already uses same-origin production API.')
+          s = s[:start] + desired + s[end + 1:]
+
+          old_runtime = 'const rawRuntimeUrl = isBrowser() ? window.__AUTO_AI_API_URL__?.trim() || "" : "";'
+          new_runtime = 'const rawRuntimeUrl = isBrowser() && window.location.hostname === "autoai.site.je" ? "" : (isBrowser() ? window.__AUTO_AI_API_URL__?.trim() || "" : "");'
+          if old_runtime in s:
+              s = s.replace(old_runtime, new_runtime, 1)
+
+          old_build = 'const rawBuildUrl = import.meta.env.VITE_API_URL?.trim() || "";'
+          new_build = 'const rawBuildUrl = isBrowser() && window.location.hostname === "autoai.site.je" ? "" : (import.meta.env.VITE_API_URL?.trim() || "");'
+          if old_build in s:
+              s = s.replace(old_build, new_build, 1)
+
+          p.write_text(s)
+          print('Production web API is forced to same-origin /api/v1.')
           PY
       - name: Commit and push fix
         run: |
@@ -45,5 +53,5 @@ jobs:
             echo 'No changes to commit.'
             exit 0
           fi
-          git commit -m 'fix: use same-origin API proxy in production'
+          git commit -m 'fix: force same-origin API on production web'
           git push
