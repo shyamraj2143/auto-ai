@@ -50,7 +50,6 @@ class AlarmAwakeService:
             temperature=0,
             max_tokens=140,
             request_timeout=8.0,
-            allow_bedrock_fallback=False,
         )
         payload = self.parse_json(content)
         awake = payload.get("awake") is True
