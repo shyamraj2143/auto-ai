@@ -15,7 +15,12 @@ def test_chat_model_for_defaults_to_configured_provider():
     assert settings.chat_model_for() == settings.OPENAI_MODEL
 
 
-def test_chat_model_for_rejects_removed_providers():
+def test_legacy_removed_provider_configuration_normalizes_to_groq():
+    assert Settings(AI_PROVIDER="bedrock").AI_PROVIDER == "groq"
+    assert Settings(AI_PROVIDER="gemini").AI_PROVIDER == "groq"
+
+
+def test_chat_model_for_rejects_removed_providers_when_explicitly_requested():
     settings = Settings()
     for provider in ("bedrock", "gemini"):
         with pytest.raises(ValueError, match="Unsupported AI provider"):
