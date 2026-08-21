@@ -103,8 +103,6 @@ def release_demo_message(db: Session, session_id: str) -> None:
 def demo_provider_for_model(model: str) -> str:
     if model == settings.OPENAI_MODEL:
         return "openai"
-    if model == settings.GEMINI_MODEL:
-        return "gemini"
     return "groq"
 
 
@@ -137,8 +135,6 @@ def demo_chat(payload: DemoChatRequest, db: Session = Depends(get_db)) -> DemoCh
     ]
 
     try:
-        # AWS Bedrock is intentionally disabled. The public demo uses the
-        # configured Groq provider directly, matching GroqService.complete().
         content, usage, selected_model = groq_service.complete(
             messages,
             provider="groq",
