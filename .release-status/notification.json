@@ -1,9 +1,9 @@
 {
-  "release_tag": "android-406221",
-  "run_id": "32451602136",
-  "source_commit": "33c238d958030ffcd1614d38474e87d21fa65e03",
+  "release_tag": "android-406231",
+  "run_id": "32452398910",
+  "source_commit": "fcc7b44811935e5e7056a964967e69ea76005490",
   "status": "success",
-  "updated_at": "2026-08-21T05:44:04.214332+00:00",
-  "version_code": "406221",
-  "version_name": "1.0.406221"
+  "updated_at": "2026-08-21T05:56:17.497810+00:00",
+  "version_code": "406231",
+  "version_name": "1.0.406231"
 }
