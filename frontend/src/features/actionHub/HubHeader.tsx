@@ -5,6 +5,7 @@ import { resolveApiAssetUrl } from "../../api/client";
 import type { User } from "../../types";
 import { LogoIcon } from "../../components/brand/LogoIcon";
 import { isNativeAndroid, NativeUpdate, shouldShowUpdate, updateButtonBusy, updateButtonLabel, type NativeUpdateState } from "./nativeUpdate";
+import { InternetCheck } from "./InternetCheck";
 
 function userAvatar(user: User) {
   return resolveApiAssetUrl(user.picture || user.avatar);
@@ -96,6 +97,7 @@ export function HubHeader({
       </button>
 
       <div className="hub-header-actions">
+        <InternetCheck />
         <Link className="hub-header-icon" to={notificationHref} aria-label="Open notifications">
           <Bell size={19} />
           {unreadNotifications > 0 && <span>{unreadNotifications > 9 ? "9+" : unreadNotifications}</span>}
