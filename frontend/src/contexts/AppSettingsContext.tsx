@@ -5,8 +5,10 @@ import { useMotionMode } from "../motion/MotionProvider";
 export type AppLanguage = "system" | "en" | "hi" | "hinglish";
 export type ResponseLanguage = "auto" | "en" | "hi";
 
+type SupportedAiProvider = "openai" | "groq";
+
 export type AppSettings = {
-  defaultProvider: AiProvider;
+  defaultProvider: SupportedAiProvider;
   defaultModel: string;
   memoryEnabled: boolean;
   feedbackLearningEnabled: boolean;
@@ -28,7 +30,7 @@ export type AppSettings = {
 
 type AppSettingsContextValue = {
   settings: AppSettings;
-  setDefaultProvider: (provider: AiProvider) => void;
+  setDefaultProvider: (provider: SupportedAiProvider) => void;
   setDefaultModel: (model: string) => void;
   setMemoryEnabled: (enabled: boolean) => void;
   setFeedbackLearningEnabled: (enabled: boolean) => void;
@@ -51,7 +53,7 @@ type AppSettingsContextValue = {
 
 const STORAGE_KEY = "auto-ai-app-settings";
 
-export const PROVIDER_MODELS: Record<AiProvider, Array<{ value: string; label: string }>> = {
+export const PROVIDER_MODELS: Record<SupportedAiProvider, Array<{ value: string; label: string }>> = {
   openai: [
     { value: "gpt-4.1-mini", label: "GPT-4.1 mini" },
     { value: "gpt-4o-mini", label: "GPT-4o mini" },
@@ -94,8 +96,8 @@ const LANGUAGE_VALUES = new Set<AppLanguage>(["system", "en", "hi", "hinglish"])
 const RESPONSE_LANGUAGE_VALUES = new Set<ResponseLanguage>(["auto", "en", "hi"]);
 function normalizeSettings(payload: unknown): AppSettings {
   if (!payload || typeof payload !== "object") return DEFAULT_SETTINGS;
-  const raw = payload as Partial<AppSettings>;
-  const provider = raw.defaultProvider === "openai" || raw.defaultProvider === "groq"
+  const raw = payload as Partial<AppSettings> & { defaultProvider?: AiProvider };
+  const provider: SupportedAiProvider = raw.defaultProvider === "openai" || raw.defaultProvider === "groq"
     ? raw.defaultProvider
     : DEFAULT_SETTINGS.defaultProvider;
   const validModels = PROVIDER_MODELS[provider].map((item) => item.value);
