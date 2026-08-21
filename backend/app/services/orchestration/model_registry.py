@@ -44,13 +44,12 @@ class ModelRegistry:
         with self._lock:
             if not force and self._records and monotonic() - self._refreshed_at < settings.ORCHESTRATION_HEALTH_TTL_SECONDS:
                 return list(self._records.values())
-            discovered = {"groq": self._discover_groq(), "nvidia": self._discover_nvidia(), "openai": self._discover_openai_compatible("openai"), "gemini": self._discover_openai_compatible("gemini")}
+            discovered = {"groq": self._discover_groq(), "nvidia": self._discover_nvidia(), "openai": self._discover_openai_compatible("openai")}
             now = datetime.now(timezone.utc)
             provider_defaults = {
                 "groq": [*settings.ORCHESTRATION_GROQ_MODELS, settings.ORCHESTRATION_GROQ_CODING_MODEL],
                 "nvidia": discovered["nvidia"][:MAX_PROVIDER_POOL],
                 "openai": [settings.OPENAI_MODEL, *settings.OPENAI_RESEARCH_MODELS],
-                "gemini": [settings.GEMINI_MODEL, *settings.GEMINI_RESEARCH_MODELS],
             }
             records: dict[tuple[str, str], ModelRecord] = {}
             for provider, configured_defaults in provider_defaults.items():
@@ -63,7 +62,7 @@ class ModelRegistry:
                     modes = {IntelligenceMode.INSTANT, IntelligenceMode.MEDIUM, IntelligenceMode.HIGH, IntelligenceMode.DEEP_RESEARCH, IntelligenceMode.CODING}
                     value = model_id.lower()
                     quality = 1.6 if any(token in value for token in ("253b", "235b", "120b", "70b", "ultra", "pro", "m3", "glm5")) else 1.3 if any(token in value for token in ("32b", "34b", "30b", "27b", "20b")) else 1.0
-                    records[(provider, model_id)] = ModelRecord(provider=provider, friendly_name=_display_name(model_id), actual_model_id=model_id, enabled=is_available, supported_modes=frozenset(modes), capabilities=capabilities, supports_streaming=provider in {"groq", "openai", "gemini"}, supports_vision="vision" in capabilities, priority=index, latency_weight=0.6 if any(token in value for token in ("instant", "8b", "20b", "mini", "flash")) else 1.0, quality_weight=quality, timeout_seconds=float(settings.DEEP_RESEARCH_PER_MODEL_TIMEOUT_SECONDS), required_region=None, health_status="healthy" if is_available else "unavailable", last_health_check=now)
+                    records[(provider, model_id)] = ModelRecord(provider=provider, friendly_name=_display_name(model_id), actual_model_id=model_id, enabled=is_available, supported_modes=frozenset(modes), capabilities=capabilities, supports_streaming=provider in {"groq", "openai", "nvidia"}, supports_vision="vision" in capabilities, priority=index, latency_weight=0.6 if any(token in value for token in ("instant", "8b", "20b", "mini", "flash")) else 1.0, quality_weight=quality, timeout_seconds=float(settings.DEEP_RESEARCH_PER_MODEL_TIMEOUT_SECONDS), required_region=None, health_status="healthy" if is_available else "unavailable", last_health_check=now)
             self._records = records
             self._refreshed_at = monotonic()
             return list(records.values())
@@ -102,10 +101,9 @@ class ModelRegistry:
 
     @staticmethod
     def _discover_openai_compatible(provider: str) -> set[str]:
-        if provider == "openai":
-            key, base_url, headers, configured = settings.OPENAI_API_KEY, settings.OPENAI_BASE_URL, groq_service._openai_headers() if settings.OPENAI_API_KEY else {}, {settings.OPENAI_MODEL, *settings.OPENAI_RESEARCH_MODELS}
-        else:
-            key, base_url, headers, configured = settings.GEMINI_API_KEY, settings.GEMINI_BASE_URL, groq_service._gemini_headers() if settings.GEMINI_API_KEY else {}, {settings.GEMINI_MODEL, *settings.GEMINI_RESEARCH_MODELS}
+        if provider != "openai":
+            return set()
+        key, base_url, headers, configured = settings.OPENAI_API_KEY, settings.OPENAI_BASE_URL, groq_service._openai_headers() if settings.OPENAI_API_KEY else {}, {settings.OPENAI_MODEL, *settings.OPENAI_RESEARCH_MODELS}
         if not key: return set()
         try:
             response = httpx.get(f"{base_url.rstrip('/')}/models", headers=headers, timeout=8)
