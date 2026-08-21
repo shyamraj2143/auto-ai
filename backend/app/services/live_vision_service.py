@@ -80,29 +80,12 @@ class LiveVisionService:
         except Exception as exc:
             errors.append(f"nvidia: {exc}")
 
-        # Existing providers remain fallbacks so a temporary NVIDIA failure does not break live vision.
+        # Groq is the supported application fallback for live vision.
         try:
             return groq_service.analyze_image(image, "live-frame.jpg", prompt)
         except Exception as exc:
             errors.append(f"groq: {exc}")
 
-        encoded = base64.b64encode(image).decode("ascii")
-        content = [
-            {"type": "text", "text": prompt},
-            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded}"}},
-        ]
-        fallback_providers = []
-        if settings.OPENAI_API_KEY:
-            fallback_providers.append(("openai", settings.OPENAI_MODEL))
-        if settings.GEMINI_API_KEY:
-            fallback_providers.append(("gemini", settings.GEMINI_MODEL))
-        for provider, model in fallback_providers:
-            try:
-                result, _, _ = groq_service.complete([{"role": "user", "content": content}], provider=provider, model=model, max_tokens=300, request_timeout=30)
-                if result.strip():
-                    return result
-            except Exception as exc:
-                errors.append(f"{provider}: {exc}")
         logger.warning("live_vision_provider_failure errors=%s", errors)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Live vision provider is unavailable.")
 
