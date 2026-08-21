@@ -18,7 +18,7 @@ logger = logging.getLogger("auto_ai.rate_limit")
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    """Route-aware per-IP and per-session limiter with optional shared Redis counters."""
+    """Route-aware limiter that avoids shared-proxy IP collisions for authenticated users."""
 
     def __init__(self, app, limit_per_minute: int | None = None) -> None:
         super().__init__(app)
@@ -54,11 +54,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     def _identity(request: Request) -> tuple[str, str]:
-        # Uvicorn resolves trusted proxy headers into request.client. Reading a
-        # caller-supplied X-Forwarded-For value here would make limits spoofable.
-        ip = request.client.host if request.client else "unknown"
-        auth = request.headers.get("authorization", "")
+        auth = request.headers.get("authorization", "").strip()
         session = hashlib.sha256(auth.encode("utf-8")).hexdigest()[:20] if auth else "anonymous"
+
+        # Railway documents X-Real-IP as the client IP header. It is also
+        # preserved by our nginx reverse proxy. Use it only for anonymous
+        # traffic; authenticated requests are isolated by bearer-token hash.
+        forwarded_ip = request.headers.get("x-real-ip", "").strip()
+        ip = forwarded_ip or (request.client.host if request.client else "unknown")
         return ip[:80], session
 
     async def _redis_count(self, key: str) -> tuple[int, int] | None:
@@ -96,7 +99,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if self.limit_override is not None:
             limit = self.limit_override
         ip, session = self._identity(request)
-        keys = (f"{category}:ip:{ip}", f"{category}:session:{session}") if session != "anonymous" else (f"{category}:ip:{ip}",)
+
+        # Never combine a shared proxy/IP bucket with an authenticated session
+        # bucket. Railway's edge forwards requests through 100.64.x.x addresses,
+        # so the old max(ip, session) logic could rate-limit unrelated users.
+        if session != "anonymous":
+            keys = (f"{category}:session:{session}",)
+        else:
+            keys = (f"{category}:ip:{ip}",)
+
         results = []
         for key in keys:
             result = await self._redis_count(key)
