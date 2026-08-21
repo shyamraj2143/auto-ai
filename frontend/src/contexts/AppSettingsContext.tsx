@@ -66,23 +66,6 @@ export const PROVIDER_MODELS: Record<AiProvider, Array<{ value: string; label: s
     { value: "llama-3.1-8b-instant", label: "Llama 3.1 8B" },
     { value: "qwen/qwen3-32b", label: "Qwen 3 32B" },
     { value: "meta-llama/llama-4-scout-17b-16e-instruct", label: "Llama 4 Scout" }
-  ],
-  bedrock: [
-    { value: "amazon.nova-lite-v1:0", label: "Nova Lite" },
-    { value: "amazon.nova-pro-v1:0", label: "Nova Pro" },
-    { value: "anthropic.claude-3-haiku-20240307-v1:0", label: "Claude 3 Haiku" },
-    { value: "openai.gpt-oss-120b", label: "GPT-OSS 120B" },
-    { value: "openai.gpt-oss-20b", label: "GPT-OSS 20B" },
-    { value: "mistral.ministral-3-8b-instruct", label: "Ministral 3 8B" },
-    { value: "mistral.ministral-3-14b-instruct", label: "Ministral 3 14B" },
-    { value: "mistral.mistral-large-3-675b-instruct", label: "Mistral Large 3" },
-    { value: "google.gemma-3-27b-it", label: "Gemma 3 27B" },
-    { value: "qwen.qwen3-coder-30b-a3b-instruct", label: "Qwen 3 Coder 30B" }
-  ],
-  gemini: [
-    { value: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-    { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-    { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" }
   ]
 };
 
@@ -100,11 +83,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   crystalOrb: true,
   crystalSurfaces: true,
   crystalButtonMotion: true,
-  crystalVoiceVisualizer: true
-  ,assistantEnabled: true
-  ,assistantSpokenResponses: false
-  ,assistantPersonalization: true
-  ,assistantActionConfirmations: true
+  crystalVoiceVisualizer: true,
+  assistantEnabled: true,
+  assistantSpokenResponses: false,
+  assistantPersonalization: true,
+  assistantActionConfirmations: true
 };
 
 const LANGUAGE_VALUES = new Set<AppLanguage>(["system", "en", "hi", "hinglish"]);
@@ -112,7 +95,7 @@ const RESPONSE_LANGUAGE_VALUES = new Set<ResponseLanguage>(["auto", "en", "hi"])
 function normalizeSettings(payload: unknown): AppSettings {
   if (!payload || typeof payload !== "object") return DEFAULT_SETTINGS;
   const raw = payload as Partial<AppSettings>;
-  const provider = raw.defaultProvider === "openai" || raw.defaultProvider === "groq" || raw.defaultProvider === "bedrock" || raw.defaultProvider === "gemini"
+  const provider = raw.defaultProvider === "openai" || raw.defaultProvider === "groq"
     ? raw.defaultProvider
     : DEFAULT_SETTINGS.defaultProvider;
   const validModels = PROVIDER_MODELS[provider].map((item) => item.value);
