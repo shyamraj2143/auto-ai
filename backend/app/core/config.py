@@ -24,8 +24,24 @@ class Settings(BaseSettings):
     RAILWAY_GIT_COMMIT_SHA: str | None = None
     RAILWAY_DEPLOYMENT_ID: str | None = None
     BACKEND_URL: str | None = Field(default=None, validate_default=True)
+    RAZORPAY_KEY_ID: str | None = None
+    RAZORPAY_KEY_SECRET: SecretStr | None = None
+    RAZORPAY_WEBHOOK_SECRET: SecretStr | None = None
+    RAZORPAY_CHECKOUT_CONFIG_ID: str | None = DEFAULT_RAZORPAY_CHECKOUT_CONFIG_ID
     RAZORPAY_CALLBACK_URL: str | None = None
+    RAZORPAY_SUCCESS_URL: str | None = None
     RAZORPAY_FAILURE_URL: str | None = None
+    RAZORPAY_PRO_LINK: str | None = None
+    RAZORPAY_PREMIUM_LINK: str | None = None
+    RAZORPAY_ULTRA_LINK: str | None = None
+    PAYMENT_UPI_ID: str | None = None
+    UPI_PAYEE_NAME: str | None = None
+    STRIPE_SECRET_KEY: SecretStr | None = None
+    STRIPE_WEBHOOK_SECRET: SecretStr | None = None
+    STRIPE_PRICE_PRO: str | None = None
+    STRIPE_PRICE_PREMIUM: str | None = None
+    STRIPE_PRICE_ULTRA: str | None = None
+    ADMIN_EMAIL: str | None = None
     SECRET_KEY: str = Field(default="change-me-in-production")
     JWT_SECRET_KEY: str | None = None
     JWT_ALGORITHM: str = "HS256"
@@ -258,7 +274,13 @@ class Settings(BaseSettings):
     @property
     def razorpay_callback_url(self) -> str | None: return self.RAZORPAY_CALLBACK_URL
     @property
-    def razorpay_failure_url(self) -> str | None: return self.RAZORPAY_FAILURE_URL
+    def razorpay_checkout_config_id(self) -> str | None: return (self.RAZORPAY_CHECKOUT_CONFIG_ID or "").strip() or None
+    @property
+    def razorpay_success_url(self) -> str: return (self.RAZORPAY_SUCCESS_URL or f"{self.frontend_url}/payment/success").rstrip("/")
+    @property
+    def razorpay_failure_url(self) -> str: return (self.RAZORPAY_FAILURE_URL or f"{self.frontend_url}/settings?section=subscription&payment=failed").rstrip("/")
+    @property
+    def payment_upi_id(self) -> str | None: return (self.PAYMENT_UPI_ID or "").strip() or None
     @property
     def redis_url(self) -> str | None: return self.REDIS_URL
     @property
