@@ -14,12 +14,14 @@ class PresetPolicy:
     exact_model_count: int | None = None
 
 
+# Auto-AI orchestration is intentionally built around Groq + NVIDIA.
+# OpenAI is not part of the multi-model worker pool.
 PRESET_POLICIES = {
-    IntelligenceMode.INSTANT: PresetPolicy(IntelligenceMode.INSTANT, frozenset({"groq", "openai"}), exact_model_count=1),
-    IntelligenceMode.MEDIUM: PresetPolicy(IntelligenceMode.MEDIUM, frozenset({"groq", "openai"})),
-    IntelligenceMode.HIGH: PresetPolicy(IntelligenceMode.HIGH, frozenset({"groq", "openai"})),
-    IntelligenceMode.DEEP_RESEARCH: PresetPolicy(IntelligenceMode.DEEP_RESEARCH, frozenset({"groq", "openai"}), requires_web_research=True),
-    IntelligenceMode.CODING: PresetPolicy(IntelligenceMode.CODING, frozenset({"groq", "openai"}), exact_model_count=2),
+    IntelligenceMode.INSTANT: PresetPolicy(IntelligenceMode.INSTANT, frozenset({"groq", "nvidia"}), exact_model_count=1),
+    IntelligenceMode.MEDIUM: PresetPolicy(IntelligenceMode.MEDIUM, frozenset({"groq", "nvidia"})),
+    IntelligenceMode.HIGH: PresetPolicy(IntelligenceMode.HIGH, frozenset({"groq", "nvidia"})),
+    IntelligenceMode.DEEP_RESEARCH: PresetPolicy(IntelligenceMode.DEEP_RESEARCH, frozenset({"groq", "nvidia"}), requires_web_research=True),
+    IntelligenceMode.CODING: PresetPolicy(IntelligenceMode.CODING, frozenset({"groq", "nvidia"}), exact_model_count=2),
 }
 
 
@@ -66,7 +68,7 @@ def coding_task_records(records: list[ModelRecord]) -> list[ModelRecord]:
 
 def coding_configuration_status(records: list[ModelRecord]) -> tuple[bool, str | None]:
     selected = coding_task_records(records)
-    return (True, None) if len(selected) >= 2 else (False, "Coding requires two distinct healthy text-chat models from Groq/OpenAI.")
+    return (True, None) if len(selected) >= 2 else (False, "Coding requires two distinct healthy text-chat models from Groq/NVIDIA.")
 
 
 def coding_model_ids(records: list[ModelRecord]) -> tuple[str | None, str | None]:
