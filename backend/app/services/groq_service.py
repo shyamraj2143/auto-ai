@@ -137,7 +137,7 @@ class GroqService:
         except GroqError as exc:
             self._handle_groq_error(exc)
 
-    def complete(self, messages, *, model=None, provider=None, web_search=False, temperature=None, max_tokens=None, request_timeout=None):
+    def complete(self, messages, *, model=None, provider=None, web_search=False, temperature=None, max_tokens=None, request_timeout=None, **_legacy_options):
         selected_provider = self.selected_provider(provider)
         selected_model = self.selected_model(model, provider=selected_provider, web_search=web_search)
         if selected_provider == "openai":
@@ -152,7 +152,7 @@ class GroqService:
                     raise
         raise last_error or HTTPException(status_code=503, detail="No Groq chat model is available.")
 
-    def stream(self, messages, *, model=None, provider=None, web_search=False, temperature=None):
+    def stream(self, messages, *, model=None, provider=None, web_search=False, temperature=None, **_legacy_options):
         selected_provider = self.selected_provider(provider)
         selected_model = self.selected_model(model, provider=selected_provider, web_search=web_search)
         if selected_provider == "openai":
