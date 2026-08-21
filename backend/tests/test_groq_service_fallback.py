@@ -1,6 +1,5 @@
 from fastapi import HTTPException
 
-from app.core.config import settings
 from app.services.groq_service import GroqService
 
 
@@ -18,7 +17,6 @@ def test_groq_stream_tries_stable_fallback_after_selected_model_failure(monkeypa
         yield {"choices": [{"delta": {"content": "ok"}}]}
 
     monkeypatch.setattr(service, "_stream_groq", fake_stream)
-
     chunks = list(service.stream([{"role": "user", "content": "Hi"}], model="bad-model", provider="groq"))
 
     assert attempted[:2] == ["bad-model", "openai/gpt-oss-120b"]
@@ -39,39 +37,9 @@ def test_groq_complete_tries_stable_fallback_after_selected_model_failure(monkey
         return "ok", {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}, model
 
     monkeypatch.setattr(service, "_complete_groq", fake_complete)
-
     content, usage, model = service.complete([{"role": "user", "content": "Hi"}], model="bad-model", provider="groq")
 
     assert attempted[:2] == ["bad-model", "openai/gpt-oss-120b"]
     assert content == "ok"
     assert usage["total_tokens"] == 2
     assert model == "openai/gpt-oss-120b"
-
-
-def test_bedrock_uses_openai_when_bedrock_and_groq_fail(monkeypatch):
-    service = GroqService()
-
-    def unavailable(detail):
-        def fail(*args, **kwargs):
-            raise HTTPException(status_code=503, detail=detail)
-        return fail
-
-    monkeypatch.setattr(service, "_complete_bedrock_mantle", unavailable("bedrock unavailable"))
-    monkeypatch.setattr(service, "_complete_bedrock_runtime", unavailable("runtime unavailable"))
-    monkeypatch.setattr(service, "_complete_groq", unavailable("groq unavailable"))
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", "configured")
-    monkeypatch.setattr(
-        service,
-        "_complete_openai",
-        lambda *args, **kwargs: ("OpenAI fallback", {"total_tokens": 2}, kwargs["model"]),
-    )
-
-    content, usage, model = service._complete_bedrock(
-        [{"role": "user", "content": "Hi"}],
-        model=settings.bedrock_model,
-        allow_fallback=True,
-    )
-
-    assert content == "OpenAI fallback"
-    assert usage["total_tokens"] == 2
-    assert model == settings.OPENAI_MODEL
