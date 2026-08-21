@@ -25,10 +25,10 @@ HIGH_ROLES = ["primary", "technical", "facts", "logic", "alternative", "evidence
 DEEP_RESEARCH_ROLES = ["research", "evidence", "technical", "facts", "counterpoint", "logic", "citations", "primary", "structure"]
 VISION_ROLES = ["primary", "technical", "facts", "structure", "alternative"]
 
-# Instant uses two Groq candidates and one NVIDIA candidate. The executor tries
-# the planned candidates in order and stops after the first successful response.
+# Every Instant request gets one Groq candidate and one NVIDIA candidate.
+# Both are executed in parallel; if one fails, the successful provider can still answer.
 PROVIDER_COUNTS = {
-    IntelligenceMode.INSTANT: (2, 1),
+    IntelligenceMode.INSTANT: (1, 1),
     IntelligenceMode.MEDIUM: (3, 3),
     IntelligenceMode.HIGH: (8, 8),
     IntelligenceMode.DEEP_RESEARCH: (20, 20),
