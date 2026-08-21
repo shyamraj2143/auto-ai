@@ -3,7 +3,7 @@ from pathlib import Path
 import re
 from urllib.parse import urlsplit, urlunsplit
 
-from pydantic import AliasChoices, AnyHttpUrl, Field, SecretStr
+from pydantic import AliasChoices, AnyHttpUrl, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -193,6 +193,12 @@ class Settings(BaseSettings):
     RATE_LIMIT_ADMIN_PER_MINUTE: int = 30
     RATE_LIMIT_RESTORE_PER_MINUTE: int = 3
     RATE_LIMIT_UPLOAD_PER_MINUTE: int = 12
+
+    @field_validator("AI_PROVIDER", mode="before")
+    @classmethod
+    def normalize_ai_provider(cls, value: str | None) -> str:
+        selected = str(value or "groq").strip().lower()
+        return selected if selected in {"groq", "openai"} else "groq"
 
     @property
     def groq_api_key(self) -> str | None:
