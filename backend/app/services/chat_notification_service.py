@@ -15,6 +15,7 @@ from app.models.user import User
 from app.models.user_chat import ChatMessage
 from app.services.device_token_security import decrypt_token
 from app.services.firebase_notifications import firebase_notification_service
+from app.services.fcm_chat_delivery import send_chat_data_only
 from app.services.user_avatar import public_avatar
 from app.services.notification_destination import with_notification_destination
 
@@ -74,11 +75,9 @@ def send_chat_message_notifications(db: Session, recipient_id: str, sender: User
             device.fcm_token_hash = None
             device.updated_at = datetime.utcnow()
             continue
-        result = firebase_notification_service.send_chat_data(
+        result = send_chat_data_only(
             token,
             data,
-            sender.name,
-            preview,
             target_kind="fid" if device.push_provider == "fcm_fid" else "token",
         )
         if result.ok:
@@ -127,8 +126,6 @@ def _send_ai_response_ready(generation_id: str) -> None:
             if not user or not firebase_notification_service.configured:
                 return
 
-            # The frontend sends a short-lived foreground heartbeat. Do not
-            # interrupt an active app session with a redundant system alert.
             if _is_app_foreground(user.id):
                 payload["ai_response_notification_suppressed"] = True
                 generation.request_payload = payload
@@ -163,11 +160,9 @@ def _send_ai_response_ready(generation_id: str) -> None:
                 if not token:
                     device.is_active = False
                     continue
-                result = firebase_notification_service.send_chat_data(
+                result = send_chat_data_only(
                     token,
                     data,
-                    "Auto-AI",
-                    "Your response is ready.",
                     target_kind="fid" if device.push_provider == "fcm_fid" else "token",
                 )
                 if result.ok:
@@ -182,7 +177,6 @@ def _send_ai_response_ready(generation_id: str) -> None:
             db.add(generation)
             db.commit()
     except Exception:
-        # Notification failure must never fail or roll back the completed AI response.
         return
 
 
