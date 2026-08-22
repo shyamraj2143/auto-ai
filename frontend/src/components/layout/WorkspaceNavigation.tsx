@@ -100,7 +100,7 @@ export function WorkspaceMobileNavigation() {
   const isAdmin = Boolean(user?.is_admin && isAdminPanelRole(user.role));
   const mobileItems = user?.role === "seva_agent" ? [agentOperationsItem] : isAdmin
     ? [primaryItems[0], primaryItems[2], sevaOperationsItem, primaryItems[4], primaryItems[5]]
-    : primaryItems.slice(0, 5);
+    : [primaryItems[0], primaryItems[1], primaryItems[5], primaryItems[4], primaryItems[3]];
 
   return (
     <nav className="autoai-mobile-nav" aria-label="Primary navigation">
