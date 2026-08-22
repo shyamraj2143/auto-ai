@@ -10,6 +10,7 @@ import { CallOverlay } from "../../features/calls/CallOverlay";
 import { AndroidBackHandler } from "./AndroidBackHandler";
 import { useMotionMode } from "../../motion/MotionProvider";
 import { parseNotificationDestination, routeForNotificationDestination } from "../../notifications/notificationDestination";
+import { NativeNotifications } from "../../notifications/nativeNotifications";
 import "../../features/calls/calls.css";
 import { AlarmProvider } from "../../features/alarms/AlarmContext";
 import { AlarmOverlay } from "../../features/alarms/AlarmOverlay";
@@ -63,6 +64,7 @@ export function AppShell() {
   const isChatWorkspace = location.pathname.startsWith("/chat");
   const isSettingsWorkspace = location.pathname === "/settings";
   const needsChatContext = isChatWorkspace || isSettingsWorkspace;
+
   useEffect(() => {
     closeSidebar();
   }, [closeSidebar, location.pathname]);
@@ -110,6 +112,19 @@ export function AppShell() {
     };
     window.addEventListener("auto-ai-destination-consumed", clearConsumedDestination);
     return () => window.removeEventListener("auto-ai-destination-consumed", clearConsumedDestination);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void NativeNotifications.getState()
+      .then((state) => {
+        if (cancelled || state.granted || !state.canPrompt) return;
+        return NativeNotifications.requestPermission();
+      })
+      .catch(() => {
+        // Browser builds and devices without the native plugin simply ignore this.
+      });
+    return () => { cancelled = true; };
   }, []);
 
   const workspace = (
