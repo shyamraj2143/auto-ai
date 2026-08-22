@@ -21,11 +21,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - name: Apply requested messaging and offline fixes
+      - name: Apply requested messaging, offline and multimodal fixes
         run: |
           set -euo pipefail
           python scripts/apply_messaging_offline_fixes.py
           python scripts/apply_user_requested_feature_fixes.py
+          python scripts/apply_multimodal_model_fixes.py
       - name: Commit generated fixes
         run: |
           set -euo pipefail
