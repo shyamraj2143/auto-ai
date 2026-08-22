@@ -1,0 +1,45 @@
+name: Apply Reliable AutoAI Fixes
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore: apply reliable autoai fixes') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Apply deterministic fixes
+        run: |
+          set -euo pipefail
+          python -m py_compile scripts/apply_chat_and_update_reliability_v2.py
+          python scripts/apply_chat_and_update_reliability_v2.py
+          python -m py_compile backend/app/services/groq_service.py backend/app/services/firebase_notifications.py backend/app/api/routes/notifications.py backend/app/api/routes/ai.py
+
+      - name: Commit generated application fixes
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if git diff --quiet; then
+            echo 'No generated application changes.'
+            exit 0
+          fi
+          git add frontend backend scripts
+          git commit -m 'chore: apply reliable autoai fixes'
+          git push origin main
