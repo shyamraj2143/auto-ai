@@ -27,7 +27,7 @@ jobs:
           python scripts/apply_messaging_offline_fixes.py
           python scripts/apply_user_requested_feature_fixes.py
           python scripts/apply_multimodal_model_fixes.py
-          python scripts/apply_reliability_and_multimodal_fixes.py
+          python scripts/apply_chat_and_update_reliability_v2.py
       - name: Commit generated fixes
         run: |
           set -euo pipefail
