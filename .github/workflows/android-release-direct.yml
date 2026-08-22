@@ -73,6 +73,8 @@ jobs:
         run: |
           python -m py_compile backend/app/services/groq_service.py
           python -m py_compile backend/app/services/firebase_notifications.py
+          python -m py_compile backend/app/services/github_apk_release.py
+          python -m py_compile backend/app/services/seva_notifications.py
           python -m py_compile backend/app/api/routes/notifications.py
 
       - name: Prepare signing and version
@@ -115,6 +117,20 @@ jobs:
           apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
           "$apksigner" verify --verbose --print-certs output/android/auto-ai.apk
 
+      - name: Prepare GitHub release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha256="$(sha256sum output/android/auto-ai.apk | awk '{print $1}')"
+          printf '%s\n' \
+            "Version-Code: $AUTO_AI_ANDROID_VERSION_CODE" \
+            "Version-Name: $AUTO_AI_ANDROID_VERSION_NAME" \
+            "SHA256: $sha256" \
+            "Force-Update: true" \
+            "Changelog: $AUTO_AI_CHANGELOG" \
+            > release-notes.md
+          cat release-notes.md
+
       - name: Publish GitHub release
         shell: bash
         env:
@@ -122,7 +138,7 @@ jobs:
         run: |
           set -euo pipefail
           tag="android-${AUTO_AI_ANDROID_VERSION_CODE}"
-          gh release create "$tag" output/android/auto-ai.apk --repo "$GITHUB_REPOSITORY" --title "Auto-AI Android $AUTO_AI_ANDROID_VERSION_NAME" --notes "AutoAI Android $AUTO_AI_ANDROID_VERSION_NAME" --latest
+          gh release create "$tag" output/android/auto-ai.apk --repo "$GITHUB_REPOSITORY" --title "Auto-AI Android $AUTO_AI_ANDROID_VERSION_NAME" --notes-file release-notes.md --latest
 
       - name: Publish APK metadata
         run: |
