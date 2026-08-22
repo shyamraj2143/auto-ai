@@ -3,12 +3,10 @@ const MAX_RETRIES = 3;
 const BASE_BACKOFF_MS = 500;
 const MAX_BACKOFF_MS = 10_000;
 const IN_FLIGHT_TTL_MS = 5_000;
+const PATCH_FLAG = "__AUTO_AI_NETWORK_RESILIENCE__";
 
 const inFlight = new Map<string, { promise: Promise<Response>; startedAt: number }>();
 const recentStarts = new Map<string, number>();
-const patchedFetch = Symbol("autoAiResilientFetch");
-
-type ResilientWindow = Window & { [patchedFetch]?: boolean };
 
 function sleep(ms: number, signal?: AbortSignal | null) {
   if (ms <= 0) return Promise.resolve();
@@ -17,15 +15,16 @@ function sleep(ms: number, signal?: AbortSignal | null) {
       reject(signal.reason ?? new DOMException("Request aborted", "AbortError"));
       return;
     }
-    const timer = window.setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
+    let timer = 0;
     const onAbort = () => {
       window.clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
       reject(signal?.reason ?? new DOMException("Request aborted", "AbortError"));
     };
+    timer = window.setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
     signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
@@ -67,27 +66,36 @@ function shouldRetry(response: Response, method: string) {
   return response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504;
 }
 
-async function performFetch(input: RequestInfo | URL, init: RequestInit, method: string) {
+async function performFetch(
+  nativeFetch: typeof window.fetch,
+  input: RequestInfo | URL,
+  init: RequestInit,
+  method: string,
+) {
   const signal = init.signal;
   for (let attempt = 0; ; attempt += 1) {
     if (signal?.aborted) throw signal.reason ?? new DOMException("Request aborted", "AbortError");
 
-    const response = await window.fetch(input, init);
+    const response = await nativeFetch(input, init);
     if (!shouldRetry(response, method) || attempt >= MAX_RETRIES) return response;
 
     const retryDelay = response.status === 429
       ? Math.max(retryAfterMs(response), backoffMs(attempt))
       : backoffMs(attempt);
 
-    response.body?.cancel().catch(() => undefined);
+    try {
+      await response.body?.cancel();
+    } catch {
+      // Ignore body cleanup failures before the retry.
+    }
     await sleep(retryDelay, signal);
   }
 }
 
 export function installNetworkResilience() {
   if (typeof window === "undefined") return;
-  const win = window as ResilientWindow;
-  if (win[patchedFetch]) return;
+  const win = window as Window & { [PATCH_FLAG]?: boolean };
+  if (win[PATCH_FLAG]) return;
 
   const nativeFetch = window.fetch.bind(window);
   window.fetch = async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -108,7 +116,7 @@ export function installNetworkResilience() {
     if (waitMs > 0) await sleep(waitMs, init.signal);
     recentStarts.set(key, Date.now());
 
-    const promise = performFetch(input, init, method);
+    const promise = performFetch(nativeFetch, input, init, method);
     inFlight.set(key, { promise, startedAt: Date.now() });
     try {
       const response = await promise;
@@ -120,7 +128,7 @@ export function installNetworkResilience() {
       }, 0);
     }
   };
-  win[patchedFetch] = true;
+  win[PATCH_FLAG] = true;
 }
 
 function applyNativeLazyLoading(root: ParentNode = document) {
