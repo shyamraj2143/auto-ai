@@ -3,22 +3,16 @@ from __future__ import annotations
 import base64
 import json
 import logging
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import httpx
-from jose import jwt
+from firebase_admin import credentials, get_app, initialize_app, messaging
 
 from app.core.config import settings
 from app.services.notification_destination import with_notification_destination
 
 logger = logging.getLogger(__name__)
-
-
-FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
-DEFAULT_TOKEN_URI = "https://oauth2.googleapis.com/token"
 
 
 @dataclass
@@ -31,8 +25,7 @@ class FcmSendResult:
 
 class FirebaseNotificationService:
     def __init__(self) -> None:
-        self._access_token: str | None = None
-        self._access_token_expires_at = 0
+        self._app = None
 
     @property
     def configured(self) -> bool:
@@ -40,7 +33,7 @@ class FirebaseNotificationService:
             return False
         try:
             return bool(self._service_account())
-        except (ValueError, TypeError, KeyError):
+        except (ValueError, TypeError, KeyError, json.JSONDecodeError):
             return False
 
     def send_update_notification(
@@ -56,14 +49,22 @@ class FirebaseNotificationService:
         message = {
             "message": {
                 **self._target(target, target_kind),
+                "notification": {
+                    "title": f"Auto-AI {version_name} is available",
+                    "body": (changelog or "A new Auto-AI Android update is ready.")[:180],
+                },
                 "data": with_notification_destination({
                     "type": "apk_update",
                     "event_id": f"apk_update:{release_id or version_code}",
                     "version_code": str(version_code),
+                    "version_name": version_name,
                     "release_id": release_id,
+                    "force_update": "true",
                 }),
                 "android": {
-                    "priority": "HIGH",
+                    "priority": "high",
+                    "channel_id": "auto_ai_updates",
+                    "sound": "default",
                 },
             }
         }
@@ -81,22 +82,17 @@ class FirebaseNotificationService:
         *,
         target_kind: str = "token",
     ) -> FcmSendResult:
-        analytics_label = "incoming_call_primary" if data.get("type") == "incoming_call" else "call_terminal"
-        message = {
-            "message": {
-                **self._target(target, target_kind),
-                "data": data,
-                "android": {
-                    "priority": "HIGH",
-                    "ttl": f"{max(1, ttl_seconds)}s",
-                    "direct_boot_ok": False,
-                    "restricted_package_name": "com.autoai.app",
-                    "collapse_key": f"call_{data.get('call_id', 'unknown')}",
-                    "fcm_options": {"analytics_label": analytics_label},
-                },
-            }
-        }
-        return self._send(message)
+        return self._send({"message": {
+            **self._target(target, target_kind),
+            "data": data,
+            "android": {
+                "priority": "high",
+                "ttl": max(1, ttl_seconds),
+                "direct_boot_ok": False,
+                "restricted_package_name": "com.autoai.app",
+                "collapse_key": f"call_{data.get('call_id', 'unknown')}",
+            },
+        }})
 
     def send_call_system_fallback(
         self,
@@ -115,18 +111,16 @@ class FirebaseNotificationService:
             "notification": {"title": title[:120], "body": fallback_body[:180]},
             "data": data,
             "android": {
-                "priority": "HIGH",
-                "ttl": f"{max(1, ttl_seconds)}s",
+                "priority": "high",
+                "ttl": max(1, ttl_seconds),
                 "direct_boot_ok": False,
                 "notification": {
                     "channel_id": "auto_ai_incoming_calls_v6",
-                    "notification_priority": "PRIORITY_MAX",
                     "default_sound": True,
                     "visibility": "PUBLIC",
                     "tag": notification_tag,
                     "click_action": "com.autoai.app.INCOMING_CALL_FALLBACK",
                 },
-                "fcm_options": {"analytics_label": "incoming_call_fallback"},
             },
         }})
 
@@ -139,22 +133,18 @@ class FirebaseNotificationService:
         *,
         target_kind: str = "token",
     ) -> FcmSendResult:
-        message = {
-            "message": {
-                **self._target(target, target_kind),
-                "notification": {"title": title[:120], "body": body[:180]},
-                "data": data,
-                "android": {
-                    "priority": "HIGH",
-                    "notification": {
-                        "channel_id": "auto_ai_messages",
-                        "default_sound": True,
-                        "notification_priority": "PRIORITY_HIGH",
-                    },
+        return self._send({"message": {
+            **self._target(target, target_kind),
+            "notification": {"title": title[:120], "body": body[:180]},
+            "data": data,
+            "android": {
+                "priority": "high",
+                "notification": {
+                    "channel_id": "auto_ai_messages",
+                    "default_sound": True,
                 },
-            }
-        }
-        return self._send(message)
+            },
+        }})
 
     def send_alarm_data(
         self,
@@ -165,21 +155,17 @@ class FirebaseNotificationService:
         target_kind: str = "token",
     ) -> FcmSendResult:
         alarm_id = data.get("alarm_id", "unknown")
-        message = {
-            "message": {
-                **self._target(target, target_kind),
-                "data": data,
-                "android": {
-                    "priority": "HIGH",
-                    "ttl": f"{max(60, min(ttl_seconds, 2_419_200))}s",
-                    "direct_boot_ok": False,
-                    "restricted_package_name": "com.autoai.app",
-                    "collapse_key": f"alarm_{alarm_id}",
-                    "fcm_options": {"analytics_label": "alarm_sync"},
-                },
-            }
-        }
-        return self._send(message)
+        return self._send({"message": {
+            **self._target(target, target_kind),
+            "data": data,
+            "android": {
+                "priority": "high",
+                "ttl": max(60, min(ttl_seconds, 2_419_200)),
+                "direct_boot_ok": False,
+                "restricted_package_name": "com.autoai.app",
+                "collapse_key": f"alarm_{alarm_id}",
+            },
+        }})
 
     def send_relationship_followup(
         self,
@@ -196,89 +182,121 @@ class FirebaseNotificationService:
             "notification": {"title": title[:120], "body": body[:180]},
             "data": data,
             "android": {
-                "priority": "HIGH",
-                "ttl": "86400s",
+                "priority": "high",
+                "ttl": 86400,
                 "collapse_key": f"relationship_{contact_id}",
                 "notification": {
                     "channel_id": "auto_ai_relationship_followups",
                     "default_sound": True,
-                    "notification_priority": "PRIORITY_HIGH",
                     "visibility": "PRIVATE",
                     "tag": f"relationship_{contact_id}",
                 },
-                "fcm_options": {"analytics_label": "relationship_followup"},
             },
         }})
+
+    def _get_app(self, service_account: dict[str, Any]):
+        if self._app is not None:
+            return self._app
+        try:
+            self._app = get_app()
+        except ValueError:
+            self._app = initialize_app(credentials.Certificate(service_account))
+        return self._app
+
+    @staticmethod
+    def _build_message(message: dict[str, Any]) -> messaging.Message:
+        payload = dict(message.get("message") or {})
+        kwargs: dict[str, Any] = {}
+        if payload.get("fid"):
+            kwargs["fid"] = str(payload["fid"])
+        elif payload.get("token"):
+            kwargs["token"] = str(payload["token"])
+        elif payload.get("topic"):
+            kwargs["topic"] = str(payload["topic"])
+        elif payload.get("condition"):
+            kwargs["condition"] = str(payload["condition"])
+        else:
+            raise ValueError("FCM message has no destination")
+
+        raw_data = payload.get("data") or {}
+        kwargs["data"] = {str(key): str(value) for key, value in raw_data.items()}
+
+        notification = payload.get("notification")
+        if isinstance(notification, dict):
+            kwargs["notification"] = messaging.Notification(
+                title=str(notification.get("title") or "")[:120],
+                body=str(notification.get("body") or "")[:180],
+                image=str(notification.get("image") or "") or None,
+            )
+
+        android = dict(payload.get("android") or {})
+        android_kwargs: dict[str, Any] = {}
+        priority = str(android.get("priority") or "normal").lower()
+        if priority in {"high", "normal"}:
+            android_kwargs["priority"] = priority
+        ttl = android.get("ttl")
+        if isinstance(ttl, int):
+            from datetime import timedelta
+            android_kwargs["ttl"] = timedelta(seconds=max(1, ttl))
+        elif isinstance(ttl, str) and ttl.endswith("s"):
+            from datetime import timedelta
+            try:
+                android_kwargs["ttl"] = timedelta(seconds=max(1, int(ttl[:-1])))
+            except ValueError:
+                pass
+        for field in ("collapse_key", "restricted_package_name", "direct_boot_ok"):
+            if android.get(field) is not None:
+                android_kwargs[field] = android[field]
+
+        android_notification = dict(android.get("notification") or {})
+        if android.get("channel_id"):
+            android_notification.setdefault("channel_id", android["channel_id"])
+        if android.get("sound"):
+            android_notification.setdefault("sound", android["sound"])
+        allowed_notification_fields = (
+            "icon", "color", "sound", "tag", "click_action", "channel_id",
+            "ticker", "sticky", "local_only", "visibility", "default_sound",
+        )
+        notification_kwargs = {key: android_notification[key] for key in allowed_notification_fields if key in android_notification}
+        if notification_kwargs:
+            if "default_sound" in notification_kwargs:
+                notification_kwargs["default_sound"] = bool(notification_kwargs["default_sound"])
+            android_kwargs["notification"] = messaging.AndroidNotification(**notification_kwargs)
+        if android_kwargs:
+            kwargs["android"] = messaging.AndroidConfig(**android_kwargs)
+        return messaging.Message(**kwargs)
 
     def _send(self, message: dict[str, Any]) -> FcmSendResult:
         try:
             service_account = self._service_account()
-        except (ValueError, TypeError, KeyError):
-            logger.warning("fcm_send_skipped reason=invalid_service_account")
-            return FcmSendResult(ok=False, detail="Firebase service account configuration is invalid.")
+        except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+            logger.warning("fcm_send_skipped reason=invalid_service_account error=%s", type(exc).__name__)
+            return FcmSendResult(ok=False, detail="Firebase service account configuration is invalid.", failure_code="FCM_CONFIG_INVALID")
         if not service_account:
             logger.info("fcm_send_skipped reason=unconfigured")
-            return FcmSendResult(ok=False, detail="Firebase service account is not configured.")
-        project_id = settings.FIREBASE_PROJECT_ID or str(service_account.get("project_id") or "")
-        if not project_id:
-            logger.warning("fcm_send_skipped reason=missing_project_id")
-            return FcmSendResult(ok=False, detail="Firebase project id is missing.")
-        data = message.get("message", {}).get("data", {})
-        message_type = data.get("type") if isinstance(data, dict) else None
-        call_id = data.get("call_id") if isinstance(data, dict) else None
+            return FcmSendResult(ok=False, detail="Firebase service account is not configured.", failure_code="FCM_CONFIG_MISSING")
         try:
-            response = httpx.post(
-                f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send",
-                headers={
-                    "Authorization": f"Bearer {self._access_token_for(service_account)}",
-                    "Content-Type": "application/json; charset=utf-8",
-                },
-                json=message,
-                timeout=20.0,
-            )
-        except httpx.HTTPError as exc:
-            logger.warning("fcm_send_failed project_id=%s type=%s call_id=%s detail=%s", project_id, message_type, call_id, str(exc)[:160])
-            return FcmSendResult(ok=False, detail=str(exc), failure_code="FCM_SEND_TIMEOUT" if isinstance(exc, httpx.TimeoutException) else "FCM_SEND_FAILED")
-        if 200 <= response.status_code < 300:
-            logger.info("fcm_send_ok project_id=%s type=%s call_id=%s", project_id, message_type, call_id)
-            return FcmSendResult(ok=True)
-        error_text = response.text
-        inactive = response.status_code == 404 or "UNREGISTERED" in error_text or "not a valid FCM" in error_text
-        logger.warning("fcm_send_http_error project_id=%s type=%s call_id=%s status=%d inactive=%s detail=%s", project_id, message_type, call_id, response.status_code, inactive, error_text[:160])
-        failure_code = "FCM_TOKEN_UNREGISTERED" if inactive else "FCM_AUTH_FAILED" if response.status_code in {401, 403} else "FCM_TOKEN_PROJECT_MISMATCH" if "SENDER_ID_MISMATCH" in error_text else "FCM_REJECTED_BY_FIREBASE"
-        return FcmSendResult(ok=False, inactive=inactive, detail=error_text[:500], failure_code=failure_code)
-
-    def _access_token_for(self, service_account: dict[str, Any]) -> str:
-        now = int(time.time())
-        if self._access_token and now < self._access_token_expires_at - 60:
-            return self._access_token
-        token_uri = str(service_account.get("token_uri") or DEFAULT_TOKEN_URI)
-        private_key = str(service_account["private_key"])
-        client_email = str(service_account["client_email"])
-        assertion = jwt.encode(
-            {
-                "iss": client_email,
-                "scope": FCM_SCOPE,
-                "aud": token_uri,
-                "iat": now,
-                "exp": now + 3600,
-            },
-            private_key,
-            algorithm="RS256",
-        )
-        response = httpx.post(
-            token_uri,
-            data={
-                "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
-                "assertion": assertion,
-            },
-            timeout=20.0,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        self._access_token = str(payload["access_token"])
-        self._access_token_expires_at = now + int(payload.get("expires_in", 3600))
-        return self._access_token
+            app = self._get_app(service_account)
+            response = messaging.send(self._build_message(message), app=app)
+            logger.info("fcm_send_ok response=%s", response)
+            return FcmSendResult(ok=True, detail=str(response))
+        except Exception as exc:
+            text = str(exc)
+            lower = text.lower()
+            inactive = any(marker in lower for marker in (
+                "unregistered", "not registered", "registration token is not a valid",
+                "requested entity was not found", "requested entity was not found",
+            ))
+            if inactive:
+                code = "FCM_TOKEN_UNREGISTERED"
+            elif "sender_id_mismatch" in lower:
+                code = "FCM_TOKEN_PROJECT_MISMATCH"
+            elif "credential" in lower or "permission" in lower or "unauthenticated" in lower:
+                code = "FCM_AUTH_FAILED"
+            else:
+                code = "FCM_SEND_FAILED"
+            logger.warning("fcm_send_failed inactive=%s error_type=%s detail=%s", inactive, type(exc).__name__, text[:300])
+            return FcmSendResult(ok=False, inactive=inactive, detail=text[:500], failure_code=code)
 
     def _service_account(self) -> dict[str, Any] | None:
         client_email = (settings.FIREBASE_CLIENT_EMAIL or "").strip()
@@ -289,7 +307,7 @@ class FirebaseNotificationService:
                 "project_id": project_id,
                 "client_email": client_email,
                 "private_key": private_key.replace("\\n", "\n"),
-                "token_uri": DEFAULT_TOKEN_URI,
+                "token_uri": "https://oauth2.googleapis.com/token",
             }
         raw_json = settings.FIREBASE_SERVICE_ACCOUNT_JSON.get_secret_value() if settings.FIREBASE_SERVICE_ACCOUNT_JSON else ""
         if raw_json.strip():
