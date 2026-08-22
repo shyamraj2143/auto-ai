@@ -1,0 +1,40 @@
+name: Apply Pending Messaging Offline Fixes
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore: apply messaging offline fixes') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Apply requested messaging and offline fixes
+        run: |
+          set -euo pipefail
+          python scripts/apply_messaging_offline_fixes.py
+          python scripts/apply_user_requested_feature_fixes.py
+      - name: Commit generated fixes
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if git diff --quiet; then
+            echo 'No pending generated changes.'
+            exit 0
+          fi
+          git add frontend android backend scripts
+          git commit -m 'chore: apply messaging offline fixes'
+          git push origin main
