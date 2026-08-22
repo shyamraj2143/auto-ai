@@ -1,6 +1,6 @@
 /* Contacts / accepted-conversations layout fix.
-   Keep the existing Call Hub structure, but prevent the identity column from
-   collapsing to a few pixels when action buttons are present. */
+   Keep the existing Call Hub structure, but prevent identity/content columns
+   from collapsing when action buttons are present. */
 .calls-workspace-content,
 .calls-workspace-content > .calls-tab,
 .calls-list.social-panel {
@@ -23,8 +23,11 @@
 }
 
 .call-user-row > .call-avatar,
-.call-user-row > .call-avatar-wrap {
+.call-user-row > .call-avatar-wrap,
+.call-user-row > .call-user-avatar {
   flex: 0 0 44px;
+  width: 44px;
+  min-width: 44px;
 }
 
 .call-user-copy {
@@ -79,6 +82,101 @@
   flex: 0 0 auto;
 }
 
+/* Accepted Conversations / Chats tab.
+   The chat markup uses .call-history-row + .call-chat-open, not .call-user-row.
+   The previous fix therefore did not touch this layout. */
+.call-chat-row {
+  display: flex !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  align-items: center !important;
+  gap: 10px !important;
+  overflow: hidden !important;
+}
+
+.call-chat-open {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  align-items: center !important;
+  gap: 10px !important;
+  overflow: hidden !important;
+  text-align: left !important;
+}
+
+.call-chat-open > .call-user-avatar,
+.call-chat-open > .call-avatar,
+.call-chat-open > .call-avatar-wrap {
+  flex: 0 0 44px !important;
+  width: 44px !important;
+  min-width: 44px !important;
+  max-width: 44px !important;
+  box-sizing: border-box !important;
+}
+
+.call-chat-open > span:nth-child(2) {
+  display: block !important;
+  flex: 1 1 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+.call-chat-open > span:nth-child(2) > strong,
+.call-chat-open > span:nth-child(2) > small {
+  display: block !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+}
+
+.call-chat-open > span:nth-child(2) > strong {
+  line-height: 1.25 !important;
+}
+
+.call-chat-open > span:nth-child(2) > small {
+  margin-top: 3px;
+  line-height: 1.25 !important;
+}
+
+.call-chat-open > .thread-muted,
+.call-chat-open > .thread-unread {
+  flex: 0 0 auto !important;
+  min-width: max-content !important;
+}
+
+.call-chat-actions {
+  display: flex !important;
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: max-content !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 6px !important;
+  margin-left: auto !important;
+}
+
+.call-chat-actions > button {
+  flex: 0 0 38px !important;
+  width: 38px !important;
+  min-width: 38px !important;
+  height: 38px !important;
+  min-height: 38px !important;
+  box-sizing: border-box !important;
+}
+
 @media (max-width: 640px) {
   .calls-workspace-content {
     padding-left: 8px;
@@ -100,5 +198,33 @@
     min-width: 34px;
     height: 34px;
     min-height: 34px;
+  }
+
+  .call-chat-row {
+    gap: 7px !important;
+  }
+
+  .call-chat-open {
+    gap: 8px !important;
+  }
+
+  .call-chat-open > .call-user-avatar,
+  .call-chat-open > .call-avatar,
+  .call-chat-open > .call-avatar-wrap {
+    flex-basis: 44px !important;
+    width: 44px !important;
+    min-width: 44px !important;
+  }
+
+  .call-chat-actions {
+    gap: 5px !important;
+  }
+
+  .call-chat-actions > button {
+    flex-basis: 38px !important;
+    width: 38px !important;
+    min-width: 38px !important;
+    height: 38px !important;
+    min-height: 38px !important;
   }
 }
