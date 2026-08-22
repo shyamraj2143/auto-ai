@@ -1,9 +1,10 @@
 name: Android release
 
 on:
-  workflow_run:
-    workflows: ["Apply Reliable AutoAI Fixes"]
-    types: [completed]
+  push:
+    branches: [main]
+    paths-ignore:
+      - '.release-status/**'
   workflow_dispatch:
 
 concurrency:
@@ -28,7 +29,6 @@ env:
 
 jobs:
   build-and-publish:
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     environment: production
