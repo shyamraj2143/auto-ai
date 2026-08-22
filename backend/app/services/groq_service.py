@@ -12,6 +12,7 @@ from fastapi import HTTPException, status
 from groq import AuthenticationError, Groq, GroqError
 
 from app.core.config import settings
+from app.services.nvidia_vision_service import nvidia_vision_service
 
 
 class GroqService:
@@ -171,12 +172,45 @@ class GroqService:
         return iterator()
 
     def analyze_image(self, image_bytes: bytes, filename: str, prompt: str) -> str:
+        """Run true multimodal analysis: Groq Vision first, NVIDIA Vision fallback."""
+        if not image_bytes:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image is empty.")
         suffix = Path(filename).suffix.lower().replace(".", "") or "png"
         mime = "jpeg" if suffix == "jpg" else suffix
         encoded = base64.b64encode(image_bytes).decode("ascii")
-        messages = [{"role":"user","content":[{"type":"text","text":prompt},{"type":"image_url","image_url":{"url":f"data:image/{mime};base64,{encoded}"}}]}]
-        content, _, _ = self._complete_groq(messages, model=settings.GROQ_VISION_MODEL, max_tokens=settings.GROQ_MAX_TOKENS, request_timeout=60)
-        return content
+        messages = [{"role": "user", "content": [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": f"data:image/{mime};base64,{encoded}"}},
+        ]}]
+        errors: list[str] = []
+        try:
+            content, _, _ = self._complete_groq(
+                messages,
+                model=settings.GROQ_VISION_MODEL,
+                max_tokens=settings.GROQ_MAX_TOKENS,
+                request_timeout=90,
+            )
+            if content.strip():
+                return content.strip()
+        except Exception as exc:
+            errors.append(f"groq:{type(exc).__name__}")
+        try:
+            content = nvidia_vision_service.analyze_image(
+                image_bytes,
+                filename,
+                prompt,
+                mime_type=f"image/{mime}",
+                max_tokens=settings.GROQ_MAX_TOKENS,
+                timeout=90,
+            )
+            if content.strip():
+                return content.strip()
+        except Exception as exc:
+            errors.append(f"nvidia:{type(exc).__name__}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Image analysis failed for both Groq Vision and NVIDIA Vision: " + ", ".join(errors),
+        )
 
     def transcribe_audio(self, audio_bytes: bytes, filename: str, model: str | None = None, *, language: str | None = None, prompt: str | None = None) -> str:
         temp_path = None
