@@ -11,6 +11,7 @@ import "./styles/nvidiaIntelligenceComposer.css";
 import "./styles/modelActivityVisibilityFix.css";
 import "./styles/chatResponseLayoutFix.css";
 import "./styles/callsContactsFixes.css";
+import "./reliability/networkResilience";
 import App from "./App";
 import { beginStartupRecovery } from "./reliability/safeMode";
 import { installFunctionalDialogDiagnostics, installResponsiveDiagnostics } from "./reliability/responsiveDiagnostics";
