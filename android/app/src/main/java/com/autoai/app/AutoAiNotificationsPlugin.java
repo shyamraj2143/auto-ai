@@ -15,7 +15,6 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
-
 @CapacitorPlugin(
     name = "AutoAiNotifications",
     permissions = @Permission(strings = { Manifest.permission.POST_NOTIFICATIONS }, alias = "notifications")
@@ -39,7 +38,7 @@ public final class AutoAiNotificationsPlugin extends Plugin {
         JSObject result = new JSObject();
         result.put("granted", granted());
         result.put("prompted", prompted);
-        result.put("canPrompt", Build.VERSION.SDK_INT >= 33 && !granted() && !prompted);
+        result.put("canPrompt", Build.VERSION.SDK_INT >= 33 && !granted());
         result.put("settingsRequired", Build.VERSION.SDK_INT >= 33 && !granted() && prompted);
         return result;
     }
@@ -55,10 +54,8 @@ public final class AutoAiNotificationsPlugin extends Plugin {
             call.resolve(state());
             return;
         }
-        if (preferences().getBoolean(PROMPTED, false)) {
-            call.resolve(state());
-            return;
-        }
+        // Do not permanently block retries because the first prompt can be lost
+        // during WebView startup or dismissed before the user sees it.
         preferences().edit().putBoolean(PROMPTED, true).apply();
         requestPermissionForAlias("notifications", call, "notificationPermissionResult");
     }
