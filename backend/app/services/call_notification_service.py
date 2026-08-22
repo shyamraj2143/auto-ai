@@ -143,8 +143,30 @@ def send_incoming_call_notifications(
         else:
             device.last_fcm_send_result = "rejected"
             device.last_fcm_failure_code = result.failure_code or "FCM_REJECTED_BY_FIREBASE"
-            logger.warning("FCM_SEND_FAILED call_id=%s trace_id=%s event_id=%s installation_hash=%s app_version=%s result=FCM_SEND_FAILED timestamp=%s", call.id, call.trace_id, data["event_id"], installation_hash, device.app_version or "", datetime.now(timezone.utc).isoformat())
+            logger.warning("FCM_SEND_FAILED call_id=%s trace_id=%s event_id=%s installation_hash=%s app_version=%s result=FCM_SEND_FAILED timestamp=%s", call.id, call.trace_id, device_data["event_id"], installation_hash, device.app_version or "", datetime.now(timezone.utc).isoformat())
             logger.warning("call_fcm_incoming_failed call_id=%s device_id=%s detail=%s", call.id, device.device_id, result.detail[:160])
+            # If the native data message is rejected, immediately try the system
+            # notification path so the callee still sees an actionable alert.
+            fallback = firebase_notification_service.send_call_system_fallback(
+                token,
+                device_data,
+                f"Incoming {call.call_type} call",
+                f"{caller.name} is calling you",
+                remaining_lifetime,
+                device_data["notification_tag"],
+                target_kind=_target_kind(device),
+            )
+            if fallback.ok:
+                sent += 1
+                device.last_fcm_send_result = "accepted"
+                device.last_fcm_failure_code = None
+                logger.info("CALL_SYSTEM_FALLBACK_ACCEPTED call_id=%s device_id=%s", call.id, device.device_id)
+            elif fallback.inactive:
+                device.is_active = False
+                device.fcm_token = None
+                device.fcm_token_ciphertext = None
+                device.fcm_token_hash = None
+                device.updated_at = datetime.utcnow()
     db.flush()
     return sent
 
