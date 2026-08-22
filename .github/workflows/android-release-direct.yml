@@ -12,6 +12,7 @@ on:
       - 'package-lock.json'
       - 'frontend/package.json'
       - 'frontend/package-lock.json'
+      - '.github/workflows/android-release-direct.yml'
   workflow_dispatch:
 
 concurrency:
