@@ -1,0 +1,3 @@
+Force Android release pipeline after fixing the main-branch release trigger.
+
+No runtime effect. This commit intentionally touches android/** so android-release-direct.yml executes from main and builds/publishes the current APK, metadata, and FCM update notification.
