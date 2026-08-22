@@ -26,7 +26,9 @@ jobs:
           python-version: '3.13'
 
       - name: Apply fixes
-        run: python scripts/apply_messaging_offline_fixes.py
+        run: |
+          python scripts/apply_messaging_offline_fixes.py
+          python scripts/apply_message_thread_layout_fix.py
 
       - name: Commit implementation
         run: |
