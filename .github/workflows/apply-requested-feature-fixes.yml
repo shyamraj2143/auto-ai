@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - "scripts/apply_user_requested_feature_fixes.py"
+      - "scripts/apply_messaging_offline_fixes.py"
       - "scripts/fix_requested_feature_contract_test.py"
       - ".github/workflows/apply-requested-feature-fixes.yml"
       - ".github/feature-fix-trigger.txt"
@@ -15,6 +16,7 @@ on:
       - main
     paths:
       - "scripts/apply_user_requested_feature_fixes.py"
+      - "scripts/apply_messaging_offline_fixes.py"
       - "scripts/fix_requested_feature_contract_test.py"
       - ".github/workflows/apply-requested-feature-fixes.yml"
       - ".github/feature-fix-trigger.txt"
@@ -46,6 +48,7 @@ jobs:
       - name: Apply targeted patch
         shell: bash
         run: |
+          python scripts/apply_messaging_offline_fixes.py
           if test -f frontend/src/styles/featureFixes.css && grep -q 'Response language' frontend/src/components/chat/ChatPage.tsx; then
             echo "Targeted patch is already applied."
           else
@@ -117,18 +120,6 @@ jobs:
           target_branch="${GITHUB_HEAD_REF:-main}"
           git config user.name "AutoAI Fix Bot"
           git config user.email "actions@users.noreply.github.com"
-          git add \
-            frontend/src/contexts/AppSettingsContext.tsx \
-            frontend/src/components/chat/ChatPage.tsx \
-            frontend/src/components/settings/SettingsPage.tsx \
-            frontend/src/features/screenShare/ScreenShareProvider.tsx \
-            frontend/src/features/screenShare/ScreenShareWorkspacePage.tsx \
-            frontend/src/features/screenShare/ScreenShareOverlay.tsx \
-            frontend/src/styles/featureFixes.css \
-            frontend/src/main.tsx \
-            frontend/src/reliability/requestedFeatureFixes.contract.test.ts \
-            backend/app/services/live_context.py \
-            backend/app/api/routes/ai.py \
-            backend/tests/test_response_language_context.py
-          git commit -m "fix: improve chat settings sharing and mobile messaging"
+          git add -A
+          git commit -m "fix: messaging notifications offline mode and attachment previews"
           git push origin HEAD:"$target_branch"
