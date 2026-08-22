@@ -1,0 +1,163 @@
+name: Android release direct
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'backend/**'
+      - 'android/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'frontend/package.json'
+      - 'frontend/package-lock.json'
+  workflow_dispatch:
+
+concurrency:
+  group: android-release-direct
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  AUTO_AI_API_BASE_URL: https://auto-ai-app-download.up.railway.app/api/v1
+  AUTO_AI_ANDROID_KEYSTORE_BASE64: ${{ secrets.AUTO_AI_ANDROID_KEYSTORE_BASE64 }}
+  AUTO_AI_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.AUTO_AI_ANDROID_KEYSTORE_PASSWORD }}
+  AUTO_AI_ANDROID_KEY_ALIAS: ${{ secrets.AUTO_AI_ANDROID_KEY_ALIAS }}
+  AUTO_AI_ANDROID_KEY_PASSWORD: ${{ secrets.AUTO_AI_ANDROID_KEY_PASSWORD }}
+  AUTO_AI_GOOGLE_WEB_CLIENT_ID: ${{ secrets.AUTO_AI_GOOGLE_WEB_CLIENT_ID }}
+  AUTO_AI_GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.AUTO_AI_GOOGLE_SERVICES_JSON_BASE64 }}
+  AUTO_AI_EXPECTED_SIGNING_SHA256: ${{ secrets.AUTO_AI_EXPECTED_SIGNING_SHA256 }}
+  AUTO_AI_ADMIN_EMAIL: ${{ secrets.AUTO_AI_ADMIN_EMAIL }}
+  AUTO_AI_ADMIN_PASSWORD: ${{ secrets.AUTO_AI_ADMIN_PASSWORD }}
+  AUTO_AI_UPDATE_NOTIFY_SECRET: ${{ secrets.AUTO_AI_UPDATE_NOTIFY_SECRET }}
+
+jobs:
+  release:
+    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip android]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: production
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 2
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Validate backend source
+        run: |
+          python -m py_compile backend/app/services/groq_service.py
+          python -m py_compile backend/app/services/firebase_notifications.py
+          python -m py_compile backend/app/api/routes/notifications.py
+
+      - name: Prepare signing and version
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in AUTO_AI_ANDROID_KEYSTORE_BASE64 AUTO_AI_ANDROID_KEYSTORE_PASSWORD AUTO_AI_ANDROID_KEY_ALIAS AUTO_AI_ANDROID_KEY_PASSWORD AUTO_AI_GOOGLE_SERVICES_JSON_BASE64; do
+            test -n "${!name:-}" || { echo "Missing $name" >&2; exit 1; }
+          done
+          mkdir -p .android-signing
+          printf '%s' "$AUTO_AI_ANDROID_KEYSTORE_BASE64" | base64 --decode > .android-signing/auto-ai-release.jks
+          echo "AUTO_AI_ANDROID_KEYSTORE=$PWD/.android-signing/auto-ai-release.jks" >> "$GITHUB_ENV"
+          version_code=$((500000 + GITHUB_RUN_NUMBER * 10 + GITHUB_RUN_ATTEMPT))
+          echo "AUTO_AI_ANDROID_VERSION_CODE=$version_code" >> "$GITHUB_ENV"
+          echo "AUTO_AI_ANDROID_VERSION_NAME=1.0.$version_code" >> "$GITHUB_ENV"
+          echo "AUTO_AI_CHANGELOG=AutoAI mobile update ${version_code}" >> "$GITHUB_ENV"
+          printf '%s' "$AUTO_AI_GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > android/app/google-services.json
+          test -s android/app/google-services.json
+
+      - name: Build web and signed APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm ci --prefix frontend
+          AUTO_AI_SKIP_COMPRESSION=1 VITE_API_URL="$AUTO_AI_API_BASE_URL" VITE_GOOGLE_WEB_CLIENT_ID="$AUTO_AI_GOOGLE_WEB_CLIENT_ID" npm run build
+          test -f frontend/dist/index.html
+          npx cap sync android
+          test -f android/app/src/main/assets/public/index.html
+          chmod +x android/gradlew
+          ./android/gradlew -p android :app:assembleRelease
+          test -s android/app/build/outputs/apk/release/app-release.apk
+          mkdir -p output/android
+          cp android/app/build/outputs/apk/release/app-release.apk output/android/auto-ai.apk
+
+      - name: Verify APK signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          "$apksigner" verify --verbose --print-certs output/android/auto-ai.apk
+
+      - name: Publish GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="android-${AUTO_AI_ANDROID_VERSION_CODE}"
+          gh release create "$tag" output/android/auto-ai.apk --repo "$GITHUB_REPOSITORY" --title "Auto-AI Android $AUTO_AI_ANDROID_VERSION_NAME" --notes "AutoAI Android $AUTO_AI_ANDROID_VERSION_NAME" --latest
+
+      - name: Publish APK metadata
+        run: |
+          set -euo pipefail
+          python scripts/publish_android_release.py \
+            --api-url "$AUTO_AI_API_BASE_URL" \
+            --apk output/android/auto-ai.apk \
+            --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
+            --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
+            --changelog "$AUTO_AI_CHANGELOG" \
+            --release-notes "$AUTO_AI_CHANGELOG" \
+            --metadata-only \
+            --force-update
+
+      - name: Send update notification
+        shell: bash
+        run: |
+          set -euo pipefail
+          success=0
+          for attempt in $(seq 1 10); do
+            if python scripts/notify_android_update.py \
+              --api-url "$AUTO_AI_API_BASE_URL" \
+              --version-code "$AUTO_AI_ANDROID_VERSION_CODE" \
+              --version-name "$AUTO_AI_ANDROID_VERSION_NAME" \
+              --changelog "$AUTO_AI_CHANGELOG"; then
+              success=1
+              break
+            fi
+            sleep 20
+          done
+          test "$success" -eq 1
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: auto-ai-${{ env.AUTO_AI_ANDROID_VERSION_NAME }}
+          path: output/android/auto-ai.apk
+          if-no-files-found: error
+          retention-days: 14
