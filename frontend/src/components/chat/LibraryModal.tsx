@@ -10,10 +10,16 @@ function formatSize(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function isPdf(asset: LibraryAsset) {
+  return asset.mime_type.toLowerCase() === "application/pdf" || asset.display_name.toLowerCase().endsWith(".pdf");
+}
+
 function AssetPreview({ asset, token }: { asset: LibraryAsset; token: string }) {
   const [src, setSrc] = useState("");
+  const previewable = asset.file_type === "image" || isPdf(asset);
+
   useEffect(() => {
-    if (asset.file_type !== "image") return;
+    if (!previewable) return;
     let active = true;
     let objectUrl = "";
     api.previewLibraryAsset(token, asset.id).then((blob) => {
@@ -25,9 +31,12 @@ function AssetPreview({ asset, token }: { asset: LibraryAsset; token: string }) 
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [asset.file_type, asset.id, token]);
-  if (src) return <img src={src} alt="" loading="lazy" />;
+  }, [asset.id, previewable, token]);
+
+  if (src && asset.file_type === "image") return <img src={src} alt="" loading="lazy" />;
+  if (src && isPdf(asset)) return <iframe className="library-preview-pdf" src={`${src}#toolbar=0&navpanes=0&scrollbar=0`} title={`Preview ${asset.display_name}`} />;
   if (asset.file_type === "image") return <ImageIcon />;
+  if (isPdf(asset)) return <FileText />;
   if (asset.file_type === "code") return <FileCode2 />;
   return <FileText />;
 }
