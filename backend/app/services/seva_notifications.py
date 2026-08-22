@@ -27,11 +27,18 @@ def send_seva_push(db: Session, recipient_id: str, work_order_id: str, event_id:
         UserDevice.is_active.is_(True),
         (UserDevice.fcm_token_ciphertext.is_not(None) | UserDevice.fcm_token.is_not(None)),
     )))
+    application_id = deep_link.rsplit("/", 1)[-1] if deep_link.startswith("/seva/applications/") else work_order_id
     data = with_notification_destination({
-        "type": "seva_case_update", "event_id": event_id, "work_order_id": work_order_id,
-        "case_route_id": deep_link.rsplit("/", 1)[-1] if deep_link.startswith("/seva/applications/") else work_order_id,
+        "type": "seva_case_update",
+        "event_id": event_id,
+        "work_order_id": work_order_id,
+        "application_id": application_id,
+        "case_route_id": application_id,
         "secondary_id": "agent" if deep_link.startswith("/agent/") else "user",
-        "deep_link": deep_link, "created_at": datetime.now(timezone.utc).isoformat(),
+        "deep_link": deep_link,
+        "title": title,
+        "body": body,
+        "created_at": datetime.now(timezone.utc).isoformat(),
     })
     sent = 0
     for device in devices:
@@ -39,8 +46,13 @@ def send_seva_push(db: Session, recipient_id: str, work_order_id: str, event_id:
             token = decrypt_token(device.fcm_token_ciphertext, device.fcm_token)
             if not token:
                 continue
-            result = firebase_notification_service.send_chat_data(
-                token, data, title, body, target_kind="fid" if device.push_provider == "fcm_fid" else "token"
+            # Send data-only so the Android FirebaseMessagingService receives the
+            # event in background/terminated state and can build the Seva-specific
+            # notification + deep link itself.
+            result = firebase_notification_service.send_seva_data(
+                token,
+                data,
+                target_kind="fid" if device.push_provider == "fcm_fid" else "token",
             )
             sent += int(result.ok)
             if result.inactive:
@@ -48,4 +60,5 @@ def send_seva_push(db: Session, recipient_id: str, work_order_id: str, event_id:
                 device.updated_at = datetime.utcnow()
         except Exception:
             logger.exception("Seva push delivery failed for device %s", device.id)
+    db.commit()
     return sent
