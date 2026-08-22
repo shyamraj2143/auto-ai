@@ -22,7 +22,6 @@ jobs:
     timeout-minutes: 90
     environment: production
     env:
-      # Single production backend used by the current app configuration.
       AUTO_AI_API_BASE_URL: https://auto-ai-app-download.up.railway.app/api/v1
       AUTO_AI_ANDROID_KEYSTORE_BASE64: ${{ secrets.AUTO_AI_ANDROID_KEYSTORE_BASE64 }}
       AUTO_AI_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.AUTO_AI_ANDROID_KEYSTORE_PASSWORD }}
@@ -62,6 +61,25 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+
+      - name: Apply messaging, offline and notification fixes to release source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f scripts/apply_messaging_offline_fixes.py ]; then
+            python scripts/apply_messaging_offline_fixes.py
+            # These are one-shot CI patch helpers; keep the application source clean.
+            rm -f scripts/apply_messaging_offline_fixes.py .github/workflows/apply-messaging-fixes.yml
+            git config user.name 'AutoAI Fix Bot'
+            git config user.email 'actions@users.noreply.github.com'
+            git add -A
+            if ! git diff --cached --quiet; then
+              git commit -m 'fix: messaging notifications offline mode and attachment previews'
+              git push origin HEAD:main
+            fi
+          else
+            echo 'Messaging fix script already consumed.'
+          fi
 
       - name: Prepare production signing and version
         shell: bash
