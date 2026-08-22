@@ -13,8 +13,6 @@ from app.services.apk_service import ApkService
 
 GITHUB_REPO = os.getenv("AUTO_AI_GITHUB_APK_REPO", "shyamraj2143/auto-ai").strip()
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-# The FastAPI application is mounted under /api/v1. Keep generated download
-# URLs aligned with the public API prefix so QR codes and metadata links work.
 GITHUB_DOWNLOAD_URL = "/api/v1/download/apk/github/latest"
 GITHUB_CACHE_TTL_SECONDS = 60
 GITHUB_RELEASES_REQUIRE_UPDATE = True
@@ -77,14 +75,34 @@ class GitHubApkReleaseService:
         tag = str(payload.get("tag_name") or "")
         name = str(payload.get("name") or "")
         asset_name = str(asset.get("name") or settings.APK_FILENAME)
-        version_code = self._parse_int(body, r"Version-Code:\s*(\d+)") or self._parse_int(tag, r"(\d+)") or self._parse_int(asset_name, r"(\d+)")
+        version_code = (
+            self._parse_int(body, r"Version-Code:\s*(\d+)")
+            or self._parse_int(tag, r"(\d+)")
+            or self._parse_int(asset_name, r"(\d+)")
+        )
         if not version_code:
             return None
-        version_name = self._parse_text(body, r"Version-Name:\s*([^\s]+)") or f"1.0.{version_code}"
-        sha256 = self._parse_text(body, r"SHA256:\s*([A-Fa-f0-9]{64})") or ""
+
+        version_name = (
+            self._parse_text(body, r"Version-Name:\s*([^\s]+)")
+            or self._parse_text(name, r"(1\.0\.[0-9]+)")
+            or f"1.0.{version_code}"
+        )
+
+        # GitHub now exposes an asset digest on release-asset responses. Use it
+        # when the release notes do not contain the SHA256 line. Older releases
+        # may still have the digest in the form "sha256:<hex>".
+        sha256 = self._parse_text(body, r"SHA256:\s*([A-Fa-f0-9]{64})")
+        if not sha256:
+            digest = str(asset.get("digest") or "")
+            if digest.lower().startswith("sha256:"):
+                sha256 = digest.split(":", 1)[1].strip()
+        sha256 = (sha256 or "").lower()
+
         file_size = int(asset.get("size") or 0)
-        if not sha256 or file_size <= 0:
+        if not sha256 or not re.fullmatch(r"[0-9a-f]{64}", sha256) or file_size <= 0:
             return None
+
         released_at = self._parse_datetime(str(payload.get("published_at") or payload.get("created_at") or ""))
         download_url = f"{GITHUB_DOWNLOAD_URL}?version={version_name}"
         release_notes = self._release_notes(body)
@@ -119,7 +137,14 @@ class GitHubApkReleaseService:
         try:
             parsed = urlparse(value)
             expected_prefix = f"/{GITHUB_REPO}/releases/download/"
-            return parsed.scheme == "https" and parsed.hostname == "github.com" and parsed.username is None and parsed.password is None and parsed.path.startswith(expected_prefix) and parsed.path.lower().endswith(".apk")
+            return (
+                parsed.scheme == "https"
+                and parsed.hostname == "github.com"
+                and parsed.username is None
+                and parsed.password is None
+                and parsed.path.startswith(expected_prefix)
+                and parsed.path.lower().endswith(".apk")
+            )
         except (TypeError, ValueError):
             return False
 
